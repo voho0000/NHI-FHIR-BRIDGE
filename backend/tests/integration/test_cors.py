@@ -17,7 +17,6 @@ from fastapi.testclient import TestClient
 # Point the app at a throw-away DB so import doesn't touch real data.
 # Each module-scoped client gets a fresh file.
 _TEST_DB = Path("/tmp/cors_test.db")
-os.environ.setdefault("SECRET_KEY", "test-secret-key-min-32-characters-long")
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TEST_DB}"
 
 

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.security import require_sync_api_key
 from app.fhir.server import fhir_server
 from app.smart.oauth2 import smart_auth
 
@@ -60,6 +61,24 @@ async def authorize(
     if redirect_uri not in client.redirect_uris:
         raise HTTPException(400, "Invalid redirect_uri")
 
+    # PKCE is MANDATORY for public clients per SMART App Launch IG §1.0.2.
+    # Public clients (mobile/browser SMART apps) can't keep a client_secret,
+    # so PKCE is the only thing protecting the authorization code from
+    # interception. Confidential clients can authenticate via client_secret
+    # at /token instead.
+    if not client.is_confidential:
+        if not code_challenge:
+            raise HTTPException(
+                400,
+                "code_challenge is required for public clients (PKCE). "
+                "See SMART App Launch IG §1.0.2.",
+            )
+        if code_challenge_method not in ("S256", "plain"):
+            raise HTTPException(
+                400,
+                "code_challenge_method must be 'S256' (recommended) or 'plain'.",
+            )
+
     # POC: auto-approve. Patient context resolution priority:
     #   1. Launch token created via POST /smart/launch-context (EHR-Launch flow)
     #   2. Fallback to first patient in the store
@@ -89,11 +108,15 @@ async def authorize(
 async def create_launch_context(
     payload: dict = Body(...),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_sync_api_key),
 ):
     """Create a launch token bound to a specific patient.
     Frontend calls this before opening a SMART app so the EHR-Launch flow
     can pre-select the patient context (instead of always defaulting to the
     first patient in the store).
+
+    Auth: gated by SYNC_API_KEY (same as /sync/*) to prevent an attacker
+    on the local network from minting launch tokens for arbitrary patients.
     """
     patient_id = payload.get("patient_id")
     if not patient_id:

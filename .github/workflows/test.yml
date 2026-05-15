@@ -28,15 +28,11 @@ jobs:
 
       - name: Run pytest
         working-directory: backend
-        env:
-          # Required by Settings validator; just needs to satisfy length.
-          SECRET_KEY: "ci-test-secret-key-with-at-least-32-chars"
         run: pytest -v --cov=app --cov-report=term-missing
 
       - name: Verify Alembic baseline applies cleanly
         working-directory: backend
         env:
-          SECRET_KEY: "ci-test-secret-key-with-at-least-32-chars"
           DATABASE_URL: "sqlite+aiosqlite:///ci_test.db"
         run: |
           python -m alembic upgrade head

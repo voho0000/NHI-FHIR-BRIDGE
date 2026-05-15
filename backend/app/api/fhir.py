@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.security import require_sync_api_key
 from app.fhir.capability import build_capability_statement
 from app.fhir.server import fhir_server
 from app.smart.oauth2 import smart_auth
@@ -51,10 +52,15 @@ def _enforce_read_access(resource: dict, auth_patient_id: Optional[str]) -> None
     if not auth_patient_id:
         return
     # FHIR reference field is "subject" for most resources, "patient" for
-    # AllergyIntolerance and a few others.
+    # AllergyIntolerance and a few others. Use EXACT match against
+    # "Patient/<id>" — a substring match would let a token bound to
+    # "A12345678" read patients whose ID is "A123456789" (which DOES
+    # happen with Taiwan national IDs since they're a fixed-length
+    # format with no separator).
+    expected_ref = f"Patient/{auth_patient_id}"
     for field in ("subject", "patient"):
         ref = resource.get(field, {})
-        if isinstance(ref, dict) and auth_patient_id in ref.get("reference", ""):
+        if isinstance(ref, dict) and ref.get("reference") == expected_ref:
             return
     raise HTTPException(404, "Resource not found")
 
@@ -207,6 +213,7 @@ for _rtype in _PER_PATIENT_RESOURCES:
 async def export_bundle(
     patient: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_sync_api_key),
 ):
     """Export all FHIR resources (optionally filtered to one patient) as a
     FHIR Bundle type=collection. Suitable for download + re-import.
@@ -247,7 +254,11 @@ async def export_bundle(
 
 
 @router.post("/import")
-async def import_bundle(request: Request, db: AsyncSession = Depends(get_db)):
+async def import_bundle(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_sync_api_key),
+):
     """Import a FHIR Bundle, a single resource, or an array of resources.
     All resources are upserted (create-or-update by resourceType + id).
     Resources missing an id are skipped."""

@@ -98,7 +98,7 @@ backend/app/
 │   ├── smart.py       # SMART on FHIR OAuth2
 │   └── sync.py        # /sync/upload-structured + /sync/upload-html
 ├── core/
-│   ├── config.py      # Pydantic Settings + SECRET_KEY 驗證
+│   ├── config.py      # Pydantic Settings
 │   └── database.py    # async engine + Base
 ├── fhir/
 │   ├── server.py      # idempotent upsert by (resourceType, id)
@@ -167,7 +167,12 @@ migration 檔在 `backend/alembic/versions/`，建議在 PR 時 review。
 | `/smart/authorize` `/smart/token` | OAuth2 標準流程 | 嚴格 allow list | Auth code + PKCE，client_id + redirect_uri 須事先註冊 |
 | Dashboard `/` | 無 | 嚴格 allow list | 預設 bind `127.0.0.1` only |
 
-`SECRET_KEY`：必填且 ≥ 32 字元，否則啟動失敗。用於 JWT 簽章。
+**Auth model summary**：
+
+- **PHI 寫入路徑**（`/sync/upload-*`、`/smart/launch-context`、`/fhir/import`、`/fhir/export`）：靠 `SYNC_API_KEY` header。預設未啟用，正式部署必設。
+- **PHI 讀取路徑**（`/fhir/<resource>`）：靠 SMART OAuth2 Bearer token，token 可 patient-scoped。
+- **OAuth2**：Auth code + 強制 PKCE（public client 不帶 `code_challenge` 直接拒絕）+ 預註冊 client_id + redirect_uri 白名單。
+- **無 JWT 簽章**：access token 是 opaque random，DB membership 即為驗證——沒有用 `SECRET_KEY`。
 
 ### CORS 雙層設計
 

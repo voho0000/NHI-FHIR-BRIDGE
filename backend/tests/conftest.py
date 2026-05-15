@@ -21,9 +21,8 @@ if str(BACKEND_DIR) not in sys.path:
 
 # Use an in-memory SQLite by default so tests don't touch dev DB.
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
-os.environ.setdefault("SECRET_KEY", "test-secret-key-min-32-characters-long")
-os.environ.setdefault("LLM_PROVIDER", "claude")
-os.environ.setdefault("ANTHROPIC_API_KEY", "test-key-not-real")
+# LLM_PROVIDER defaults to "none" in production. Tests that want to
+# exercise the fallback path should monkeypatch this.
 
 
 @pytest.fixture

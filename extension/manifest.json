@@ -26,7 +26,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["sidebar.html", "sidebar.js"],
+      "resources": ["sidebar.js"],
       "matches": [
         "https://myhealthbank.nhi.gov.tw/*"
       ]

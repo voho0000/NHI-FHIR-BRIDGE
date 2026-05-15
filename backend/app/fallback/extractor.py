@@ -1,23 +1,16 @@
-"""Shared HTML → FHIR extraction.
+"""LLM-driven HTML → FHIR extraction (fallback path only).
 
-The Playwright agent (server-side scraping) and the Chrome extension
-(client-side, via POST /sync/upload-html) both feed raw HTML through
-this module. Centralizing the LLM schemas + mapper dispatch keeps the
-two paths producing identical FHIR shapes.
+Invoked only by POST /sync/upload-html when the primary JSON-API path
+can't be used. The dispatch tables (`LIST_HANDLERS`, `GROUP_HANDLERS`)
+live in `app.mapper.dispatch` — both this module AND the primary path
+pull from there so both produce identical FHIR shapes.
 """
 
 import logging
-from collections.abc import Callable
 
 from app.fallback.llm.base import LLMProvider
-from app.mapper.allergy import map_allergy_intolerance
-from app.mapper.condition import map_condition
-from app.mapper.diagnostic_report import map_diagnostic_report
-from app.mapper.encounter import map_encounter
-from app.mapper.medication import map_medication_request, map_medications_dedup
-from app.mapper.observation import map_observation, map_observations_grouped
+from app.mapper.dispatch import GROUP_HANDLERS, LIST_HANDLERS
 from app.mapper.patient import map_patient
-from app.mapper.procedure import map_procedure
 
 logger = logging.getLogger(__name__)
 
@@ -242,29 +235,6 @@ SCHEMAS: dict[str, dict] = {
 }
 
 
-# page_type → (mapper function, JSON list key inside LLM response)
-_LIST_HANDLERS: dict[str, tuple[Callable[[dict, str], dict], str]] = {
-    "observations": (map_observation, "observations"),
-    "medications": (map_medication_request, "medications"),
-    "conditions": (map_condition, "conditions"),
-    "allergies": (map_allergy_intolerance, "allergies"),
-    "diagnostic_reports": (map_diagnostic_report, "diagnostic_reports"),
-    "procedures": (map_procedure, "procedures"),
-    "encounters": (map_encounter, "encounters"),
-}
-
-# page_type → mapper that takes the FULL list at once (returns list[dict]).
-# Use this when grouping across rows is required (e.g. NHI lab panels —
-# many items per 醫令代碼 share an order_code and become one DR + N Obs).
-# Signature: (raw_items, patient_id) -> list[dict]
-_GROUP_HANDLERS: dict[str, Callable[[list, str], list]] = {
-    "observations": map_observations_grouped,
-    # Same drug appears 3x in NHI (English-only, Eng+中, 中+Eng). Dedup
-    # by canonical English fragment per (date, drug).
-    "medications": map_medications_dedup,
-}
-
-
 def supported_page_types() -> list[str]:
     return list(SCHEMAS.keys())
 
@@ -349,15 +319,15 @@ async def _extract_one(
     if not patient_id:
         raise ValueError(f"page_type={page_type} requires patient_id")
 
-    mapper, list_key = _LIST_HANDLERS[page_type]
+    mapper, list_key = LIST_HANDLERS[page_type]
     raw_items = result.get(list_key, []) if isinstance(result, dict) else []
     if not isinstance(raw_items, list):
         return []
 
     # Group-aware mappers (e.g. lab panel grouping) take the full list
     # and do their own grouping.
-    if page_type in _GROUP_HANDLERS:
-        return _GROUP_HANDLERS[page_type](raw_items, patient_id)
+    if page_type in GROUP_HANDLERS:
+        return GROUP_HANDLERS[page_type](raw_items, patient_id)
 
     # Per-item mappers may return None to signal "this row isn't a real
     # resource" (e.g. imaging that belongs in DiagnosticReport). Filter.

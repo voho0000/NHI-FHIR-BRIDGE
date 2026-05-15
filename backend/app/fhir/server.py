@@ -137,12 +137,15 @@ class FHIRServer:
 
 
 def _patient_ref_matches(resource: dict, patient_id: str) -> bool:
-    # FHIR resources use "subject" (most) or "patient" (AllergyIntolerance, etc.)
+    # FHIR resources use "subject" (most) or "patient" (AllergyIntolerance, etc.).
+    # Use EXACT match — substring matching would cause "A12345678" to match
+    # "Patient/A123456789", leaking cross-patient data with Taiwan-national-ID
+    # patient identifiers (which have no separator).
+    expected_ref = f"Patient/{patient_id}"
     for field in ("subject", "patient"):
         ref = resource.get(field, {})
-        if isinstance(ref, dict):
-            if patient_id in ref.get("reference", ""):
-                return True
+        if isinstance(ref, dict) and ref.get("reference") == expected_ref:
+            return True
     return False
 
 

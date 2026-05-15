@@ -3,25 +3,18 @@ import re
 from datetime import UTC, datetime
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.security import require_sync_api_key as _require_sync_api_key
 from app.models.fhir_store import AuditLog, SyncLog
 
 router = APIRouter(prefix="/sync", tags=["Sync"])
 logger = logging.getLogger(__name__)
-
-
-def _require_sync_api_key(x_sync_api_key: Optional[str] = Header(None)) -> None:
-    """Reject requests when SYNC_API_KEY is configured but the header is missing or wrong."""
-    if not settings.SYNC_API_KEY:
-        return  # auth disabled — POC / dev mode
-    if x_sync_api_key != settings.SYNC_API_KEY:
-        raise HTTPException(401, "Invalid or missing X-Sync-API-Key header")
 
 
 # Regex extractors for the HIS user identifier shown in the captured HTML's
@@ -469,7 +462,11 @@ async def wipe_patient(
 
     from app.models.fhir_store import FHIRResource
 
-    ref = f"Patient/{patient_id}"
+    # Escape SQL LIKE metacharacters (% and _) in the patient_id so a TW
+    # national ID containing them (unlikely but contractually possible —
+    # the format only locks down structure, not literal codepoints) can't
+    # widen the deletion to other patients' rows.
+    safe_ref = f"Patient/{patient_id}".replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     result = await db.execute(
         delete(FHIRResource).where(
             or_(
@@ -478,7 +475,9 @@ async def wipe_patient(
                 # Any resource whose JSON references the patient. SQLite
                 # stores JSON as TEXT so a simple LIKE on the dumped JSON
                 # is fine; for Postgres we'd switch to JSONB ops.
-                text("CAST(resource AS TEXT) LIKE :ref").bindparams(ref=f"%{ref}%"),
+                text("CAST(resource AS TEXT) LIKE :ref ESCAPE '\\'").bindparams(
+                    ref=f"%{safe_ref}%"
+                ),
             )
         )
     )
@@ -711,8 +710,8 @@ async def upload_structured(
     feeds with LLM-extracted dicts). Idempotent stable-ID upserts mean
     re-running is safe.
     """
-    from app.fallback.extractor import _GROUP_HANDLERS, _LIST_HANDLERS
     from app.fhir.server import fhir_server
+    from app.mapper.dispatch import GROUP_HANDLERS, LIST_HANDLERS
     from app.mapper.patient import map_patient
 
     override = payload.patient_override
@@ -775,10 +774,10 @@ async def upload_structured(
             logger.info("upload-structured: auto-created Patient id=%s", override_id)
 
     # Skip LLM — run items straight through mapper.
-    if payload.page_type in _GROUP_HANDLERS:
-        resources = _GROUP_HANDLERS[payload.page_type](payload.items, effective_pid)
-    elif payload.page_type in _LIST_HANDLERS:
-        mapper, _ignored_key = _LIST_HANDLERS[payload.page_type]
+    if payload.page_type in GROUP_HANDLERS:
+        resources = GROUP_HANDLERS[payload.page_type](payload.items, effective_pid)
+    elif payload.page_type in LIST_HANDLERS:
+        mapper, _ignored_key = LIST_HANDLERS[payload.page_type]
         mapped = [mapper(it, effective_pid) for it in payload.items if isinstance(it, dict)]
         resources = [r for r in mapped if r is not None]
     else:
@@ -865,6 +864,15 @@ async def list_audit(
 
 
 def _build_llm_provider():
+    if settings.LLM_PROVIDER == "none":
+        # Default — the /sync/upload-html fallback path is disabled. Users
+        # who want to opt-in must explicitly set LLM_PROVIDER=claude (sends
+        # captured HTML to Anthropic) or ollama (local).
+        raise HTTPException(
+            503,
+            "LLM fallback path is disabled. Set LLM_PROVIDER=claude or "
+            "LLM_PROVIDER=ollama in .env to enable /sync/upload-html.",
+        )
     if settings.LLM_PROVIDER == "ollama":
         from app.fallback.llm.ollama import OllamaProvider
 

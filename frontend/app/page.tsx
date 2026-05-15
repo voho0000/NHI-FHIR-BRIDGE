@@ -3,6 +3,18 @@ import { useEffect, useState, useCallback, useRef, ChangeEvent } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8010";
 
+// When SYNC_API_KEY is set on the backend (production deployments), every
+// PHI-touching endpoint requires the header. The dashboard reads its copy
+// from NEXT_PUBLIC_SYNC_API_KEY at build time. Empty string = no header
+// sent, which the backend accepts in POC mode (settings.SYNC_API_KEY == "").
+const SYNC_API_KEY = process.env.NEXT_PUBLIC_SYNC_API_KEY || "";
+
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return SYNC_API_KEY
+    ? { ...extra, "X-Sync-API-Key": SYNC_API_KEY }
+    : extra;
+}
+
 interface Patient {
   id: string;
   name?: { text: string }[];
@@ -45,13 +57,13 @@ export default function Dashboard() {
   }, []);
 
   const fetchLogs = useCallback(async () => {
-    const res = await fetch(`${API}/sync/logs`);
+    const res = await fetch(`${API}/sync/logs`, { headers: authHeaders() });
     setLogs(await res.json());
   }, []);
 
   const clearLogs = useCallback(async () => {
     if (!confirm("確定要清除全部同步歷史紀錄？（FHIR 資料不會被刪除）")) return;
-    await fetch(`${API}/sync/logs`, { method: "DELETE" });
+    await fetch(`${API}/sync/logs`, { method: "DELETE", headers: authHeaders() });
     await fetchLogs();
   }, [fetchLogs]);
 
@@ -60,7 +72,7 @@ export default function Dashboard() {
     // strip the row locally first so the dashboard feels instant,
     // then re-fetch in case anything else changed server-side.
     setLogs((prev) => prev.filter((l) => l.id !== id));
-    await fetch(`${API}/sync/logs/${id}`, { method: "DELETE" });
+    await fetch(`${API}/sync/logs/${id}`, { method: "DELETE", headers: authHeaders() });
     await fetchLogs();
   }, [fetchLogs]);
 
@@ -75,7 +87,7 @@ export default function Dashboard() {
     const url = patientId
       ? `${API}/fhir/export?patient=${encodeURIComponent(patientId)}`
       : `${API}/fhir/export`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: authHeaders() });
     if (!res.ok) { alert("Export 失敗: " + res.status); return; }
     const data = await res.json();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -101,7 +113,7 @@ export default function Dashboard() {
       JSON.parse(text); // validate before sending
       const res = await fetch(`${API}/fhir/import`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: text,
       });
       const result = await res.json();
@@ -127,6 +139,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API}/sync/patient/${encodeURIComponent(patientId)}`, {
         method: "DELETE",
+        headers: authHeaders(),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail ?? JSON.stringify(data));
@@ -144,7 +157,7 @@ export default function Dashboard() {
       try {
         const res = await fetch(`${API}/smart/launch-context`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ patient_id: patientId }),
         });
         if (res.ok) {
@@ -444,14 +457,12 @@ export default function Dashboard() {
           >
             API Docs (Swagger)
           </a>
-          <a
-            href={`${API}/fhir/export`}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            onClick={() => exportBundle()}
             className="bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded text-emerald-700 transition"
           >
             Export All (raw JSON)
-          </a>
+          </button>
         </div>
       </section>
     </div>

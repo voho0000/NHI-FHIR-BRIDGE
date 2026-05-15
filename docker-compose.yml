@@ -33,5 +33,10 @@ services:
       - "127.0.0.1:3010:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8010
+      # When SYNC_API_KEY is set on backend, the dashboard needs the same
+      # value to call PHI-touching endpoints. Read from host env via
+      # docker compose's variable substitution (or .env at compose-time).
+      # Empty = no header sent, which the backend accepts in POC mode.
+      NEXT_PUBLIC_SYNC_API_KEY: ${SYNC_API_KEY:-}
     depends_on:
       - backend

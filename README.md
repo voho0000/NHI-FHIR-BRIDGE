@@ -52,7 +52,6 @@ flowchart LR
 - Docker + Docker Compose（[安裝指南](https://docs.docker.com/get-docker/)）
 - Chrome 瀏覽器
 - 健保卡 + 註冊密碼 / 自然人憑證（登入健康存摺用）
-- Python 3（產生 SECRET_KEY 用，Mac 內建）
 
 ---
 
@@ -65,35 +64,7 @@ cd NHI-FHIR-BRIDGE
 
 ---
 
-### Step 2：產生並設定 SECRET_KEY ⚠️ **必做**
-
-```bash
-# 複製環境變數範本
-cp .env.example .env
-
-# 產生隨機 SECRET_KEY
-python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
-```
-
-第二個指令會輸出一串隨機字串，類似：
-
-```
-xR8K_3pZv-fY7nQwL9mTbU5jH2cAdGnEoR1sVxM6yB
-```
-
-**打開 `.env` 檔案，把這串貼到 `SECRET_KEY=` 後面**，例如：
-
-```bash
-SECRET_KEY=xR8K_3pZv-fY7nQwL9mTbU5jH2cAdGnEoR1sVxM6yB
-```
-
-> **為什麼必填？** 後端用這個 key 簽 JWT (SMART on FHIR 流程需要)。**沒設或少於 32 字元 backend 會直接拒絕啟動**，這是故意的，避免你用預設值跑 production 出意外。
->
-> 其他 LLM / Ollama 等變數**都是選填**，預設模式不會用到。
-
----
-
-### Step 3：啟動服務
+### Step 2：啟動服務
 
 ```bash
 docker compose up --build
@@ -117,7 +88,7 @@ frontend-1 | ✓ Ready in 1.4s
 
 ---
 
-### Step 4：載入 Chrome 擴充功能
+### Step 3：載入 Chrome 擴充功能
 
 1. Chrome 網址列輸入 `chrome://extensions`
 2. 右上角開啟「**開發人員模式**」
@@ -127,7 +98,7 @@ frontend-1 | ✓ Ready in 1.4s
 
 ---
 
-### Step 5：填入身分證字號
+### Step 4：填入身分證字號
 
 點工具列的擴充功能圖示，會跳出 popup。展開「**病人資料**」區塊：
 
@@ -144,13 +115,13 @@ frontend-1 | ✓ Ready in 1.4s
 
 ---
 
-### Step 6：登入健康存摺
+### Step 5：登入健康存摺
 
 新分頁開 https://myhealthbank.nhi.gov.tw/，用健保卡 + 註冊密碼登入。
 
 ---
 
-### Step 7：開始同步！
+### Step 6：開始同步！
 
 回到擴充功能 popup，下面有個大綠按鈕：
 
@@ -164,7 +135,7 @@ frontend-1 | ✓ Ready in 1.4s
 
 ---
 
-### Step 8：看資料
+### Step 7：看資料
 
 打開 http://localhost:3010，Dashboard 會列出你的 FHIR Patient。每個 Patient 卡片下面：
 
@@ -194,38 +165,25 @@ https://your-smart-app.example.com/launch
 
 ## 環境變數參考
 
-`.env` 完整可用變數，**只有 `SECRET_KEY` 必填**：
+完整變數列表（**所有都選填，本機開發直接 `docker compose up --build` 即可**）：
 
-| 變數 | 必填 | 預設 | 說明 |
-|------|------|------|------|
-| `SECRET_KEY` | ✅ | — | JWT 簽章金鑰，至少 32 字元 |
-| `SYNC_API_KEY` | ❌ | (空) | `/sync/*` API 認證 key。**production 強烈建議設**，否則任何能連到 backend 的人都能寫資料 |
-| `ALLOW_CORS_ORIGINS` | ❌ | (空) | 額外允許的 CORS origin（逗號分隔），追加到內建白名單 |
-| `FHIR_BASE_URL` | ❌ | `http://localhost:8010/fhir` | 對外公開的 FHIR base URL（SMART CapabilityStatement 會用到） |
-| `LLM_PROVIDER` | ❌ | `claude` | 只在 HTML fallback 路徑用到 |
-| `ANTHROPIC_API_KEY` | ❌ | — | 上面 `=claude` 時填 |
-| `OLLAMA_BASE_URL` | ❌ | `http://host.docker.internal:11434` | 上面 `=ollama` 時 |
-| `OLLAMA_MODEL` | ❌ | `qwen2.5vl:7b` | Ollama 模型名 |
+| 變數 | 預設 | 用途 |
+|------|------|------|
+| `SYNC_API_KEY` | (空) | 保護所有 PHI 寫入端點 (`/sync/*`、`/smart/launch-context`、`/fhir/import`、`/fhir/export`)。**任何網路可達的部署必設**，否則局網內任何人都能寫/讀資料 |
+| `ALLOW_CORS_ORIGINS` | (空) | 額外允許的 CORS origin（逗號分隔） |
+| `FHIR_BASE_URL` | `http://localhost:8010/fhir` | 對外公開的 FHIR base URL（SMART CapabilityStatement 會用到） |
+| `LLM_PROVIDER` | `none` | 控制 fallback 路徑：`none`（預設，停用）/ `claude`（雲端）/ `ollama`（本機） |
+| `ANTHROPIC_API_KEY` | — | `LLM_PROVIDER=claude` 時填 |
+| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | `LLM_PROVIDER=ollama` 時 |
+| `OLLAMA_MODEL` | `qwen2.5vl:7b` | Ollama 模型名 |
+
+需要時 `cp .env.example .env` 編輯即可。
 
 ---
 
 ## 常見問題
 
-### Q1: backend log 顯示 `SECRET_KEY must be at least 32 characters`
-
-你 `.env` 沒設或字串太短。執行：
-
-```bash
-python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
-```
-
-把輸出貼到 `.env` 的 `SECRET_KEY=` 後面，重啟：
-
-```bash
-docker compose restart backend
-```
-
-### Q2: Dashboard 顯示 `Failed to fetch`
+### Q1: Dashboard 顯示 `Failed to fetch`
 
 Backend 沒跑起來。
 
@@ -238,7 +196,7 @@ docker compose logs --tail=50 backend
 curl http://localhost:8010/
 ```
 
-### Q3: 同步完顯示「已更新 0 筆健康紀錄」
+### Q2: 同步完顯示「已更新 0 筆健康紀錄」
 
 最常見的兩種原因：
 
@@ -251,26 +209,26 @@ curl http://localhost:8010/
 docker compose logs --tail=100 backend | grep -E "upload-structured|ERROR"
 ```
 
-### Q4: Launch SMART App 卡在「Launching SMART…」
+### Q3: Launch SMART App 卡在「Launching SMART…」
 
 如果是預設的 demo SMART app (voho0000.github.io)：可能 GitHub Pages 暫時無法存取，等一下再試。
 
 如果是自架 SMART App：打開 SMART App 那個 tab 的 DevTools Console 看錯誤訊息。最常見的是 SMART App 自己的 OAuth2 redirect_uri 沒在後端註冊（這需要改 backend code 註冊新 client_id）。
 
-### Q5: 我可以同步別人的健保存摺嗎？
+### Q4: 我可以同步別人的健保存摺嗎？
 
 **不可以**。你只能登入你自己的 NHI 帳號、同步你自己的健康存摺。
 
-### Q6: 我的資料會被傳到哪裡？
+### Q5: 我的資料會被傳到哪裡？
 
-預設 API 直連模式：
+預設安裝（`LLM_PROVIDER=none`）：
 
 - ✅ 健保存摺 → 你電腦上的擴充功能 → 你電腦上的 backend → 你電腦上的 SQLite
 - ✅ **沒有任何資料傳到第三方雲端**
 
-只有當你選擇開 LLM fallback（手動改 `.env` + 用 `/sync/upload-html` endpoint）才會用 Claude API 或本機 Ollama。
+只有當你**主動把 `LLM_PROVIDER` 改為 `claude`** 並使用 `/sync/upload-html` endpoint 才會把擷取的 HTML 送到 Anthropic Claude API。改成 `ollama` 則只送到你本機 Ollama，仍不離開內網。
 
-### Q7: 如果想清空所有資料重來？
+### Q6: 如果想清空所有資料重來？
 
 ```bash
 docker compose down
@@ -325,7 +283,7 @@ OLLAMA_MODEL=qwen2.5vl:7b
 - ✅ Backend 與 Dashboard 預設綁定 `127.0.0.1`（loopback only），LAN 上其他機器無法存取
 - ✅ Chrome 擴充功能完全運作於你自己的瀏覽器 session，**不儲存任何登入憑證**
 - ✅ 健保存摺資料屬於敏感個資（PHI），請遵守《個人資料保護法》
-- ⚠️ Production 部署務必設 `SYNC_API_KEY` 與強隨機 `SECRET_KEY`
+- ⚠️ Production 部署務必設一個強隨機 `SYNC_API_KEY`
 - ⚠️ Dashboard 預設無認證，多人使用需自行加 SSO / Reverse Proxy
 
 ---
