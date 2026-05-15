@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>NHI-FHIR Bridge</title>
+  <style>
+    /* ── Reset & base ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+    /* [hidden] must win over display rules below. Without this, the
+       `button { display: inline-flex }` reset would defeat hidden=true
+       on #stop-btn, leaving the stop button visible after sync. */
+    [hidden] { display: none !important; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                   "Noto Sans TC", "PingFang TC", sans-serif;
+      width: 360px;
+      margin: 0;
+      padding: 0;
+      background: #f9fafb;
+      color: #111827;
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Header ────────────────────────────────────────────────────── */
+    .header {
+      padding: 14px 16px 12px;
+      background: white;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0;
+      color: #1e3a8a;
+      letter-spacing: -0.01em;
+    }
+    .header .subtitle {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 2px;
+    }
+
+    /* ── Layout ────────────────────────────────────────────────────── */
+    .content { padding: 14px 16px 4px; }
+    .section { margin-bottom: 14px; }
+    .section:last-child { margin-bottom: 0; }
+
+    .label {
+      font-size: 11px;
+      color: #6b7280;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .label .required { color: #dc2626; }
+    .hint {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    /* ── Inputs ────────────────────────────────────────────────────── */
+    input, select {
+      width: 100%;
+      font-size: 13px;
+      padding: 8px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: white;
+      color: #111827;
+      font-family: inherit;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
+
+    /* ── Buttons ───────────────────────────────────────────────────── */
+    button {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.12s, transform 0.05s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    button:active:not(:disabled) { transform: translateY(0.5px); }
+
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-primary:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
+
+    .btn-cta {
+      background: #10b981;
+      color: white;
+      font-size: 14px;
+      padding: 12px 14px;
+    }
+    .btn-cta:hover:not(:disabled) { background: #059669; }
+    .btn-cta:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: white;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+    .btn-secondary:hover:not(:disabled) { background: #f9fafb; }
+    .btn-secondary:disabled { color: #9ca3af; cursor: not-allowed; }
+
+    .btn-danger {
+      background: white;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+    .btn-danger:hover { background: #fef2f2; }
+
+    /* ── Patient card ──────────────────────────────────────────────── */
+    .patient-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: white;
+      overflow: hidden;
+    }
+    .patient-card[data-state="empty"] {
+      border-color: #fcd34d;
+      background: #fffbeb;
+    }
+    .patient-card[data-state="filled"] {
+      border-color: #d1fae5;
+      background: #f0fdf4;
+    }
+    .patient-card > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      user-select: none;
+    }
+    .patient-card > summary::-webkit-details-marker { display: none; }
+    .patient-card > summary::before {
+      content: "▸";
+      font-size: 10px;
+      color: #9ca3af;
+      transition: transform 0.12s;
+    }
+    .patient-card[open] > summary::before { transform: rotate(90deg); }
+    .patient-card .pc-title { font-weight: 600; }
+    .patient-card .pc-status { flex: 1; color: #6b7280; }
+    .patient-card[data-state="empty"] .pc-title { color: #92400e; }
+    .patient-card[data-state="empty"] .pc-status { color: #b45309; }
+    .patient-card[data-state="filled"] .pc-title { color: #065f46; }
+    .patient-card[data-state="filled"] .pc-status { color: #047857; font-weight: 500; }
+    .patient-card-body {
+      padding: 12px;
+      border-top: 1px solid rgba(0, 0, 0, 0.06);
+    }
+    .patient-card[data-state="empty"] .patient-card-body { border-top-color: rgba(217, 119, 6, 0.18); }
+    .patient-card[data-state="filled"] .patient-card-body { border-top-color: rgba(16, 185, 129, 0.2); }
+    .patient-card-body .field { margin-bottom: 8px; }
+    .patient-card-body .field:last-child { margin-bottom: 0; }
+    .patient-card-body .help {
+      font-size: 11px;
+      color: #78350f;
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+    .patient-card[data-state="filled"] .patient-card-body .help { color: #4b5563; }
+
+    /* ── Settings panel ────────────────────────────────────────────── */
+    details.settings {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: white;
+      overflow: hidden;
+    }
+    details.settings > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 9px 12px;
+      font-size: 12px;
+      color: #6b7280;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      user-select: none;
+    }
+    details.settings > summary::-webkit-details-marker { display: none; }
+    details.settings > summary::before {
+      content: "▸";
+      font-size: 10px;
+      transition: transform 0.12s;
+    }
+    details.settings[open] > summary::before { transform: rotate(90deg); }
+    details.settings .settings-body {
+      padding: 12px;
+      border-top: 1px solid #f3f4f6;
+    }
+    details.settings .settings-body .field { margin-bottom: 12px; }
+    details.settings .settings-body .field:last-child { margin-bottom: 0; }
+
+    /* ── Status banner ─────────────────────────────────────────────── */
+    .status {
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-top: 12px;
+      display: none;
+      line-height: 1.6;
+      word-break: break-word;
+    }
+    .status.info {
+      display: block;
+      background: #eff6ff;
+      color: #1e40af;
+      border: 1px solid #bfdbfe;
+    }
+    .status.success {
+      display: block;
+      background: #f0fdf4;
+      color: #047857;
+      border: 1px solid #bbf7d0;
+    }
+    .status.error {
+      display: block;
+      background: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+    /* Per-endpoint breakdown collapsible inside the status banner.
+       Inherits the banner's text color so it visually nests under
+       the main success/warning line. */
+    .status-detail {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid currentColor;
+      border-top-color: rgba(0, 0, 0, 0.08);
+    }
+    .status-detail > summary {
+      list-style: none;
+      cursor: pointer;
+      font-size: 11px;
+      opacity: 0.7;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .status-detail > summary::-webkit-details-marker { display: none; }
+    .status-detail > summary::before {
+      content: "▸";
+      font-size: 9px;
+      transition: transform 0.12s;
+    }
+    .status-detail[open] > summary::before { transform: rotate(90deg); }
+    .status-breakdown {
+      margin-top: 4px;
+      padding: 6px 8px;
+      font-size: 10px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      background: rgba(0, 0, 0, 0.04);
+      border-radius: 4px;
+      line-height: 1.55;
+      opacity: 0.85;
+      word-break: break-word;
+    }
+
+    /* ── Footer ────────────────────────────────────────────────────── */
+    .footer {
+      border-top: 1px solid #e5e7eb;
+      padding: 10px 16px;
+      font-size: 11px;
+      color: #9ca3af;
+      display: flex;
+      justify-content: space-between;
+      background: white;
+    }
+    .footer a { color: #6b7280; text-decoration: none; }
+    .footer a:hover { color: #2563eb; }
+
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <h1>🏥 NHI-FHIR Bridge</h1>
+    <div class="subtitle">健保存摺 → FHIR 同步</div>
+  </header>
+
+  <div class="content">
+
+    <!-- ── 1. Patient data (NHI required) ────────────────────────── -->
+    <section class="section">
+      <details class="patient-card" id="patient-override" data-state="empty">
+        <summary>
+          <span class="pc-title">病人資料</span>
+          <span class="pc-status" id="override-summary">未設定</span>
+        </summary>
+        <div class="patient-card-body">
+          <div class="help">
+            身分證字號將作為 FHIR Patient 資源的唯一識別。儲存後同步將綁定此病人。
+          </div>
+          <div class="field">
+            <div class="label">身分證字號 <span class="required">*</span></div>
+            <input type="text" id="ov-id-no" placeholder="A123456789" autocomplete="off" />
+          </div>
+          <div class="field">
+            <div class="label">姓名</div>
+            <input type="text" id="ov-name" placeholder="例：陳志明" />
+          </div>
+          <div class="row">
+            <div class="field" style="flex:2">
+              <div class="label">生日</div>
+              <input type="date" id="ov-birth-date" />
+            </div>
+            <div class="field" style="flex:1">
+              <div class="label">性別</div>
+              <select id="ov-gender">
+                <option value="">—</option>
+                <option value="male">男</option>
+                <option value="female">女</option>
+                <option value="other">其他</option>
+              </select>
+            </div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn-primary" id="ov-save-btn">儲存</button>
+            <button class="btn-secondary" id="ov-clear-btn">清除</button>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <!-- ── 2. Sync scope ─────────────────────────────────────────── -->
+    <section class="section">
+      <div class="label">同步範圍</div>
+      <select id="api-sync-range">
+        <option value="1">最近 1 年</option>
+        <option value="3" selected>最近 3 年</option>
+        <option value="5">最近 5 年</option>
+        <option value="10">最近 10 年</option>
+        <option value="all">全部歷史紀錄</option>
+      </select>
+    </section>
+
+    <!-- ── 3. Primary CTA ─────────────────────────────────────────── -->
+    <section class="section">
+      <button class="btn-cta" id="sync-api-btn" disabled>
+        📥 同步健保存摺資料
+      </button>
+      <button class="btn-danger" id="stop-btn" hidden style="margin-top:6px">
+        停止同步
+      </button>
+      <div class="hint">
+        從健保存摺擷取就醫、用藥、檢驗、影像等資料，轉換為 FHIR
+        標準格式供 SMART app 使用。同步時間依資料量而定。
+      </div>
+    </section>
+
+    <!-- ── 4. Status ─────────────────────────────────────────────── -->
+    <div id="status" class="status"></div>
+
+    <!-- ── 5. Launch SMART App ───────────────────────────────────── -->
+    <section class="section" style="margin-top:14px">
+      <button class="btn-primary" id="launch-btn" disabled>
+        🚀 開啟 SMART App
+      </button>
+    </section>
+
+    <!-- ── 6. Advanced settings ──────────────────────────────────── -->
+    <section class="section">
+      <details class="settings">
+        <summary>⚙️ 進階設定</summary>
+        <div class="settings-body">
+          <div class="field">
+            <div class="label">Backend URL</div>
+            <input type="text" id="backend-url" placeholder="http://localhost:8010" />
+            <div class="hint">
+              NHI-FHIR-Bridge 後端位置。本機開發保留預設即可；換機器/換 port 時才需要改。
+            </div>
+          </div>
+          <div class="field">
+            <div class="label">Sync API Key（選填）</div>
+            <input type="password" id="sync-api-key" placeholder="留空 = 無認證" />
+            <div class="hint">
+              Backend 沒設 SYNC_API_KEY（預設）時不用填。對外開放 backend 時設定來擋未授權的寫入。
+            </div>
+          </div>
+          <div class="field">
+            <div class="label">SMART App Launch URL</div>
+            <input type="text" id="smart-app-url" placeholder="https://your-smart-app.example/smart/launch" />
+            <div class="hint">
+              點擊「開啟 SMART App」要 launch 的 SMART on FHIR 應用入口。
+              預設為 medical-note 示範 app；串接自己的 SMART app 時改這裡。
+            </div>
+          </div>
+        </div>
+      </details>
+    </section>
+
+  </div>
+
+  <footer class="footer">
+    <a href="#" id="dashboard-link" target="_blank">Dashboard ↗</a>
+    <span id="version">v0.2.0</span>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

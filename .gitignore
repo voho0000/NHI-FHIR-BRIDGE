@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Env
+.env
+.env.local
+
+# Data (SQLite DB)
+data/
+**/data/*.db
+**/data/*.db-shm
+**/data/*.db-wal
+
+# HTML captured from real HIS — contains PHI, never commit
+dev-replay/
+**/dev-replay/
+*.html.captured
+
+# Node
+node_modules/
+.next/
+frontend/.next/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Playwright
+/test-results/
+/playwright-report/
+
+# Logs
+*.log

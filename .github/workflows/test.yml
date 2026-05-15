@@ -1,0 +1,44 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run pytest
+        working-directory: backend
+        env:
+          # Required by Settings validator; just needs to satisfy length.
+          SECRET_KEY: "ci-test-secret-key-with-at-least-32-chars"
+        run: pytest -v --cov=app --cov-report=term-missing
+
+      - name: Verify Alembic baseline applies cleanly
+        working-directory: backend
+        env:
+          SECRET_KEY: "ci-test-secret-key-with-at-least-32-chars"
+          DATABASE_URL: "sqlite+aiosqlite:///ci_test.db"
+        run: |
+          python -m alembic upgrade head
+          # Re-run should be idempotent (no-op when at head)
+          python -m alembic upgrade head

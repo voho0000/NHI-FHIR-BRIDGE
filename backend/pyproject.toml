@@ -1,0 +1,52 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "app/fallback/*",     # LLM fallback path: not exercised in CI
+    "app/__init__.py",
+    "app/*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["app/fallback/llm/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = [
+    "E501",  # line too long — formatter handles this
+    "E701",  # `if cond: return x` is fine for short branches
+    "B008",  # function call in argument default — standard FastAPI Depends() pattern
+    "UP007", # Optional[X] is more readable than X | None for FastAPI hints
+    "UP045", # ditto for return types
+]
+
+[tool.ruff.lint.per-file-ignores]
+# LOINC tables intentionally re-declare some keys in "added after audit"
+# sections to keep the historical layering visible. Behavior is unchanged
+# because the override value matches the original.
+"app/mapper/_loinc_tables.py" = ["F601"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+exclude = ["tests/.*"]
