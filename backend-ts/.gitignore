@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+*.log
+
+# Drizzle generated artifacts are committed; ignore tmp only
+drizzle/.tmp/
+node_modules/
