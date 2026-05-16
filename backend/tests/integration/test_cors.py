@@ -8,29 +8,19 @@ Verifies the dual-tier model:
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
-
-# Point the app at a throw-away DB so import doesn't touch real data.
-# Each module-scoped client gets a fresh file.
-_TEST_DB = Path("/tmp/cors_test.db")
-os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TEST_DB}"
 
 
 @pytest.fixture(scope="module")
 def client():
-    if _TEST_DB.exists():
-        _TEST_DB.unlink()
-    # Import inside the fixture so the env vars set above are honoured.
+    # DATABASE_URL is set in conftest.py at module-top so settings caches
+    # the right value here. Importing app inside the fixture is fine
+    # because settings has already been instantiated against the test DB.
     from app.main import app
 
     with TestClient(app) as c:
         yield c
-    if _TEST_DB.exists():
-        _TEST_DB.unlink()
 
 
 ARBITRARY_ORIGIN = "https://random-smart-app.example.com"

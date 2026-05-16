@@ -8,32 +8,29 @@ Covers fixes from the pre-release security audit:
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
-_TEST_DB = Path("/tmp/security_test.db")
-os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TEST_DB}"
-# Enable API-key auth in this test module — empty key would short-circuit
-# the guard back to "no auth" mode and defeat the regression check.
-os.environ["SYNC_API_KEY"] = "test-sync-api-key-very-secret"
+VALID_KEY = "test-sync-api-key-very-secret"
 
 
 @pytest.fixture(scope="module")
 def client():
-    if _TEST_DB.exists():
-        _TEST_DB.unlink()
+    # Enable API-key enforcement for the duration of this module by mutating
+    # the cached `settings` singleton — env-var changes here are too late
+    # because settings is instantiated at first import. The dep
+    # `require_sync_api_key` reads `settings.SYNC_API_KEY` at request time,
+    # so mutation takes effect immediately.
+    from app.core.config import settings
     from app.main import app
 
-    with TestClient(app) as c:
-        yield c
-    if _TEST_DB.exists():
-        _TEST_DB.unlink()
-
-
-VALID_KEY = "test-sync-api-key-very-secret"
+    original_key = settings.SYNC_API_KEY
+    settings.SYNC_API_KEY = VALID_KEY
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        settings.SYNC_API_KEY = original_key
 
 
 # ── /sync/* and /smart/launch-context, /fhir/import|export auth ──────────
