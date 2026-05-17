@@ -574,16 +574,15 @@
         </summary>
         <div class="patient-card-body">
           <div class="help">
-            健康存摺沒有以下基本資料，請補上。考量隱私：
+            健康存摺只能抓到病歷資料，<b>身分證字號</b>會在同步時自動帶入，其他基本資料請補上。考量隱私：
             <ul style="margin:6px 0 0 16px; padding:0">
               <li><b>姓名 + 完整生日</b>：可以填假，自用想填真也行。</li>
               <li><b>出生年份 + 性別</b>：建議填真（AI 判讀年齡 / 性別會用到）。</li>
-              <li><b>身分證字號</b>：留空系統會自動產生 (`auto-XXXXXXXX`)。</li>
             </ul>
           </div>
           <div class="field">
             <div class="label">身分證字號（選填）</div>
-            <input type="text" id="ov-id-no" placeholder="留空 = 系統自動產生" autocomplete="off" />
+            <input type="text" id="ov-id-no" placeholder="留空 = 同步時自動帶入" autocomplete="off" />
           </div>
           <div class="field">
             <div class="label">姓名</div>
