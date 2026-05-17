@@ -33,10 +33,6 @@
     "http://127.0.0.1/*",
     "https://myhealthbank.nhi.gov.tw/*"
   ],
-  "optional_host_permissions": [
-    "http://localhost/*",
-    "http://127.0.0.1/*"
-  ],
   "content_scripts": [
     {
       "matches": [
