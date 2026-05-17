@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NHI-FHIR Bridge Capture",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "將健保署健康存摺頁面擷取並轉換為 FHIR R4，透過 NHI-FHIR-Bridge 後端服務。",
   "action": {
     "default_popup": "popup.html",
@@ -10,7 +10,13 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["activeTab", "storage", "scripting", "downloads", "alarms"],
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "downloads",
+    "alarms"
+  ],
   "host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*",
@@ -25,13 +31,17 @@
       "matches": [
         "https://myhealthbank.nhi.gov.tw/*"
       ],
-      "js": ["sidebar.js"],
+      "js": [
+        "sidebar.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["sidebar.js"],
+      "resources": [
+        "sidebar.js"
+      ],
       "matches": [
         "https://myhealthbank.nhi.gov.tw/*"
       ]
