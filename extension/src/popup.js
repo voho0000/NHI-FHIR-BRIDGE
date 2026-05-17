@@ -128,23 +128,33 @@ function getPatientOverride() {
 
 /**
  * Validate the patient card's birth-date input. Returns null when OK,
- * otherwise a user-facing error string.
+ * otherwise a user-facing error string. Reads directly from the
+ * <input type="date"> so we can detect partial-input states that
+ * Chrome reports through `validity.badInput` (the input's `.value`
+ * is "" in that case, indistinguishable from "blank" by string check
+ * alone — that's why the old version of this function let partial
+ * year-only entries slip through).
  *
  * Allowed states:
- *   - empty (the field is optional)
+ *   - genuinely empty (the field is optional)
  *   - full ISO YYYY-MM-DD that round-trips through Date()
  * Rejected:
- *   - year-only ("1960"), year+month ("1960-05"), or any malformed
- *     value. Native <input type="date"> normally produces only ""
- *     or YYYY-MM-DD, but paste / autofill / odd locales have been
- *     observed to leak partial values that pass through and break
- *     downstream age math (NaN years old).
+ *   - year-only / year+month: the input renders blank value but
+ *     validity.badInput is true
  *   - dates in the future
  *   - implausibly old dates (year < 1900)
  */
-function validateBirthDate(s) {
+function validateBirthDate() {
+  const el = els.ovBirthDate;
+  if (!el) return null;
+  // Chrome's native date input: partial entry (just year, just yyyy-mm)
+  // surfaces here even though .value is "".
+  if (el.validity && el.validity.badInput) {
+    return "生日請填完整年月日，或清空欄位";
+  }
+  const s = (el.value || "").trim();
   if (!s) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "生日請填完整年月日，或留空";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "生日請填完整年月日，或清空欄位";
   const [y, m, d] = s.split("-").map(Number);
   const dt = new Date(s + "T00:00:00Z");
   if (
@@ -236,7 +246,7 @@ async function savePatientOverride() {
   // Birth-date may be empty (it's optional), but if present must be a
   // full valid ISO date — partial values silently break age math
   // downstream (years comes back as NaN).
-  const dobError = validateBirthDate(els.ovBirthDate.value.trim());
+  const dobError = validateBirthDate();
   if (dobError) {
     setStatus(`⛔ ${dobError}`, "error");
     els.ovBirthDate.focus();
@@ -367,7 +377,7 @@ function _isStepDone(step) {
   const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
   const modeOk = currentMode() === "local" || _connState === "ok";
   const genderOk = !!els.ovGender?.value;
-  const dobError = validateBirthDate(els.ovBirthDate?.value?.trim() ?? "");
+  const dobError = validateBirthDate();
   switch (step) {
     case 1:
       return onNhi && loggedIn;
@@ -458,7 +468,7 @@ function _refreshButtonStates() {
   const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
   const modeOk = currentMode() === "local" || _connState === "ok";
   const genderOk = !!els.ovGender?.value;
-  const dobError = validateBirthDate(els.ovBirthDate?.value?.trim() ?? "");
+  const dobError = validateBirthDate();
 
   let reason = "";
   if (!onNhi) reason = "請先切到健保存摺分頁";
