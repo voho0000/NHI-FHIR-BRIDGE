@@ -119,8 +119,8 @@
         text-orientation: mixed;
         transition: right 0.2s ease, background 0.2s ease, transform 0.2s ease;
         /* Subtle 3-cycle pulse on first paint so a brand-new user sees
-           "oh that's a button". Animation only plays once per page load
-           thanks to `forwards` + count 3; never gets in the way after. */
+           "oh that's a button". 3 cycles then stops — never gets in
+           the way after. */
         animation: nfb-toggle-pulse 1.6s ease-out 3 forwards;
       }
       .toggle:hover {
