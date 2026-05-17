@@ -1482,10 +1482,18 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     // This is what `/fhir/export` returns — the backend's complete view
     // of this patient (this sync + any prior syncs), as opposed to local
     // mode's "just this sync" bundle.
-    if (patientOverride.id_no) {
+    //
+    // Skip stashing entirely when the upload pass produced no resources
+    // — exporting 0 entries then stashing them creates a misleading
+    // "本地 ✓ 0 筆" indicator and a useless 📤 上傳 button.
+    if (patientOverride.id_no && total > 0) {
       try {
         await setStatus({ progress: "📦 取得後端完整資料…", totalResources: total });
-        const expUrl = `${backend}/fhir/export?patient=${encodeURIComponent(patientOverride.id_no)}`;
+        // Backend stores Patient under derivePatientId(rawId), so the
+        // export filter must use the hashed form — querying with the
+        // raw national ID matches zero rows even when data is there.
+        const fhirPid = derivePatientId(patientOverride.id_no);
+        const expUrl = `${backend}/fhir/export?patient=${encodeURIComponent(fhirPid)}`;
         const r = await fetch(expUrl, {
           headers: syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {},
         });
@@ -1524,11 +1532,29 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   // tuck them into a deeper "技術細節" sub-toggle.
   const _phaseLines = _phases.map((p) => `⏱ ${p.name}=${(p.ms / 1000).toFixed(1)}s`);
   const _fullBreakdown = [...breakdown, ..._phaseLines];
+
+  // Pick the right summary line. Zero-result is the trickiest case:
+  // we don't want a green ✅ saying "0 筆" because that reads as
+  // "succeeded with zero data". That's almost always one of:
+  //   - NHI session expired between the login probe and the sync
+  //     (the IHKE3410 probe can still succeed while data endpoints
+  //     respond with empty arrays);
+  //   - the user truly has no records in the selected date range.
+  // Either way the actionable next step is "重新登入 NHI 再試一次".
+  let _summaryLine;
+  if (errors.length) {
+    _summaryLine = `⚠️ 取得完成 · ${_successVerb} ${total} 筆健康紀錄，${errors.length} 項失敗（${_elapsedStr}）${_localTail}`;
+  } else if (total === 0) {
+    _summaryLine =
+      `⚠️ 取得完成但沒抓到任何資料（${_elapsedStr}）— ` +
+      `健保存摺 session 可能過期，請回該分頁重新登入；或拉長「日期範圍」再試。`;
+  } else {
+    _summaryLine = `✅ 取得完成 · ${_successVerb} ${total} 筆健康紀錄（${_elapsedStr}）${_localTail}`;
+  }
+
   await setStatus({
     running: false,
-    progress: errors.length
-      ? `⚠️ 取得完成 · ${_successVerb} ${total} 筆健康紀錄，${errors.length} 項失敗（${_elapsedStr}）${_localTail}`
-      : `✅ 取得完成 · ${_successVerb} ${total} 筆健康紀錄（${_elapsedStr}）${_localTail}`,
+    progress: _summaryLine,
     phase: "done",
     totalResources: total,
     completed: Date.now(),
