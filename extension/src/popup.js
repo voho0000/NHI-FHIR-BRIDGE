@@ -274,7 +274,32 @@ async function savePatientOverride() {
     ov.id_no = _generateAutoPatientId();
     els.ovIdNo.value = ov.id_no;
   }
+
+  // Detect identity switch: if the previous saved override was for a
+  // different patient, the result-zone contents (pending bundle from
+  // patient A's sync, last completion status with A's id, backend
+  // presence cache, etc.) are stale — nuke them so step 3 doesn't
+  // misleadingly carry A's leftovers into B's context.
+  const prevStored = (await chrome.storage.local.get("patientOverride"))
+    .patientOverride;
+  const patientChanged =
+    prevStored?.id_no && ov.id_no && prevStored.id_no !== ov.id_no;
+
   await chrome.storage.local.set({ patientOverride: ov });
+
+  if (patientChanged) {
+    // 1. drop the prior local FHIR bundle (download button content)
+    // 2. drop the SW's last sync status so the result zone doesn't
+    //    keep showing "✅ 取得完成 · A 的 81 筆…"
+    // 3. drop the in-popup latest-status snapshot
+    await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
+    await chrome.runtime
+      .sendMessage({ type: "clearSyncStatus" })
+      .catch(() => {});
+    _latestStatus = null;
+    setStatus("", null);
+  }
+
   _markStep2Confirmed(true);
   refreshOverrideSummary();
   _refreshButtonStates();
