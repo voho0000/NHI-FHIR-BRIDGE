@@ -10,34 +10,77 @@
 flowchart LR
   user["使用者瀏覽器<br/>(myhealthbank.nhi.gov.tw 已登入)"]
   ext["Chrome Extension<br/>(MV3 service worker)"]
-  backend["FastAPI 後端<br/>(localhost:8010)"]
+  file["本機 FHIR Bundle<br/>JSON 檔"]
+  backend["Hono Backend<br/>(localhost:8010)"]
   db[("SQLite FHIR Store")]
   dash["Next.js Dashboard<br/>(localhost:3010)"]
+  proxy["Dashboard 內<br/>/api/backend proxy"]
   smart["SMART App<br/>(外部)"]
 
   user -->|active tab cookies| ext
   ext -->|fetch /api/ihke3000/...| user
-  ext -->|POST /sync/upload-structured| backend
+  ext -. 模式 A：下載 .-> file
+  ext -- 模式 B：上傳 --> backend
   backend --> db
-  dash -->|GET /fhir/*| backend
-  smart -->|OAuth2 + GET /fhir/*| backend
+  dash --> proxy
+  proxy -->|X-Sync-API-Key| backend
+  smart -->|OAuth2 + Bearer + GET /fhir/*| backend
+```
+
+兩種運行模式：
+
+- **模式 A**：extension 全程在瀏覽器內運作，把 NHI 結構化資料轉成 FHIR Bundle JSON 下載到電腦。完全不需要後端
+- **模式 B**：除上述外，把 Bundle POST 到本機 Hono 後端，後端寫入 SQLite。Dashboard 顯示多病人、Launch SMART App
+
+---
+
+## Monorepo 結構
+
+```
+NHI-FHIR-BRIDGE/                     # npm workspaces
+├── packages/
+│   └── mapper/                      # @nhi-fhir-bridge/mapper
+│       └── src/                     # NHI → FHIR R4 純函式
+│                                    #   同時供 backend + extension import
+├── backend-ts/                      # Hono 後端 (TypeScript)
+│   ├── src/
+│   │   ├── api/{fhir,smart,sync}.ts
+│   │   ├── core/{config,database,security,migrate}.ts
+│   │   ├── fhir/{server,capability,systems}.ts
+│   │   ├── smart/oauth2.ts
+│   │   ├── fallback/                # LLM HTML 萃取備援
+│   │   ├── models/schema.ts         # Drizzle ORM
+│   │   └── main.ts                  # Hono app + CORS + lifespan
+│   ├── drizzle/                     # SQL migration
+│   └── tests/                       # vitest
+├── extension/                       # Chrome MV3
+│   ├── src/{background,popup,sidebar}.js
+│   └── build.mjs                    # esbuild + Resvg icon render
+├── frontend/                        # Next.js Dashboard
+│   └── app/
+│       ├── api/backend/[...path]/   # server-side proxy with API key
+│       ├── page.tsx                 # patient list / export / launch / delete
+│       ├── launch/                  # SMART launch redirect
+│       └── authorize/               # SMART authorize redirect
+├── docker-compose.yml               # backend + frontend
+└── .env.example
 ```
 
 ---
 
-## 資料流程：主要同步路徑
+## 資料流程：主要同步路徑（模式 B）
 
 ```mermaid
 sequenceDiagram
   participant User as 使用者瀏覽器
   participant Ext as Extension (background.js)
   participant NHI as myhealthbank.nhi.gov.tw
-  participant API as FastAPI /sync/upload-structured
+  participant API as Hono /sync/upload-structured
   participant DB as SQLite (FHIR resources)
 
   User->>NHI: 用健保卡登入
-  User->>Ext: 點「📥 同步健保存摺資料」
-  Ext->>Ext: 檢查 patient_override.id_no
+  User->>Ext: 點「🔄 取得健保存摺資料」
+  Ext->>NHI: 自動帶入身分證 (IHKE3410)
   par 13+ 個 NHI 端點平行抓
     Ext->>NHI: GET /api/ihke3000/ihke3306s01/search (藥品)
     Ext->>NHI: GET /api/ihke3000/ihke3303s01/search (就醫紀錄)
@@ -47,113 +90,51 @@ sequenceDiagram
   NHI-->>Ext: JSON
   Ext->>Ext: adapt*() — 轉成 mapper 接受的 shape
   loop 每個 page_type
-    Ext->>API: POST /sync/upload-structured {page_type, items, patient_override}
-    API->>API: mapper.map_*() — 轉成 FHIR R4
-    API->>DB: upsert
+    Ext->>API: POST /sync/upload-structured
+    API->>API: derivePatientId(nationalId) → 32-char hex
+    API->>API: GROUP_HANDLERS / LIST_HANDLERS — 轉 FHIR R4
+    API->>DB: upsert by (resourceType, id)
   end
   API-->>Ext: {count, breakdown}
-  Ext-->>User: ✅ 同步完成
+  Ext-->>User: ✅ 取得完成
 ```
 
-關鍵：**主要路徑完全 bypass LLM**。Extension 在瀏覽器端取得結構化 JSON 後，直接餵 mapper。
+**關鍵設計**：
+
+- **主要路徑完全 bypass LLM**：extension 在瀏覽器端取得結構化 JSON 後直接餵 mapper，沒有 AI 推論或不確定性
+- **共用 mapper**：`packages/mapper` 同時被 backend (Hono) 和 extension (service worker) import。模式 A 在 SW 內完成 FHIR 轉換，模式 B 則由後端執行——同一份 mapper 程式碼，輸出相同
+- **stableId + 雜湊 Patient.id**：身分證從不出現在 FHIR `Patient.id` 或 `subject.reference`；只存在 `Patient.identifier[].value`。安裝時各自產生隨機 salt（後端存 `app_settings`，extension 存 `chrome.storage.local`），讓 Bundle 即使外流也無法以暴力枚舉反推身分證
 
 ---
 
-## 資料流程：fallback 路徑（HTML + LLM）
+## 資料流程：fallback 路徑（HTML + LLM，預設不啟用）
 
 ```mermaid
 sequenceDiagram
-  participant Caller as 自訂 client (CLI / 自製 ext)
-  participant API as FastAPI /sync/upload-html
+  participant Caller as 手動 client (curl / 自製 ext)
+  participant API as Hono /sync/upload-html
   participant Pre as fallback/preprocessor
   participant LLM as Claude / Ollama
-  participant Map as mapper/*
+  participant Map as packages/mapper
   participant DB as SQLite
 
   Caller->>API: POST /sync/upload-html {html, page_type, host}
   API->>Pre: preprocess(html, host, page_type)
   Note over Pre: strip 95% noise (.main_ctn only)
-  API->>LLM: extract_structured_data(cleaned_html, schema)
+  API->>LLM: extract structured data (system schema)
   LLM-->>API: JSON items
-  API->>Map: map_*(items, patient_id)
+  API->>Map: mapper handler(items, patientId)
   Map-->>API: FHIR resources
   API->>DB: upsert
 ```
 
 何時觸發 fallback：
+
 - NHI 改 API 格式時的緊急替代方案
 - 某些新頁面 NHI 尚未開 JSON 端點
 - Debug 用
 
-目前 Chrome Extension 不會自動切到這條路徑——只有手動呼叫 `/sync/upload-html` 才會。
-
----
-
-## Backend 模組地圖
-
-```
-backend/app/
-├── api/                FastAPI route 定義
-│   ├── fhir.py        # FHIR R4 endpoints (Patient / Observation / ...)
-│   ├── smart.py       # SMART on FHIR OAuth2
-│   └── sync.py        # /sync/upload-structured + /sync/upload-html
-├── core/
-│   ├── config.py      # Pydantic Settings
-│   └── database.py    # async engine + Base
-├── fhir/
-│   ├── server.py      # idempotent upsert by (resourceType, id)
-│   ├── capability.py  # /fhir/metadata
-│   └── systems.py     # 程式碼系統 URI 常數
-├── mapper/             FHIR mapping 核心
-│   ├── patient.py、condition.py、allergy.py、procedure.py、encounter.py、
-│   │   diagnostic_report.py、medication.py、observation.py
-│   ├── _loinc_tables.py    # 大型靜態資料表（純 data，無 logic）
-│   └── _parsers.py         # 數值 / 參考範圍 / UCUM 解析
-├── models/
-│   └── fhir_store.py  # SQLAlchemy ORM
-├── smart/
-│   └── oauth2.py      # SMART OAuth2 流程
-├── fallback/           HTML + LLM 備援路徑（預設不啟用）
-│   ├── extractor.py
-│   ├── preprocessor.py
-│   └── llm/{base.py, claude.py, ollama.py, json_utils.py}
-└── main.py            # FastAPI app + lifespan (alembic upgrade head)
-```
-
----
-
-## 為什麼還留著 fallback/?
-
-NHI 健康存摺的 `/api/ihke3000/*` JSON 端點是 SPA 內部 API，沒有公開 API 合約。健保署改版時可能：
-
-1. **改 endpoint 路徑**：例如 `/api/ihke3000/ihke3306s01/search` 改名
-2. **改 response 欄位**：JSON 欄位名變動
-3. **加上 anti-bot**：CSRF token、rate limit
-
-任一情境發生時，extension 的 API 直連模式會失效。HTML + LLM 路徑作為應急方案，可以用網頁上**仍渲染得出來的內容**繼續服務使用者，直到主路徑修好。
-
-代價：~600 LOC 與 `anthropic` 套件依賴。trade-off 是值得的——比起改版時系統完全壞掉，多帶這些備援程式碼風險低很多。
-
----
-
-## 資料庫 schema 演進
-
-採 Alembic：
-
-```bash
-# 啟動時自動 apply (main.py lifespan 內部跑 alembic upgrade head)
-docker compose up
-
-# 手動修 schema
-cd backend
-# 1. 改 models/fhir_store.py
-# 2. 生 migration
-alembic revision --autogenerate -m "..."
-# 3. apply
-alembic upgrade head
-```
-
-migration 檔在 `backend/alembic/versions/`，建議在 PR 時 review。
+目前 extension 不會自動切到這條路徑——只有手動呼叫 `/sync/upload-html` 才會。
 
 ---
 
@@ -161,35 +142,63 @@ migration 檔在 `backend/alembic/versions/`，建議在 PR 時 review。
 
 | 介面 | 認證 | CORS | 備註 |
 |------|------|------|------|
-| `/sync/upload-structured` `/sync/upload-html` | `X-Sync-API-Key` header（可選） | 嚴格 allow list | 預設 `SYNC_API_KEY=""` 為無認證模式，僅供本機開發。production 必填 |
-| `/fhir/<resource>`（讀 PHI） | SMART OAuth2 Bearer token | 嚴格 allow list | token 可 patient-scoped |
-| `/fhir/metadata` `/smart/.well-known/smart-configuration` | 無（公開 metadata） | **`*` 任何 origin** | SMART App Launch IG §3.1 要求公開；不含 PHI |
-| `/smart/authorize` `/smart/token` | OAuth2 標準流程 | 嚴格 allow list | Auth code + PKCE，client_id + redirect_uri 須事先註冊 |
-| Dashboard `/` | 無 | 嚴格 allow list | 預設 bind `127.0.0.1` only |
+| `/sync/*` (所有) | `X-Sync-API-Key` header | 嚴格 allow list | 包含 `/status`、`/logs`、`/audit-log` 等讀取端點 |
+| `/fhir/Patient`、`/fhir/<resource>` | `X-Sync-API-Key` **或** SMART Bearer | 嚴格 allow list | dashboard 走 server proxy 注入 key；SMART app 走 OAuth |
+| `/fhir/import`、`/fhir/export` | `X-Sync-API-Key` | 嚴格 allow list | PHI bulk transfer |
+| `/fhir/metadata`、`/.well-known/smart-configuration` | 無（公開 metadata） | **`*` 任何 origin** | SMART App Launch IG §3.1 要求；不含 PHI |
+| `/smart/authorize` | 須有效 `launch=` token (來自 `/sync/launch-context`) | 嚴格 allow list | 拒絕 standalone-launch；驗證 `aud`；public client 強制 PKCE |
+| `/smart/token` | OAuth2 standard | 嚴格 allow list | PKCE verifier check |
+| Dashboard `/` | 無（單機 POC） | 嚴格 allow list | 預設 bind `127.0.0.1` |
 
-**Auth model summary**：
+### 認證流程要點
 
-- **PHI 寫入路徑**（`/sync/upload-*`、`/smart/launch-context`、`/fhir/import`、`/fhir/export`）：靠 `SYNC_API_KEY` header。預設未啟用，正式部署必設。
-- **PHI 讀取路徑**（`/fhir/<resource>`）：靠 SMART OAuth2 Bearer token，token 可 patient-scoped。
-- **OAuth2**：Auth code + 強制 PKCE（public client 不帶 `code_challenge` 直接拒絕）+ 預註冊 client_id + redirect_uri 白名單。
-- **無 JWT 簽章**：access token 是 opaque random，DB membership 即為驗證——沒有用 `SECRET_KEY`。
+- **PHI 寫入路徑**（`/sync/upload-*`、`/sync/launch-context`、`/fhir/import`、`/fhir/export`）：靠 `SYNC_API_KEY` header。預設未啟用即所有 auth 旁路（dev 模式），啟動時印 console 警告；正式部署必設
+- **PHI 讀取路徑**（`/fhir/*`）：dashboard 透過 Next.js `/api/backend/[...path]` server route 注入 API key，**金鑰永遠不到 browser bundle**；SMART app 透過 OAuth2 Bearer token，token 可 patient-scoped 限制只讀那位病人
+- **OAuth2 PKCE**：所有 public client 強制 PKCE；`/smart/authorize` 拒絕無 `launch` token 的 standalone launch（避免自動選第一位病人的 PHI 洩漏漏洞）；驗證 `aud` 確認 SMART app 不是被釣到別的 server
+- **opaque token**：access token 是隨機字串，DB membership 即為驗證——沒有 JWT 也沒有 `SECRET_KEY`
 
 ### CORS 雙層設計
 
-實作上由 `backend/app/main.py` 兩個 layer 組成：
+實作上由 `backend-ts/src/main.ts` 兩個 middleware 層組成：
 
-1. **嚴格層** (`CORSMiddleware`)：所有端點預設使用 `_DEFAULT_CORS_ORIGINS` + `ALLOW_CORS_ORIGINS` env var 的合併白名單
-2. **公開 metadata 覆寫層**：`public_discovery_cors` middleware 在嚴格層之外另跑一層，攔截 `/fhir/metadata` 與 `/smart/.well-known/smart-configuration` 兩個路徑，回應 `Access-Control-Allow-Origin: *`
+1. **最外層**：攔截 `/fhir/metadata`、`/smart/.well-known/smart-configuration`、`/fhir/.well-known/smart-configuration`，回應 `Access-Control-Allow-Origin: *`（SMART discovery 業界做法）
+2. **嚴格層** (`hono/cors`)：其餘所有端點使用內建白名單 + `ALLOW_CORS_ORIGINS` env 合併。`chrome-extension://` origins 預設只接受 `ALLOWED_EXTENSION_IDS` 內列出的 ID（未設則 fallback 接受任何 32-char [a-p] extension ID，覆蓋 dev install）
 
-這是 SMART on FHIR 業界標準做法（HAPI、Epic、Cerner、SMART Health IT sandbox 都這樣）。詳細安全分析見 GitHub Issues / PR 討論。
+PHI 端點仍由 API key + Bearer + OAuth2 redirect-URI 白名單保護；CORS 對 PHI 不是 load-bearing 機制。
 
-**結果**：使用者填入任何自架 SMART App URL 都能正常 launch，**不用改 `.env` 也不用 restart backend**。PHI 端點仍由 Bearer token + OAuth2 redirect-URI 白名單保護，CORS 對 PHI 不是 load-bearing 機制。
+### 安裝時 salt
+
+啟動時 `app_settings` 表沒有 `stable_id_salt` row 就生一個 32 byte 隨機 hex 寫進去。`setStableIdSalt()` 在 mapper module 設定全局，所有後續 `stableId()` 和 `derivePatientId()` 計算都會 mix 進這個 salt。Extension 在 SW 啟動時做同樣事情，存在 `chrome.storage.local.stableIdSalt`。
+
+**權衡**：backend 和 extension 各有自己的 salt — 模式 A 下載的 Bundle 不能直接 import 進 backend（會被視為新病人）。可接受的限制——這個版本目標是阻斷 leak 後的反推攻擊，不是跨環境一致性。
+
+---
+
+## 資料庫 schema 演進
+
+採 Drizzle ORM + drizzle-kit：
+
+```bash
+# 啟動時自動 apply (main.ts runStartup() 內部跑 migrate)
+docker compose up
+
+# 手動修 schema
+# 1. 改 backend-ts/src/models/schema.ts
+# 2. 生 migration
+cd backend-ts && npx drizzle-kit generate
+# 3. apply
+npx tsx src/core/migrate.ts
+```
+
+migration 檔在 `backend-ts/drizzle/`，每個 PR 一同 review。
 
 ---
 
 ## 已知設計限制
 
-1. **增量同步**：目前每次同步都重抓所有 page_type，沒有 delta query
-2. **多病人**：單一 instance 同時間只支援一位病人同步（透過 `patient_override`）
-3. **SQLite**：適合單一機構/單一使用者 POC 部署。多人並行寫入要換 PostgreSQL（`DATABASE_URL` 即可切換）
-4. **FHIR 驗證**：已通過 TWNHIFHIR validator 三輪修正（Bundle / UCUM / OID / LOINC / ICD-10-CM / SNOMED），但未整合自動驗證進 CI
+1. **增量同步**：每次同步重抓所有 page_type，沒有 delta query
+2. **沒有 tombstone**：NHI 後續刪除某筆紀錄不會反映到本地 FHIR store（持續累積 stale 資料）
+3. **單一病人 sync**：單一 instance 同時間只跑一位病人（`patient_override` 串行）
+4. **SQLite**：適合單機構 / 單使用者 POC。多人並行寫入要換 PostgreSQL（schema 已可 portable）
+5. **FHIR 驗證**：通過 TWNHIFHIR validator 三輪修正（Bundle / UCUM / OID / LOINC / ICD-10-CM / SNOMED），但未整合自動驗證進 CI
+6. **Mapper 測試覆蓋**：目前約 100 個 unit test，主要在 patient / observation / condition / medication / parsers。allergy / procedure / encounter / diagnostic-report / link / dispatch 尚無 golden-file 測試

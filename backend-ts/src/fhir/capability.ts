@@ -8,17 +8,25 @@
 
 import { settings } from "@/core/config";
 
+type SearchParamSpec = { name: string; type: string };
+
 function makeResource(
   rtype: string,
   interactions: string[],
-  searchParams: string[],
+  searchParams: SearchParamSpec[],
 ): Record<string, any> {
   return {
     type: rtype,
     interaction: interactions.map((c) => ({ code: c })),
-    searchParam: searchParams.map((p) => ({ name: p, type: "reference" })),
+    searchParam: searchParams.map((p) => ({ name: p.name, type: p.type })),
   };
 }
+
+// Reused across every per-patient resource.
+const PT = { name: "patient", type: "reference" };
+const DATE = { name: "date", type: "date" };
+const CODE = { name: "code", type: "token" };
+const ENC = { name: "encounter", type: "reference" };
 
 export function buildCapabilityStatement(): Record<string, any> {
   const base = settings.FHIR_BASE_URL.replace("/fhir", "");
@@ -55,10 +63,18 @@ export function buildCapabilityStatement(): Record<string, any> {
             },
           ],
         },
+        // The 8 types the mapper actually produces, plus search params
+        // the server.search() implementation honors (patient/date/code/
+        // encounter). SMART apps refuse to query types not declared here.
         resource: [
           makeResource("Patient", ["read", "search-type"], []),
-          makeResource("Observation", ["read", "search-type"], ["patient"]),
-          makeResource("MedicationRequest", ["read", "search-type"], ["patient"]),
+          makeResource("Observation", ["read", "search-type"], [PT, DATE, CODE, ENC]),
+          makeResource("MedicationRequest", ["read", "search-type"], [PT, DATE, ENC]),
+          makeResource("Condition", ["read", "search-type"], [PT, DATE, CODE, ENC]),
+          makeResource("AllergyIntolerance", ["read", "search-type"], [PT, DATE, CODE]),
+          makeResource("DiagnosticReport", ["read", "search-type"], [PT, DATE, CODE, ENC]),
+          makeResource("Procedure", ["read", "search-type"], [PT, DATE, CODE, ENC]),
+          makeResource("Encounter", ["read", "search-type"], [PT, DATE]),
         ],
       },
     ],
