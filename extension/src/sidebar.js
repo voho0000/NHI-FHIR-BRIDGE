@@ -107,7 +107,11 @@
         transform: translateY(-50%);
         width: 28px;
         height: 72px;
-        background: #2563eb;
+        /* Deep navy (#1e3a8a) — kept distinct from popup's primary
+           blue on purpose: this pill lives on the host NHI page, not
+           in the extension UI, so a slightly heavier color helps it
+           hold its own against the page background. */
+        background: #1e3a8a;
         color: white;
         border: none;
         border-radius: 8px 0 0 8px;
@@ -126,11 +130,11 @@
       }
       .toggle svg { display: block; width: 20px; height: 20px; }
       .toggle:hover {
-        background: #1d4ed8;
+        background: #1e40af;
         transform: translateY(-50%) translateX(-2px);
       }
       .toggle:focus-visible {
-        outline: 2px solid #93c5fd;
+        outline: 2px solid #60a5fa;
         outline-offset: 2px;
       }
       @keyframes nfb-toggle-pulse {
