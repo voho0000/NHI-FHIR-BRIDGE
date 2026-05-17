@@ -381,9 +381,21 @@ function _renderDataState() {
   }
 
   // "📤 上傳本地 Bundle" button shows only when there's something to
-  // upload. Non-destructive (stable-ID upsert) so safe even when
-  // backend already has data — it'll just refresh / fill gaps.
+  // upload. Disabled (instead of hidden) when backend and local already
+  // agree on count — upload would be a no-op (stable-ID upsert hits
+  // the same rows) so it's just noise. Keeping the button visible but
+  // greyed out lets the user see "I'm in sync" instead of wondering
+  // why the button disappeared.
   els.pushLocalBtn.hidden = !localMatches;
+  const inSync =
+    localMatches &&
+    _backendPatient.state === "present" &&
+    _backendPatient.count === _localBundle.count;
+  els.pushLocalBtn.disabled = inSync;
+  els.pushLocalBtn.title = inSync ? "本地與後端筆數一致，已同步" : "";
+  els.pushLocalBtn.textContent = inSync
+    ? "✓ 已與後端同步"
+    : "📤 把本地 Bundle 上傳到後端";
 }
 
 async function _refreshLocalBundleState() {
@@ -482,8 +494,11 @@ async function pushLocalBundleToBackend() {
   } catch (e) {
     setStatus(`⛔ 上傳失敗：${e.message}`, "error");
   } finally {
-    els.pushLocalBtn.disabled = false;
-    els.pushLocalBtn.textContent = "📤 把本地 Bundle 上傳到後端";
+    // _renderDataState() (already called from checkBackendPatient on
+    // success) decides the right disabled state + label based on
+    // whether backend and local agree. Call it here too to cover the
+    // failure path that skipped checkBackendPatient.
+    _renderDataState();
   }
 }
 
