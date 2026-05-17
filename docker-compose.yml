@@ -25,6 +25,11 @@ services:
     environment:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       DATABASE_FILE: /app/data/ehr_bridge.db
+      # Inside the container we MUST bind 0.0.0.0 so the host-side
+      # `127.0.0.1:8010:8010` port mapping can reach us. The loopback
+      # bind that protects PHI lives in the port mapping above, NOT
+      # inside the container.
+      BIND_HOST: 0.0.0.0
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

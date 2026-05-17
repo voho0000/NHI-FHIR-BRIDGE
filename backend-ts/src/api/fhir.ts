@@ -9,7 +9,7 @@
 import { Hono } from "hono";
 
 import { settings } from "@/core/config";
-import { requireSyncApiKey } from "@/core/security";
+import { requireFhirAuth, requireSyncApiKey } from "@/core/security";
 import { buildCapabilityStatement } from "@/fhir/capability";
 import { fhirServer } from "@/fhir/server";
 import { smartAuth } from "@/smart/oauth2";
@@ -107,6 +107,12 @@ fhirApi.get("/.well-known/smart-configuration", (c) => {
   });
 });
 
+// ── PHI auth gate for everything below ───────────────────────────────
+// All /Patient and per-patient resource routes require either a SMART
+// bearer or the X-Sync-API-Key. Discovery routes above stay open.
+fhirApi.use("/Patient", requireFhirAuth);
+fhirApi.use("/Patient/*", requireFhirAuth);
+
 // ── Patient ──────────────────────────────────────────────────────────
 
 fhirApi.get("/Patient", (c) => {
@@ -153,6 +159,9 @@ const PER_PATIENT_RESOURCES = [
 ];
 
 for (const rtype of PER_PATIENT_RESOURCES) {
+  fhirApi.use(`/${rtype}`, requireFhirAuth);
+  fhirApi.use(`/${rtype}/*`, requireFhirAuth);
+
   fhirApi.get(`/${rtype}`, (c) => {
     const authPid = getAuthenticatedPatientId(c.req.header("Authorization"));
     const queryPid = c.req.query("patient") ?? null;
