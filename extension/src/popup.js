@@ -788,6 +788,17 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
 });
 
+// Background-side flow can mutate the patientOverride mid-sync — most
+// importantly _maybeFetchPatientIdFromNhi swaps the auto-XXXXXXXX
+// placeholder for the real NHI cid. Without this listener the popup
+// inputs stayed stale, refreshPendingBundle's patient-match check
+// then compared old input value vs. fresh bundle.patientId and hid
+// the download button. Reload the override into the inputs whenever
+// storage changes so every downstream guard sees consistent values.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync" && changes.patientOverride) loadPatientOverride();
+});
+
 // ── ⓘ Help-icon tooltip ─────────────────────────────────────────────
 //
 // One shared <div> appended to the popup body. On hover of any
