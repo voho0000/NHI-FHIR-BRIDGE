@@ -136,10 +136,26 @@ function refreshOverrideSummary() {
   // Changing patient ID invalidates: (a) backend-state cache (new
   // patient might not be on backend); (b) local-bundle row in the
   // data-state card; (c) the 📥 download bundle section, which would
-  // otherwise still show the previous patient's stashed file.
+  // otherwise still show the previous patient's stashed file; (d)
+  // the last completed sync's success message, which was tagged for
+  // the previous patient.
   _renderDataState();
   refreshPendingBundle();
+  _clearStaleSyncStatus(getPatientOverride());
   if (currentMode() === "backend" && _connState === "ok") checkBackendPatient();
+}
+
+// Drop a "✅ 同步完成 …" status banner that was recorded for a
+// different patient. Mid-flight syncs are left alone (status.running)
+// so the user can still see progress of the in-flight sync.
+function _clearStaleSyncStatus(ov) {
+  if (!_latestStatus) return;
+  if (_latestStatus.running) return;
+  if (!_latestStatus.histno) return;
+  if (ov?.id_no === _latestStatus.histno) return;
+  _latestStatus = null;
+  setStatus("", null);
+  chrome.storage.local.remove("syncStatus").catch(() => {});
 }
 
 async function savePatientOverride() {
