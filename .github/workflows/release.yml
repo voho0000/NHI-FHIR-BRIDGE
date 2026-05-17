@@ -58,11 +58,33 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
+            ## 0.5.0 重點
+
+            這版是一次比較大的安全 + 隱私強化，外加完全拿掉 AI／LLM 整合。
+
+            - 🔒 **所有 PHI 端點補上認證**：先前 `/fhir/*` 讀取與部分 `/sync/*` 路由可不需要任何驗證直接拿資料；現在統一強制 `X-Sync-API-Key` 或 SMART Bearer
+            - 🔒 **Dashboard 不再把 API key 編進前端**：改走 Next.js server proxy 注入；DevTools 看不到 key
+            - 🔒 **`Patient.id` 改為雜湊形式**：身分證從此不出現在 FHIR `Patient.id`、`subject.reference`、SMART token payload 或任何 URL；真實值只留在 `Patient.identifier[].value`
+            - 🔒 **設定改存 `chrome.storage.local`**：身分證 + API key 不再隨 Google 帳號同步到所有裝置
+            - 🔒 後端預設綁 `127.0.0.1`、`/smart/authorize` 拒絕無 launch token 的 standalone 登入、驗 `aud`、CORS 接受清單可由 `ALLOWED_EXTENSION_IDS` 收緊
+            - ✂️ **完全拿掉 AI／LLM 整合**：刪掉 Anthropic / Ollama provider、`/sync/upload-html`、cheerio。每個支援的 NHI 頁面都有穩定 JSON 端點，extension 直接打、mapper 是純確定性 TypeScript。**PHI 永遠不離開你機器**
+            - 🎨 病人資料卡簡化、模式切換 label 改、CTA 卡住時把原因 inline 顯示、Dashboard 在地化、release notes 大幅改寫
+
+            **破壞性變更**（從 0.4.x 升上來請看）：
+            - Patient.id 變雜湊形式 → 舊 backend DB 資料 orphan，建議 `docker compose down -v` 清掉再重 sync
+            - `LLM_PROVIDER`、`OLLAMA_*`、`ANTHROPIC_API_KEY` 環境變數刪除；`.env` 裡有設這些可以拿掉
+            - `optional_host_permissions` 收緊只允許 localhost；LAN 自架 backend 需自行改 `manifest.json`
+            - Dashboard PHI 路徑改走 `/api/backend/*` → docker-compose 用戶要 `docker compose up --build` 重建 frontend image
+
+            ---
+
             ## 這個是什麼
 
             一個 Chrome 擴充功能，可以把你在**健保存摺** (myhealthbank.nhi.gov.tw) 看到的就醫紀錄、用藥、檢驗報告、影像報告，**整理成 FHIR R4 標準格式的健康紀錄檔**。檔案可以：
-            - 下載到自己電腦（供臨床研究、AI 判讀、轉給其他醫療系統用）
+            - 下載到自己電腦（個人病歷備份、單次匯出、轉給其他醫療系統用）
             - 或上傳到本機 Docker 後端，配合 Dashboard / SMART App 看資料
+
+            **完全沒有 AI／LLM**：FHIR 轉換是純確定性程式碼，PHI 永遠不離開你機器。
 
             ---
 
@@ -123,7 +145,7 @@ jobs:
             docker compose up -d
             ```
 
-            然後 Extension popup 上方切到「**☁️ 上傳後端**」即可。Dashboard 在 http://localhost:3010。
+            然後 Extension popup 上方切到「**🏥 本機後端 (進階)**」即可。Dashboard 在 http://localhost:3010。
 
             ---
 
