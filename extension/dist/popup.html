@@ -1187,11 +1187,12 @@
 
     <!-- ── Advanced settings ────────────────────────────────────────
          Reachable from any step (collapsed by default) so users can
-         tweak mask / backend URL / SMART app URL mid-flow without
-         backing out. The section header is mode-agnostic; rows that
-         only make sense in backend mode carry .backend-only and
-         disappear in local mode. -->
-    <section class="section" style="margin-top:16px">
+         tweak backend URL / API key / SMART app URL mid-flow without
+         backing out. Every row inside is backend-only after the
+         mask-name toggle moved into step 2's name field — so the whole
+         section is .backend-only too, otherwise local mode would show
+         an empty collapsible. -->
+    <section class="section backend-only" style="margin-top:16px">
       <details class="settings">
         <summary>進階設定</summary>
         <div class="settings-body">
