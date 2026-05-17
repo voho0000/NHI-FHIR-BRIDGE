@@ -32,26 +32,5 @@
     "http://localhost/*",
     "http://127.0.0.1/*",
     "https://myhealthbank.nhi.gov.tw/*"
-  ],
-  "content_scripts": [
-    {
-      "matches": [
-        "https://myhealthbank.nhi.gov.tw/*"
-      ],
-      "js": [
-        "sidebar.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "sidebar.js"
-      ],
-      "matches": [
-        "https://myhealthbank.nhi.gov.tw/*"
-      ]
-    }
   ]
 }

@@ -1083,12 +1083,6 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   // back through chrome.runtime.sendMessage.
   _activeSyncCtx = { backend, syncApiKey, patientId: patientOverride.id_no };
 
-  // Sidebar iframe (medical-note SMART app) competes with NHI fan-out
-  // fetches for the tab's network + JS thread. Even in display:none it
-  // can take 100-200ms per request. Tell sidebar.js to suspend the
-  // iframe (set src=about:blank) for the duration of the sync.
-  await chrome.storage.local.set({ syncRunning: true }).catch(() => {});
-
   // Wall-clock start time — used to compute elapsed seconds for the
   // final status line ("總耗時 12.3 秒"). Stash on a local so we can
   // reach it from the completion message at the very end.
@@ -1582,9 +1576,6 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     localFilename: _localFilename,
   });
 
-  // Resume the sidebar iframe now that the NHI tab is no longer busy.
-  chrome.storage.local.set({ syncRunning: false }).catch(() => {});
-
   // Best-effort: write a Sync History row to the backend so the dashboard
   // can show when/who/how-long/what/range. Skipped in local mode (there
   // is no backend). Wrapped + swallowed so a logging failure never
@@ -1619,12 +1610,6 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   _activeSyncCtx = null;
 }
 
-// On install / update / chrome://extensions reload, the new sidebar.js
-// is shipped in the bundle but Chrome won't re-inject it into already-
-// open NHI tabs (content_scripts only fire at document_idle of fresh
-// loads). Without this, settings introduced in the new version (e.g.
-// the sidebarEnabled toggle) appear inert on open tabs until F5.
-// Force-inject so the toggle takes effect immediately.
 // One-time migration from chrome.storage.sync → chrome.storage.local.
 // Previous versions stored syncApiKey + patientOverride (containing the
 // national ID) under .sync, which Chrome replicates to the user's Google
@@ -1636,7 +1621,6 @@ const SYNC_KEYS_TO_MIGRATE = [
   "smartAppLaunchUrl",
   "patientOverride",
   "syncMode",
-  "sidebarEnabled",
   "maskNameEnabled",
 ];
 
@@ -1663,17 +1647,6 @@ async function migrateSyncToLocal() {
 
 chrome.runtime.onInstalled.addListener(async () => {
   await migrateSyncToLocal();
-  let tabs;
-  try {
-    tabs = await chrome.tabs.query({ url: "https://myhealthbank.nhi.gov.tw/*" });
-  } catch {
-    return;
-  }
-  for (const tab of tabs) {
-    chrome.scripting
-      .executeScript({ target: { tabId: tab.id }, files: ["sidebar.js"] })
-      .catch(() => {});
-  }
 });
 
 // Also run migration on service-worker wake-up (covers reload/restart
@@ -1688,10 +1661,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     runNhiApiSync(msg.payload).then(
       () => { try { sendResponse({ ok: true }); } catch {} },
       async (e) => {
-        // Make sure the sidebar iframe gets un-paused on every exit path
-        // (success runs this from inside runNhiApiSync; cancel + error +
-        // session-expired bail before reaching that point).
-        chrome.storage.local.set({ syncRunning: false }).catch(() => {});
         if (e?.message === CANCEL_ERROR) {
           try { sendResponse({ ok: true, cancelled: true }); } catch {}
           return;

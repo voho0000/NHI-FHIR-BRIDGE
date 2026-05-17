@@ -89,6 +89,5 @@ Settings persist in `chrome.storage.sync` across Chrome profiles.
 ```
 popup.js        — UI logic, page detection, button handlers
 background.js   — Service worker: runNhiSync() tab-navigation, runNhiApiSync()
-sidebar.js      — Content script injected into NHI pages (status overlay)
 manifest.json   — MV3 config, host_permissions for myhealthbank.nhi.gov.tw
 ```

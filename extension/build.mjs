@@ -1,7 +1,7 @@
 /**
  * Extension build script.
  *
- * Bundles `src/{background,popup,sidebar}.js` → `dist/`, inlining the
+ * Bundles `src/{background,popup}.js` → `dist/`, inlining the
  * shared mapper from `@nhi-fhir-bridge/mapper` so the service worker
  * and popup can both call `mapPatient`, `linkEncountersInResources`,
  * etc. without runtime module resolution.
@@ -36,7 +36,7 @@ const bundleOpts = {
   logLevel: "info",
 };
 
-const entries = ["background.js", "popup.js", "sidebar.js"];
+const entries = ["background.js", "popup.js"];
 
 const contexts = await Promise.all(
   entries.map((file) =>

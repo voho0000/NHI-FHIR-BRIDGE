@@ -65,7 +65,6 @@ const els = {
   localState: document.getElementById("local-state"),
   pushLocalBtn: document.getElementById("push-local-btn"),
   syncStatusHint: document.getElementById("sync-status-hint"),
-  sidebarEnabled: document.getElementById("sidebar-enabled"),
   maskNameEnabled: document.getElementById("mask-name-enabled"),
   openNhiSection: document.getElementById("open-nhi-section"),
   openNhiBtn: document.getElementById("open-nhi-btn"),
@@ -1003,18 +1002,6 @@ els.backendUrl.addEventListener("change", () => {
 els.syncApiKey.addEventListener("change", () => {
   chrome.storage.local.set({ syncApiKey: els.syncApiKey.value.trim() });
 });
-// Sidebar "📋 助理" toggle — persists in chrome.storage.local so the
-// preference is sticky across reinstalls. sidebar.js listens to the
-// same key and hides itself when set to false.
-async function loadSidebarEnabled() {
-  const { sidebarEnabled } = await chrome.storage.local.get("sidebarEnabled");
-  els.sidebarEnabled.checked = sidebarEnabled !== false; // default ON
-}
-
-els.sidebarEnabled?.addEventListener("change", () => {
-  chrome.storage.local.set({ sidebarEnabled: els.sidebarEnabled.checked });
-});
-
 // Mask-patient-name toggle — defaults OFF (citizens downloading their
 // own data don't need anonymization). When ON: popup summary, FHIR
 // Bundle output, sync-log, and NHI report narrative all use the
@@ -1269,7 +1256,6 @@ async function init() {
   document.getElementById("login-ok-next")
     ?.addEventListener("click", () => _setActiveStep(2));
 
-  await loadSidebarEnabled();
   await loadMaskNameEnabled();
 
   // Seed local bundle state from storage so the data-state card is
