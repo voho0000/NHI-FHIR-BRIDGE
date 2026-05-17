@@ -358,6 +358,9 @@ async function clearPatientOverride() {
 let _connState = "unknown";
 let _connFailReason = null; // { kind: "no-permission" | "no-url" | "network" | "timeout" | "http" | "not-fhir", detail? }
 
+// Banner copy. Drop the leading ✗ — the red dot left of the text is
+// already the "fail" signal, and the row was reading "● ✗ 連不上後端"
+// = three indicators stacked.
 const _CONN_LABELS = {
   unknown: "未檢測",
   checking: "檢測中…",
@@ -365,13 +368,13 @@ const _CONN_LABELS = {
   fail: () => {
     const r = _connFailReason || {};
     return ({
-      "no-url": "✗ 未設定 Backend URL",
-      "no-permission": "✗ 未授權連線",
-      "network": "✗ 連不上後端",
-      "timeout": "✗ 連線逾時",
-      "http": `✗ HTTP ${r.detail || ""}`.trim(),
-      "not-fhir": "✗ 回應不是 FHIR",
-    })[r.kind] ?? "✗ 連線失敗";
+      "no-url": "未設定 Backend URL",
+      "no-permission": "未授權連線",
+      "network": "連不上後端",
+      "timeout": "連線逾時",
+      "http": `HTTP ${r.detail || ""}`.trim(),
+      "not-fhir": "回應不是 FHIR",
+    })[r.kind] ?? "連線失敗";
   },
 };
 
@@ -388,6 +391,10 @@ function _renderConnBanner() {
   const banner = els.connBanner;
   if (!banner) return;
   banner.dataset.state = _connState;
+  // Mirror state onto the outer .conn-block so the wrapper border
+  // (which holds banner + help body inside ONE card) tracks the same
+  // color the banner is using.
+  if (els.connSection) els.connSection.dataset.state = _connState;
   const label = _CONN_LABELS[_connState];
   els.connMsg.textContent = typeof label === "function" ? label() : label;
   els.connRetryBtn.hidden = _connState !== "fail";
