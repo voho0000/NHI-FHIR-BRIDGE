@@ -826,7 +826,13 @@
       </details>
     </section>
 
-    <!-- ── 2. Sync scope ─────────────────────────────────────────── -->
+    </div><!-- /STEP 2 -->
+
+    <!-- ── STEP 3: 取得資料 + 看結果 ─────────────────────────────── -->
+    <div class="wizard-step" data-step="3">
+
+    <!-- 3a. Date range — "what to grab" belongs with the action, not
+         with the one-time identity / mode setup. -->
     <section class="section">
       <div class="label">日期範圍</div>
       <select id="api-sync-range">
@@ -838,12 +844,7 @@
       </select>
     </section>
 
-    </div><!-- /STEP 2 -->
-
-    <!-- ── STEP 3: 取得資料 + 看結果 ─────────────────────────────── -->
-    <div class="wizard-step" data-step="3">
-
-    <!-- 3a. Primary CTA ─────────────────────────────────── -->
+    <!-- 3b. Primary CTA ─────────────────────────────────── -->
     <section class="section">
       <button class="btn-cta" id="sync-api-btn" disabled>
         🔄 取得健保存摺資料
