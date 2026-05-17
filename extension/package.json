@@ -12,6 +12,7 @@
     "@nhi-fhir-bridge/mapper": "*"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "esbuild": "^0.24.0"
   }
 }
