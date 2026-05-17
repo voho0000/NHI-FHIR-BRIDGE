@@ -842,7 +842,7 @@ async function _maybeFetchPatientIdFromNhi(tabId, patientOverride) {
 
   if (cid && cid !== current) {
     patientOverride = { ...patientOverride, id_no: cid };
-    chrome.storage.sync.set({ patientOverride }).catch(() => {});
+    chrome.storage.local.set({ patientOverride }).catch(() => {});
   }
   return patientOverride;
 }
@@ -853,7 +853,7 @@ async function _maybeFetchPatientIdFromNhi(tabId, patientOverride) {
 // cheaper than syncing state across SW lifecycles.
 async function _isMaskEnabled() {
   try {
-    const { maskNameEnabled } = await chrome.storage.sync.get("maskNameEnabled");
+    const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
     return maskNameEnabled === true;
   } catch {
     return false;
@@ -1529,7 +1529,44 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
 // loads). Without this, settings introduced in the new version (e.g.
 // the sidebarEnabled toggle) appear inert on open tabs until F5.
 // Force-inject so the toggle takes effect immediately.
+// One-time migration from chrome.storage.sync → chrome.storage.local.
+// Previous versions stored syncApiKey + patientOverride (containing the
+// national ID) under .sync, which Chrome replicates to the user's Google
+// account and pushes to every device they sign into. Move everything
+// settings-related to .local; clear the sync copy.
+const SYNC_KEYS_TO_MIGRATE = [
+  "backendUrl",
+  "syncApiKey",
+  "smartAppLaunchUrl",
+  "patientOverride",
+  "syncMode",
+  "sidebarEnabled",
+  "maskNameEnabled",
+];
+
+async function migrateSyncToLocal() {
+  try {
+    const synced = await chrome.storage.sync.get(SYNC_KEYS_TO_MIGRATE);
+    const present = Object.fromEntries(
+      Object.entries(synced).filter(([, v]) => v !== undefined),
+    );
+    if (Object.keys(present).length === 0) return;
+    const local = await chrome.storage.local.get(Object.keys(present));
+    // Don't overwrite anything the user already set on this machine.
+    const toWrite = Object.fromEntries(
+      Object.entries(present).filter(([k]) => local[k] === undefined),
+    );
+    if (Object.keys(toWrite).length > 0) {
+      await chrome.storage.local.set(toWrite);
+    }
+    await chrome.storage.sync.remove(Object.keys(present));
+  } catch {
+    // Migration is best-effort. The next run gets to try again.
+  }
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
+  await migrateSyncToLocal();
   let tabs;
   try {
     tabs = await chrome.tabs.query({ url: "https://myhealthbank.nhi.gov.tw/*" });
@@ -1542,6 +1579,13 @@ chrome.runtime.onInstalled.addListener(async () => {
       .catch(() => {});
   }
 });
+
+// Also run migration on service-worker wake-up (covers reload/restart
+// paths where onInstalled doesn't fire).
+chrome.runtime.onStartup?.addListener?.(() => {
+  migrateSyncToLocal();
+});
+migrateSyncToLocal();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "startNhiApiSync") {
