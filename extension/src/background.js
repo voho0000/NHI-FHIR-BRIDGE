@@ -419,6 +419,25 @@ function adaptDiagReport(item) {
 // Confirmed via URLs observed in NHI's SPA. Other endpoints either don't
 // accept range params, or NHI rejects unknown params — we leave them alone
 // (they fall back to their default window, typically 1-2 years).
+// User-facing label for each endpoint name. The breakdown collapsible
+// in the popup ("查看明細") reads from this so users see "就醫 12 筆"
+// instead of the dev-flavoured "encounters=12/12". Unknown names fall
+// through to the raw key, which keeps it obvious during development
+// when we add a new endpoint and haven't labelled it yet.
+const ENDPOINT_LABEL_ZH = {
+  encounters: "就醫",
+  inpatient: "住院",
+  inpatient_legacy: "住院（舊）",
+  procedures: "手術 / 處置",
+  medications: "處方藥品",
+  allergies: "藥物過敏",
+  allergies_b: "藥物過敏（B）",
+  adult_preventive: "成人健檢",
+  cancer_screening: "癌症篩檢",
+  imaging: "影像檢查",
+  other_labs: "檢驗",
+};
+
 const NHI_API_ENDPOINTS = [
   // encounters / procedures don't have a /search variant (404). page_load
   // silently ignores s_date / e_date — verified the array length is
@@ -1360,30 +1379,33 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   // Per-endpoint breakdown so the final status can tell user exactly
   // which endpoints came back empty / mis-shaped — much more useful than
   // a single aggregated number.
+  // Breakdown shown to the user under "查看明細". Use the Chinese label
+  // when known; only fall back to the raw endpoint name for unmapped
+  // (newly added) endpoints. Empty-result endpoints are omitted from
+  // the success summary entirely — they add noise. Errors always show
+  // so the user knows something didn't come through.
   const breakdown = [];
   for (let i = 0; i < settled.length; i++) {
     const ep = NHI_API_ENDPOINTS[i];
     const s = settled[i];
+    const label = ENDPOINT_LABEL_ZH[ep.name] ?? ep.name;
     if (s.status === "rejected") {
       errors.push(`${ep.name}: ${s.reason.message}`);
-      breakdown.push(`${ep.name}=ERR`);
+      breakdown.push(`❌ ${label}：取得失敗`);
       continue;
     }
     const { items, raw_count } = s.value;
     raw_total += raw_count;
     adapted_total += items.length;
-    // Format: adapted_items/raw_NHI_rows. For most endpoints the ratio
-    // is 1:1 (one NHI row → one FHIR item) so "5/5" reads naturally.
-    // For 1-to-many adapters (e.g. adult_preventive unfolds one
-    // screening row into ~18 Observations), prefix the raw side with
-    // its noun so users don't read "36/2" as "36 of 2 expected".
-    let label;
+    if (raw_count === 0) continue; // nothing to show
     if (items.length > raw_count && raw_count > 0) {
-      label = `${ep.name}=${raw_count} rows → ${items.length} obs`;
+      // 1-to-many adapter (e.g. adult_preventive: one screening row →
+      // ~18 Observations). Show both numbers so the user understands
+      // why one record produced many.
+      breakdown.push(`${label}：${raw_count} 筆 → ${items.length} 項`);
     } else {
-      label = `${ep.name}=${items.length}/${raw_count}`;
+      breakdown.push(`${label}：${items.length} 筆`);
     }
-    breakdown.push(label);
     // Save body sample for first endpoint with raw>0 but adapted=0 (adapter
     // mismatch) so we can iterate. Stored under chrome.storage.local for
     // inspection via service worker DevTools.
@@ -1496,11 +1518,12 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   // below the status, so saying "點下方按鈕" is just noise.
   const _localTail = "";
   const _successVerb = mode === "local" ? "已產生" : "已更新";
-  // Prepend phase timings to the breakdown so the user can see which
-  // step is slow (NHI fetch is usually the bulk; backend mode adds an
-  // upload step measured in 100s of ms not seconds).
+  // Phase timings (`nhi-parallel=8s`, `backend-upload=0.8s`) are dev
+  // info — useful when investigating a slow sync but noise for an end
+  // user. Keep them, but tag with the "⏱" prefix the popup uses to
+  // tuck them into a deeper "技術細節" sub-toggle.
   const _phaseLines = _phases.map((p) => `⏱ ${p.name}=${(p.ms / 1000).toFixed(1)}s`);
-  const _fullBreakdown = [..._phaseLines, ...breakdown];
+  const _fullBreakdown = [...breakdown, ..._phaseLines];
   await setStatus({
     running: false,
     progress: errors.length
