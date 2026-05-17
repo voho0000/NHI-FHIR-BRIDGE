@@ -40,6 +40,13 @@
       margin: 0;
       color: #1e3a8a;
       letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .header-icon {
+      border-radius: 4px;
+      flex: 0 0 auto;
     }
     .header .subtitle {
       font-size: 11px;
@@ -528,7 +535,11 @@
 
   <header class="header">
     <div class="header-text">
-      <h1>🏥 NHI-FHIR Bridge</h1>
+      <h1>
+        <img src="icons/icon-32.png" width="20" height="20"
+             alt="" class="header-icon" />
+        NHI-FHIR Bridge
+      </h1>
       <div class="subtitle">健保存摺 → FHIR 同步</div>
     </div>
     <!-- Compact connection indicator (backend mode + state=ok). For other
@@ -659,7 +670,7 @@
         </div>
         <button class="btn-secondary" id="push-local-btn" hidden
                 style="margin-top:6px; padding:5px 10px; font-size:12px">
-          📤 把本地 Bundle 上傳到後端
+          📤 把本地檔案上傳到後端
         </button>
       </div>
     </section>
@@ -668,7 +679,7 @@
     <section class="section pending-bundle" id="pending-bundle" hidden style="margin-top:8px">
       <div class="bundle-row">
         <button class="btn-primary" id="download-bundle-btn" style="background:#0ea5e9; flex:1">
-          📥 下載 FHIR Bundle
+          📥 下載健康紀錄檔
         </button>
         <button class="btn-secondary btn-icon" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">🗑️</button>
       </div>
@@ -702,7 +713,7 @@
             <label class="toggle-row">
               <input type="checkbox" id="mask-name-enabled" />
               <span>對外輸出時遮罩病人姓名（郭一新 → 郭O新）</span>
-              <span class="help-icon" data-tip="預設關閉 — 民眾下載自己資料時不必遮。&#10;開啟後：popup 摘要、FHIR Bundle、Dashboard、SMART App 看到的姓名都會遮罩。&#10;NHI 報告內容裡跟「姓名」欄位完全相同的字串也會被取代成遮罩版。&#10;適合多病人診間 / 教學展示 / 螢幕分享情境。">ⓘ</span>
+              <span class="help-icon" data-tip="預設關閉 — 民眾下載自己資料時不必遮。&#10;開啟後：popup 摘要、下載的健康紀錄檔、Dashboard、SMART App 看到的姓名都會遮罩。&#10;NHI 報告內容裡跟「姓名」欄位完全相同的字串也會被取代成遮罩版。&#10;適合多病人診間 / 教學展示 / 螢幕分享情境。">ⓘ</span>
             </label>
           </div>
           <div class="field backend-only">

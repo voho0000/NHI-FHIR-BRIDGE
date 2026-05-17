@@ -310,7 +310,7 @@ function _refreshButtonStates() {
     currentMode() !== "backend"  ? "請切到「上傳後端」模式" :
     _connState !== "ok"           ? "後端尚未連線" :
     !ov?.id_no                    ? "請先填病人資料" :
-    !haveBackendPatient           ? "後端尚無此病人的資料 — 請先同步或上傳本地 Bundle" :
+    !haveBackendPatient           ? "後端尚無此病人的資料 — 請先同步或上傳本地檔案" :
                                     "";
 }
 
@@ -448,7 +448,7 @@ function _renderDataState() {
       // exists (otherwise the user goes hunting for an upload button
       // that's not there and concludes "there's no sync button at all").
       bs.textContent = localMatches
-        ? "⚠ 尚無此病人 — 請按上方「🔄 同步」或下方「📤 上傳本地 Bundle」"
+        ? "⚠ 尚無此病人 — 請按上方「🔄 同步」或下方「📤 把本地檔案上傳到後端」"
         : "⚠ 尚無此病人 — 請按上方「🔄 同步」抓資料到後端";
       break;
     case "present": {
@@ -485,7 +485,7 @@ function _renderDataState() {
   els.pushLocalBtn.hidden = !localMatches;
   els.pushLocalBtn.disabled = false;
   els.pushLocalBtn.title = "";
-  els.pushLocalBtn.textContent = "📤 把本地 Bundle 上傳到後端";
+  els.pushLocalBtn.textContent = "📤 把本地檔案上傳到後端";
 }
 
 async function _refreshLocalBundleState() {
