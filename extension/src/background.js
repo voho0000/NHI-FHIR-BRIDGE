@@ -1392,6 +1392,26 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   _activeSyncCtx = null;
 }
 
+// On install / update / chrome://extensions reload, the new sidebar.js
+// is shipped in the bundle but Chrome won't re-inject it into already-
+// open NHI tabs (content_scripts only fire at document_idle of fresh
+// loads). Without this, settings introduced in the new version (e.g.
+// the sidebarEnabled toggle) appear inert on open tabs until F5.
+// Force-inject so the toggle takes effect immediately.
+chrome.runtime.onInstalled.addListener(async () => {
+  let tabs;
+  try {
+    tabs = await chrome.tabs.query({ url: "https://myhealthbank.nhi.gov.tw/*" });
+  } catch {
+    return;
+  }
+  for (const tab of tabs) {
+    chrome.scripting
+      .executeScript({ target: { tabId: tab.id }, files: ["sidebar.js"] })
+      .catch(() => {});
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "startNhiApiSync") {
     runNhiApiSync(msg.payload).then(

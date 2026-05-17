@@ -15,10 +15,15 @@
 // - Per-HIS auth handoff (FHIR launch token, etc.).
 
 (() => {
-  // Don't double-inject — the same script can re-run on SPA route
-  // changes that don't reload the document.
-  if (window.__ehrFhirSidebarMounted) return;
-  window.__ehrFhirSidebarMounted = true;
+  // Re-injection (e.g. background.js calling chrome.scripting.executeScript
+  // after an extension update) means the script runs again on a page that
+  // already has a host element from the previous instance. Clean up the
+  // stale host so the toggle button doesn't appear twice.
+  // Leftover chrome.storage.onChanged listeners from the old script
+  // instance can't be unregistered, but they reference detached DOM
+  // nodes so their callbacks are visual no-ops.
+  const previousHost = document.getElementById("nhi-fhir-sidebar-host");
+  if (previousHost) previousHost.remove();
 
   const SIDEBAR_DEFAULT_WIDTH = 420;
   const SIDEBAR_MIN_WIDTH = 280;
