@@ -6,6 +6,7 @@
  *   - mapPatient(raw) — main entry
  */
 
+import { derivePatientId } from "./helpers";
 import * as systems from "./systems";
 
 // Taiwan national ID: 1 letter + 9 digits (A123456789). Used to decide
@@ -19,7 +20,12 @@ export function looksLikeTwNationalId(value: string | null | undefined): boolean
 }
 
 export function mapPatient(raw: Record<string, any>): Record<string, any> {
-  const patientId = String(raw.identifier ?? raw.id ?? "unknown");
+  const rawId = String(raw.identifier ?? raw.id ?? "unknown");
+  // FHIR Patient.id is the hashed/salted form. Real national ID stays
+  // only in identifier[].value so a leaked Bundle (or a SMART app token
+  // payload containing patient_id) doesn't disclose it via every
+  // subject.reference.
+  const patientId = derivePatientId(rawId);
 
   // Use `??` (not just default arg) so explicit null from the LLM also
   // falls back. Local models sometimes emit null instead of omitting.
@@ -44,10 +50,10 @@ export function mapPatient(raw: Record<string, any>): Record<string, any> {
     identifier: [
       {
         use: "official",
-        system: looksLikeTwNationalId(patientId)
+        system: looksLikeTwNationalId(rawId)
           ? systems.TW_NATIONAL_ID
           : systems.HIS_LOCAL_PATIENT_MRN,
-        value: patientId,
+        value: rawId,
       },
     ],
     name: [nameEntry],

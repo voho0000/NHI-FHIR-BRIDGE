@@ -21,6 +21,7 @@ import {
   GROUP_HANDLERS,
   LIST_HANDLERS,
   dedupAdmissionDayAmb,
+  derivePatientId,
   linkEncountersInResources,
   mapPatient,
   resolveSexStratifiedRanges,
@@ -305,7 +306,11 @@ syncApi.post("/upload-structured", requireSyncApiKey, async (c) => {
 
   const override = payload.patient_override ?? null;
   const overrideId = override?.id_no?.trim() || null;
-  const effectivePid = overrideId ?? payload.patient_id ?? null;
+  // Raw national ID (caller-supplied) vs FHIR Patient.id (hashed).
+  // Mappers want the hashed form so every subject.reference matches
+  // the Patient.id; lookups by Patient also use the hashed form.
+  const rawPid = overrideId ?? payload.patient_id ?? null;
+  const effectivePid = rawPid ? derivePatientId(rawPid) : null;
 
   // patient_info + override → bypass extraction, build Patient directly.
   if (payload.page_type === "patient_info" && overrideId) {
@@ -340,7 +345,7 @@ syncApi.post("/upload-structured", requireSyncApiKey, async (c) => {
 
   // Auto-create Patient from override when not yet in FHIR.
   if (overrideId) {
-    if (!fhirServer.read("Patient", overrideId)) {
+    if (!fhirServer.read("Patient", effectivePid)) {
       fhirServer.upsert(buildOverridePatient(override!));
     }
   }
@@ -411,7 +416,8 @@ syncApi.post("/upload-html", requireSyncApiKey, async (c) => {
   const hisUser = parseHisUser(payload.html);
   const override = payload.patient_override ?? null;
   const overrideId = override?.id_no?.trim() || null;
-  const effectivePid = overrideId ?? payload.patient_id ?? null;
+  const rawPid = overrideId ?? payload.patient_id ?? null;
+  const effectivePid = rawPid ? derivePatientId(rawPid) : null;
 
   const writeAudit = (extra: Partial<typeof auditLog.$inferInsert> = {}) => {
     defaultDb
@@ -445,8 +451,8 @@ syncApi.post("/upload-html", requireSyncApiKey, async (c) => {
   }
 
   // Non-patient_info + override → ensure Patient exists, then run LLM.
-  if (overrideId && payload.page_type !== "patient_info") {
-    if (!fhirServer.read("Patient", overrideId)) {
+  if (overrideId && effectivePid && payload.page_type !== "patient_info") {
+    if (!fhirServer.read("Patient", effectivePid)) {
       fhirServer.upsert(buildOverridePatient(override!));
     }
   }

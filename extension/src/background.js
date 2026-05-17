@@ -18,12 +18,31 @@ import {
   GROUP_HANDLERS,
   LIST_HANDLERS,
   dedupAdmissionDayAmb,
+  derivePatientId,
   linkEncountersInResources,
   mapPatient,
   maskId,
   maskName,
   resolveSexStratifiedRanges,
+  setStableIdSalt,
 } from "@nhi-fhir-bridge/mapper";
+
+// Install-local salt for stableId(). Without this, the SHA-1 hashes
+// derived from the patient's national ID are reversible by brute force
+// over the ~30M Taiwanese ID space. Loaded once on SW init.
+const STABLE_ID_SALT_KEY = "stableIdSalt";
+async function _ensureStableIdSalt() {
+  const stored = await chrome.storage.local.get(STABLE_ID_SALT_KEY);
+  let salt = stored[STABLE_ID_SALT_KEY];
+  if (!salt) {
+    const buf = new Uint8Array(32);
+    crypto.getRandomValues(buf);
+    salt = Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
+    await chrome.storage.local.set({ [STABLE_ID_SALT_KEY]: salt });
+  }
+  setStableIdSalt(salt);
+}
+_ensureStableIdSalt();
 
 const STORAGE_KEY = "syncStatus";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
