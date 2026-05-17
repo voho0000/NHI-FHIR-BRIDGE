@@ -223,12 +223,12 @@
 
     /* ── Status banner ─────────────────────────────────────────────── */
     .status {
-      padding: 10px 12px;
+      padding: 8px 10px;
       border-radius: 6px;
       font-size: 12px;
-      margin-top: 12px;
+      margin-top: 8px;
       display: none;
-      line-height: 1.6;
+      line-height: 1.55;
       word-break: break-word;
     }
     .status.info {
@@ -360,7 +360,7 @@
 
     /* ── Backend↔local data state card ─────────────────────────────── */
     .data-state-card {
-      padding: 8px 10px;
+      padding: 6px 10px;
       background: #f9fafb;
       border: 1px solid #e5e7eb;
       border-radius: 6px;
@@ -370,10 +370,10 @@
       display: flex;
       gap: 8px;
       align-items: baseline;
-      line-height: 1.6;
+      line-height: 1.5;
     }
     .data-state-label {
-      flex: 0 0 70px;
+      flex: 0 0 40px;
       color: #6b7280;
       font-weight: 500;
     }
@@ -512,24 +512,6 @@
       </details>
     </section>
 
-    <!-- ── 1b. Backend ↔ local data state (backend mode only) ─────── -->
-    <section class="section backend-only" id="data-state-section" hidden>
-      <div class="data-state-card">
-        <div class="data-state-row">
-          <span class="data-state-label">後端</span>
-          <span class="data-state-value" id="backend-state">檢查中…</span>
-        </div>
-        <div class="data-state-row" id="local-state-row" hidden>
-          <span class="data-state-label">本地 Bundle</span>
-          <span class="data-state-value" id="local-state">—</span>
-        </div>
-        <button class="btn-secondary" id="push-local-btn" hidden
-                style="margin-top:8px; padding:6px 10px; font-size:12px">
-          📤 把本地 Bundle 上傳到後端
-        </button>
-      </div>
-    </section>
-
     <!-- ── 2. Sync scope ─────────────────────────────────────────── -->
     <section class="section">
       <div class="label">同步範圍</div>
@@ -550,16 +532,30 @@
       <button class="btn-danger" id="stop-btn" hidden style="margin-top:6px">
         停止同步
       </button>
-      <div class="hint">
-        從健保存摺擷取就醫、用藥、檢驗、影像等資料，轉換為 FHIR
-        標準格式供 SMART app 使用。同步時間依資料量而定。
-      </div>
     </section>
 
     <!-- ── 4. Status ─────────────────────────────────────────────── -->
     <div id="status" class="status"></div>
 
-    <!-- ── 4b. Pending FHIR Bundle (local mode result) ──────────── -->
+    <!-- ── 4b. Backend ↔ local data state (backend mode only) ──── -->
+    <section class="section backend-only" id="data-state-section" hidden>
+      <div class="data-state-card">
+        <div class="data-state-row">
+          <span class="data-state-label">後端</span>
+          <span class="data-state-value" id="backend-state">檢查中…</span>
+        </div>
+        <div class="data-state-row" id="local-state-row" hidden>
+          <span class="data-state-label">本地</span>
+          <span class="data-state-value" id="local-state">—</span>
+        </div>
+        <button class="btn-secondary" id="push-local-btn" hidden
+                style="margin-top:6px; padding:5px 10px; font-size:12px">
+          📤 把本地 Bundle 上傳到後端
+        </button>
+      </div>
+    </section>
+
+    <!-- ── 4c. Pending FHIR Bundle (local mode result) ──────────── -->
     <section class="section pending-bundle" id="pending-bundle" hidden style="margin-top:8px">
       <div class="bundle-row">
         <button class="btn-primary" id="download-bundle-btn" style="background:#0ea5e9; flex:1">

@@ -1331,7 +1331,9 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   const _elapsedStr = _elapsedMs < 60_000
     ? `${(_elapsedMs / 1000).toFixed(1)}s`
     : `${Math.floor(_elapsedMs / 60_000)}m${Math.round((_elapsedMs % 60_000) / 1000)}s`;
-  const _localTail = _localFilename ? " · 檔案已備妥，點下方按鈕下載" : "";
+  // No more "檔案已備妥…" tail — the 📥 download button sits right
+  // below the status, so saying "點下方按鈕" is just noise.
+  const _localTail = "";
   const _successVerb = mode === "local" ? "已產生" : "已更新";
   // Prepend phase timings to the breakdown so the user can see which
   // step is slow (NHI fetch is usually the bulk; backend mode adds an
