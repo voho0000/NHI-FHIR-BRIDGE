@@ -1,0 +1,17 @@
+{
+  "name": "nhi-fhir-bridge-extension",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome extension: NHI 健康存摺 → FHIR R4 capture (local-only or backend upload).",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch"
+  },
+  "dependencies": {
+    "@nhi-fhir-bridge/mapper": "*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

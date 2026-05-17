@@ -43,9 +43,17 @@
     }
 
     /* ── Layout ────────────────────────────────────────────────────── */
-    .content { padding: 14px 16px 4px; }
-    .section { margin-bottom: 14px; }
+    .content { padding: 12px 16px 4px; }
+    .section { margin-bottom: 10px; }
     .section:last-child { margin-bottom: 0; }
+    .bundle-row { display: flex; gap: 6px; align-items: stretch; }
+    .bundle-row > button { width: auto; }
+    .bundle-row .btn-icon {
+      flex: 0 0 38px;
+      width: 38px;
+      padding: 0;
+      font-size: 14px;
+    }
 
     .label {
       font-size: 11px;
@@ -241,6 +249,20 @@
       color: #b91c1c;
       border: 1px solid #fecaca;
     }
+    /* Phase timings — always-visible monospace line under the status
+       text. Lets the user see "nhi-parallel=8s · backend-upload=0.8s"
+       without having to expand anything. */
+    .status-phases {
+      margin-top: 6px;
+      padding: 6px 8px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.04);
+      border-radius: 4px;
+      line-height: 1.55;
+      opacity: 0.85;
+      word-break: break-word;
+    }
     /* Per-endpoint breakdown collapsible inside the status banner.
        Inherits the banner's text color so it visually nests under
        the main success/warning line. */
@@ -279,6 +301,103 @@
       word-break: break-word;
     }
 
+    /* ── Connection banner (backend mode) ─────────────────────────── */
+    .conn-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      border: 1px solid transparent;
+    }
+    .conn-banner[data-state="unknown"]  { background:#f3f4f6; color:#6b7280; border-color:#e5e7eb; }
+    .conn-banner[data-state="checking"] { background:#dbeafe; color:#1d4ed8; border-color:#bfdbfe; }
+    .conn-banner[data-state="ok"]       { background:#f0fdf4; color:#047857; border-color:#bbf7d0; }
+    .conn-banner[data-state="fail"]     { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+    .conn-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      flex: 0 0 8px;
+      background: currentColor;
+    }
+    .conn-banner[data-state="checking"] .conn-dot {
+      animation: conn-pulse 1s ease-in-out infinite;
+    }
+    @keyframes conn-pulse {
+      0%, 100% { opacity: 0.4; }
+      50%      { opacity: 1; }
+    }
+    .conn-msg { flex: 1; line-height: 1.4; word-break: break-all; }
+    .conn-retry {
+      width: auto;
+      flex: 0 0 auto;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: 4px;
+      background: white;
+      color: inherit;
+      border: 1px solid currentColor;
+      cursor: pointer;
+    }
+    .conn-retry:hover { background: rgba(255, 255, 255, 0.6); }
+    .conn-help {
+      margin-top: 6px;
+      padding: 8px 10px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      font-size: 11px;
+      color: #7f1d1d;
+      line-height: 1.55;
+    }
+    .conn-help code {
+      background: rgba(127, 29, 29, 0.08);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+
+    /* ── Mode-conditional visibility ───────────────────────────────── */
+    body[data-mode="local"] .backend-only { display: none !important; }
+    body[data-mode="backend"] .local-only { display: none !important; }
+
+    /* ── Mode toggle (compact segmented control) ───────────────────── */
+    .mode-toggle {
+      display: flex;
+      gap: 0;
+      padding: 2px;
+      background: #f3f4f6;
+      border-radius: 6px;
+      border: 1px solid #e5e7eb;
+    }
+    .mode-opt {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #6b7280;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      position: relative;
+      user-select: none;
+    }
+    .mode-opt input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .mode-opt:has(input:checked) {
+      background: white;
+      color: #1d4ed8;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+      font-weight: 600;
+    }
+
     /* ── Footer ────────────────────────────────────────────────────── */
     .footer {
       border-top: 1px solid #e5e7eb;
@@ -302,6 +421,30 @@
   </header>
 
   <div class="content">
+
+    <!-- ── 0. Sync mode ───────────────────────────────────────────── -->
+    <section class="section">
+      <div class="mode-toggle" role="radiogroup" aria-label="輸出方式">
+        <label class="mode-opt" title="產生 FHIR JSON 檔下載到電腦，不經過後端">
+          <input type="radio" name="sync-mode" value="local" checked />
+          下載到電腦
+        </label>
+        <label class="mode-opt" title="寫入 NHI-FHIR-Bridge backend，可用 dashboard / SMART app">
+          <input type="radio" name="sync-mode" value="backend" />
+          上傳後端
+        </label>
+      </div>
+    </section>
+
+    <!-- ── 0b. Backend connection status (backend mode only) ───────── -->
+    <section class="section backend-only" id="conn-section">
+      <div class="conn-banner" id="conn-banner" data-state="unknown">
+        <span class="conn-dot" id="conn-dot"></span>
+        <span class="conn-msg" id="conn-msg">未檢測</span>
+        <button class="conn-retry" id="conn-retry-btn" hidden>重試</button>
+      </div>
+      <div class="conn-help" id="conn-help" hidden></div>
+    </section>
 
     <!-- ── 1. Patient data (NHI required) ────────────────────────── -->
     <section class="section">
@@ -374,15 +517,26 @@
     <!-- ── 4. Status ─────────────────────────────────────────────── -->
     <div id="status" class="status"></div>
 
-    <!-- ── 5. Launch SMART App ───────────────────────────────────── -->
-    <section class="section" style="margin-top:14px">
+    <!-- ── 4b. Pending FHIR Bundle (local mode result) ──────────── -->
+    <section class="section pending-bundle" id="pending-bundle" hidden style="margin-top:8px">
+      <div class="bundle-row">
+        <button class="btn-primary" id="download-bundle-btn" style="background:#0ea5e9; flex:1">
+          📥 下載 FHIR Bundle
+        </button>
+        <button class="btn-secondary btn-icon" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">🗑️</button>
+      </div>
+      <div class="hint" id="bundle-meta" style="margin-top:4px"></div>
+    </section>
+
+    <!-- ── 5. Launch SMART App (backend mode only) ───────────────── -->
+    <section class="section backend-only" style="margin-top:14px">
       <button class="btn-primary" id="launch-btn" disabled>
         🚀 開啟 SMART App
       </button>
     </section>
 
-    <!-- ── 6. Advanced settings ──────────────────────────────────── -->
-    <section class="section">
+    <!-- ── 6. Advanced settings (backend mode only) ─────────────── -->
+    <section class="section backend-only">
       <details class="settings">
         <summary>⚙️ 進階設定</summary>
         <div class="settings-body">
@@ -390,7 +544,9 @@
             <div class="label">Backend URL</div>
             <input type="text" id="backend-url" placeholder="http://localhost:8010" />
             <div class="hint">
-              NHI-FHIR-Bridge 後端位置。本機開發保留預設即可；換機器/換 port 時才需要改。
+              本機 Docker 保留預設即可；指向團隊 server
+              (例如 <code>http://192.168.1.100:8010</code>) 第一次同步時 Chrome 會跳出權限對話框。
+              連線狀態顯示在 popup 最上方。
             </div>
           </div>
           <div class="field">
@@ -415,7 +571,7 @@
   </div>
 
   <footer class="footer">
-    <a href="#" id="dashboard-link" target="_blank">Dashboard ↗</a>
+    <a href="#" id="dashboard-link" class="backend-only" target="_blank">Dashboard ↗</a>
     <span id="version">v0.2.0</span>
   </footer>
 

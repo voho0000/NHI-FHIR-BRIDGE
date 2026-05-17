@@ -6,6 +6,22 @@
 //   - popup posts {type: "startNhiApiSync", payload}  → NHI JSON-API sync
 //   - background runs the full sync sequence, updating chrome.storage.local
 //   - popup reads chrome.storage.local on reopen to show progress
+//
+// Modes:
+//   - "local"   → after NHI fetch, run mappers in-extension, download a
+//                 FHIR Bundle to the user's machine. No backend required.
+//   - "backend" → POST per-page_type items to /sync/upload-structured
+//                 (existing behaviour); dashboard + SMART app use the
+//                 backend's FHIR store.
+
+import {
+  GROUP_HANDLERS,
+  LIST_HANDLERS,
+  dedupAdmissionDayAmb,
+  linkEncountersInResources,
+  mapPatient,
+  resolveSexStratifiedRanges,
+} from "@nhi-fhir-bridge/mapper";
 
 const STORAGE_KEY = "syncStatus";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -761,7 +777,112 @@ async function _postStructured(backend, page_type, items, syncApiKey, patientOve
   return await r.json();
 }
 
-async function runNhiApiSync({ tabId, backend, syncApiKey, nhiBase, patientOverride, dateRange, dateRangeLabel }) {
+// ── Local mode ─────────────────────────────────────────────────────────
+//
+// Runs the same mappers the backend runs, then triggers a download of the
+// resulting FHIR Bundle. Nothing leaves the user's machine; no backend
+// required. Mirrors backend/upload-structured order: encounters first so
+// that linkEncountersInResources can attach references to downstream
+// observations/medications/etc.
+
+const _LOCAL_PAGE_TYPE_ORDER = [
+  "encounters",
+  "observations",
+  "medications",
+  "conditions",
+  "allergies",
+  "diagnostic_reports",
+  "procedures",
+];
+
+function _buildOverridePatient(ov) {
+  const raw = {
+    id: ov.id_no,
+    identifier: ov.id_no,
+    name: ov.name || ov.id_no,
+  };
+  if (ov.birth_date) raw.birthDate = ov.birth_date;
+  if (ov.gender) raw.gender = ov.gender;
+  return mapPatient(raw);
+}
+
+function _assembleLocalBundle(byType, patientOverride) {
+  const patient = _buildOverridePatient(patientOverride);
+  const pid = patient.id;
+  const all = [patient];
+
+  for (const pt of _LOCAL_PAGE_TYPE_ORDER) {
+    const items = byType[pt];
+    if (!items || items.length === 0) continue;
+    let mapped;
+    if (GROUP_HANDLERS[pt]) {
+      mapped = GROUP_HANDLERS[pt](items, pid);
+    } else if (LIST_HANDLERS[pt]) {
+      const [fn] = LIST_HANDLERS[pt];
+      mapped = items
+        .filter((it) => it && typeof it === "object")
+        .map((it) => fn(it, pid))
+        .filter((r) => r !== null);
+    } else {
+      continue;
+    }
+    if (pt === "encounters") mapped = dedupAdmissionDayAmb(mapped);
+    all.push(...mapped);
+  }
+
+  // Linker + sex-stratified resolver run once over the full assembled
+  // list (same pipeline backend's /sync/upload-structured runs, just
+  // against an in-memory candidate array instead of a SQLite query).
+  linkEncountersInResources(all, all);
+  resolveSexStratifiedRanges(patient, all);
+
+  return {
+    resourceType: "Bundle",
+    type: "collection",
+    timestamp: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+    entry: all.map((r) => ({
+      fullUrl: `${r.resourceType}/${r.id}`,
+      resource: r,
+    })),
+  };
+}
+
+// Local mode stashes the assembled Bundle in chrome.storage.local under
+// a single "pendingFhirBundle" slot. The popup shows a download button
+// when this slot is non-empty; the actual chrome.downloads.download call
+// happens from the popup (in response to a user click) so the file
+// doesn't appear in the Downloads bar uninvited.
+//
+// Single slot means a new sync overwrites the previous pending bundle.
+// chrome.storage.local default quota is 10 MB; a typical NHI sync is
+// well under 2 MB.
+const PENDING_BUNDLE_KEY = "pendingFhirBundle";
+
+async function _stashFhirBundle(bundle, patientId) {
+  // Filename per spec: nhi-{patient_id}-{YYYYMMDD-HHMM}.json
+  // toISOString() returns UTC; user expects local-clock time on disk.
+  // Build the stamp from local-time components instead.
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const ts =
+    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+    `-${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const safePid = (patientId || "unknown").replace(/[^A-Za-z0-9_-]/g, "_");
+  const filename = `nhi-${safePid}-${ts}.json`;
+  const json = JSON.stringify(bundle, null, 2);
+  await chrome.storage.local.set({
+    [PENDING_BUNDLE_KEY]: {
+      filename,
+      json,
+      bytes: json.length,
+      generatedAt: Date.now(),
+      patientId: patientId || null,
+    },
+  });
+  return { filename, bytes: json.length };
+}
+
+async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patientOverride, dateRange, dateRangeLabel }) {
   _cancelled = false;
   const BASE = nhiBase || `https://${NHI_HOST}`;
 
@@ -784,10 +905,25 @@ async function runNhiApiSync({ tabId, backend, syncApiKey, nhiBase, patientOverr
   // back through chrome.runtime.sendMessage.
   _activeSyncCtx = { backend, syncApiKey, patientId: patientOverride.id_no };
 
+  // Sidebar iframe (medical-note SMART app) competes with NHI fan-out
+  // fetches for the tab's network + JS thread. Even in display:none it
+  // can take 100-200ms per request. Tell sidebar.js to suspend the
+  // iframe (set src=about:blank) for the duration of the sync.
+  await chrome.storage.local.set({ syncRunning: true }).catch(() => {});
+
   // Wall-clock start time — used to compute elapsed seconds for the
   // final status line ("總耗時 12.3 秒"). Stash on a local so we can
   // reach it from the completion message at the very end.
   const _t0 = Date.now();
+  // Per-phase timings, surfaced into the popup's "查看明細" so the user
+  // can see exactly where time is going. Each entry: { name, ms }.
+  const _phases = [];
+  let _phaseStart = _t0;
+  const _markPhase = (name) => {
+    const now = Date.now();
+    _phases.push({ name, ms: now - _phaseStart });
+    _phaseStart = now;
+  };
   await setStatus({
     running: true, progress: "🚀 開始同步健保存摺資料…", phase: "init",
     started: _t0, totalResources: 0, host: NHI_HOST, errors: [],
@@ -970,6 +1106,8 @@ async function runNhiApiSync({ tabId, backend, syncApiKey, nhiBase, patientOverr
     return { status: "fulfilled", value: { ep, items, raw_count: list.length, bodySample, rawList: list } };
   });
 
+  _markPhase("nhi-parallel");
+
   // Step 1a: encounter detail fan-out (IHKE3303S02) → classify each
   // IHKE3303S01 visit as AMB / EMER / IMP via hosp_DATA_TYPE_NAME.
   // List endpoint doesn't expose 急診 distinction; detail does. We re-
@@ -1001,6 +1139,7 @@ async function runNhiApiSync({ tabId, backend, syncApiKey, nhiBase, patientOverr
       }
     }
   }
+  _markPhase("encounter-detail");
 
   // Step 1b: medications need a 2-step fetch — IHKE3306S01 only returns
   // visit metadata (date, ICD, hospital), no drug names. Drugs live at
@@ -1030,6 +1169,7 @@ async function runNhiApiSync({ tabId, backend, syncApiKey, nhiBase, patientOverr
       }
     }
   }
+  _markPhase("imaging-detail");
 
   const medIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "medications");
   if (medIdx >= 0 && settled[medIdx].status === "fulfilled") {
@@ -1052,6 +1192,7 @@ async function runNhiApiSync({ tabId, backend, syncApiKey, nhiBase, patientOverr
       }
     }
   }
+  _markPhase("medication-detail");
 
   // Step 2: aggregate items by page_type, POST to backend.
   const byType = {};
@@ -1099,19 +1240,72 @@ async function runNhiApiSync({ tabId, backend, syncApiKey, nhiBase, patientOverr
   }
 
   let total = 0;
-  for (const [page_type, items] of Object.entries(byType)) {
+  let _localFilename = null;
+  if (mode === "local") {
     if (_cancelled) throw new Error(CANCEL_ERROR);
-    await setStatus({
-      progress: `⬆️ 上傳 ${page_type}（${items.length} 筆）…`,
-      totalResources: total,
-    });
+    await setStatus({ progress: "🧬 轉換為 FHIR Bundle…", totalResources: 0 });
+    let bundle;
     try {
-      const data = await _postStructured(backend, page_type, items, syncApiKey, patientOverride);
-      total += data.count || 0;
+      bundle = _assembleLocalBundle(byType, patientOverride);
     } catch (e) {
-      errors.push(`upload ${page_type}: ${e.message}`);
+      errors.push(`local mapping: ${e.message}`);
+      bundle = null;
+    }
+    if (bundle) {
+      total = bundle.entry.length;
+      await setStatus({ progress: `💾 準備 ${total} 筆 FHIR 資源…`, totalResources: total });
+      try {
+        const dl = await _stashFhirBundle(bundle, patientOverride.id_no);
+        _localFilename = dl.filename;
+      } catch (e) {
+        errors.push(`stash bundle: ${e.message}`);
+      }
+    }
+  } else {
+    for (const [page_type, items] of Object.entries(byType)) {
+      if (_cancelled) throw new Error(CANCEL_ERROR);
+      await setStatus({
+        progress: `⬆️ 上傳 ${page_type}（${items.length} 筆）…`,
+        totalResources: total,
+      });
+      try {
+        const data = await _postStructured(backend, page_type, items, syncApiKey, patientOverride);
+        total += data.count || 0;
+      } catch (e) {
+        errors.push(`upload ${page_type}: ${e.message}`);
+      }
+    }
+
+    // After backend upload, also fetch a snapshot of the patient's full
+    // cumulative FHIR Bundle and stash it for the popup's "📥 下載" button.
+    // This is what `/fhir/export` returns — the backend's complete view
+    // of this patient (this sync + any prior syncs), as opposed to local
+    // mode's "just this sync" bundle.
+    if (patientOverride.id_no) {
+      try {
+        await setStatus({ progress: "📦 取得後端完整 Bundle…", totalResources: total });
+        const expUrl = `${backend}/fhir/export?patient=${encodeURIComponent(patientOverride.id_no)}`;
+        const r = await fetch(expUrl, {
+          headers: syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {},
+        });
+        if (r.ok) {
+          const bundle = await r.json();
+          const dl = await _stashFhirBundle(bundle, patientOverride.id_no);
+          _localFilename = dl.filename;
+          // Align reported count with local mode: bundle.entry.length
+          // includes the Patient resource (which the per-page-type POST
+          // counts had previously omitted because Patient is auto-created
+          // silently from patient_override). Same data → same number.
+          if (Array.isArray(bundle.entry)) total = bundle.entry.length;
+        } else {
+          errors.push(`export bundle: HTTP ${r.status}`);
+        }
+      } catch (e) {
+        errors.push(`export bundle: ${e.message}`);
+      }
     }
   }
+  _markPhase(mode === "local" ? "assemble+stash" : "backend-upload");
 
   // Format elapsed wall-clock time: seconds (1 dp) for short syncs,
   // "mm:ss" once we cross the minute mark so the popup status stays readable.
@@ -1119,11 +1313,18 @@ async function runNhiApiSync({ tabId, backend, syncApiKey, nhiBase, patientOverr
   const _elapsedStr = _elapsedMs < 60_000
     ? `${(_elapsedMs / 1000).toFixed(1)}s`
     : `${Math.floor(_elapsedMs / 60_000)}m${Math.round((_elapsedMs % 60_000) / 1000)}s`;
+  const _localTail = _localFilename ? " · 檔案已備妥，點下方按鈕下載" : "";
+  const _successVerb = mode === "local" ? "已產生" : "已更新";
+  // Prepend phase timings to the breakdown so the user can see which
+  // step is slow (NHI fetch is usually the bulk; backend mode adds an
+  // upload step measured in 100s of ms not seconds).
+  const _phaseLines = _phases.map((p) => `⏱ ${p.name}=${(p.ms / 1000).toFixed(1)}s`);
+  const _fullBreakdown = [..._phaseLines, ...breakdown];
   await setStatus({
     running: false,
     progress: errors.length
-      ? `⚠️ 同步完成 · 已更新 ${total} 筆健康紀錄，${errors.length} 項失敗（${_elapsedStr}）`
-      : `✅ 同步完成 · 已更新 ${total} 筆健康紀錄（${_elapsedStr}）`,
+      ? `⚠️ 同步完成 · ${_successVerb} ${total} 筆健康紀錄，${errors.length} 項失敗（${_elapsedStr}）${_localTail}`
+      : `✅ 同步完成 · ${_successVerb} ${total} 筆健康紀錄（${_elapsedStr}）${_localTail}`,
     phase: "done",
     totalResources: total,
     completed: Date.now(),
@@ -1132,15 +1333,21 @@ async function runNhiApiSync({ tabId, backend, syncApiKey, nhiBase, patientOverr
     // Keep as a plain array so popup.js can render with DOM API (no
     // innerHTML / no escaping concerns). Items look like
     // 'encounters=12/12' or 'adult_preventive=2 rows → 36 obs'.
-    breakdown,
+    breakdown: _fullBreakdown,
     errors,
     histno: patientOverride.id_no,
+    mode,
+    localFilename: _localFilename,
   });
 
-  // Best-effort: write a Sync History row so the dashboard can show
-  // when/who/how-long/what/range. Wrapped + swallowed so a logging
-  // failure never propagates back to the user-facing sync status.
-  try {
+  // Resume the sidebar iframe now that the NHI tab is no longer busy.
+  chrome.storage.local.set({ syncRunning: false }).catch(() => {});
+
+  // Best-effort: write a Sync History row to the backend so the dashboard
+  // can show when/who/how-long/what/range. Skipped in local mode (there
+  // is no backend). Wrapped + swallowed so a logging failure never
+  // propagates back to the user-facing sync status.
+  if (mode !== "local") try {
     await fetch(`${backend}/sync/log`, {
       method: "POST",
       headers: {
@@ -1170,6 +1377,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     runNhiApiSync(msg.payload).then(
       () => { try { sendResponse({ ok: true }); } catch {} },
       async (e) => {
+        // Make sure the sidebar iframe gets un-paused on every exit path
+        // (success runs this from inside runNhiApiSync; cancel + error +
+        // session-expired bail before reaching that point).
+        chrome.storage.local.set({ syncRunning: false }).catch(() => {});
         if (e?.message === CANCEL_ERROR) {
           try { sendResponse({ ok: true, cancelled: true }); } catch {}
           return;

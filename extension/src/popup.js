@@ -24,7 +24,10 @@ function isNhiTab(url) {
   }
 }
 
+const DEFAULT_MODE = "local";
+
 const els = {
+  modeRadios: () => document.querySelectorAll('input[name="sync-mode"]'),
   backendUrl: document.getElementById("backend-url"),
   syncApiKey: document.getElementById("sync-api-key"),
   smartAppUrl: document.getElementById("smart-app-url"),
@@ -42,7 +45,17 @@ const els = {
   launchBtn: document.getElementById("launch-btn"),
   status: document.getElementById("status"),
   dashboardLink: document.getElementById("dashboard-link"),
+  pendingBundle: document.getElementById("pending-bundle"),
+  downloadBundleBtn: document.getElementById("download-bundle-btn"),
+  clearBundleBtn: document.getElementById("clear-bundle-btn"),
+  bundleMeta: document.getElementById("bundle-meta"),
+  connBanner: document.getElementById("conn-banner"),
+  connMsg: document.getElementById("conn-msg"),
+  connRetryBtn: document.getElementById("conn-retry-btn"),
+  connHelp: document.getElementById("conn-help"),
 };
+
+const PENDING_BUNDLE_KEY = "pendingFhirBundle";
 
 // Persisted-state keys. Backend URL and API key persist across browser sessions.
 async function loadBackendUrl() {
@@ -97,15 +110,14 @@ function refreshOverrideSummary() {
   if (!ov) {
     els.ovSummary.textContent = "未設定";
     if (card) card.dataset.state = "empty";
-    els.launchBtn.disabled = true;
-    return;
+  } else {
+    const parts = [ov.id_no];
+    if (ov.name) parts.push(ov.name);
+    els.ovSummary.textContent = `✓ ${parts.join("  ·  ")}`;
+    if (card) card.dataset.state = "filled";
   }
-  const parts = [ov.id_no];
-  if (ov.name) parts.push(ov.name);
-  els.ovSummary.textContent = `✓ ${parts.join("  ·  ")}`;
-  if (card) card.dataset.state = "filled";
-  // Once an id_no is on file we can always launch SMART for that patient.
-  els.launchBtn.disabled = false;
+  // Both launch + sync enabled state depend on patient + mode + conn.
+  _refreshButtonStates();
 }
 
 async function savePatientOverride() {
@@ -131,9 +143,169 @@ async function clearPatientOverride() {
   setStatus("已清除病人資料", "info");
 }
 
+// ── Backend connection state ─────────────────────────────────────────
+//
+// Single source of truth: `_connState` reflects the latest backend
+// connectivity check. Both the banner UI and the enabled-state of the
+// 📥 Sync / 🚀 Launch buttons read from it.
+//
+// States:
+//   "unknown"  — not yet checked (e.g. first paint in local mode)
+//   "checking" — fetch in flight
+//   "ok"       — GET /fhir/metadata returned a FHIR CapabilityStatement
+//   "fail"     — anything else; `_connFailReason` carries detail
+//
+// Backend connectivity is treated as a *prerequisite* for backend mode,
+// not as a per-action check. Switching to backend mode triggers a test
+// immediately; failure shows a banner with actionable guidance and
+// disables both action buttons until connectivity recovers.
+
+let _connState = "unknown";
+let _connFailReason = null; // { kind: "no-permission" | "no-url" | "network" | "timeout" | "http" | "not-fhir", detail? }
+
+const _CONN_LABELS = {
+  unknown: "未檢測",
+  checking: "檢測中…",
+  ok: () => `已連線 — ${els.backendUrl.value.trim()}`,
+  fail: () => {
+    const r = _connFailReason || {};
+    return ({
+      "no-url": "✗ 未設定 Backend URL",
+      "no-permission": "✗ 未授權連線",
+      "network": "✗ 連不上後端",
+      "timeout": "✗ 連線逾時",
+      "http": `✗ HTTP ${r.detail || ""}`.trim(),
+      "not-fhir": "✗ 回應不是 FHIR",
+    })[r.kind] ?? "✗ 連線失敗";
+  },
+};
+
+const _CONN_HELP = {
+  "no-url":        "請到「進階設定」填入 Backend URL，例如 <code>http://localhost:8010</code>。",
+  "no-permission": "Chrome 阻擋了跨來源請求。請重新開 popup，當權限對話框跳出時按「允許」。",
+  "network":       "後端可能還沒啟動。請執行：<br><code>docker compose up -d</code><br>確認 backend 容器跑起來再重試。",
+  "timeout":       "5 秒內沒收到回應 — backend 可能還在啟動中，等 30 秒再按重試。",
+  "http":          "Backend 回應錯誤狀態碼。檢查 backend 的 log：<br><code>docker compose logs backend</code>",
+  "not-fhir":      "這個 URL 回了東西，但不是 FHIR CapabilityStatement。確認 Backend URL 指向 NHI-FHIR-Bridge 的 /fhir 根目錄。",
+};
+
+function _renderConnBanner() {
+  const banner = els.connBanner;
+  if (!banner) return;
+  banner.dataset.state = _connState;
+  const label = _CONN_LABELS[_connState];
+  els.connMsg.textContent = typeof label === "function" ? label() : label;
+  els.connRetryBtn.hidden = _connState !== "fail";
+  if (_connState === "fail" && _connFailReason?.kind) {
+    els.connHelp.hidden = false;
+    els.connHelp.innerHTML = _CONN_HELP[_connFailReason.kind] ?? "";
+  } else {
+    els.connHelp.hidden = true;
+    els.connHelp.innerHTML = "";
+  }
+}
+
+function _refreshButtonStates() {
+  // Sync button: NHI tab required (set elsewhere via syncApiBtn.disabled).
+  // In backend mode, additionally require conn === ok.
+  // In local mode, conn doesn't apply.
+  const onNhi = !els.syncApiBtn.dataset.offNhi;
+  const modeOk = currentMode() === "local" || _connState === "ok";
+  els.syncApiBtn.disabled = !(onNhi && modeOk);
+  els.syncApiBtn.title = !onNhi
+    ? "請先切到健保存摺分頁再同步"
+    : (!modeOk ? "後端尚未連線" : "");
+
+  // Launch button: backend mode + conn ok + patient set.
+  const ov = getPatientOverride();
+  els.launchBtn.disabled = !(currentMode() === "backend" && _connState === "ok" && !!ov?.id_no);
+  els.launchBtn.title = currentMode() !== "backend"
+    ? "請切到「上傳後端」模式"
+    : (_connState !== "ok" ? "後端尚未連線" : (!ov?.id_no ? "請先填病人資料" : ""));
+}
+
+async function testBackendConnection() {
+  const url = els.backendUrl.value.trim();
+  if (!url) {
+    _connState = "fail"; _connFailReason = { kind: "no-url" };
+    _renderConnBanner(); _refreshButtonStates(); return false;
+  }
+  _connState = "checking"; _connFailReason = null;
+  _renderConnBanner(); _refreshButtonStates();
+
+  const perm = await ensureBackendPermission(url);
+  if (!perm.ok) {
+    _connState = "fail"; _connFailReason = { kind: "no-permission" };
+    _renderConnBanner(); _refreshButtonStates(); return false;
+  }
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const res = await fetch(`${url.replace(/\/$/, "")}/fhir/metadata`, { signal: ctrl.signal });
+    if (!res.ok) {
+      _connState = "fail"; _connFailReason = { kind: "http", detail: res.status };
+    } else {
+      const body = await res.json().catch(() => null);
+      if (body?.resourceType !== "CapabilityStatement") {
+        _connState = "fail"; _connFailReason = { kind: "not-fhir" };
+      } else {
+        _connState = "ok"; _connFailReason = null;
+      }
+    }
+  } catch (e) {
+    _connState = "fail";
+    _connFailReason = { kind: e.name === "AbortError" ? "timeout" : "network" };
+  } finally {
+    clearTimeout(timer);
+  }
+
+  _renderConnBanner();
+  _refreshButtonStates();
+  return _connState === "ok";
+}
+
+els.connRetryBtn?.addEventListener("click", testBackendConnection);
+
+// ── Sync mode (local | backend) ──────────────────────────────────────
+async function loadSyncMode() {
+  const { syncMode } = await chrome.storage.sync.get("syncMode");
+  const mode = syncMode === "backend" ? "backend" : DEFAULT_MODE;
+  for (const r of els.modeRadios()) r.checked = r.value === mode;
+  document.body.dataset.mode = mode;
+  if (mode === "backend") {
+    // Auto-test on open so the user sees status without clicking. Awaiting
+    // here serializes the rest of init() until we know the answer.
+    await testBackendConnection();
+  } else {
+    _connState = "unknown"; _connFailReason = null;
+    _renderConnBanner();
+  }
+}
+
+function currentMode() {
+  for (const r of els.modeRadios()) if (r.checked) return r.value;
+  return DEFAULT_MODE;
+}
+
+for (const r of els.modeRadios()) {
+  r.addEventListener("change", () => {
+    const mode = currentMode();
+    document.body.dataset.mode = mode;
+    chrome.storage.sync.set({ syncMode: mode });
+    if (mode === "backend") {
+      testBackendConnection();
+    } else {
+      _connState = "unknown"; _connFailReason = null;
+      _renderConnBanner(); _refreshButtonStates();
+    }
+  });
+}
+
 els.backendUrl.addEventListener("change", () => {
   chrome.storage.sync.set({ backendUrl: els.backendUrl.value.trim() });
   els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
+  if (currentMode() === "backend") testBackendConnection();
 });
 els.syncApiKey.addEventListener("change", () => {
   chrome.storage.sync.set({ syncApiKey: els.syncApiKey.value.trim() });
@@ -150,23 +322,38 @@ els.smartAppUrl.addEventListener("change", () => {
 });
 
 function setStatus(text, kind, breakdown) {
-  // Build with DOM API — avoids innerHTML / XSS risk. When `breakdown`
-  // (array of per-endpoint result tags) is provided, append a collapsible
-  // '查看明細' section below the main message.
+  // Build with DOM API — avoids innerHTML / XSS risk.
+  // breakdown is an array of mixed entries:
+  //   - phase timings prefixed with "⏱"  → 階段耗時
+  //   - per-endpoint counts                → 各 endpoint 抓到幾筆
+  // Both kinds are tucked inside a single "查看明細" toggle so the
+  // popup stays compact by default.
   els.status.className = kind || "";
   els.status.textContent = "";
   if (!text && !(breakdown && breakdown.length)) return;
   els.status.appendChild(document.createTextNode(text || ""));
   if (breakdown && breakdown.length) {
+    const phaseRows = breakdown.filter((b) => b.startsWith("⏱"));
+    const otherRows = breakdown.filter((b) => !b.startsWith("⏱"));
+
     const details = document.createElement("details");
     details.className = "status-detail";
     const summary = document.createElement("summary");
     summary.textContent = "查看明細";
     details.appendChild(summary);
-    const body = document.createElement("div");
-    body.className = "status-breakdown";
-    body.textContent = breakdown.join(" · ");
-    details.appendChild(body);
+
+    if (phaseRows.length) {
+      const phases = document.createElement("div");
+      phases.className = "status-phases";
+      phases.textContent = phaseRows.map((p) => p.replace(/^⏱\s*/, "")).join(" · ");
+      details.appendChild(phases);
+    }
+    if (otherRows.length) {
+      const body = document.createElement("div");
+      body.className = "status-breakdown";
+      body.textContent = otherRows.join(" · ");
+      details.appendChild(body);
+    }
     els.status.appendChild(details);
   }
 }
@@ -176,20 +363,84 @@ async function getActiveTab() {
   return tab;
 }
 
+// ── Pending FHIR Bundle (local-mode result) ──────────────────────────
+//
+// Background stashes the generated Bundle into chrome.storage.local
+// under `pendingFhirBundle`. Popup renders a download button. User must
+// click to actually trigger chrome.downloads.download — the file never
+// hits the disk unsolicited.
+
+function _fmtBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+async function refreshPendingBundle() {
+  const { [PENDING_BUNDLE_KEY]: pending } =
+    await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+  if (!pending || !pending.json) {
+    els.pendingBundle.hidden = true;
+    return;
+  }
+  els.pendingBundle.hidden = false;
+  const ago = pending.generatedAt
+    ? `${Math.max(1, Math.round((Date.now() - pending.generatedAt) / 1000))} 秒前`
+    : "";
+  els.bundleMeta.textContent = `${pending.filename} · ${_fmtBytes(pending.bytes || 0)}${ago ? ` · ${ago}` : ""}`;
+}
+
+async function downloadPendingBundle() {
+  const { [PENDING_BUNDLE_KEY]: pending } =
+    await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+  if (!pending) return;
+  const blob = new Blob([pending.json], { type: "application/fhir+json" });
+  const url = URL.createObjectURL(blob);
+  try {
+    await chrome.downloads.download({ url, filename: pending.filename, saveAs: false });
+  } finally {
+    // Release after a tick so the download has time to start.
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+}
+
+async function clearPendingBundle() {
+  await chrome.storage.local.remove(PENDING_BUNDLE_KEY);
+  await refreshPendingBundle();
+}
+
+els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);
+els.clearBundleBtn.addEventListener("click", clearPendingBundle);
+
+// Live update when background stashes a new bundle while popup is open.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
+});
+
 async function init() {
+  // Order matters: loadBackendUrl populates els.backendUrl.value, which
+  // loadSyncMode() reads via testBackendConnection(). Reverse this and
+  // the auto-test sees an empty URL and falsely reports "未設定 Backend URL"
+  // on every popup open.
   await loadBackendUrl();
+  await loadSyncMode();
   await loadPatientOverride();
+  await refreshPendingBundle();
 
   const tab = await getActiveTab();
   if (!tab?.url) {
     setStatus("no active tab", "error");
-    els.syncApiBtn.disabled = true;
+    els.syncApiBtn.dataset.offNhi = "1";
+    _refreshButtonStates();
     return;
   }
 
-  // Enable sync button only when we're on an NHI tab (cookies/session
-  // need to be from myhealthbank.nhi.gov.tw to call its JSON API).
-  els.syncApiBtn.disabled = !isNhiTab(tab.url);
+  // Sync requires being on an NHI tab so cookies/session are usable from
+  // the SW. Flag via dataset so _refreshButtonStates can combine this
+  // with the mode + conn state.
+  if (isNhiTab(tab.url)) delete els.syncApiBtn.dataset.offNhi;
+  else els.syncApiBtn.dataset.offNhi = "1";
+  _refreshButtonStates();
 
   // Re-attach to any sync that's currently running in the service worker.
   // This is what lets the user close + reopen the popup mid-sync.
@@ -237,14 +488,15 @@ function applySyncStatus(status) {
       _elapsedTickerId = setInterval(_renderStatus, 1000);
     }
   } else {
-    els.syncApiBtn.disabled = false;
     els.stopBtn.hidden = true;
     if (_elapsedTickerId) {
       clearInterval(_elapsedTickerId);
       _elapsedTickerId = null;
     }
-    // SMART launch availability is gated on patient_override id_no
-    // (refreshOverrideSummary keeps launchBtn in sync), not on this status.
+    // Re-derive sync button enabled state from mode/conn/NHI-tab instead
+    // of unconditionally enabling — keeps the button disabled when we
+    // know we shouldn't sync (e.g. backend down, off-NHI tab).
+    _refreshButtonStates();
   }
 }
 
@@ -265,7 +517,7 @@ async function stopSync() {
   setStatus("⛔ 停止中，正在清除部分同步資料…", "info");
   chrome.runtime.sendMessage({ type: "stopSync" }).catch(() => {});
   els.stopBtn.hidden = true;
-  els.syncApiBtn.disabled = false;
+  _refreshButtonStates();
 }
 
 // Live progress updates — listen on chrome.storage.onChanged so we get
@@ -313,6 +565,38 @@ async function isOnNhiLoginPage(tabId, url) {
 // ⚡ NHI API-direct sync — primary path. Hits NHI's underlying JSON
 // endpoints in parallel and posts adapted items to /sync/upload-structured.
 // Requires patient_override to be filled.
+// Convert a backend URL → the origin-pattern Chrome wants for permission
+// requests. "http://192.168.1.5:8010" → "http://192.168.1.5:8010/*".
+// Returns null when the URL isn't parseable so the caller can short-circuit.
+function _originPatternFor(url) {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}/*`;
+  } catch {
+    return null;
+  }
+}
+
+// Backend-mode pre-flight: ensure the extension has host permission for
+// the user-configured backend URL. Localhost / 127.0.0.1 are covered by
+// the default manifest host_permissions; remote / LAN / production URLs
+// need a one-time user grant. Must run from a user gesture (button click).
+async function ensureBackendPermission(backendUrl) {
+  const pattern = _originPatternFor(backendUrl);
+  if (!pattern) return { ok: false, reason: `Backend URL 無法解析: ${backendUrl}` };
+  const already = await chrome.permissions.contains({ origins: [pattern] });
+  if (already) return { ok: true };
+  let granted;
+  try {
+    granted = await chrome.permissions.request({ origins: [pattern] });
+  } catch (e) {
+    return { ok: false, reason: `權限請求失敗: ${e.message}` };
+  }
+  return granted
+    ? { ok: true }
+    : { ok: false, reason: `未授權連線到 ${pattern} — 同步取消` };
+}
+
 async function apiSyncNhi() {
   const ov = getPatientOverride();
   if (!ov) {
@@ -328,6 +612,19 @@ async function apiSyncNhi() {
   if (onLogin) {
     setStatus("🔒 尚未登入健保存摺 — 請先以健保卡登入後再試", "error");
     return;
+  }
+
+  // Backend mode: re-verify connectivity right here even if the banner
+  // last said ok. Between the previous check and this click the user
+  // may have stopped docker; without a fresh probe we'd start an upload
+  // that fails mid-flight after partial data has hit (or failed to hit)
+  // the backend. Cheap (≤5s) and saves a lot of confusion.
+  if (currentMode() === "backend") {
+    const ok = await testBackendConnection();
+    if (!ok) {
+      setStatus("⛔ 後端連線失敗 — 請看頂部 banner 的說明", "error");
+      return;
+    }
   }
 
   els.syncApiBtn.disabled = true;
@@ -373,6 +670,7 @@ async function apiSyncNhi() {
     type: "startNhiApiSync",
     payload: {
       tabId: tab.id,
+      mode: currentMode(),
       backend: els.backendUrl.value.trim(),
       syncApiKey: els.syncApiKey.value.trim(),
       nhiBase: "https://myhealthbank.nhi.gov.tw",
@@ -390,6 +688,13 @@ async function launch() {
   const smartAppLaunch = els.smartAppUrl.value.trim() || DEFAULT_SMART_APP_LAUNCH;
   if (!patientId) {
     setStatus("沒有病人身分證字號可以 launch — 請先填寫病人資料", "error");
+    return;
+  }
+  // Re-test connection even if banner shows ok — backend may have gone
+  // down since the last probe.
+  const ok = await testBackendConnection();
+  if (!ok) {
+    setStatus("⛔ 後端連線失敗 — 請看頂部 banner 的說明", "error");
     return;
   }
   setStatus("建立 launch context…", "info");

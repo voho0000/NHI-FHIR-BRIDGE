@@ -58,6 +58,23 @@
   `;
   document.documentElement.appendChild(host);
 
+  // The sidebar's assistant button + iframe panel are only useful in
+  // "上傳後端" mode — the iframe is a SMART app that talks to the local
+  // FHIR backend. In "下載到電腦" mode there's no backend to talk to,
+  // so hide the whole thing. Toggle live when the popup switches modes.
+  async function _applyModeVisibility() {
+    try {
+      const { syncMode } = await chrome.storage.sync.get("syncMode");
+      host.style.display = syncMode === "backend" ? "" : "none";
+    } catch {
+      host.style.display = "none";
+    }
+  }
+  _applyModeVisibility();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "sync" && "syncMode" in changes) _applyModeVisibility();
+  });
+
   const root = host.attachShadow({ mode: "open" });
   root.innerHTML = `
     <style>
@@ -307,8 +324,14 @@
   async function buildIframeUrl() {
     const cacheBust = `_=${Date.now()}`;
     if (!isContextAlive()) {
+      // Chrome invalidates a content script's chrome.* APIs the moment
+      // the extension itself is updated / reloaded. The script keeps
+      // running on the page but can no longer talk to storage / SW —
+      // user has to F5 the NHI tab so a fresh copy of sidebar.js gets
+      // injected. Phrase this without jargon.
       throw new Error(
-        "Extension was reloaded — please refresh this page (F5) to re-inject the sidebar."
+        "擴充功能剛更新過，請按 F5 重新整理這個頁面就能恢復助理面板。\n" +
+        "(Extension was just updated — press F5 on this page to reload the sidebar.)",
       );
     }
     const { patientOverride, backendUrl } = await chrome.storage.sync.get([
@@ -346,9 +369,14 @@
     let src;
     try { src = await buildIframeUrl(); }
     catch (err) {
-      emptyBox.innerHTML = `
-        <div style="color:#b91c1c">⚠ ${err.message}</div>
-      `;
+      // Use textContent + white-space:pre-line so multi-line bilingual
+      // messages from buildIframeUrl render with their line breaks
+      // intact (and we don't have to worry about HTML escaping).
+      emptyBox.textContent = "";
+      const div = document.createElement("div");
+      div.style.cssText = "color:#b91c1c; white-space:pre-line; line-height:1.6";
+      div.textContent = `⚠ ${err.message}`;
+      emptyBox.appendChild(div);
       return;
     }
     iframeEl = document.createElement("iframe");
@@ -389,4 +417,31 @@
   chrome.storage.local.get(STORAGE_KEY).then((d) => {
     if (d[STORAGE_KEY]) setOpen(true);
   }).catch(() => {});
+
+  // ── Sync-running iframe pause ──────────────────────────────────────
+  // While the extension's runNhiApiSync is in flight, the medical-note
+  // iframe competes with our NHI fan-out fetches for the tab's network
+  // + JS thread (we saw NHI fan-out time roughly triple when this iframe
+  // was active). Stash the iframe's src into about:blank during sync so
+  // its OAuth + FHIR calls stop hammering the network. Resume by
+  // re-loading from the saved src when sync finishes.
+  let _pausedSrc = null;
+  function pauseIframe() {
+    if (!iframeEl || _pausedSrc !== null) return;
+    _pausedSrc = iframeEl.src;
+    iframeEl.src = "about:blank";
+  }
+  function resumeIframe() {
+    if (!iframeEl || _pausedSrc === null) return;
+    iframeEl.src = _pausedSrc;
+    _pausedSrc = null;
+  }
+  chrome.storage.local.get("syncRunning").then((d) => {
+    if (d.syncRunning) pauseIframe();
+  }).catch(() => {});
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !("syncRunning" in changes)) return;
+    if (changes.syncRunning.newValue) pauseIframe();
+    else resumeIframe();
+  });
 })();

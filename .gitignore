@@ -8,6 +8,12 @@ venv/
 dist/
 build/
 
+# Chrome extension build output is intentionally committed so
+# non-developers can load `extension/dist/` straight after `git clone`
+# (no build step required). Re-run `npm run build:extension` before
+# each commit that touches `extension/src/` or `packages/mapper/`.
+!extension/dist/
+
 # Env
 .env
 .env.local

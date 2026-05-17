@@ -12,8 +12,13 @@
   },
   "permissions": ["activeTab", "storage", "scripting", "downloads", "alarms"],
   "host_permissions": [
-    "http://localhost:8010/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
     "https://myhealthbank.nhi.gov.tw/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "content_scripts": [
     {
