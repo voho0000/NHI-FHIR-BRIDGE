@@ -140,14 +140,18 @@ function refreshOverrideSummary() {
     els.ovSummary.textContent = "未設定";
     if (card) card.dataset.state = "empty";
   } else {
-    // ID always shown half-masked (P120740866 → P12074****) — that
-    // matches NHI 健康存摺's own UI convention and removes a stable
-    // shoulder-surfing target. Raw value still in chrome.storage and
-    // visible in the input field when the card is expanded.
-    // Name follows the toggle (民眾自用 預設關 = 真名 / multi-patient
-    // demo 開啟 = 遮罩).
-    const parts = [maskId(ov.id_no)];
+    // Name first (when present), then masked ID. Name → "the patient
+    // I'm working with" reads naturally first; ID is the technical
+    // detail. Previously the order was reversed, putting `P12074****`
+    // ahead of the actual person's name.
+    // ID always half-masked (P120740866 → P12074****) — matches NHI
+    // 健康存摺's own UI convention and removes a stable shoulder-
+    // surfing target. Raw value still in storage + the input field.
+    // Name follows the mask toggle (民眾自用 預設關 = 真名 /
+    // multi-patient demo 開啟 = 遮罩).
+    const parts = [];
     if (ov.name) parts.push(_maybeMask(ov.name));
+    parts.push(maskId(ov.id_no));
     els.ovSummary.textContent = `✓ ${parts.join("  ·  ")}`;
     if (card) card.dataset.state = "filled";
   }
