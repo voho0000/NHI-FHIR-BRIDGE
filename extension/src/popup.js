@@ -68,6 +68,7 @@ const els = {
   maskNameEnabled: document.getElementById("mask-name-enabled"),
   openNhiSection: document.getElementById("open-nhi-section"),
   openNhiBtn: document.getElementById("open-nhi-btn"),
+  nhiNeedsLoginSection: document.getElementById("nhi-needs-login-section"),
 };
 
 const NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
@@ -298,16 +299,19 @@ function _renderConnBanner() {
 function _refreshButtonStates() {
   // Sync button. Conditions, in priority order:
   //   1. on an NHI tab
-  //   2. backend mode → backend connected
-  //   3. gender filled (other patient fields all optional)
+  //   2. logged in to NHI (detected via background pre-flight)
+  //   3. backend mode → backend connected
+  //   4. gender filled (other patient fields all optional)
   // Whatever blocks the CTA also gets surfaced as an inline message
   // below the button — tooltips are invisible in the 360px popup.
   const onNhi = !els.syncApiBtn.dataset.offNhi;
+  const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
   const modeOk = currentMode() === "local" || _connState === "ok";
   const genderOk = !!els.ovGender?.value;
 
   let reason = "";
   if (!onNhi) reason = "請先切到健保存摺分頁";
+  else if (!loggedIn) reason = "健保存摺分頁尚未登入";
   else if (!modeOk) reason = "後端尚未連線（看上方紅色提示）";
   else if (!genderOk) reason = "請先在上方填「性別」並按確定";
 
@@ -933,6 +937,38 @@ async function init() {
   if (onNhi) delete els.syncApiBtn.dataset.offNhi;
   else els.syncApiBtn.dataset.offNhi = "1";
   if (els.openNhiSection) els.openNhiSection.hidden = onNhi;
+
+  // When on the NHI tab, ask background to verify there's an active
+  // session. The SW probes IHKE3410 with sessionStorage.token — cheap
+  // and only succeeds when the user has logged in. Anything but `true`
+  // (false, null, or no response) makes us assume "not logged in" so
+  // the user sees the actionable banner instead of mashing the CTA
+  // into a delayed "🔒 尚未登入" status.
+  if (onNhi && tab.id) {
+    chrome.runtime
+      .sendMessage({ type: "checkNhiLogin", tabId: tab.id })
+      .then((resp) => {
+        const loggedIn = resp?.loggedIn === true;
+        if (loggedIn) delete els.syncApiBtn.dataset.nhiLoggedIn;
+        else els.syncApiBtn.dataset.nhiLoggedIn = "no";
+        if (els.nhiNeedsLoginSection) {
+          els.nhiNeedsLoginSection.hidden = loggedIn;
+        }
+        _refreshButtonStates();
+      })
+      .catch(() => {
+        // If the probe fails (SW unreachable, etc), don't punish the
+        // user — leave the CTA enabled and let the sync's own session
+        // check surface a real error if needed.
+        delete els.syncApiBtn.dataset.nhiLoggedIn;
+        if (els.nhiNeedsLoginSection) els.nhiNeedsLoginSection.hidden = true;
+        _refreshButtonStates();
+      });
+  } else {
+    delete els.syncApiBtn.dataset.nhiLoggedIn;
+    if (els.nhiNeedsLoginSection) els.nhiNeedsLoginSection.hidden = true;
+  }
+
   _refreshButtonStates();
 
   // Re-attach to any sync that's currently running in the service worker.

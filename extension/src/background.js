@@ -798,6 +798,40 @@ const _LOCAL_PAGE_TYPE_ORDER = [
   "procedures",
 ];
 
+// Cheap pre-flight: does this NHI tab have an authenticated session?
+// Uses the same sessionStorage.token + lightweight API call pattern as
+// _maybeFetchPatientIdFromNhi. Doesn't return anything PII — just a
+// boolean for the popup to decide whether to surface a "log in first"
+// banner. Returns null when we can't tell (script-injection blocked,
+// timeout, etc.) so the popup can fall back to "enabled" rather than
+// scaring the user with a false negative.
+async function _checkNhiLoginState(tabId) {
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async () => {
+        const t = sessionStorage.getItem("token");
+        if (!t) return false;
+        try {
+          // Same endpoint as the cid auto-fetch — known to need an
+          // authenticated session and to be cheap.
+          const r = await fetch("/api/ihke3000/ihke3410s01/page_load", {
+            credentials: "same-origin",
+            headers: { Accept: "application/json", Authorization: `Bearer ${t}` },
+          });
+          // 401/403 → session token rejected. 200 → logged in.
+          return r.ok;
+        } catch {
+          return false;
+        }
+      },
+    });
+    return typeof result === "boolean" ? result : null;
+  } catch {
+    return null;
+  }
+}
+
 // NHI 健康存摺 endpoint IHKE3410S01 (我接種紀錄 / COVID 篩檢紀錄) happens
 // to carry the logged-in user's real citizen ID in the response (`cid`
 // field, e.g. "P120740866"). Use it to fill the patient_override's
@@ -1667,6 +1701,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg?.type === "clearSyncStatus") {
     chrome.storage.local.remove(STORAGE_KEY).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg?.type === "checkNhiLogin") {
+    _checkNhiLoginState(msg.tabId).then(
+      (state) => { try { sendResponse({ loggedIn: state }); } catch {} },
+      () => { try { sendResponse({ loggedIn: null }); } catch {} },
+    );
     return true;
   }
 });
