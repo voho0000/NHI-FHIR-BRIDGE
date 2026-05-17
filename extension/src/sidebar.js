@@ -5,8 +5,9 @@
 //    the NHI 健保存摺 page without CSP / X-Frame-Options issues.
 // 2. Keep the sidebar isolated from the host page's CSS via Shadow DOM
 //    so HIS-specific styles can't bleed in and break layout.
-// 3. Give a single toggle button (📋) at the right edge that slides the
-//    panel in/out. State persists across navigations on the same origin
+// 3. Give a single toggle button (prism mark — same as medical-note's
+//    app icon) at the right edge that slides the panel in/out. State
+//    persists across navigations on the same origin
 //    via chrome.storage.local.
 //
 // Not in scope here:
@@ -104,42 +105,38 @@
         top: 50%;
         right: 0;
         transform: translateY(-50%);
-        width: 34px;
-        height: 96px;
-        background: #1e3a8a;
+        width: 28px;
+        height: 72px;
+        background: #2563eb;
         color: white;
         border: none;
-        border-radius: 10px 0 0 10px;
+        border-radius: 8px 0 0 8px;
         cursor: pointer;
-        font-size: 14px;
-        font-weight: 600;
-        letter-spacing: 1px;
         font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        box-shadow: -2px 2px 8px rgba(0,0,0,0.15);
+        box-shadow: -1px 2px 6px rgba(0,0,0,0.12);
         pointer-events: auto;
         display: flex;
         align-items: center;
         justify-content: center;
-        writing-mode: vertical-rl;
-        text-orientation: mixed;
         transition: right 0.2s ease, background 0.2s ease, transform 0.2s ease;
         /* Subtle 3-cycle pulse on first paint so a brand-new user sees
            "oh that's a button". 3 cycles then stops — never gets in
            the way after. */
         animation: nfb-toggle-pulse 1.6s ease-out 3 forwards;
       }
+      .toggle svg { display: block; width: 20px; height: 20px; }
       .toggle:hover {
-        background: #1e40af;
+        background: #1d4ed8;
         transform: translateY(-50%) translateX(-2px);
       }
       .toggle:focus-visible {
-        outline: 2px solid #60a5fa;
+        outline: 2px solid #93c5fd;
         outline-offset: 2px;
       }
       @keyframes nfb-toggle-pulse {
-        0%, 100% { box-shadow: -2px 2px 8px rgba(0,0,0,0.15); }
-        50% { box-shadow: -2px 2px 8px rgba(0,0,0,0.15),
-                          0 0 0 6px rgba(59, 130, 246, 0.35); }
+        0%, 100% { box-shadow: -1px 2px 6px rgba(0,0,0,0.12); }
+        50% { box-shadow: -1px 2px 6px rgba(0,0,0,0.12),
+                          0 0 0 5px rgba(59, 130, 246, 0.35); }
       }
       @media (prefers-reduced-motion: reduce) {
         .toggle { animation: none; }
@@ -187,6 +184,12 @@
         justify-content: space-between;
         align-items: center;
       }
+      .header-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .header-mark { width: 16px; height: 16px; flex: 0 0 16px; }
       .header .close {
         background: none;
         border: none;
@@ -233,11 +236,41 @@
 
     <button class="toggle" id="toggle"
             title="點此開啟 NHI-FHIR Bridge 助理面板"
-            aria-label="開啟 NHI-FHIR Bridge 助理面板">📋 助理</button>
+            aria-label="開啟 NHI-FHIR Bridge 助理面板">
+      <!-- Prism mark — same shape as medical-note's app icon, so the
+           trigger visually matches the app it opens. currentColor
+           lets the white stroke inherit from .toggle's color: white. -->
+      <svg viewBox="0 0 256 256" fill="none" stroke="currentColor"
+           stroke-width="14" stroke-linejoin="round" stroke-linecap="round"
+           aria-hidden="true">
+        <path d="M 80 80 L 176 80"/>
+        <path d="M 80 80 L 48 176"/>
+        <path d="M 176 80 L 208 176"/>
+        <path d="M 48 176 L 208 176"/>
+        <path d="M 48 176 L 128 224 L 208 176"/>
+        <path d="M 80 80 L 128 176"/>
+        <path d="M 176 80 L 128 176"/>
+        <path d="M 128 176 L 128 224"/>
+      </svg>
+    </button>
     <div class="panel" id="panel">
       <div class="resizer" id="resizer" title="拖曳調整寬度"></div>
       <div class="header">
-        <span>🏥 NHI-FHIR Bridge 助理</span>
+        <span class="header-title">
+          <svg viewBox="0 0 256 256" fill="none" stroke="currentColor"
+               stroke-width="16" stroke-linejoin="round" stroke-linecap="round"
+               aria-hidden="true" class="header-mark">
+            <path d="M 80 80 L 176 80"/>
+            <path d="M 80 80 L 48 176"/>
+            <path d="M 176 80 L 208 176"/>
+            <path d="M 48 176 L 208 176"/>
+            <path d="M 48 176 L 128 224 L 208 176"/>
+            <path d="M 80 80 L 128 176"/>
+            <path d="M 176 80 L 128 176"/>
+            <path d="M 128 176 L 128 224"/>
+          </svg>
+          NHI-FHIR Bridge 助理
+        </span>
         <span style="display:flex;gap:4px">
           <button class="close" id="popout" title="移到獨立視窗 (pop-out)" aria-label="pop out">
             <!-- "external link / open in new window" icon. Inline SVG so
@@ -250,8 +283,25 @@
               <path d="M19 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6"/>
             </svg>
           </button>
-          <button class="close" id="reload" title="強制重新載入助理 (繞 cache)">🔄</button>
-          <button class="close" id="close" title="收起">✕</button>
+          <button class="close" id="reload" title="強制重新載入助理 (繞 cache)"
+                  aria-label="強制重新載入助理">
+            <!-- lucide RotateCw. Replaces unicode 🔄 which renders very
+                 differently across OSes / emoji fonts (especially Win). -->
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+              <path d="M21 3v5h-5"/>
+            </svg>
+          </button>
+          <button class="close" id="close" title="收起" aria-label="收起">
+            <!-- lucide X — matches the rest of the SVG icon family in
+                 this header so the whole row reads as one toolbar. -->
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
         </span>
       </div>
       <div class="empty" id="empty">
