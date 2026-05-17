@@ -1,9 +1,8 @@
 /**
  * page_type → mapper dispatch tables.
  *
- * Port of `backend/app/mapper/dispatch.py`. Both the primary structured
- * path (`/sync/upload-structured`) and the LLM fallback path
- * (`/sync/upload-html`) consume the same tables so output is identical.
+ * Consumed by backend's `/sync/upload-structured` and the extension's
+ * local-mode bundle assembler so both produce identical FHIR output.
  */
 
 import { mapAllergyIntolerance } from "./allergy";

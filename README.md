@@ -188,6 +188,7 @@ https://your-smart-app.example.com/launch
 | 變數 | 預設 | 用途 |
 |------|------|------|
 | `SYNC_API_KEY` | (空) | 保護所有 PHI 端點 (`/sync/*`、`/fhir/*`、`/smart/launch-context`、`/fhir/import`、`/fhir/export`)。**任何網路可達的部署必設**；空值時後端會印 console 警告 |
+| `DASHBOARD_PASSWORD` | (空) | Dashboard 自身的 shared password gate。設了之後 dashboard 會跳 `/login` 頁先要密碼；session cookie 有效 30 天。診間 / 多人共用一台機器時建議設 |
 | `ALLOWED_EXTENSION_IDS` | (空) | 允許走 CORS 的 chrome-extension ID（逗號分隔）。Production 部署建議只放發佈用的 ID |
 | `BIND_HOST` | `127.0.0.1` | 本機綁定 host。對 LAN 開放才需要設成 `0.0.0.0`（Docker compose 自動處理） |
 | `ALLOW_CORS_ORIGINS` | (空) | 額外允許的 CORS origin（逗號分隔） |
