@@ -278,6 +278,9 @@ async function savePatientOverride() {
   _markStep2Confirmed(true);
   refreshOverrideSummary();
   _refreshButtonStates();
+  // Successful save is THE intentional step-2 completion event — this
+  // is where the wizard is allowed to advance forward.
+  if (_wizardInitialized) _maybeAutoAdvance();
   if (els.patientOverrideDetails) els.patientOverrideDetails.open = false;
   // Make clear this is the identity save, not a medical-record sync —
   // 「病人資料」alone reads as "patient data" (medical) for some users.
@@ -566,13 +569,13 @@ function _refreshButtonStates() {
     !haveBackendPatient           ? "後端尚無此病人資料 — 先按「🔄 取得健保存摺資料」或下方「📤 把本地檔案上傳到後端」" :
                                     "";
 
-  // Wizard depends on the same inputs — refresh stepper + maybe auto-
-  // advance. Guard against the initial paint where _wizardInitialized
-  // hasn't run yet (init() calls _initWizard explicitly after).
-  if (_wizardInitialized) {
-    _refreshWizardUi();
-    _maybeAutoAdvance();
-  }
+  // Refresh the stepper UI on every state change, but DON'T auto-
+  // advance from here — incidental input changes (typing in a field
+  // while revisiting step 2) shouldn't yank the user forward. Auto-
+  // advance is only fired from the events that signal intent:
+  //   - login probe flipping to true → forward into step 2
+  //   - savePatientOverride success → forward into step 3
+  if (_wizardInitialized) _refreshWizardUi();
 }
 
 async function testBackendConnection() {
@@ -1228,6 +1231,10 @@ async function init() {
           els.nhiNeedsLoginSection.hidden = loggedIn;
         }
         _refreshButtonStates();
+        // Login probe completing positively is the step-1 intentional
+        // completion event — advance the wizard once if the user is
+        // currently looking at step 1.
+        if (loggedIn && _wizardInitialized) _maybeAutoAdvance();
       })
       .catch(() => {
         // If the probe fails (SW unreachable, etc), don't punish the
