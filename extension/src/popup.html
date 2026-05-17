@@ -421,45 +421,31 @@
       vertical-align: middle;
     }
     .help-icon:hover { color: #2563eb; }
-    /* Tooltip sourced from data-tip; line breaks rendered via white-space:
-       pre-line (we used &#10; in HTML which decodes to a real newline).
-       Right-anchored: the popup is 360px wide and every ⓘ sits near the
-       right edge — centering on the icon would clip ~half the tooltip.
-       Anchoring its right edge to the icon's right edge lets it grow
-       leftward into available space. */
-    .help-icon::before {
-      content: attr(data-tip);
-      position: absolute;
-      bottom: 100%;
-      right: -4px;
-      margin-bottom: 8px;
+    /* Tooltip — single shared element positioned by JS per hover. CSS
+       pseudo-elements can't be measured / repositioned, so they end up
+       clipping at one edge of the popup or another depending on which
+       icon you hover. JS placement keeps the tip inside the 360px popup
+       no matter where its trigger sits. */
+    .help-tooltip {
+      position: fixed;
+      max-width: 240px;
       padding: 6px 8px;
       background: #1f2937;
       color: white;
       font-size: 11px;
-      font-weight: normal;
       line-height: 1.5;
       border-radius: 4px;
       white-space: pre-line;
-      width: 240px;
       pointer-events: none;
       opacity: 0;
       visibility: hidden;
       transition: opacity 0.1s;
-      z-index: 10;
+      z-index: 100;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
-    .help-icon::after {
-      content: "";
-      position: absolute;
-      bottom: 100%;
-      right: 2px;       /* sit under the icon, not under the tooltip centre */
-      margin-bottom: -2px;
-      border: 5px solid transparent;
-      border-top-color: #1f2937;
-      pointer-events: none;
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.1s;
+    .help-tooltip.visible {
+      opacity: 1;
+      visibility: visible;
     }
     .help-icon:hover::before,
     .help-icon:hover::after {

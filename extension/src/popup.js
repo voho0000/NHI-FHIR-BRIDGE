@@ -705,6 +705,64 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
 });
 
+// ── ⓘ Help-icon tooltip ─────────────────────────────────────────────
+//
+// One shared <div> appended to the popup body. On hover of any
+// .help-icon, we copy its data-tip text and position the tooltip
+// inside the popup, clamping to its viewport so it can't clip off
+// either edge regardless of where the icon sits. (CSS pseudo-elements
+// can't be measured, so a pure-CSS approach inevitably picks one
+// anchor side and breaks for icons on the other side of the popup.)
+const _helpTip = document.createElement("div");
+_helpTip.className = "help-tooltip";
+document.body.appendChild(_helpTip);
+
+const VIEWPORT_MARGIN = 6; // keep this many px clear of popup edges
+
+function _showHelpTooltip(icon) {
+  _helpTip.textContent = icon.dataset.tip || icon.getAttribute("data-tip") || "";
+  _helpTip.classList.add("visible");
+
+  // Measure now that content is set.
+  const iconRect = icon.getBoundingClientRect();
+  const tipRect = _helpTip.getBoundingClientRect();
+  const viewportW = document.documentElement.clientWidth;
+  const viewportH = document.documentElement.clientHeight;
+
+  // Horizontal: prefer centered on the icon; clamp into [margin, vw-tip-margin].
+  let left = iconRect.left + iconRect.width / 2 - tipRect.width / 2;
+  if (left < VIEWPORT_MARGIN) left = VIEWPORT_MARGIN;
+  if (left + tipRect.width > viewportW - VIEWPORT_MARGIN) {
+    left = viewportW - VIEWPORT_MARGIN - tipRect.width;
+  }
+  // Vertical: prefer above the icon; flip below if there's no room up top.
+  let top = iconRect.top - tipRect.height - 6;
+  if (top < VIEWPORT_MARGIN) top = iconRect.bottom + 6;
+  // Final safety: clamp into viewport so very long tooltips can't bleed
+  // off the bottom either.
+  if (top + tipRect.height > viewportH - VIEWPORT_MARGIN) {
+    top = Math.max(VIEWPORT_MARGIN, viewportH - VIEWPORT_MARGIN - tipRect.height);
+  }
+
+  _helpTip.style.left = `${left}px`;
+  _helpTip.style.top = `${top}px`;
+}
+
+function _hideHelpTooltip() {
+  _helpTip.classList.remove("visible");
+}
+
+// Delegated hover handlers — works for icons added after popup load too
+// (e.g. when mode toggle reveals backend-only fields).
+document.addEventListener("mouseover", (e) => {
+  const icon = e.target.closest?.(".help-icon");
+  if (icon) _showHelpTooltip(icon);
+});
+document.addEventListener("mouseout", (e) => {
+  const icon = e.target.closest?.(".help-icon");
+  if (icon) _hideHelpTooltip();
+});
+
 async function init() {
   await loadSidebarEnabled();
 
