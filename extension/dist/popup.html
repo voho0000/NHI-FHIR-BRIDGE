@@ -520,60 +520,45 @@
     }
     .btn-danger:hover { background: #fef2f2; }
 
-    /* ── Patient card ──────────────────────────────────────────────── */
+    /* ── Patient panel (step 2) ───────────────────────────────────────
+       White panel matching step 3. No more colored fills based on
+       data-state — header status text alone conveys completion. */
     .patient-card {
       border: 1px solid #e5e7eb;
-      border-radius: 8px;
+      border-radius: 10px;
       background: white;
       overflow: hidden;
     }
-    .patient-card[data-state="empty"] {
-      border-color: #fcd34d;
-      background: #fffbeb;
-    }
-    .patient-card[data-state="filled"] {
-      border-color: #d1fae5;
-      background: #f0fdf4;
-    }
-    .patient-card > summary {
-      list-style: none;
-      cursor: pointer;
-      padding: 10px 12px;
+    .patient-card-header {
+      padding: 10px 14px;
       display: flex;
-      align-items: center;
-      gap: 8px;
+      align-items: baseline;
+      gap: 10px;
       font-size: 13px;
-      user-select: none;
+      border-bottom: 1px solid #f3f4f6;
     }
-    .patient-card > summary::-webkit-details-marker { display: none; }
-    .patient-card > summary::before {
-      content: "▸";
-      font-size: 10px;
+    .patient-card .pc-title { font-weight: 600; color: #111827; }
+    .patient-card .pc-status {
+      flex: 1;
       color: #9ca3af;
-      transition: transform 0.12s;
+      font-size: 12px;
+      text-align: right;
     }
-    .patient-card[open] > summary::before { transform: rotate(90deg); }
-    .patient-card .pc-title { font-weight: 600; }
-    .patient-card .pc-status { flex: 1; color: #6b7280; }
-    .patient-card[data-state="empty"] .pc-title { color: #92400e; }
-    .patient-card[data-state="empty"] .pc-status { color: #b45309; }
-    .patient-card[data-state="filled"] .pc-title { color: #065f46; }
-    .patient-card[data-state="filled"] .pc-status { color: #047857; font-weight: 500; }
+    .patient-card[data-state="filled"] .pc-status {
+      color: #047857;
+      font-weight: 500;
+    }
     .patient-card-body {
-      padding: 12px;
-      border-top: 1px solid rgba(0, 0, 0, 0.06);
+      padding: 12px 14px;
     }
-    .patient-card[data-state="empty"] .patient-card-body { border-top-color: rgba(217, 119, 6, 0.18); }
-    .patient-card[data-state="filled"] .patient-card-body { border-top-color: rgba(16, 185, 129, 0.2); }
     .patient-card-body .field { margin-bottom: 8px; }
     .patient-card-body .field:last-child { margin-bottom: 0; }
     .patient-card-body .help {
       font-size: 11px;
-      color: #78350f;
-      line-height: 1.5;
-      margin-bottom: 8px;
+      color: #6b7280;
+      line-height: 1.55;
+      margin-bottom: 10px;
     }
-    .patient-card[data-state="filled"] .patient-card-body .help { color: #4b5563; }
 
     /* ── Settings panel ────────────────────────────────────────────── */
     details.settings {
@@ -967,16 +952,17 @@
     <!-- ── STEP 2: 您的基本資料 ─────────────────────────────────── -->
     <div class="wizard-step" data-step="2">
 
-    <!-- 2a. Patient data card (gender + dob required) ─────────── -->
+    <!-- 2a. Patient data (gender + dob required). Plain panel — step 2
+              owns its own page now, no need to collapse this. -->
     <section class="section">
-      <details class="patient-card" id="patient-override" data-state="empty">
-        <summary>
+      <div class="patient-card" id="patient-override" data-state="empty">
+        <div class="patient-card-header">
           <span class="pc-title">您的基本資料</span>
           <span class="pc-status" id="override-summary">未設定</span>
-        </summary>
+        </div>
         <div class="patient-card-body">
           <div class="help">
-            ℹ️ <b>性別、生日必填</b>。其他可省略；身分證號按下「取得」時會自動帶入。
+            <b>性別、生日必填</b>。其他可省略；身分證號按下「取得」時會自動帶入。
           </div>
           <div class="field">
             <div class="label">身分證字號（選填）</div>
@@ -1002,11 +988,11 @@
             </div>
           </div>
           <div class="row" style="margin-top:10px">
-            <button class="btn-primary" id="ov-save-btn">✓ 確定</button>
+            <button class="btn-primary" id="ov-save-btn">確定</button>
             <button class="btn-secondary" id="ov-clear-btn">清除</button>
           </div>
         </div>
-      </details>
+      </div>
     </section>
 
     </div><!-- /STEP 2 -->
