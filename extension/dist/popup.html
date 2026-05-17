@@ -793,7 +793,7 @@
         </summary>
         <div class="patient-card-body">
           <div class="help">
-            ℹ️ <b>性別必填</b>，其他可省略。身分證號按下「取得」時會自動帶入。
+            ℹ️ <b>性別、生日必填</b>。其他可省略；身分證號按下「取得」時會自動帶入。
           </div>
           <div class="field">
             <div class="label">身分證字號（選填）</div>
@@ -805,8 +805,8 @@
           </div>
           <div class="row">
             <div class="field" style="flex:2">
-              <div class="label">生日（建議真實年份）</div>
-              <input type="date" id="ov-birth-date" />
+              <div class="label">生日 <span class="required">*</span></div>
+              <input type="date" id="ov-birth-date" required />
             </div>
             <div class="field" style="flex:1">
               <div class="label">性別 <span class="required">*</span></div>
