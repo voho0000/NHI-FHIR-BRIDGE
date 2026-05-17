@@ -494,22 +494,25 @@
     .btn-secondary:hover:not(:disabled) { background: #f9fafb; }
     .btn-secondary:disabled { color: #9ca3af; cursor: not-allowed; }
 
-    /* Launch SMART App — white-bg blue-outline, same palette family as
-       the primary 下載 / 取得 buttons so it doesn't look like a
-       different product. Reads as a secondary "open in app" action. */
+    /* Launch SMART App — tinted blue card with bold blue text. Same
+       palette family as the primary 下載 button (no "different product"
+       feel) but tinted-fill instead of solid-fill so it reads as the
+       secondary "open in app" action — second-loudest, not a perma-
+       disabled-looking outline. White-outline version was so faint
+       users couldn't tell it was clickable. */
     .btn-launch {
-      color: #2563eb;
-      border-color: #bfdbfe;
-      background: white;
-      font-weight: 500;
+      color: #1d4ed8;
+      border-color: #93c5fd;
+      background: #eff6ff;
+      font-weight: 600;
     }
     .btn-launch:hover:not(:disabled) {
-      background: #eff6ff;
-      border-color: #93c5fd;
+      background: #dbeafe;
+      border-color: #60a5fa;
     }
     .btn-launch:disabled {
       color: #9ca3af;
-      background: white;
+      background: #f9fafb;
       border-color: #e5e7eb;
     }
 
