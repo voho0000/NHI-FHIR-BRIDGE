@@ -20,6 +20,7 @@ import {
   dedupAdmissionDayAmb,
   linkEncountersInResources,
   mapPatient,
+  maskId,
   maskName,
   resolveSexStratifiedRanges,
 } from "@nhi-fhir-bridge/mapper";
@@ -969,7 +970,13 @@ async function _stashFhirBundle(bundle, patientId) {
   const ts =
     `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
     `-${pad(now.getHours())}${pad(now.getMinutes())}`;
-  const safePid = (patientId || "unknown").replace(/[^A-Za-z0-9_-]/g, "_");
+  // Half-mask the ID in the filename so the user's Downloads folder
+  // doesn't leak the full 身分證 (would be visible to anyone seeing
+  // a file listing or download-bar preview). `X` because `*` is
+  // invalid in Windows paths. Bundle CONTENTS still carry the real
+  // ID under Patient.id — file owner knows whose data it is.
+  const maskedPid = maskId(patientId || "unknown", "X");
+  const safePid = maskedPid.replace(/[^A-Za-z0-9_-]/g, "_");
   const filename = `nhi-${safePid}-${ts}.json`;
   const json = JSON.stringify(bundle, null, 2);
   await chrome.storage.local.set({

@@ -7,7 +7,7 @@
 //   4. Progress streamed back via chrome.storage.local.syncStatus.
 //   5. After sync completes, "🚀 開啟 SMART App" launches with that patient.
 
-import { maskName } from "@nhi-fhir-bridge/mapper";
+import { maskId, maskName } from "@nhi-fhir-bridge/mapper";
 
 const DEFAULT_BACKEND = "http://localhost:8010";
 // Default SMART app for a fresh install. Users can override via
@@ -134,10 +134,13 @@ function refreshOverrideSummary() {
     els.ovSummary.textContent = "未設定";
     if (card) card.dataset.state = "empty";
   } else {
-    // Summary line uses the masked form only when the user opted in
-    // (maskNameEnabled). Raw input is always in chrome.storage and
-    // visible in the input fields when the card is expanded.
-    const parts = [ov.id_no];
+    // ID always shown half-masked (P120740866 → P12074****) — that
+    // matches NHI 健康存摺's own UI convention and removes a stable
+    // shoulder-surfing target. Raw value still in chrome.storage and
+    // visible in the input field when the card is expanded.
+    // Name follows the toggle (民眾自用 預設關 = 真名 / multi-patient
+    // demo 開啟 = 遮罩).
+    const parts = [maskId(ov.id_no)];
     if (ov.name) parts.push(_maybeMask(ov.name));
     els.ovSummary.textContent = `✓ ${parts.join("  ·  ")}`;
     if (card) card.dataset.state = "filled";
@@ -187,8 +190,10 @@ async function savePatientOverride() {
   if (els.patientOverrideDetails) els.patientOverrideDetails.open = false;
   // Make clear this is the identity save, not a medical-record sync —
   // 「病人資料」alone reads as "patient data" (medical) for some users.
+  // ID half-masked in the toast for the same shoulder-surfing reason
+  // as the summary line above.
   const displayName = ov.name ? ` (${_maybeMask(ov.name)})` : "";
-  setStatus(`✅ 病人身份已記住：${ov.id_no}${displayName}`, "success");
+  setStatus(`✅ 病人身份已記住：${maskId(ov.id_no)}${displayName}`, "success");
 }
 
 async function clearPatientOverride() {

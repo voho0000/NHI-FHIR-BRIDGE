@@ -36,6 +36,25 @@ export function stableId(patientId: string, ...parts: string[]): string {
  *   John Smith → John S***
  *   John Q Smith → John *** Smith
  */
+/**
+ * Half-mask a Taiwan national ID for shoulder-surfing-safe display.
+ * Matches NHI 健康存摺's own `hid` convention (first 6 visible, last
+ * 4 hidden): `P120740866` → `P12074****`.
+ *
+ * `char` defaults to `*` for popup/toast display. Use `X` for filenames
+ * since `*` is invalid in Windows paths. The auto-generated
+ * `auto-XXXXXXXX` placeholders flow through unchanged (already
+ * non-identifying).
+ */
+export function maskId(id: string | null | undefined, char = "*"): string {
+  const s = (id ?? "").trim();
+  if (!s) return s;
+  if (/^[A-Z][12]\d{8}$/.test(s)) return s.slice(0, 6) + char.repeat(4);
+  if (s.startsWith("auto-")) return s;
+  if (s.length > 6) return s.slice(0, 2) + char.repeat(s.length - 4) + s.slice(-2);
+  return s;
+}
+
 export function maskName(name: string | null | undefined): string {
   const trimmed = (name ?? "").trim();
   if (!trimmed || trimmed === "Unknown") return trimmed;
