@@ -516,7 +516,7 @@
     .btn-danger {
       background: white;
       color: #b91c1c;
-      border: 1px solid #fecaca;
+      border: 1.5px solid #fca5a5;
     }
     .btn-danger:hover { background: #fef2f2; }
 
@@ -967,7 +967,7 @@
 
       <!-- 1a. User isn't on the NHI tab — shortcut to open it. -->
       <section class="section" id="open-nhi-section" hidden>
-        <button class="btn-primary" id="open-nhi-btn" style="background:#0ea5e9">
+        <button class="btn-primary" id="open-nhi-btn">
           🔗 開啟健保存摺登入
         </button>
         <div class="hint">
@@ -988,7 +988,10 @@
         <div class="login-ok">
           <b>✅ 健保存摺已登入</b>
           可以開始取得資料了。
-          <span class="next-hint">↓ 接著確認下方資料</span>
+          <span class="next-hint" id="login-ok-next"
+                style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">
+            → 步驟 ② 確認您的資料
+          </span>
         </div>
       </section>
     </div>
@@ -1087,7 +1090,7 @@
             </label>
             <label class="mode-opt" title="進階：寫入你自己機器跑的本機 Docker 後端，搭配 Dashboard / SMART App 使用。仍然不上 NHI 或雲端。">
               <input type="radio" name="sync-mode" value="backend" />
-              本機後端
+              本機伺服器
             </label>
           </div>
         </div>
@@ -1237,7 +1240,7 @@
 
   <footer class="footer">
     <a href="#" id="dashboard-link" class="backend-only" target="_blank">Dashboard ↗</a>
-    <span id="version">v0.2.0</span>
+    <span id="version"></span>
   </footer>
 
   <script src="popup.js"></script>
