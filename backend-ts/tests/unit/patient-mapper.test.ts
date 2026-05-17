@@ -5,7 +5,7 @@
 import { describe, expect, test } from "vitest";
 
 import * as systems from "@nhi-fhir-bridge/mapper";
-import { looksLikeTwNationalId, mapPatient, maskName } from "@nhi-fhir-bridge/mapper";
+import { looksLikeTwNationalId, mapPatient, maskId, maskName } from "@nhi-fhir-bridge/mapper";
 
 const PATIENT_ID = "A123456789";
 
@@ -127,5 +127,34 @@ describe("maskName", () => {
   });
   test("trims whitespace first", () => {
     expect(maskName("  郭一新  ")).toBe("郭O新");
+  });
+});
+
+describe("maskId", () => {
+  test("Taiwan national ID (1+9): first 6 visible, last 4 masked", () => {
+    expect(maskId("P123456789")).toBe("P12345****");
+    expect(maskId("A123456789")).toBe("A12345****");
+    expect(maskId("B223456789")).toBe("B22345****");
+  });
+  test("custom mask char (X for filenames)", () => {
+    expect(maskId("P123456789", "X")).toBe("P12345XXXX");
+  });
+  test("auto-XXXXXXXX placeholders pass through unchanged", () => {
+    expect(maskId("auto-c7bdf544")).toBe("auto-c7bdf544");
+  });
+  test("non-TWID identifiers (mid-length): keep first 2 + last 2", () => {
+    expect(maskId("ABC1234567")).toBe("AB******67");
+  });
+  test("very short identifiers pass through", () => {
+    expect(maskId("A1")).toBe("A1");
+    expect(maskId("ABC")).toBe("ABC");
+  });
+  test("empty / null / undefined pass through", () => {
+    expect(maskId("")).toBe("");
+    expect(maskId(null)).toBe("");
+    expect(maskId(undefined)).toBe("");
+  });
+  test("trims whitespace first", () => {
+    expect(maskId("  P123456789  ")).toBe("P12345****");
   });
 });
