@@ -1,7 +1,7 @@
 # NHI-FHIR-BRIDGE
 
-[![tests](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/test.yml/badge.svg)](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/test.yml)
-[![lint](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/lint.yml/badge.svg)](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/lint.yml)
+[![backend-ts + extension](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/backend-ts.yml/badge.svg)](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/backend-ts.yml)
+[![release](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/release.yml/badge.svg)](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/release.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > 把台灣健保署**健康存摺**裡的就醫、用藥、檢驗、影像紀錄，**自動轉成 FHIR R4 標準格式**，讓任何 SMART on FHIR App 都能查得到。
@@ -79,7 +79,8 @@ flowchart LR
 - 填身分證字號 + 姓名 + 生日 + 性別 → 儲存
 - 開新分頁登入 https://myhealthbank.nhi.gov.tw/
 - 回 popup，按「**📥 同步健保存摺資料**」
-- ~30 秒後，瀏覽器自動下載 `nhi-{身分證}-{日期}.json`
+- ~15–30 秒（看 NHI 速度）後 popup 出現「📥 下載 FHIR Bundle」按鈕 → 按它把檔案存到電腦
+- 檔名格式：`nhi-{身分證}-{YYYYMMDD-HHMM}.json`（本地時間）
 
 ✅ 完成。檔案就是符合 FHIR R4 標準的 Bundle，可丟給任何能讀 FHIR 的軟體。
 
@@ -114,9 +115,17 @@ docker compose up -d
 **2. 切換 Extension 模式**
 
 Extension popup → 上方「輸出方式」改成「**上傳後端**」即可。Backend URL
-預設 `http://localhost:8010` 不用改；自架其他位置就改進階設定那欄。
+預設 `http://localhost:8010` 不用改；自架其他位置（例如 `http://192.168.1.100:8010`）就到「⚙️ 進階設定」填新的 URL，
+第一次 Chrome 會跳出權限對話框，按「允許」就好。
 
-之後流程跟模式 A 一樣，但同步完是上傳到後端而非下載檔案。Dashboard 立刻看到新增的 Patient。
+popup 最上方會出現綠色「**🟢 已連線**」banner — 沒有 banner 不要按 sync，
+表示 backend 還沒起來或設定錯了，banner 會直接告訴你原因（例如「請執行 `docker compose up -d`」）。
+
+之後流程跟模式 A 一樣，差別在：
+- 資料**也會**寫到 backend 的 FHIR Store（Dashboard 立刻看到新增的 Patient）
+- 同時還是會產生一個下載按鈕 — 內容是 backend 目前累積的完整 Bundle（這次 + 過往）
+
+`http://localhost:3010` 打開 Dashboard 可以多病人瀏覽 + 一鍵 launch SMART App。
 
 ---
 
@@ -171,7 +180,7 @@ https://your-smart-app.example.com/launch
 
 ## 環境變數參考
 
-完整變數列表（**所有都選填，本機開發直接 `docker compose up --build` 即可**）：
+完整變數列表（**所有都選填，本機開發直接 `docker compose up -d` 即可**）：
 
 | 變數 | 預設 | 用途 |
 |------|------|------|
@@ -236,11 +245,24 @@ docker compose logs --tail=100 backend | grep -E "upload-structured|ERROR"
 
 ### Q6: 如果想清空所有資料重來？
 
+Backend 模式（SQLite 跑在 Docker 內部 named volume）：
+
 ```bash
-docker compose down
-rm -f data/ehr_bridge.db
-docker compose up --build
+docker compose down -v          # -v 連 named volume 一起刪
+docker compose up -d
 ```
+
+純 Extension 模式（沒 backend）：popup 上的「🗑️ 清除待下載檔案」按鈕清掉
+chrome.storage 裡的暫存 Bundle；下次 sync 會重新產生。Extension 自己沒長期儲存資料。
+
+### Q7: 為什麼 popup 上面顯示「✗ 連不上後端」？
+
+「上傳後端」模式才會看到這個 banner。最常見原因：
+
+1. **Backend 沒啟動** → 執行 `docker compose up -d`
+2. **URL 設錯** → 看「⚙️ 進階設定 → Backend URL」是不是指對地方
+3. **Chrome 沒給跨來源權限**（自架 server 時）→ 重新開 popup，當權限對話框跳出時按「允許」
+4. **5 秒逾時** → backend 剛啟動還在 migration，等 30 秒再按 banner 上的「重試」
 
 ---
 
@@ -305,22 +327,50 @@ OLLAMA_MODEL=qwen2.5vl:7b
 ## 專案結構
 
 ```
-NHI-FHIR-BRIDGE/
-├── backend/                    # FastAPI 後端
-│   ├── app/
-│   │   ├── api/                # FHIR / SMART / sync endpoints
-│   │   ├── core/               # config, database
-│   │   ├── fhir/               # FHIR store, CapabilityStatement, code systems
-│   │   ├── mapper/             # 8 個 FHIR mappers + LOINC 對照表 + parsers
-│   │   ├── smart/              # SMART OAuth2 實作
-│   │   └── fallback/           # HTML + LLM 備援路徑 (預設不啟用)
-│   ├── alembic/                # DB migration
-│   └── tests/                  # pytest 單元 + 整合測試
-├── extension/                  # Chrome 擴充功能 (MV3)
-├── frontend/                   # Next.js Dashboard
-├── docs/                       # 架構文件
-├── docker-compose.yml
+NHI-FHIR-BRIDGE/                     # npm workspaces monorepo
+├── packages/
+│   └── mapper/                      # @nhi-fhir-bridge/mapper —
+│       └── src/                     #   NHI → FHIR R4 pure mapping
+│                                    #   logic, 同時給 backend + extension import
+├── backend-ts/                      # Hono 後端 (TypeScript)
+│   ├── src/
+│   │   ├── api/                     # /fhir /smart /sync routes
+│   │   ├── core/                    # config, database, security, migrate
+│   │   ├── fhir/                    # FHIR store, CapabilityStatement
+│   │   ├── smart/                   # SMART OAuth2 + PKCE
+│   │   ├── fallback/                # LLM HTML 萃取備援 (預設關閉)
+│   │   └── main.ts                  # Hono app + CORS + lifespan
+│   ├── drizzle/                     # SQL migration (idempotent)
+│   └── tests/                       # vitest 單元測試
+├── extension/                       # Chrome MV3 擴充功能
+│   ├── src/                         # 開發 source
+│   ├── dist/                        # build 產出（commit 進 git，user 直接 load）
+│   └── build.mjs                    # esbuild 打包腳本
+├── frontend/                        # Next.js Dashboard
+├── docs/                            # 架構文件
+├── docker-compose.yml               # backend-ts + frontend
+├── docker-compose.python.yml        # 舊 Python backend（保留參考用）
 └── .env.example
+```
+
+### 開發者：從 source 跑 / 改 code
+
+```bash
+git clone https://github.com/voho0000/NHI-FHIR-BRIDGE.git
+cd NHI-FHIR-BRIDGE
+npm install                          # 安裝 workspaces 全部依賴
+
+# Backend
+docker compose up -d                 # 跑 backend + dashboard
+# 或本機直跑：
+cd backend-ts && npm run dev
+
+# Extension（改完 src/ 要重 build）
+npm run build:extension              # 從 repo root 跑
+# 或開發 watch mode：
+cd extension && npm run dev
+
+# 然後 chrome://extensions → 重新整理 ⟳ extension 卡片
 ```
 
 ---
