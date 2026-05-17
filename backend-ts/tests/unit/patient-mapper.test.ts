@@ -5,7 +5,13 @@
 import { describe, expect, test } from "vitest";
 
 import * as systems from "@nhi-fhir-bridge/mapper";
-import { looksLikeTwNationalId, mapPatient, maskId, maskName } from "@nhi-fhir-bridge/mapper";
+import {
+  derivePatientId,
+  looksLikeTwNationalId,
+  mapPatient,
+  maskId,
+  maskName,
+} from "@nhi-fhir-bridge/mapper";
 
 const PATIENT_ID = "A123456789";
 
@@ -41,7 +47,11 @@ describe("mapPatient", () => {
   test("minimum shape", () => {
     const r = mapPatient({ identifier: PATIENT_ID, name: "陳大文" });
     expect(r.resourceType).toBe("Patient");
-    expect(r.id).toBe(PATIENT_ID);
+    // Patient.id is the hashed/salted form (FHIR R4 §2.20 — no PHI in
+    // logical id). The raw national ID lives in identifier[].value.
+    expect(r.id).toBe(derivePatientId(PATIENT_ID));
+    expect(r.id).not.toBe(PATIENT_ID);
+    expect(r.identifier[0].value).toBe(PATIENT_ID);
     // mapPatient transcribes the name as-given — the caller decides
     // whether to pre-mask before calling.
     expect(r.name.some((n: any) => n.text === "陳大文")).toBe(true);
@@ -68,9 +78,10 @@ describe("mapPatient", () => {
     expect(r.birthDate).toBe("1980-05-15");
   });
 
-  test("missing ID falls back to 'unknown'", () => {
+  test("missing ID falls back to hashed 'unknown'", () => {
     const r = mapPatient({ name: "Foo" });
-    expect(r.id).toBe("unknown");
+    expect(r.id).toBe(derivePatientId("unknown"));
+    expect(r.identifier[0].value).toBe("unknown");
   });
 
   test("CJK name splits to family/given (raw, no internal masking)", () => {

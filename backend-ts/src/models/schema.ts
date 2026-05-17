@@ -144,6 +144,20 @@ export const auditLog = sqliteTable(
   }),
 );
 
+/**
+ * Single-row key/value bag for install-scoped runtime config the backend
+ * needs to persist but doesn't fit a dedicated table. First use case:
+ * the salt mixed into stableId() / derivePatientId() so leaked Bundles
+ * can't be brute-forced back to a national ID.
+ */
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key", { length: 64 }).primaryKey(),
+  value: text("value").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+});
+
 // Convenience type exports for use elsewhere.
 export type FHIRResource = typeof fhirResources.$inferSelect;
 export type NewFHIRResource = typeof fhirResources.$inferInsert;

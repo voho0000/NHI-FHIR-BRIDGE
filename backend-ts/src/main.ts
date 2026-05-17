@@ -7,10 +7,14 @@
  * (strict allow-list for PHI + wildcard for SMART discovery).
  */
 
+import { randomBytes } from "node:crypto";
+
 import { serve } from "@hono/node-server";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+
+import { setStableIdSalt } from "@nhi-fhir-bridge/mapper";
 
 import { fhirApi } from "@/api/fhir";
 import { smartApi } from "@/api/smart";
@@ -18,8 +22,22 @@ import { syncApi } from "@/api/sync";
 import { settings } from "@/core/config";
 import { db } from "@/core/database";
 import { runMigrations } from "@/core/migrate";
-import { syncLogs } from "@/models/schema";
+import { appSettings, syncLogs } from "@/models/schema";
 import { smartAuth } from "@/smart/oauth2";
+
+const STABLE_ID_SALT_KEY = "stable_id_salt";
+
+function loadOrCreateStableIdSalt(): string {
+  const existing = db
+    .select()
+    .from(appSettings)
+    .where(eq(appSettings.key, STABLE_ID_SALT_KEY))
+    .get();
+  if (existing) return existing.value;
+  const salt = randomBytes(32).toString("hex");
+  db.insert(appSettings).values({ key: STABLE_ID_SALT_KEY, value: salt }).run();
+  return salt;
+}
 
 // ── CORS allow-list ──────────────────────────────────────────────────
 
@@ -116,6 +134,10 @@ export function createApp(): Hono {
 
 export function runStartup(): void {
   runMigrations();
+  // Salt has to be loaded AFTER migrations (the app_settings table is
+  // created by 0001) but BEFORE anything touches the mapper module —
+  // every stableId() call from here on mixes this in.
+  setStableIdSalt(loadOrCreateStableIdSalt());
   smartAuth.seedDemoClients();
 
   // Reap zombie sync logs from a previous interrupted run. If the process
