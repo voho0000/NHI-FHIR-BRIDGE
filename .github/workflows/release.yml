@@ -1,0 +1,75 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag name to publish (e.g. v0.2.1). Created if missing."
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build extension
+        run: npm run build --workspace extension
+
+      - name: Set version + tag
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG=${GITHUB_REF#refs/tags/}
+          else
+            TAG=${{ github.event.inputs.tag }}
+          fi
+          VER=${TAG#v}
+          echo "tag=$TAG"     >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Zip extension/dist
+        run: |
+          cd extension
+          zip -r ../nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip dist
+          cd ..
+          ls -la *.zip
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: NHI-FHIR-Bridge ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
+          body: |
+            ## Quick start
+
+            **Extension only (本地模式, 不需後端):**
+            1. Download `nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip` below.
+            2. Unzip somewhere (e.g. `~/nhi-fhir-bridge/`).
+            3. Chrome → `chrome://extensions/` → enable Developer mode → **Load unpacked** → select the unzipped `dist/` folder.
+            4. Open NHI 健康存摺, fill in patient ID, click 「📥 同步健保存摺資料」. A FHIR JSON file downloads to your machine.
+
+            **With dashboard + SMART app (後端模式):**
+            ```sh
+            git clone https://github.com/${{ github.repository }}.git
+            cd $(basename ${{ github.repository }})
+            docker compose up -d
+            ```
+            Then in the extension popup, switch to 「上傳後端」mode.

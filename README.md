@@ -12,13 +12,19 @@
 
 健保署「健康存摺」(`myhealthbank.nhi.gov.tw`) 雖然存了你看過的所有醫院紀錄，但只能在他們網站上瀏覽，**沒辦法匯出**、**沒有 API**、**無法跟其他系統串接**。
 
-NHI-FHIR-BRIDGE 是一個跑在**你自己電腦上**的工具，可以：
+NHI-FHIR-BRIDGE 是一個跑在**你自己電腦上**的工具。有兩種使用方式：
 
-- ✅ 一鍵把健康存摺裡的資料**同步到符合國際標準 FHIR R4** 的本地資料庫
-- ✅ 透過 Dashboard 把任一病人的資料**匯出成 FHIR Bundle JSON**
-- ✅ 用內建的 **SMART on FHIR App** 查看資料，或串接你自己/別人寫的 SMART App
-- ✅ **不需要任何 API key**（預設 API 直連模式不用 LLM）
-- ✅ **資料不離開你的電腦**（除非你選擇啟用 LLM fallback）
+**🟢 模式 A：純 Extension（下載到電腦）**
+- 只裝 Chrome 擴充功能，**完全不需要後端**
+- 健保存摺資料 → FHIR R4 → 下載成 JSON 檔到電腦
+- 適合：個人臨床研究、個人病歷備份、單次匯出
+- **PHI 不會離開你的瀏覽器**
+
+**🔵 模式 B：Extension + Backend（上傳後端）**
+- Extension + 一行 `docker compose up -d` 起後端 + Dashboard
+- 多次同步累積到本地 FHIR Server，Dashboard 瀏覽 / 一鍵 launch SMART App
+- 適合：診間多病人累積、SMART App 整合、團隊共用
+- **資料一樣只在你/團隊內部電腦**
 
 ---
 
@@ -27,15 +33,17 @@ NHI-FHIR-BRIDGE 是一個跑在**你自己電腦上**的工具，可以：
 ```mermaid
 flowchart LR
   user["使用者瀏覽器<br/>(已登入健康存摺)"]
-  ext["Chrome Extension"]
-  backend["FastAPI 後端<br/>:8010"]
+  ext["Chrome Extension<br/>(內建 mapper)"]
+  file["FHIR Bundle JSON<br/>本機下載檔"]
+  backend["Hono Backend<br/>:8010 (TS)"]
   db[("SQLite<br/>FHIR Store")]
   dash["Next.js Dashboard<br/>:3010"]
   smart["SMART App<br/>(臨床應用)"]
 
   user -->|tab cookies| ext
   ext -->|GET /api/ihke3000/...| user
-  ext -->|POST /sync/upload-structured| backend
+  ext -. 模式 A：下載到電腦 .-> file
+  ext -- 模式 B：上傳後端 --> backend
   backend --> db
   dash -->|GET /fhir/*| backend
   smart -->|OAuth2 + GET /fhir/*| backend
@@ -45,60 +53,76 @@ flowchart LR
 
 ---
 
-## 🚀 快速開始（首次安裝約 10 分鐘）
+## 🚀 快速開始
 
-### 你需要
+### 🟢 模式 A — 純 Extension（最快，~2 分鐘）
 
-- Docker + Docker Compose（[安裝指南](https://docs.docker.com/get-docker/)）
-- Chrome 瀏覽器
-- 健保卡 + 註冊密碼 / 自然人憑證（登入健康存摺用）
+不會程式也能用。完全不需要 Docker / Node / 任何指令。
+
+**1. 下載 Extension**
+
+到 [Releases 頁面](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest)下載最新的
+`nhi-fhir-bridge-extension-vX.Y.Z.zip`，解壓到任意位置（例如 `~/nhi-fhir-bridge/`）。
+
+**2. 載入到 Chrome**
+
+1. Chrome 網址列輸入 `chrome://extensions`
+2. 右上角開啟「**開發人員模式**」
+3. 左上角點「**載入未封裝項目**」
+4. 選擇剛解壓出來的 **`dist/` 資料夾**
+5. 工具列出現 🏥 **NHI-FHIR Bridge** 圖示
+
+**3. 設定 + 同步**
+
+點工具列圖示。popup 預設「**下載到電腦**」模式。
+
+- 填身分證字號 + 姓名 + 生日 + 性別 → 儲存
+- 開新分頁登入 https://myhealthbank.nhi.gov.tw/
+- 回 popup，按「**📥 同步健保存摺資料**」
+- ~30 秒後，瀏覽器自動下載 `nhi-{身分證}-{日期}.json`
+
+✅ 完成。檔案就是符合 FHIR R4 標準的 Bundle，可丟給任何能讀 FHIR 的軟體。
 
 ---
 
-### Step 1：取得程式碼
+### 🔵 模式 B — Extension + Backend（多了 dashboard / SMART app）
+
+如果你需要：
+- 把多次同步**累積在本地 FHIR Server**
+- 用 **Dashboard** 看多個病人
+- 一鍵 launch **SMART on FHIR App** 看資料
+
+那加跑後端。多兩步：
+
+**前置需要**：[安裝 Docker Desktop](https://docs.docker.com/get-docker/)
+
+**1. 取得程式碼 + 啟動後端**
 
 ```bash
 git clone https://github.com/voho0000/NHI-FHIR-BRIDGE.git
 cd NHI-FHIR-BRIDGE
+docker compose up -d
 ```
 
----
-
-### Step 2：啟動服務
-
-```bash
-docker compose up --build
-```
-
-第一次 build 大約 1–2 分鐘。完成後你會看到：
-
-```
-backend-1  | INFO  [alembic.runtime.migration] Running upgrade -> ...
-backend-1  | INFO:     Uvicorn running on http://0.0.0.0:8010
-frontend-1 | ✓ Ready in 1.4s
-```
-
-服務跑起來後：
+第一次 build 約 1–2 分鐘。跑起來後：
 
 | 服務 | 網址 |
 |------|------|
 | Dashboard | http://localhost:3010 |
 | 後端 FHIR API | http://localhost:8010 |
-| API 文件 (Swagger) | http://localhost:8010/docs |
+
+**2. 切換 Extension 模式**
+
+Extension popup → 上方「輸出方式」改成「**上傳後端**」即可。Backend URL
+預設 `http://localhost:8010` 不用改；自架其他位置就改進階設定那欄。
+
+之後流程跟模式 A 一樣，但同步完是上傳到後端而非下載檔案。Dashboard 立刻看到新增的 Patient。
 
 ---
 
-### Step 3：載入 Chrome 擴充功能
+### Step 詳細說明（模式共用）
 
-1. Chrome 網址列輸入 `chrome://extensions`
-2. 右上角開啟「**開發人員模式**」
-3. 左上角點「**載入未封裝項目**」
-4. 選擇 NHI-FHIR-BRIDGE 資料夾裡的 **`extension/` 子資料夾**
-5. 工具列出現 🏥 **NHI-FHIR Bridge** 圖示
-
----
-
-### Step 4：填入身分證字號
+#### 填入身分證字號
 
 點工具列的擴充功能圖示，會跳出 popup。展開「**病人資料**」區塊：
 
@@ -113,31 +137,13 @@ frontend-1 | ✓ Ready in 1.4s
 
 > **為什麼要手動填？** 健康存摺的個人資料頁通常用圖片渲染身分證號，程式無法可靠地抓出來。手動填一次就好，之後同步都會用這個。
 
----
-
-### Step 5：登入健康存摺
+#### 登入健康存摺
 
 新分頁開 https://myhealthbank.nhi.gov.tw/，用健保卡 + 註冊密碼登入。
 
----
+#### Backend 模式專屬：看資料 / 啟動 SMART App
 
-### Step 6：開始同步！
-
-回到擴充功能 popup，下面有個大綠按鈕：
-
-```
-📥 同步健保存摺資料
-```
-
-按下去。擴充功能會平行打 NHI 的 13+ 個 JSON API endpoint，把資料丟給後端 mapper。**通常 10–30 秒完成**，看你的病歷量。
-
-進度會即時顯示在 popup 裡。途中可以關掉 popup，背景會繼續跑。
-
----
-
-### Step 7：看資料
-
-打開 http://localhost:3010，Dashboard 會列出你的 FHIR Patient。每個 Patient 卡片下面：
+打開 http://localhost:3010，Dashboard 會列出 FHIR Patient。每個 Patient 卡片下面：
 
 | 按鈕 | 功能 |
 |------|------|

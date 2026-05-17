@@ -1,0 +1,55 @@
+name: backend-ts + extension
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install (workspaces)
+        run: npm ci
+
+      - name: Type-check (backend)
+        working-directory: backend-ts
+        run: npx tsc --noEmit
+
+      - name: Lint (biome)
+        working-directory: backend-ts
+        run: npx biome check src tests
+
+      - name: Test (vitest)
+        working-directory: backend-ts
+        run: npx vitest run
+
+      - name: Apply migrations
+        working-directory: backend-ts
+        env:
+          DATABASE_FILE: /tmp/ci.db
+        run: npx tsx src/core/migrate.ts
+
+      - name: Build extension
+        run: npm run build --workspace extension
+
+      - name: Verify extension/dist artefacts
+        run: |
+          test -f extension/dist/manifest.json
+          test -f extension/dist/background.js
+          test -f extension/dist/popup.html
+          test -f extension/dist/popup.js
+          test -f extension/dist/sidebar.js
+          # background.js must contain bundled mapper symbols
+          grep -q "linkEncountersInResources" extension/dist/background.js
