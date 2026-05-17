@@ -418,7 +418,9 @@ function _renderDataState() {
       break;
     case "absent":
       bs.className = "data-state-value empty";
-      bs.textContent = "⚠ 尚無此病人 — 請先按下方「同步」或上傳本地 Bundle";
+      // Card sits *below* the 📥 同步 button in the popup layout, so
+      // tell the user to look up, not down.
+      bs.textContent = "⚠ 尚無此病人 — 請先按上方「同步」或下方上傳本地 Bundle";
       break;
     case "present": {
       const count = _backendPatient.count;
