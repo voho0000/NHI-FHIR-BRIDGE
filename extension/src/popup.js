@@ -34,6 +34,7 @@ const els = {
   syncApiKey: document.getElementById("sync-api-key"),
   smartAppUrl: document.getElementById("smart-app-url"),
   syncApiBtn: document.getElementById("sync-api-btn"),
+  syncBlockedReason: document.getElementById("sync-blocked-reason"),
   apiSyncRange: document.getElementById("api-sync-range"),
   stopBtn: document.getElementById("stop-btn"),
   ovIdNo: document.getElementById("ov-id-no"),
@@ -199,6 +200,7 @@ async function savePatientOverride() {
   }
   await chrome.storage.local.set({ patientOverride: ov });
   refreshOverrideSummary();
+  _refreshButtonStates();
   if (els.patientOverrideDetails) els.patientOverrideDetails.open = false;
   // Make clear this is the identity save, not a medical-record sync —
   // 「病人資料」alone reads as "patient data" (medical) for some users.
@@ -215,6 +217,7 @@ async function clearPatientOverride() {
   els.ovBirthDate.value = "";
   els.ovGender.value = "";
   refreshOverrideSummary();
+  _refreshButtonStates();
   if (els.patientOverrideDetails) els.patientOverrideDetails.open = true;
   setStatus("已清除病人資料", "info");
 }
@@ -293,15 +296,27 @@ function _renderConnBanner() {
 }
 
 function _refreshButtonStates() {
-  // Sync button: NHI tab required (set elsewhere via syncApiBtn.disabled).
-  // In backend mode, additionally require conn === ok.
-  // In local mode, conn doesn't apply.
+  // Sync button. Conditions, in priority order:
+  //   1. on an NHI tab
+  //   2. backend mode → backend connected
+  //   3. gender filled (other patient fields all optional)
+  // Whatever blocks the CTA also gets surfaced as an inline message
+  // below the button — tooltips are invisible in the 360px popup.
   const onNhi = !els.syncApiBtn.dataset.offNhi;
   const modeOk = currentMode() === "local" || _connState === "ok";
-  els.syncApiBtn.disabled = !(onNhi && modeOk);
-  els.syncApiBtn.title = !onNhi
-    ? "請先切到健保存摺分頁再取得資料"
-    : (!modeOk ? "後端尚未連線" : "");
+  const genderOk = !!els.ovGender?.value;
+
+  let reason = "";
+  if (!onNhi) reason = "請先切到健保存摺分頁";
+  else if (!modeOk) reason = "後端尚未連線（看上方紅色提示）";
+  else if (!genderOk) reason = "請先在上方填「性別」並按確定";
+
+  els.syncApiBtn.disabled = reason !== "";
+  els.syncApiBtn.title = reason;
+  if (els.syncBlockedReason) {
+    els.syncBlockedReason.textContent = reason ? `⚠️ ${reason}` : "";
+    els.syncBlockedReason.hidden = reason === "";
+  }
 
   // Launch button: backend mode + conn ok + patient set + backend
   // actually has this patient (otherwise the SMART app launches into

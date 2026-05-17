@@ -129,10 +129,9 @@ export default function Dashboard() {
   const wipePatient = async (patientId: string, patientName?: string) => {
     const label = patientName ? `${patientName} (${patientId})` : patientId;
     if (!confirm(
-      `確定要刪除 ${label} 的所有 FHIR 資料嗎？\n\n` +
-      `這會清掉 Patient + Observations + MedicationRequests + DiagnosticReports + ` +
-      `Encounters + Procedures + Allergies + Conditions。動作無法 undo。\n\n` +
-      `通常用於：清理舊版 sync 留下的重複資料；之後再重新 sync 一次拿到乾淨的版本。`
+      `確定要刪除 ${label} 的所有資料嗎？\n\n` +
+      `會清掉這位病人的所有檢驗、處方、診斷、過敏、報告、處置、就診紀錄。\n\n` +
+      `動作無法復原。通常用於：清掉重複資料後重新同步。`
     )) return;
     try {
       const res = await fetch(`${API}/sync/patient/${encodeURIComponent(patientId)}`, {
@@ -179,7 +178,7 @@ export default function Dashboard() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold text-gray-900">
-            FHIR Patients
+            病人列表
             <span className="ml-2 text-sm text-gray-400 font-normal">({patients.length})</span>
           </h2>
           {patients.length > 0 && (
@@ -221,23 +220,23 @@ export default function Dashboard() {
                     <button
                       onClick={() => exportBundle(p.id, p.name?.[0]?.text)}
                       className="px-2.5 py-1 rounded text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition"
-                      title={`匯出 ${p.name?.[0]?.text ?? p.id} 的 FHIR Bundle`}
+                      title={`匯出 ${p.name?.[0]?.text ?? p.id} 的健康紀錄`}
                     >
-                      📦 Export
+                      📦 匯出
                     </button>
                     <button
                       onClick={() => launchSmartApp(p.id)}
                       className="px-2.5 py-1 rounded text-xs font-medium bg-purple-50 text-purple-700 hover:bg-purple-100 transition"
                       title={`用 ${p.name?.[0]?.text ?? p.id} 開啟 SMART App`}
                     >
-                      🚀 Launch
+                      🚀 開啟 App
                     </button>
                     <button
                       onClick={() => wipePatient(p.id, p.name?.[0]?.text)}
                       className="px-2.5 py-1 rounded text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 transition"
-                      title={`刪除 ${p.name?.[0]?.text ?? p.id} 的所有 FHIR 資料（清重複用）`}
+                      title={`刪除 ${p.name?.[0]?.text ?? p.id} 的所有資料`}
                     >
-                      🗑 Delete
+                      🗑 刪除
                     </button>
                   </div>
                 </div>
@@ -264,9 +263,9 @@ export default function Dashboard() {
       {/* Import FHIR Bundle */}
       <section className="bg-white border rounded-xl shadow-sm p-6">
         <div className="mb-3">
-          <h2 className="text-base font-semibold text-gray-900">匯入 FHIR Bundle</h2>
+          <h2 className="text-base font-semibold text-gray-900">匯入健康紀錄檔</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            上傳先前匯出的 JSON 檔案，或任何 FHIR Bundle / 單一 resource。已存在的資源會被覆蓋更新。
+            上傳先前用 extension 下載的 FHIR Bundle JSON 檔，或其他符合 FHIR R4 的紀錄。已存在的紀錄會被覆蓋更新。
           </p>
         </div>
 
