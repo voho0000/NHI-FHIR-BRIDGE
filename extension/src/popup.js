@@ -37,7 +37,6 @@ const els = {
   syncBlockedReason: document.getElementById("sync-blocked-reason"),
   apiSyncRange: document.getElementById("api-sync-range"),
   stopBtn: document.getElementById("stop-btn"),
-  ovIdNo: document.getElementById("ov-id-no"),
   ovName: document.getElementById("ov-name"),
   ovBirthDate: document.getElementById("ov-birth-date"),
   ovGender: document.getElementById("ov-gender"),
@@ -103,7 +102,6 @@ async function loadBackendUrl() {
 async function loadPatientOverride() {
   const { patientOverride } = await chrome.storage.local.get("patientOverride");
   if (patientOverride) {
-    els.ovIdNo.value = patientOverride.id_no || "";
     els.ovName.value = patientOverride.name || "";
     els.ovBirthDate.value = patientOverride.birth_date || "";
     els.ovGender.value = patientOverride.gender || "";
@@ -121,14 +119,13 @@ async function loadPatientOverride() {
 }
 
 function getPatientOverride() {
-  // Returns {id_no, name, birth_date, gender}.
-  // id_no is optional in the UI; if blank the popup auto-generates an
-  // "auto-XXXXXXXX" identifier at save time. Returns null when both
-  // id_no and name are empty (nothing identifying to save).
-  const id_no = els.ovIdNo.value.trim();
+  // Returns {name, birth_date, gender}.
+  // id_no is no longer a UI field — it's auto-minted at save time and
+  // replaced with the real cid by background's NHI fetch on first sync.
+  // Returns null when nothing identifying is filled (name empty).
   const name = els.ovName.value.trim();
-  if (!id_no && !name) return null;
-  const out = id_no ? { id_no } : {};
+  if (!name) return null;
+  const out = {};
   if (name) out.name = name;
   const birth_date = els.ovBirthDate.value.trim();
   const gender = els.ovGender.value;
@@ -269,31 +266,25 @@ async function savePatientOverride() {
     return;
   }
   // Build the override directly so we don't depend on
-  // getPatientOverride's "must have id_no or name" null-return — the
-  // required-field path above has already validated what matters.
+  // getPatientOverride's null-return — the required-field path above
+  // has already validated what matters.
   const ov = {
-    id_no: els.ovIdNo.value.trim() || null,
     name: els.ovName.value.trim() || null,
     birth_date: els.ovBirthDate.value.trim(),
     gender: els.ovGender.value,
   };
-  if (!ov.id_no) delete ov.id_no;
   if (!ov.name) delete ov.name;
-  // ID auto-generation: if user left id_no blank, mint an "auto-XXXX"
-  // and stash it in the UI so subsequent re-syncs use the same FHIR
-  // Patient.id (storage persistence keeps it stable across re-opens).
-  if (!ov.id_no) {
-    ov.id_no = _generateAutoPatientId();
-    els.ovIdNo.value = ov.id_no;
-  }
-
-  // Detect identity switch: if the previous saved override was for a
-  // different patient, the result-zone contents (pending bundle from
-  // patient A's sync, last completion status with A's id, backend
-  // presence cache, etc.) are stale — nuke them so step 3 doesn't
-  // misleadingly carry A's leftovers into B's context.
+  // id_no is no longer a UI field. Reuse the previously stored
+  // placeholder if one exists (so re-saves don't keep minting new IDs
+  // and orphaning backend resources keyed on the old one); otherwise
+  // mint a fresh auto-XXXX. background's NHI fetch swaps this for the
+  // real cid on first sync.
+  //
+  // The same read also feeds the identity-switch detection below.
   const prevStored = (await chrome.storage.local.get("patientOverride"))
     .patientOverride;
+  ov.id_no = prevStored?.id_no || _generateAutoPatientId();
+
   const patientChanged =
     prevStored?.id_no && ov.id_no && prevStored.id_no !== ov.id_no;
 
@@ -328,7 +319,6 @@ async function savePatientOverride() {
 
 async function clearPatientOverride() {
   await chrome.storage.local.remove("patientOverride");
-  els.ovIdNo.value = "";
   els.ovName.value = "";
   els.ovBirthDate.value = "";
   els.ovGender.value = "";
@@ -1634,7 +1624,7 @@ els.syncApiBtn.addEventListener("click", apiSyncNhi);
 els.stopBtn.addEventListener("click", stopSync);
 els.ovSaveBtn.addEventListener("click", savePatientOverride);
 els.ovClearBtn.addEventListener("click", clearPatientOverride);
-[els.ovIdNo, els.ovName, els.ovBirthDate, els.ovGender].forEach((el) =>
+[els.ovName, els.ovBirthDate, els.ovGender].forEach((el) =>
   el.addEventListener("input", refreshOverrideSummary)
 );
 els.launchBtn.addEventListener("click", launch);
