@@ -654,7 +654,7 @@ function _refreshButtonStates() {
     currentMode() !== "backend"  ? "請切到「🏥 本機後端 (進階)」模式" :
     _connState !== "ok"           ? "後端尚未連線" :
     !ov?.id_no                    ? "回 ② 您的資料：請填病人資料" :
-    !haveBackendPatient           ? "後端尚無此病人資料 — 先按「🔄 取得健保存摺資料」或下方「📤 把本地檔案上傳到後端」" :
+    !haveBackendPatient           ? "後端尚無此病人資料 — 先按「取得健保存摺資料」或下方「把本地檔案上傳到後端」" :
                                     "";
 
   // Refresh the stepper UI on every state change, but DON'T auto-
@@ -834,7 +834,7 @@ function _renderDataState() {
   els.pushLocalBtn.hidden = !localMatches;
   els.pushLocalBtn.disabled = false;
   els.pushLocalBtn.title = "";
-  els.pushLocalBtn.textContent = "📤 把本地檔案上傳到後端";
+  els.pushLocalBtn.textContent = "把本地檔案上傳到後端";
 }
 
 async function _refreshLocalBundleState() {
@@ -1546,11 +1546,11 @@ async function apiSyncNhi() {
   await chrome.storage.local.set({
     syncStatus: {
       running: true,
-      progress: "🚀 開始取得健保存摺資料…",
+      progress: "開始取得健保存摺資料…",
       phase: "starting", started: Date.now(), ts: Date.now(),
     },
   });
-  setStatus("🚀 開始取得健保存摺資料…", "info");
+  setStatus("開始取得健保存摺資料…", "info");
 
   // Compute date range from the dropdown. "1" = NHI's default window;
   // anything else is "today back N years". Helper inside background.js
@@ -1601,7 +1601,7 @@ async function launch() {
   const rawId = ov?.id_no;
   const smartAppLaunch = els.smartAppUrl.value.trim() || DEFAULT_SMART_APP_LAUNCH;
   if (!rawId) {
-    setStatus("⛔ 還沒有病人身分證 — 請先按「🔄 取得健保存摺資料」抓一次", "error");
+    setStatus("還沒有病人身分證 — 請先按「取得健保存摺資料」抓一次", "error");
     return;
   }
   // Backend tracks Patient under its hashed FHIR id, not the raw national ID.
