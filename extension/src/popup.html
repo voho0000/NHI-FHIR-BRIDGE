@@ -153,6 +153,19 @@
     .btn-cta:hover:not(:disabled) { background: #059669; }
     .btn-cta:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
 
+    /* Reason shown below the CTA whenever it's blocked. Replaces the
+       invisible-on-mobile/popup tooltip. */
+    .cta-reason {
+      margin-top: 6px;
+      padding: 6px 10px;
+      background: #fef3c7;
+      border-left: 3px solid #f59e0b;
+      border-radius: 4px;
+      color: #92400e;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
     .btn-secondary {
       background: white;
       color: #374151;
@@ -565,13 +578,13 @@
     <!-- ── 0. Sync mode ───────────────────────────────────────────── -->
     <section class="section">
       <div class="mode-toggle" role="radiogroup" aria-label="輸出方式">
-        <label class="mode-opt" title="產生 FHIR JSON 檔存到電腦，不經過後端">
+        <label class="mode-opt" title="只在你自己電腦上：產生 FHIR 紀錄檔下載到下載夾，完全不經過任何後端">
           <input type="radio" name="sync-mode" value="local" checked />
-          💾 存到電腦
+          💾 下載到電腦
         </label>
-        <label class="mode-opt" title="寫入 NHI-FHIR-Bridge backend，可用 dashboard / SMART app">
+        <label class="mode-opt" title="進階：寫入你自己機器跑的本機 Docker 後端，搭配 Dashboard / SMART App 使用。仍然不上 NHI 或雲端。">
           <input type="radio" name="sync-mode" value="backend" />
-          ☁️ 上傳後端
+          🏥 本機後端 (進階)
         </label>
       </div>
     </section>
@@ -590,12 +603,12 @@
     <section class="section">
       <details class="patient-card" id="patient-override" data-state="empty">
         <summary>
-          <span class="pc-title">病人資料</span>
+          <span class="pc-title">您的基本資料</span>
           <span class="pc-status" id="override-summary">未設定</span>
         </summary>
         <div class="patient-card-body">
           <div class="help">
-            ℹ️ 身分證會自動帶入。<b>性別</b>必填，<b>姓名／生日</b>可填假（建議出生年份填真，檢驗值判讀區間會用到）。
+            ℹ️ <b>性別必填</b>，其他可省略。身分證號按下「取得」時會自動帶入。
           </div>
           <div class="field">
             <div class="label">身分證字號（選填）</div>
@@ -645,6 +658,7 @@
       <button class="btn-cta" id="sync-api-btn" disabled>
         🔄 取得健保存摺資料
       </button>
+      <div id="sync-blocked-reason" class="cta-reason" hidden></div>
       <button class="btn-danger" id="stop-btn" hidden style="margin-top:6px">
         停止
       </button>
