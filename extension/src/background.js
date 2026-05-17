@@ -1505,7 +1505,16 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
           // includes the Patient resource (which the per-page-type POST
           // counts had previously omitted because Patient is auto-created
           // silently from patient_override). Same data → same number.
-          if (Array.isArray(bundle.entry)) total = bundle.entry.length;
+          //
+          // Defensive: only OVERWRITE total when export actually returned
+          // something. If export returns 0 entries despite a successful
+          // upload (could happen with a stale-DB hash mismatch we haven't
+          // fixed yet), don't clobber the truthful upload count — that's
+          // exactly the bug that made "已更新 81 筆" silently become
+          // "已更新 0 筆".
+          if (Array.isArray(bundle.entry) && bundle.entry.length > 0) {
+            total = bundle.entry.length;
+          }
         } else {
           errors.push(`export bundle: HTTP ${r.status}`);
         }
