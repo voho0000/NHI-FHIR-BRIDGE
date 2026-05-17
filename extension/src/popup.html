@@ -1189,13 +1189,13 @@
     </div><!-- /STEP 3 -->
 
     <!-- ── Advanced settings ────────────────────────────────────────
-         Reachable from any step (collapsed by default) so users can
-         tweak backend URL / API key / SMART app URL mid-flow without
-         backing out. Every row inside is backend-only after the
-         mask-name toggle moved into step 2's name field — so the whole
-         section is .backend-only too, otherwise local mode would show
-         an empty collapsible. -->
-    <section class="section backend-only" style="margin-top:16px">
+         Pinned to step 3 (取得) — every row inside concerns the sync
+         destination / SMART app launch, none of which is relevant to
+         step 1 (登入) or step 2 (您的資料). Wrapping in a wizard-step
+         block lets the existing data-active-step CSS hide it on the
+         other two steps. Also .backend-only because every row inside
+         is backend-only after the mask-name toggle moved into step 2. -->
+    <section class="section wizard-step backend-only" data-step="3" style="margin-top:16px">
       <details class="settings">
         <summary>進階設定</summary>
         <div class="settings-body">
