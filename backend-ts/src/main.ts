@@ -141,7 +141,17 @@ const isDirectRun = process.argv[1] && import.meta.url.endsWith(process.argv[1].
 if (isDirectRun) {
   runStartup();
   const app = createApp();
-  serve({ fetch: app.fetch, port: settings.PORT }, ({ port }) => {
-    console.log(`[NHI-FHIR-Bridge] listening on http://0.0.0.0:${port}`);
+  // Bind loopback by default — exposing PHI on every interface (the Node
+  // default 0.0.0.0) is rarely what anyone running this locally wants.
+  // Set BIND_HOST=0.0.0.0 (or any host) explicitly to override.
+  const hostname = process.env.BIND_HOST ?? "127.0.0.1";
+  serve({ fetch: app.fetch, port: settings.PORT, hostname }, ({ port }) => {
+    console.log(`[NHI-FHIR-Bridge] listening on http://${hostname}:${port}`);
+    if (!settings.SYNC_API_KEY) {
+      console.warn(
+        "[NHI-FHIR-Bridge] WARNING: SYNC_API_KEY is empty — all auth is disabled. " +
+          "Set SYNC_API_KEY in .env before exposing this beyond localhost.",
+      );
+    }
   });
 }

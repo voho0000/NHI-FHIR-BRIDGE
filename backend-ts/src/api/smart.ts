@@ -48,7 +48,16 @@ smartApi.get("/authorize", async (c) => {
   const codeChallenge = c.req.query("code_challenge") ?? null;
   const codeChallengeMethod = c.req.query("code_challenge_method") ?? null;
   const launch = c.req.query("launch") ?? null;
-  // response_type / aud accepted but not validated (POC — same as Python).
+  const aud = c.req.query("aud") ?? null;
+
+  // Validate aud against our public FHIR base. Prevents a malicious SMART
+  // app from luring the user to authorize against a different server.
+  if (aud) {
+    const normalize = (u: string) => u.replace(/\/+$/, "");
+    if (normalize(aud) !== normalize(settings.FHIR_BASE_URL)) {
+      return c.json({ detail: `aud must equal ${settings.FHIR_BASE_URL}` }, 400);
+    }
+  }
 
   const client = smartAuth.getClient(clientId);
   if (!client) {
@@ -78,9 +87,25 @@ smartApi.get("/authorize", async (c) => {
     }
   }
 
-  // Auto-approve. Patient context: launch token first, then first patient in store.
+  // Patient context comes from the EHR-launch handshake — the dashboard
+  // mints a launch token via /sync/launch-context (API-key-gated), then
+  // hands it to the SMART app, which echoes it back here. Without a
+  // valid launch token we refuse rather than silently picking the first
+  // patient in the store (that would be a PHI disclosure to any client
+  // who can hit this endpoint).
   let patientId = smartAuth.resolveLaunchContext(launch);
   if (!patientId) {
+    if (settings.SYNC_API_KEY) {
+      return c.json(
+        {
+          detail:
+            "Standalone launch is disabled. Launch from the dashboard so a launch context is created via /sync/launch-context.",
+        },
+        400,
+      );
+    }
+    // Dev/POC mode (SYNC_API_KEY empty): preserve old behavior of picking
+    // the first patient so local SMART app demos still work end-to-end.
     const patients = fhirServer.listAll("Patient");
     patientId = patients.length > 0 ? (patients[0]!.id as string) : null;
   }

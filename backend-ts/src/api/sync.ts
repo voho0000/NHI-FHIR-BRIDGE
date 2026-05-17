@@ -119,6 +119,10 @@ function buildOverridePatient(override: NonNullable<PatientOverride>): Record<st
 
 // ── Status / list / write log ────────────────────────────────────────
 
+// All sync routes carry PHI metadata (patient_id in logs, audit, states).
+// Gate every route behind the API key, not just writes.
+syncApi.use("*", requireSyncApiKey);
+
 syncApi.get("/status/:logId", (c) => {
   const logId = c.req.param("logId");
   const row = defaultDb.select().from(syncLogs).where(eq(syncLogs.id, logId)).get();
