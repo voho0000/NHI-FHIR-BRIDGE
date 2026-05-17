@@ -60,6 +60,7 @@ const els = {
   localStateRow: document.getElementById("local-state-row"),
   localState: document.getElementById("local-state"),
   pushLocalBtn: document.getElementById("push-local-btn"),
+  syncStatusHint: document.getElementById("sync-status-hint"),
 };
 
 const PENDING_BUNDLE_KEY = "pendingFhirBundle";
@@ -351,6 +352,7 @@ function _renderDataState() {
   const ov = getPatientOverride();
   if (currentMode() !== "backend" || !ov?.id_no) {
     els.dataStateSection.hidden = true;
+    if (els.syncStatusHint) els.syncStatusHint.hidden = true;
     return;
   }
 
@@ -366,6 +368,9 @@ function _renderDataState() {
     _backendPatient.state === "present" &&
     localMatches &&
     _backendPatient.count === _localBundle.count;
+  // Quiet "✓ 已同步" hint sits under the download button when in-sync —
+  // gives the user a tiny acknowledgement instead of total silence.
+  if (els.syncStatusHint) els.syncStatusHint.hidden = !inSync;
   const nothingToShow =
     _backendPatient.state === "present" && (!localMatches || inSync);
   if (nothingToShow) {

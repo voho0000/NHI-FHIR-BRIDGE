@@ -599,6 +599,13 @@
         <button class="btn-secondary btn-icon" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">🗑️</button>
       </div>
       <div class="hint" id="bundle-meta" style="margin-top:4px"></div>
+      <!-- Quiet confirmation that the in-extension bundle and the backend
+           store agree on count. Only shown in backend mode + in-sync;
+           otherwise the data-state card above conveys the divergence. -->
+      <div class="hint backend-only" id="sync-status-hint" hidden
+           style="margin-top:2px; color:#047857; font-weight:500">
+        ✓ 本地檔案已與後端同步
+      </div>
     </section>
 
     <!-- ── 5. Launch SMART App (backend mode only) ───────────────── -->
