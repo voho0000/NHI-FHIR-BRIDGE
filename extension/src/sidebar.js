@@ -71,9 +71,14 @@
   // Plus an explicit `sidebarEnabled` opt-out: users who only want the
   // raw FHIR Bundle and never plan to embed SMART apps on the NHI page
   // can turn the panel off entirely via the popup's 「⚙️ 進階設定」.
+  // All settings (syncMode, sidebarEnabled) live in chrome.storage.local
+  // since v0.5.0 — sidebar.js was missed in that migration and kept
+  // reading from .sync, which only ever held undefined values after
+  // the migration cleared the keys. Result: the assistant pill never
+  // appeared even when the user had ticked "顯示助理面板" in popup.
   async function _applyModeVisibility() {
     try {
-      const { syncMode, sidebarEnabled } = await chrome.storage.sync.get([
+      const { syncMode, sidebarEnabled } = await chrome.storage.local.get([
         "syncMode", "sidebarEnabled",
       ]);
       const visible = sidebarEnabled !== false && syncMode === "backend";
@@ -84,7 +89,7 @@
   }
   _applyModeVisibility();
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "sync") return;
+    if (area !== "local") return;
     if ("syncMode" in changes || "sidebarEnabled" in changes) {
       _applyModeVisibility();
     }
@@ -355,7 +360,7 @@
   // iframe surface a "connection refused" if they don't. A future setting
   // can let users flip to the deployed URL.
   async function pickAppBase() {
-    const { sidebarAppBase } = await chrome.storage.sync.get("sidebarAppBase").catch(() => ({}));
+    const { sidebarAppBase } = await chrome.storage.local.get("sidebarAppBase").catch(() => ({}));
     return sidebarAppBase || APP_BASE_LOCAL;
   }
 
@@ -372,7 +377,7 @@
         "(Extension was just updated — press F5 on this page to reload the sidebar.)",
       );
     }
-    const { patientOverride, backendUrl } = await chrome.storage.sync.get([
+    const { patientOverride, backendUrl } = await chrome.storage.local.get([
       "patientOverride", "backendUrl",
     ]).catch(() => ({}));
     const backend = (backendUrl || DEFAULT_BACKEND).replace(/\/$/, "");
