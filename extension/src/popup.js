@@ -1261,6 +1261,12 @@ document.addEventListener("mouseout", (e) => {
 });
 
 async function init() {
+  document.getElementById("version").textContent =
+    "v" + chrome.runtime.getManifest().version;
+
+  document.getElementById("login-ok-next")
+    ?.addEventListener("click", () => _setActiveStep(2));
+
   await loadSidebarEnabled();
   await loadMaskNameEnabled();
 
@@ -1383,6 +1389,7 @@ function applySyncStatus(status) {
   }
   if (status.running) {
     els.syncApiBtn.disabled = true;
+    els.syncApiBtn.textContent = "取得中…";
     els.stopBtn.hidden = false;
     if (!_elapsedTickerId) {
       _elapsedTickerId = setInterval(_renderStatus, 1000);
