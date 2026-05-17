@@ -114,13 +114,9 @@ async function loadPatientOverride() {
   _markStep2Confirmed(
     !!(patientOverride?.gender && patientOverride?.birth_date),
   );
-  // Auto-expand the card whenever the required fields aren't already
-  // saved — covers first-time AND returning users whose previous save
-  // was incomplete. Once required fields are saved, collapse to give
-  // breathing room.
-  if (els.patientOverrideDetails) {
-    els.patientOverrideDetails.open = !_step2Confirmed;
-  }
+  // Patient panel is now always-expanded (step 2 owns its own page);
+  // the previous collapse-when-confirmed behaviour was a leftover from
+  // the single-scroll layout.
   refreshOverrideSummary();
 }
 
@@ -322,7 +318,6 @@ async function savePatientOverride() {
   // Successful save is THE intentional step-2 completion event — this
   // is where the wizard is allowed to advance forward.
   if (_wizardInitialized) _maybeAutoAdvance();
-  if (els.patientOverrideDetails) els.patientOverrideDetails.open = false;
   // Make clear this is the identity save, not a medical-record sync —
   // 「病人資料」alone reads as "patient data" (medical) for some users.
   // ID half-masked in the toast for the same shoulder-surfing reason
@@ -340,7 +335,6 @@ async function clearPatientOverride() {
   _markStep2Confirmed(false);
   refreshOverrideSummary();
   _refreshButtonStates();
-  if (els.patientOverrideDetails) els.patientOverrideDetails.open = true;
   setStatus("已清除病人資料", "info");
 }
 
@@ -1619,7 +1613,6 @@ els.launchBtn.addEventListener("click", launch);
 // expands the patient card so the user can adjust the identity.
 function _gotoStep2Edit() {
   _setActiveStep(2);
-  if (els.patientOverrideDetails) els.patientOverrideDetails.open = true;
 }
 els.activePatient?.addEventListener("click", _gotoStep2Edit);
 els.activePatient?.addEventListener("keydown", (e) => {
