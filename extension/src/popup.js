@@ -50,6 +50,8 @@ const els = {
   clearBundleBtn: document.getElementById("clear-bundle-btn"),
   bundleMeta: document.getElementById("bundle-meta"),
   connBanner: document.getElementById("conn-banner"),
+  connSection: document.getElementById("conn-section"),
+  connMini: document.getElementById("conn-mini"),
   connMsg: document.getElementById("conn-msg"),
   connRetryBtn: document.getElementById("conn-retry-btn"),
   connHelp: document.getElementById("conn-help"),
@@ -212,6 +214,17 @@ function _renderConnBanner() {
   } else {
     els.connHelp.hidden = true;
     els.connHelp.innerHTML = "";
+  }
+
+  // Compact-pill vs full-banner swap: when everything's fine, shrink to
+  // a small green pill in the header so the popup body has more room
+  // for actionable content. Anything else (unknown / checking / fail)
+  // keeps the full banner so progress + error help has space to render.
+  const isOk = _connState === "ok";
+  if (els.connSection) els.connSection.hidden = isOk;
+  if (els.connMini) {
+    els.connMini.hidden = !isOk;
+    if (isOk) els.connMini.title = `已連線 — ${els.backendUrl.value.trim()}`;
   }
 }
 

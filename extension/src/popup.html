@@ -28,7 +28,12 @@
       padding: 14px 16px 12px;
       background: white;
       border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
     }
+    .header-text { flex: 1; min-width: 0; }
     .header h1 {
       font-size: 15px;
       font-weight: 600;
@@ -40,6 +45,28 @@
       font-size: 11px;
       color: #6b7280;
       margin-top: 2px;
+    }
+    /* Compact connection pill — replaces the full banner when state=ok */
+    .conn-mini {
+      flex: 0 0 auto;
+      margin-top: 2px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: 10px;
+      background: #f0fdf4;
+      color: #047857;
+      border: 1px solid #bbf7d0;
+      user-select: none;
+    }
+    .conn-mini-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
     }
 
     /* ── Layout ────────────────────────────────────────────────────── */
@@ -440,8 +467,16 @@
 <body>
 
   <header class="header">
-    <h1>🏥 NHI-FHIR Bridge</h1>
-    <div class="subtitle">健保存摺 → FHIR 同步</div>
+    <div class="header-text">
+      <h1>🏥 NHI-FHIR Bridge</h1>
+      <div class="subtitle">健保存摺 → FHIR 同步</div>
+    </div>
+    <!-- Compact connection indicator (backend mode + state=ok). For other
+         states the full banner below the mode toggle takes over. -->
+    <span class="conn-mini backend-only" id="conn-mini" hidden title="">
+      <span class="conn-mini-dot"></span>
+      已連線
+    </span>
   </header>
 
   <div class="content">
