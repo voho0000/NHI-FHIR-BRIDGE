@@ -61,18 +61,28 @@
   // The sidebar's assistant button + iframe panel are only useful in
   // "上傳後端" mode — the iframe is a SMART app that talks to the local
   // FHIR backend. In "下載到電腦" mode there's no backend to talk to,
-  // so hide the whole thing. Toggle live when the popup switches modes.
+  // so hide the whole thing.
+  //
+  // Plus an explicit `sidebarEnabled` opt-out: users who only want the
+  // raw FHIR Bundle and never plan to embed SMART apps on the NHI page
+  // can turn the panel off entirely via the popup's 「⚙️ 進階設定」.
   async function _applyModeVisibility() {
     try {
-      const { syncMode } = await chrome.storage.sync.get("syncMode");
-      host.style.display = syncMode === "backend" ? "" : "none";
+      const { syncMode, sidebarEnabled } = await chrome.storage.sync.get([
+        "syncMode", "sidebarEnabled",
+      ]);
+      const visible = sidebarEnabled !== false && syncMode === "backend";
+      host.style.display = visible ? "" : "none";
     } catch {
       host.style.display = "none";
     }
   }
   _applyModeVisibility();
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "sync" && "syncMode" in changes) _applyModeVisibility();
+    if (area !== "sync") return;
+    if ("syncMode" in changes || "sidebarEnabled" in changes) {
+      _applyModeVisibility();
+    }
   });
 
   const root = host.attachShadow({ mode: "open" });

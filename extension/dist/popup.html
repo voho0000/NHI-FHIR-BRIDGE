@@ -409,6 +409,22 @@
     .data-state-value.ok    { color: #047857; }
     .data-state-value.fail  { color: #b91c1c; }
 
+    /* ── Toggle row (checkbox + label, used in settings) ─────────── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-row input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+      flex: 0 0 auto;
+      cursor: pointer;
+    }
+
     /* ── Mode-conditional visibility ───────────────────────────────── */
     body[data-mode="local"] .backend-only { display: none !important; }
     body[data-mode="backend"] .local-only { display: none !important; }
@@ -620,6 +636,16 @@
       <details class="settings">
         <summary>⚙️ 進階設定</summary>
         <div class="settings-body">
+          <div class="field">
+            <label class="toggle-row">
+              <input type="checkbox" id="sidebar-enabled" checked />
+              <span>在健保存摺頁面顯示「📋 助理」面板</span>
+            </label>
+            <div class="hint">
+              關閉後 NHI 頁面右側不會有 SMART App 嵌入面板。
+              只想拿 FHIR 資料、不需要在 NHI 頁面直接看的人可以關掉。
+            </div>
+          </div>
           <div class="field">
             <div class="label">Backend URL</div>
             <input type="text" id="backend-url" placeholder="http://localhost:8010" />

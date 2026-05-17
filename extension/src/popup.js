@@ -61,6 +61,7 @@ const els = {
   localState: document.getElementById("local-state"),
   pushLocalBtn: document.getElementById("push-local-btn"),
   syncStatusHint: document.getElementById("sync-status-hint"),
+  sidebarEnabled: document.getElementById("sidebar-enabled"),
 };
 
 const PENDING_BUNDLE_KEY = "pendingFhirBundle";
@@ -582,6 +583,18 @@ els.backendUrl.addEventListener("change", () => {
 els.syncApiKey.addEventListener("change", () => {
   chrome.storage.sync.set({ syncApiKey: els.syncApiKey.value.trim() });
 });
+// Sidebar "📋 助理" toggle — persists in chrome.storage.sync so the
+// preference is sticky across reinstalls. sidebar.js listens to the
+// same key and hides itself when set to false.
+async function loadSidebarEnabled() {
+  const { sidebarEnabled } = await chrome.storage.sync.get("sidebarEnabled");
+  els.sidebarEnabled.checked = sidebarEnabled !== false; // default ON
+}
+
+els.sidebarEnabled?.addEventListener("change", () => {
+  chrome.storage.sync.set({ sidebarEnabled: els.sidebarEnabled.checked });
+});
+
 els.smartAppUrl.addEventListener("change", () => {
   // Persist trimmed value. Empty string → restore default on next load.
   const v = els.smartAppUrl.value.trim();
@@ -693,6 +706,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 async function init() {
+  await loadSidebarEnabled();
+
   // Seed local bundle state from storage so the data-state card is
   // populated as soon as the popup renders (no flash of "未產生").
   await _refreshLocalBundleState();
