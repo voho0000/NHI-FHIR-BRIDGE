@@ -58,18 +58,26 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
-            ## Quick start
+            ## 🚀 快速開始
 
-            **Extension only (本地模式, 不需後端):**
-            1. Download `nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip` below.
-            2. Unzip somewhere (e.g. `~/nhi-fhir-bridge/`).
-            3. Chrome → `chrome://extensions/` → enable Developer mode → **Load unpacked** → select the unzipped `dist/` folder.
-            4. Open NHI 健康存摺, fill in patient ID, click 「📥 同步健保存摺資料」. A FHIR JSON file downloads to your machine.
+            ### 🟢 純 Extension（本地模式，不需後端）
 
-            **With dashboard + SMART app (後端模式):**
+            1. 在下方下載 `nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip`。
+            2. 解壓到任意位置（例如 `~/nhi-fhir-bridge/`）。
+            3. Chrome 網址列輸入 `chrome://extensions/` → 右上角開啟「**開發人員模式**」→ 左上角點「**載入未封裝項目**」→ 選擇剛解壓出來的 **`dist/` 資料夾**。
+            4. 開健康存摺登入 → 點工具列 🏥 圖示 → 填身分證字號 → 按「**📥 同步健保存摺資料**」→ 跑完後按「**📥 下載 FHIR Bundle**」把檔案存到電腦。
+
+            ### 🔵 Extension + Backend（含 Dashboard / SMART App）
+
+            需要 [Docker Desktop](https://docs.docker.com/get-docker/)。
+
             ```sh
             git clone https://github.com/${{ github.repository }}.git
             cd $(basename ${{ github.repository }})
             docker compose up -d
             ```
-            Then in the extension popup, switch to 「上傳後端」mode.
+
+            然後 Extension popup 上方「輸出方式」切到「**上傳後端**」即可。
+            Dashboard 在 http://localhost:3010 ，可以多病人瀏覽 + 一鍵 launch SMART app。
+
+            詳細說明見 [README](https://github.com/${{ github.repository }}#readme)。
