@@ -51,7 +51,9 @@ const els = {
   pendingBundle: document.getElementById("pending-bundle"),
   downloadBundleBtn: document.getElementById("download-bundle-btn"),
   clearBundleBtn: document.getElementById("clear-bundle-btn"),
-  bundleMeta: document.getElementById("bundle-meta"),
+  // bundleMeta legacy id removed in the panel-merge; filename+size now
+  // live in dedicated #bundle-filename / #bundle-sizeage elements
+  // below.
   connBanner: document.getElementById("conn-banner"),
   connSection: document.getElementById("conn-section"),
   connMini: document.getElementById("conn-mini"),
@@ -72,10 +74,11 @@ const els = {
   loginOkSection: document.getElementById("login-ok-section"),
   wizardStepper: document.getElementById("wizard-stepper"),
   resultZone: document.getElementById("result-zone"),
-  summaryCard: document.getElementById("summary-card"),
-  launchBlock: document.querySelector(".launch-block"),
   activePatient: document.getElementById("active-patient"),
   activePatientValue: document.getElementById("active-patient-value"),
+  bundleMetaBlock: document.getElementById("bundle-meta-block"),
+  bundleFilename: document.getElementById("bundle-filename"),
+  bundleSizeage: document.getElementById("bundle-sizeage"),
 };
 
 const NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
@@ -517,16 +520,19 @@ function _refreshResultZone() {
   const launchUsable =
     currentMode() === "backend" && els.launchBtn && !els.launchBtn.disabled;
 
-  if (els.summaryCard) {
-    els.summaryCard.hidden = !(hasStatus || dataStateShown);
-  }
-  if (els.launchBlock) {
-    // Hide the launch card outright when it'd be just a disabled button
-    // — keeps backend mode's pre-sync result zone from showing a faint
-    // outlined-but-disabled "🚀 開啟 SMART App" with no context.
-    els.launchBlock.hidden = !launchUsable;
-  }
+  // Hide the entire result section (the divider + everything after) when
+  // there's nothing meaningful to show.
   els.resultZone.hidden = !(hasStatus || bundleShown || dataStateShown || launchUsable);
+
+  // Bundle filename / size block follows bundle visibility.
+  if (els.bundleMetaBlock) {
+    els.bundleMetaBlock.hidden = !bundleShown;
+  }
+  // Launch button hide-when-not-usable so the .next-actions row
+  // doesn't show a perma-disabled outline button next to nothing.
+  if (els.launchBtn) {
+    els.launchBtn.hidden = currentMode() !== "backend" || !launchUsable;
+  }
 }
 
 function _maybeAutoAdvance() {
@@ -1091,22 +1097,16 @@ async function refreshPendingBundle() {
     return;
   }
   els.pendingBundle.hidden = false;
-  // Use the shared relative-time helper so "266 秒前" auto-rolls into
-  // "4 分鐘前" once the user leaves the popup open for a while.
+  // Filename + sizeage live in separate sibling elements in the new
+  // single-panel layout so we just update each directly.
   const ago = pending.generatedAt ? _fmtRelative(pending.generatedAt) : "";
-  // Render in two pieces so a long filename gets its own line + ellipsis,
-  // and the size / age info stays compact below it. Avoids "filename ·
-  // 169.7 KB · 1 秒前" wrapping awkwardly mid-word in a 360px popup.
-  els.bundleMeta.textContent = "";
-  const fname = document.createElement("div");
-  fname.className = "bundle-filename";
-  fname.textContent = pending.filename;
-  fname.title = pending.filename;
-  const sizeAge = document.createElement("div");
-  sizeAge.className = "bundle-sizeage";
-  sizeAge.textContent = `${_fmtBytes(pending.bytes || 0)}${ago ? ` · ${ago}` : ""}`;
-  els.bundleMeta.appendChild(fname);
-  els.bundleMeta.appendChild(sizeAge);
+  if (els.bundleFilename) {
+    els.bundleFilename.textContent = pending.filename;
+    els.bundleFilename.title = pending.filename;
+  }
+  if (els.bundleSizeage) {
+    els.bundleSizeage.textContent = `${_fmtBytes(pending.bytes || 0)}${ago ? ` · ${ago}` : ""}`;
+  }
   if (_wizardInitialized) _refreshResultZone();
 }
 
