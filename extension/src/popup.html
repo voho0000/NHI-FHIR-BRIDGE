@@ -306,14 +306,9 @@
       margin-top: 12px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
     }
     .result-zone:empty { display: none; }
-    /* Inside the result zone we drop default `.section` margins so the
-       gap above takes over — no double spacing. */
-    .result-zone > .status:empty { display: none; }
-    .result-zone .pending-bundle { margin-top: 0; }
-    .result-zone .launch-block { margin-top: 0; }
     /* Subtle divider between result zone and step 3's action zone. */
     .result-zone::before {
       content: "";
@@ -321,6 +316,53 @@
       height: 1px;
       background: linear-gradient(to right, transparent, #d1d5db, transparent);
       margin: -2px 12px 4px;
+    }
+
+    /* Each .result-card holds ONE thing inside the result zone so the
+       visual hierarchy is: summary (heavy) → download (primary)
+       → launch (secondary). Light gray card chrome consistent across. */
+    .result-card {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .result-card.summary-card { padding: 8px 12px; }
+    .result-card.summary-card > .status { margin: 0; }
+    .result-card.summary-card > .status:empty { display: none; }
+
+    /* Inline state rows inside the summary card. Used in backend mode
+       to show 後端 ↔ 本地 reconciliation. Two compact rows + a small
+       upload button when there's something to push. */
+    .state-rows {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+    }
+    .state-row {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .state-label {
+      width: 32px;
+      flex-shrink: 0;
+      color: #6b7280;
+      font-weight: 500;
+    }
+    .state-value { flex: 1; color: #111827; word-break: break-word; }
+    .state-value.empty { color: #b45309; }
+    .state-value.ok    { color: #047857; }
+    .state-value.fail  { color: #b91c1c; }
+    .push-local-btn {
+      margin-top: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      align-self: flex-start;
     }
 
     /* "On NHI tab but not logged in" banner — bigger than .cta-reason
@@ -920,35 +962,38 @@
     </div>
 
     <!-- 3-B. Result zone: appears only after a sync starts or completes.
-              Status banner + breakdown + downstream actions cluster here
-              so the user's eye lands on "what's done / what's next"
-              without competing with the pre-action controls above. -->
+              Three sub-cards, each does ONE thing:
+                · summary card — what just happened (status + state)
+                · download card — get the file
+                · launch card   — open the SMART app (backend only)
+              No section escapes its card; visual weight goes from heavy
+              (summary) → primary action (download) → secondary (launch). -->
     <div class="result-zone" id="result-zone" hidden>
-      <!-- Live + completion status. Always at the top of the result zone. -->
-      <div id="status" class="status"></div>
 
-      <!-- Backend ↔ local data-state card (backend mode only). Sits
-           BELOW status so users see "sync done" first, then the
-           backend-presence detail. -->
-      <section class="backend-only" id="data-state-section" hidden>
-        <div class="data-state-card">
-          <div class="data-state-row">
-            <span class="data-state-label">後端</span>
-            <span class="data-state-value" id="backend-state">檢查中…</span>
+      <!-- Summary card: status banner + breakdown + (backend) backend
+           presence + local bundle presence in one consolidated block. -->
+      <div class="result-card summary-card">
+        <div id="status" class="status"></div>
+
+        <!-- Backend mode adds two inline rows for the backend ↔ local
+             reconciliation. Hidden in local mode. -->
+        <div class="state-rows backend-only" id="data-state-section" hidden>
+          <div class="state-row">
+            <span class="state-label">後端</span>
+            <span class="state-value" id="backend-state">檢查中…</span>
           </div>
-          <div class="data-state-row" id="local-state-row" hidden>
-            <span class="data-state-label">本地</span>
-            <span class="data-state-value" id="local-state">—</span>
+          <div class="state-row" id="local-state-row" hidden>
+            <span class="state-label">本地</span>
+            <span class="state-value" id="local-state">—</span>
           </div>
-          <button class="btn-secondary" id="push-local-btn" hidden
-                  style="margin-top:6px; padding:5px 10px; font-size:12px">
+          <button class="btn-secondary push-local-btn" id="push-local-btn" hidden>
             📤 把本地檔案上傳到後端
           </button>
         </div>
-      </section>
+      </div>
 
-      <!-- Pending FHIR Bundle download — appears once the local bundle exists. -->
-      <section class="pending-bundle" id="pending-bundle" hidden>
+      <!-- Download card: appears once the local bundle exists. -->
+      <div class="result-card" id="pending-bundle" hidden>
         <div class="bundle-row">
           <button class="btn-primary" id="download-bundle-btn" style="background:#0ea5e9; flex:1">
             📥 下載健康紀錄檔
@@ -957,22 +1002,19 @@
         </div>
         <div class="hint" id="bundle-meta"></div>
         <!-- Quiet confirmation that the in-extension bundle and the backend
-             store agree on count. Only shown in backend mode + in-sync;
-             otherwise the data-state card above conveys the divergence. -->
+             store agree on count (backend mode only). -->
         <div class="hint backend-only" id="sync-status-hint" hidden
              style="color:#047857; font-weight:500">
           ✓ 本地檔案已與後端同步
         </div>
-      </section>
+      </div>
 
-      <!-- Launch SMART App (backend mode only) — the "next action" after
-           a successful backend sync. Styled as an outline button so it
-           reads as secondary to the bright 📥 download CTA above. -->
-      <section class="backend-only launch-block">
+      <!-- Launch card (backend mode only) — secondary "open in app". -->
+      <div class="result-card backend-only launch-block">
         <button class="btn-secondary btn-launch" id="launch-btn" disabled>
           🚀 開啟 SMART App
         </button>
-      </section>
+      </div>
     </div>
 
     </div><!-- /STEP 3 -->

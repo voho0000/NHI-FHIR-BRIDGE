@@ -687,32 +687,29 @@ function _renderDataState() {
   const bs = els.backendState;
   switch (_backendPatient.state) {
     case "checking":
-      bs.className = "data-state-value";
+      bs.className = "state-value";
       bs.textContent = "檢查中…";
       break;
     case "absent":
-      bs.className = "data-state-value empty";
-      // Card sits within step 3 — both CTAs are visible nearby. Only
-      // mention the local-upload alternative when a matching pending
-      // Bundle actually exists (otherwise users go hunting for an
-      // upload button that's not there).
-      bs.textContent = localMatches
-        ? "⚠ 後端尚無此病人 — 按「🔄 取得健保存摺資料」或「📤 把本地檔案上傳到後端」"
-        : "⚠ 後端尚無此病人 — 按「🔄 取得健保存摺資料」抓資料到後端";
+      bs.className = "state-value empty";
+      // Card sits inside the result zone next to the 🔄 取得 CTA and
+      // the 📤 上傳 button — pointing at them with text would be
+      // double-talk. Just state the fact.
+      bs.textContent = "⚠ 尚無此病人資料";
       break;
     case "present": {
       const count = _backendPatient.count;
       const ts = _backendPatient.lastUpdated;
-      bs.className = "data-state-value ok";
+      bs.className = "state-value ok";
       bs.textContent = `✓ ${count > 0 ? `${count} 筆 · ` : ""}最後更新 ${_fmtTimeShort(ts) || "(unknown)"}`;
       break;
     }
     case "fail":
-      bs.className = "data-state-value fail";
+      bs.className = "state-value fail";
       bs.textContent = "✗ 檢查失敗（看連線 banner）";
       break;
     default:
-      bs.className = "data-state-value";
+      bs.className = "state-value";
       bs.textContent = "—";
   }
 
@@ -720,7 +717,7 @@ function _renderDataState() {
   // (localMatches was computed above for the early-return check.)
   if (localMatches) {
     els.localStateRow.hidden = false;
-    els.localState.className = "data-state-value ok";
+    els.localState.className = "state-value ok";
     els.localState.textContent =
       `✓ ${_localBundle.count} 筆 · ${_fmtRelative(_localBundle.generatedAt)}產生`;
   } else {
