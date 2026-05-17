@@ -679,18 +679,15 @@
       </button>
     </section>
 
-    <!-- ── 6. Advanced settings (backend mode only) ─────────────── -->
-    <section class="section backend-only">
+    <!-- ── 6. Advanced settings ─────────────────────────────────────
+         The section header itself is mode-agnostic so the mask-name
+         toggle (relevant in both modes) is reachable from "下載到電腦"
+         too. Individual rows that only make sense in backend mode
+         carry .backend-only and disappear in local mode. -->
+    <section class="section">
       <details class="settings">
         <summary>⚙️ 進階設定</summary>
         <div class="settings-body">
-          <div class="field">
-            <label class="toggle-row">
-              <input type="checkbox" id="sidebar-enabled" checked />
-              <span>在 NHI 頁面顯示「📋 助理」面板</span>
-              <span class="help-icon" data-tip="關閉後 NHI 頁面右側不會有 SMART App 嵌入面板。&#10;只想拿 FHIR 資料、不需要在 NHI 頁面直接看的人可以關掉。">ⓘ</span>
-            </label>
-          </div>
           <div class="field">
             <label class="toggle-row">
               <input type="checkbox" id="mask-name-enabled" />
@@ -698,21 +695,28 @@
               <span class="help-icon" data-tip="預設關閉 — 民眾下載自己資料時不必遮。&#10;開啟後：popup 摘要、FHIR Bundle、Dashboard、SMART App 看到的姓名都會遮罩。&#10;NHI 報告內容裡跟「姓名」欄位完全相同的字串也會被取代成遮罩版。&#10;適合多病人診間 / 教學展示 / 螢幕分享情境。">ⓘ</span>
             </label>
           </div>
-          <div class="field">
+          <div class="field backend-only">
+            <label class="toggle-row">
+              <input type="checkbox" id="sidebar-enabled" checked />
+              <span>在 NHI 頁面顯示「📋 助理」面板</span>
+              <span class="help-icon" data-tip="關閉後 NHI 頁面右側不會有 SMART App 嵌入面板。&#10;只想拿 FHIR 資料、不需要在 NHI 頁面直接看的人可以關掉。">ⓘ</span>
+            </label>
+          </div>
+          <div class="field backend-only">
             <div class="label">
               Backend URL
               <span class="help-icon" data-tip="本機 Docker 保留預設即可。&#10;指向其他 server（例如 http://192.168.1.100:8010）第一次同步時 Chrome 會跳出權限對話框。&#10;連線狀態顯示在 popup 最上方。">ⓘ</span>
             </div>
             <input type="text" id="backend-url" placeholder="http://localhost:8010" />
           </div>
-          <div class="field">
+          <div class="field backend-only">
             <div class="label">
               Sync API Key（選填）
               <span class="help-icon" data-tip="Backend 沒設 SYNC_API_KEY（預設）時不用填。&#10;對外開放 backend 時設定來擋未授權的寫入。">ⓘ</span>
             </div>
             <input type="password" id="sync-api-key" placeholder="留空 = 無認證" />
           </div>
-          <div class="field">
+          <div class="field backend-only">
             <div class="label">
               SMART App Launch URL
               <span class="help-icon" data-tip="點擊「開啟 SMART App」要 launch 的 SMART on FHIR 應用入口。&#10;預設為 medical-note 示範 app；串接自己的 SMART app 時改這裡。">ⓘ</span>
