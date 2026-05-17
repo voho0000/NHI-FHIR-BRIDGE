@@ -99,14 +99,16 @@
         top: 50%;
         right: 0;
         transform: translateY(-50%);
-        width: 28px;
-        height: 80px;
+        width: 34px;
+        height: 96px;
         background: #1e3a8a;
         color: white;
         border: none;
-        border-radius: 8px 0 0 8px;
+        border-radius: 10px 0 0 10px;
         cursor: pointer;
-        font-size: 18px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 1px;
         font-family: -apple-system, BlinkMacSystemFont, sans-serif;
         box-shadow: -2px 2px 8px rgba(0,0,0,0.15);
         pointer-events: auto;
@@ -115,9 +117,28 @@
         justify-content: center;
         writing-mode: vertical-rl;
         text-orientation: mixed;
-        transition: right 0.2s ease;
+        transition: right 0.2s ease, background 0.2s ease, transform 0.2s ease;
+        /* Subtle 3-cycle pulse on first paint so a brand-new user sees
+           "oh that's a button". Animation only plays once per page load
+           thanks to `forwards` + count 3; never gets in the way after. */
+        animation: nfb-toggle-pulse 1.6s ease-out 3 forwards;
       }
-      .toggle:hover { background: #1e40af; }
+      .toggle:hover {
+        background: #1e40af;
+        transform: translateY(-50%) translateX(-2px);
+      }
+      .toggle:focus-visible {
+        outline: 2px solid #60a5fa;
+        outline-offset: 2px;
+      }
+      @keyframes nfb-toggle-pulse {
+        0%, 100% { box-shadow: -2px 2px 8px rgba(0,0,0,0.15); }
+        50% { box-shadow: -2px 2px 8px rgba(0,0,0,0.15),
+                          0 0 0 6px rgba(59, 130, 246, 0.35); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .toggle { animation: none; }
+      }
       .panel {
         position: fixed;
         top: 0;
@@ -205,7 +226,9 @@
       }
     </style>
 
-    <button class="toggle" id="toggle" title="NHI-FHIR Bridge 助理面板">📋 助理</button>
+    <button class="toggle" id="toggle"
+            title="點此開啟 NHI-FHIR Bridge 助理面板"
+            aria-label="開啟 NHI-FHIR Bridge 助理面板">📋 助理</button>
     <div class="panel" id="panel">
       <div class="resizer" id="resizer" title="拖曳調整寬度"></div>
       <div class="header">
