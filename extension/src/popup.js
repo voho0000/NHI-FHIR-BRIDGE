@@ -340,6 +340,25 @@ function _renderDataState() {
     els.dataStateSection.hidden = true;
     return;
   }
+
+  // Card serves as an alert, not a dashboard — show only when there's
+  // something actionable / worth flagging. Hide when:
+  //   - backend has this patient AND no local bundle to compare against
+  //     (Launch is enabled → that's the signal everything's fine), or
+  //   - both sides agree on count (already in sync, no upload needed).
+  // The remaining states (checking / fail / absent / count mismatch) all
+  // either need user attention or are transient loading feedback.
+  const localMatches = _localBundle.exists && _localBundle.patientId === ov.id_no;
+  const inSync =
+    _backendPatient.state === "present" &&
+    localMatches &&
+    _backendPatient.count === _localBundle.count;
+  const nothingToShow =
+    _backendPatient.state === "present" && (!localMatches || inSync);
+  if (nothingToShow) {
+    els.dataStateSection.hidden = true;
+    return;
+  }
   els.dataStateSection.hidden = false;
 
   // Backend row
@@ -370,7 +389,7 @@ function _renderDataState() {
   }
 
   // Local row — show only when the pending bundle matches this patient.
-  const localMatches = _localBundle.exists && _localBundle.patientId === ov.id_no;
+  // (localMatches was computed above for the early-return check.)
   if (localMatches) {
     els.localStateRow.hidden = false;
     els.localState.className = "data-state-value ok";
@@ -380,22 +399,14 @@ function _renderDataState() {
     els.localStateRow.hidden = true;
   }
 
-  // "📤 上傳本地 Bundle" button shows only when there's something to
-  // upload. Disabled (instead of hidden) when backend and local already
-  // agree on count — upload would be a no-op (stable-ID upsert hits
-  // the same rows) so it's just noise. Keeping the button visible but
-  // greyed out lets the user see "I'm in sync" instead of wondering
-  // why the button disappeared.
+  // "📤 上傳本地 Bundle" button shows only when there's a local bundle
+  // for this patient. We don't reach this branch when in-sync (the
+  // whole section gets hidden above), so no need for a separate
+  // disabled state — when the button shows, upload is always meaningful.
   els.pushLocalBtn.hidden = !localMatches;
-  const inSync =
-    localMatches &&
-    _backendPatient.state === "present" &&
-    _backendPatient.count === _localBundle.count;
-  els.pushLocalBtn.disabled = inSync;
-  els.pushLocalBtn.title = inSync ? "本地與後端筆數一致，已同步" : "";
-  els.pushLocalBtn.textContent = inSync
-    ? "✓ 已與後端同步"
-    : "📤 把本地 Bundle 上傳到後端";
+  els.pushLocalBtn.disabled = false;
+  els.pushLocalBtn.title = "";
+  els.pushLocalBtn.textContent = "📤 把本地 Bundle 上傳到後端";
 }
 
 async function _refreshLocalBundleState() {
