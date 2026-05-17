@@ -77,7 +77,7 @@ jobs:
             5. 左上角點「**載入未封裝項目**」→ 選擇剛解壓的 `dist/` 資料夾
             6. **把圖示釘到工具列**（Chrome 預設不會自動釘）：
                點瀏覽器右上角的 🧩（擴充功能拼圖圖示）→ 找到 **NHI-FHIR Bridge** → 點旁邊的 📌 圖釘
-            7. 工具列就會看到 NHI-FHIR Bridge 圖示（藍綠橘配色）
+            7. 工具列就會看到 NHI-FHIR Bridge 圖示： <img src="https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.ver.outputs.tag }}/extension/dist/icons/icon-48.png" width="28" height="28" align="middle" />
 
             ---
 
