@@ -272,6 +272,57 @@
       font-weight: 500;
     }
 
+    /* ── Step 3 zones ─────────────────────────────────────────────────
+       The pre-action controls (mode / conn / date / CTA) and the
+       post-action results (status / data-state / bundle / launch) are
+       wrapped in separate "zones" so the user's eye lands on one or the
+       other, not on a five-card stack. The result zone only renders
+       when there's a sync in flight or a completion to show. */
+    .action-zone {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .action-zone .mode-toggle { margin: 0; }
+    .action-zone .conn-block { margin: 0; }
+    /* Date range inline so it doesn't take a whole stacked block. */
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .range-label {
+      font-size: 12px;
+      color: #6b7280;
+      flex-shrink: 0;
+    }
+    .range-row select { flex: 1; }
+
+    .result-zone {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .result-zone:empty { display: none; }
+    /* Inside the result zone we drop default `.section` margins so the
+       gap above takes over — no double spacing. */
+    .result-zone > .status:empty { display: none; }
+    .result-zone .pending-bundle { margin-top: 0; }
+    .result-zone .launch-block { margin-top: 0; }
+    /* Subtle divider between result zone and step 3's action zone. */
+    .result-zone::before {
+      content: "";
+      display: block;
+      height: 1px;
+      background: linear-gradient(to right, transparent, #d1d5db, transparent);
+      margin: -2px 12px 4px;
+    }
+
     /* "On NHI tab but not logged in" banner — bigger than .cta-reason
        because this is the single biggest first-run failure mode. */
     .nhi-needs-login {
@@ -306,6 +357,20 @@
     }
     .btn-secondary:hover:not(:disabled) { background: #f9fafb; }
     .btn-secondary:disabled { color: #9ca3af; cursor: not-allowed; }
+
+    /* Launch SMART App — outline-ish "open in new window" style. Reads
+       as secondary to the bright 📥 download CTA above; doesn't fight
+       with the green 🔄 取得 button in the action zone. */
+    .btn-launch {
+      color: #4338ca;
+      border-color: #c7d2fe;
+      background: #eef2ff;
+      font-weight: 600;
+    }
+    .btn-launch:hover:not(:disabled) { background: #e0e7ff; color: #3730a3; }
+    .btn-launch:disabled {
+      color: #9ca3af; background: white; border-color: #e5e7eb;
+    }
 
     .btn-danger {
       background: white;
@@ -807,9 +872,10 @@
     <!-- ── STEP 3: 取得資料 + 看結果 ─────────────────────────────── -->
     <div class="wizard-step" data-step="3">
 
-    <!-- 3a. Output mode — "where does this run write to?" is part of
-         the action choice, not a one-time setup. -->
-    <section class="section">
+    <!-- 3-A. Action zone: everything the user touches BEFORE pressing 取得.
+              Wrapped in a card so it visually decouples from the result. -->
+    <div class="action-zone">
+      <!-- Mode toggle — "where does this run write to?" -->
       <div class="mode-toggle" role="radiogroup" aria-label="輸出方式">
         <label class="mode-opt" title="只在你自己電腦上：產生 FHIR 紀錄檔下載到下載夾，完全不經過任何後端">
           <input type="radio" name="sync-mode" value="local" checked />
@@ -820,32 +886,30 @@
           🏥 本機後端 (進階)
         </label>
       </div>
-    </section>
 
-    <!-- 3b. Backend connection status — only when in backend mode. -->
-    <section class="section backend-only" id="conn-section">
-      <div class="conn-banner" id="conn-banner" data-state="unknown">
-        <span class="conn-dot" id="conn-dot"></span>
-        <span class="conn-msg" id="conn-msg">未檢測</span>
-        <button class="conn-retry" id="conn-retry-btn" hidden>重試</button>
+      <!-- Backend connection status — only when in backend mode. -->
+      <div class="backend-only conn-block" id="conn-section">
+        <div class="conn-banner" id="conn-banner" data-state="unknown">
+          <span class="conn-dot" id="conn-dot"></span>
+          <span class="conn-msg" id="conn-msg">未檢測</span>
+          <button class="conn-retry" id="conn-retry-btn" hidden>重試</button>
+        </div>
+        <div class="conn-help" id="conn-help" hidden></div>
       </div>
-      <div class="conn-help" id="conn-help" hidden></div>
-    </section>
 
-    <!-- 3c. Date range — what slice of NHI data to grab this run. -->
-    <section class="section">
-      <div class="label">日期範圍</div>
-      <select id="api-sync-range">
-        <option value="1">最近 1 年</option>
-        <option value="3" selected>最近 3 年</option>
-        <option value="5">最近 5 年</option>
-        <option value="10">最近 10 年</option>
-        <option value="all">全部歷史紀錄</option>
-      </select>
-    </section>
+      <!-- Date range. Inline label so it sits compactly next to the select. -->
+      <div class="range-row">
+        <span class="range-label">日期範圍</span>
+        <select id="api-sync-range">
+          <option value="1">最近 1 年</option>
+          <option value="3" selected>最近 3 年</option>
+          <option value="5">最近 5 年</option>
+          <option value="10">最近 10 年</option>
+          <option value="all">全部歷史紀錄</option>
+        </select>
+      </div>
 
-    <!-- 3d. Primary CTA ─────────────────────────────────── -->
-    <section class="section">
+      <!-- Primary CTA -->
       <button class="btn-cta" id="sync-api-btn" disabled>
         🔄 取得健保存摺資料
       </button>
@@ -853,53 +917,63 @@
       <button class="btn-danger" id="stop-btn" hidden style="margin-top:6px">
         停止
       </button>
-    </section>
+    </div>
 
-    <!-- 3b. Status banner (updated during sync + on completion) -->
-    <div id="status" class="status"></div>
+    <!-- 3-B. Result zone: appears only after a sync starts or completes.
+              Status banner + breakdown + downstream actions cluster here
+              so the user's eye lands on "what's done / what's next"
+              without competing with the pre-action controls above. -->
+    <div class="result-zone" id="result-zone" hidden>
+      <!-- Live + completion status. Always at the top of the result zone. -->
+      <div id="status" class="status"></div>
 
-    <!-- 3c. Backend ↔ local data state (backend mode only) -->
-    <section class="section backend-only" id="data-state-section" hidden>
-      <div class="data-state-card">
-        <div class="data-state-row">
-          <span class="data-state-label">後端</span>
-          <span class="data-state-value" id="backend-state">檢查中…</span>
+      <!-- Backend ↔ local data-state card (backend mode only). Sits
+           BELOW status so users see "sync done" first, then the
+           backend-presence detail. -->
+      <section class="backend-only" id="data-state-section" hidden>
+        <div class="data-state-card">
+          <div class="data-state-row">
+            <span class="data-state-label">後端</span>
+            <span class="data-state-value" id="backend-state">檢查中…</span>
+          </div>
+          <div class="data-state-row" id="local-state-row" hidden>
+            <span class="data-state-label">本地</span>
+            <span class="data-state-value" id="local-state">—</span>
+          </div>
+          <button class="btn-secondary" id="push-local-btn" hidden
+                  style="margin-top:6px; padding:5px 10px; font-size:12px">
+            📤 把本地檔案上傳到後端
+          </button>
         </div>
-        <div class="data-state-row" id="local-state-row" hidden>
-          <span class="data-state-label">本地</span>
-          <span class="data-state-value" id="local-state">—</span>
+      </section>
+
+      <!-- Pending FHIR Bundle download — appears once the local bundle exists. -->
+      <section class="pending-bundle" id="pending-bundle" hidden>
+        <div class="bundle-row">
+          <button class="btn-primary" id="download-bundle-btn" style="background:#0ea5e9; flex:1">
+            📥 下載健康紀錄檔
+          </button>
+          <button class="btn-secondary btn-icon" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">🗑️</button>
         </div>
-        <button class="btn-secondary" id="push-local-btn" hidden
-                style="margin-top:6px; padding:5px 10px; font-size:12px">
-          📤 把本地檔案上傳到後端
-        </button>
-      </div>
-    </section>
+        <div class="hint" id="bundle-meta"></div>
+        <!-- Quiet confirmation that the in-extension bundle and the backend
+             store agree on count. Only shown in backend mode + in-sync;
+             otherwise the data-state card above conveys the divergence. -->
+        <div class="hint backend-only" id="sync-status-hint" hidden
+             style="color:#047857; font-weight:500">
+          ✓ 本地檔案已與後端同步
+        </div>
+      </section>
 
-    <!-- ── 4c. Pending FHIR Bundle (local mode result) ──────────── -->
-    <section class="section pending-bundle" id="pending-bundle" hidden style="margin-top:8px">
-      <div class="bundle-row">
-        <button class="btn-primary" id="download-bundle-btn" style="background:#0ea5e9; flex:1">
-          📥 下載健康紀錄檔
+      <!-- Launch SMART App (backend mode only) — the "next action" after
+           a successful backend sync. Styled as an outline button so it
+           reads as secondary to the bright 📥 download CTA above. -->
+      <section class="backend-only launch-block">
+        <button class="btn-secondary btn-launch" id="launch-btn" disabled>
+          🚀 開啟 SMART App
         </button>
-        <button class="btn-secondary btn-icon" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">🗑️</button>
-      </div>
-      <div class="hint" id="bundle-meta" style="margin-top:4px"></div>
-      <!-- Quiet confirmation that the in-extension bundle and the backend
-           store agree on count. Only shown in backend mode + in-sync;
-           otherwise the data-state card above conveys the divergence. -->
-      <div class="hint backend-only" id="sync-status-hint" hidden
-           style="margin-top:2px; color:#047857; font-weight:500">
-        ✓ 本地檔案已與後端同步
-      </div>
-    </section>
-
-    <!-- 3e. Launch SMART App (backend mode only) -->
-    <section class="section backend-only" style="margin-top:14px">
-      <button class="btn-primary" id="launch-btn" disabled>
-        🚀 開啟 SMART App
-      </button>
-    </section>
+      </section>
+    </div>
 
     </div><!-- /STEP 3 -->
 

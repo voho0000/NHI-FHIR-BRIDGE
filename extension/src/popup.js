@@ -71,6 +71,7 @@ const els = {
   nhiNeedsLoginSection: document.getElementById("nhi-needs-login-section"),
   loginOkSection: document.getElementById("login-ok-section"),
   wizardStepper: document.getElementById("wizard-stepper"),
+  resultZone: document.getElementById("result-zone"),
 };
 
 const NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
@@ -451,6 +452,28 @@ function _refreshWizardUi() {
     els.nhiNeedsLoginSection.hidden = !onNhi || loggedIn;
   if (els.loginOkSection)
     els.loginOkSection.hidden = !(onNhi && loggedIn);
+
+  _refreshResultZone();
+}
+
+// Show/hide the step-3 result zone based on whether anything inside
+// has content. Without this, an empty .result-zone leaves a faint
+// divider + bottom spacing visible even on a fresh popup.
+function _refreshResultZone() {
+  if (!els.resultZone) return;
+  const hasStatus = (els.status?.textContent ?? "").trim() !== "";
+  const bundleShown =
+    els.pendingBundle && !els.pendingBundle.hidden;
+  const dataStateShown =
+    els.dataStateSection && !els.dataStateSection.hidden;
+  // Launch button only counts when the user is in backend mode AND
+  // would actually be able to use it — i.e. when a patient exists on
+  // the backend (`launchBtn.disabled === false`). Showing the result
+  // zone solely for a perma-disabled Launch button would defeat the
+  // "appears only when there's a result" intent.
+  const launchUsable =
+    currentMode() === "backend" && els.launchBtn && !els.launchBtn.disabled;
+  els.resultZone.hidden = !(hasStatus || bundleShown || dataStateShown || launchUsable);
 }
 
 function _maybeAutoAdvance() {
@@ -977,6 +1000,8 @@ function setStatus(text, kind, breakdown) {
     }
     els.status.appendChild(details);
   }
+  // Status visibility drives whether the result zone shows at all.
+  if (_wizardInitialized) _refreshResultZone();
 }
 
 async function getActiveTab() {
@@ -1002,6 +1027,7 @@ async function refreshPendingBundle() {
     await chrome.storage.local.get(PENDING_BUNDLE_KEY);
   if (!pending || !pending.json) {
     els.pendingBundle.hidden = true;
+    if (_wizardInitialized) _refreshResultZone();
     return;
   }
   // If the user has switched override to a different patient, the
@@ -1011,6 +1037,7 @@ async function refreshPendingBundle() {
   const ov = getPatientOverride();
   if (ov?.id_no && pending.patientId && pending.patientId !== ov.id_no) {
     els.pendingBundle.hidden = true;
+    if (_wizardInitialized) _refreshResultZone();
     return;
   }
   els.pendingBundle.hidden = false;
@@ -1018,6 +1045,7 @@ async function refreshPendingBundle() {
     ? `${Math.max(1, Math.round((Date.now() - pending.generatedAt) / 1000))} 秒前`
     : "";
   els.bundleMeta.textContent = `${pending.filename} · ${_fmtBytes(pending.bytes || 0)}${ago ? ` · ${ago}` : ""}`;
+  if (_wizardInitialized) _refreshResultZone();
 }
 
 async function downloadPendingBundle() {
