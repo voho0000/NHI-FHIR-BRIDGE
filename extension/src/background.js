@@ -1041,7 +1041,7 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     _phaseStart = now;
   };
   await setStatus({
-    running: true, progress: "🚀 開始同步健保存摺資料…", phase: "init",
+    running: true, progress: "🚀 開始取得健保存摺資料…", phase: "init",
     started: _t0, totalResources: 0, host: NHI_HOST, errors: [],
   });
 
@@ -1461,8 +1461,8 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   await setStatus({
     running: false,
     progress: errors.length
-      ? `⚠️ 同步完成 · ${_successVerb} ${total} 筆健康紀錄，${errors.length} 項失敗（${_elapsedStr}）${_localTail}`
-      : `✅ 同步完成 · ${_successVerb} ${total} 筆健康紀錄（${_elapsedStr}）${_localTail}`,
+      ? `⚠️ 取得完成 · ${_successVerb} ${total} 筆健康紀錄，${errors.length} 項失敗（${_elapsedStr}）${_localTail}`
+      : `✅ 取得完成 · ${_successVerb} ${total} 筆健康紀錄（${_elapsedStr}）${_localTail}`,
     phase: "done",
     totalResources: total,
     completed: Date.now(),
@@ -1593,7 +1593,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             [STORAGE_KEY]: {
               ...prev,
               running: false,
-              progress: "⛔ 已停止並清除部分同步資料 — 請重新同步",
+              progress: "⛔ 已停止並清除部分資料 — 請重新取得",
               phase: "cancelled",
               ts: Date.now(),
               completed: Date.now(),

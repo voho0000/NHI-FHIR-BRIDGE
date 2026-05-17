@@ -540,7 +540,7 @@
              alt="" class="header-icon" />
         NHI-FHIR Bridge
       </h1>
-      <div class="subtitle">健保存摺 → FHIR 同步</div>
+      <div class="subtitle">健保存摺 → FHIR 轉換</div>
     </div>
     <!-- Compact connection indicator (backend mode + state=ok). For other
          states the full banner below the mode toggle takes over. -->
@@ -558,7 +558,7 @@
         🔗 開啟健保存摺登入
       </button>
       <div class="hint">
-        需要先登入健保存摺才能同步資料。已經登入過了？把那個分頁切回前景就會自動偵測。
+        需要先登入健保存摺才能取得資料。已經登入過了？把那個分頁切回前景就會自動偵測。
       </div>
     </section>
 
@@ -595,7 +595,7 @@
         </summary>
         <div class="patient-card-body">
           <div class="help">
-            健康存摺只能抓到病歷資料，<b>身分證字號</b>會在同步時自動帶入，其他基本資料請補上。考量隱私：
+            健康存摺只能抓到病歷資料，<b>身分證字號</b>會在取得資料時自動帶入，其他基本資料請補上。考量隱私：
             <ul style="margin:6px 0 0 16px; padding:0">
               <li><b>姓名 + 完整生日</b>：可以填假，自用想填真也行。</li>
               <li><b>出生年份 + 性別</b>：建議填真（AI 判讀年齡 / 性別會用到）。</li>
@@ -603,7 +603,7 @@
           </div>
           <div class="field">
             <div class="label">身分證字號（選填）</div>
-            <input type="text" id="ov-id-no" placeholder="留空 = 同步時自動帶入" autocomplete="off" />
+            <input type="text" id="ov-id-no" placeholder="留空 = 取得資料時自動帶入" autocomplete="off" />
           </div>
           <div class="field">
             <div class="label">姓名</div>
@@ -634,7 +634,7 @@
 
     <!-- ── 2. Sync scope ─────────────────────────────────────────── -->
     <section class="section">
-      <div class="label">同步範圍</div>
+      <div class="label">日期範圍</div>
       <select id="api-sync-range">
         <option value="1">最近 1 年</option>
         <option value="3" selected>最近 3 年</option>
@@ -647,10 +647,10 @@
     <!-- ── 3. Primary CTA ─────────────────────────────────────────── -->
     <section class="section">
       <button class="btn-cta" id="sync-api-btn" disabled>
-        🔄 同步健保存摺資料
+        🔄 取得健保存摺資料
       </button>
       <button class="btn-danger" id="stop-btn" hidden style="margin-top:6px">
-        停止同步
+        停止
       </button>
     </section>
 
@@ -726,7 +726,7 @@
           <div class="field backend-only">
             <div class="label">
               Backend URL
-              <span class="help-icon" data-tip="本機 Docker 保留預設即可。&#10;指向其他 server（例如 http://192.168.1.100:8010）第一次同步時 Chrome 會跳出權限對話框。&#10;連線狀態顯示在 popup 最上方。">ⓘ</span>
+              <span class="help-icon" data-tip="本機 Docker 保留預設即可。&#10;指向其他 server（例如 http://192.168.1.100:8010）第一次取得資料時 Chrome 會跳出權限對話框。&#10;連線狀態顯示在 popup 最上方。">ⓘ</span>
             </div>
             <input type="text" id="backend-url" placeholder="http://localhost:8010" />
           </div>
