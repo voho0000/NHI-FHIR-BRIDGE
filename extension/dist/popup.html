@@ -153,6 +153,20 @@
     .btn-cta:hover:not(:disabled) { background: #059669; }
     .btn-cta:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
 
+    /* "On NHI tab but not logged in" banner — bigger than .cta-reason
+       because this is the single biggest first-run failure mode. */
+    .nhi-needs-login {
+      padding: 10px 12px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-left: 4px solid #dc2626;
+      border-radius: 6px;
+      color: #991b1b;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .nhi-needs-login b { color: #7f1d1d; }
+
     /* Reason shown below the CTA whenever it's blocked. Replaces the
        invisible-on-mobile/popup tooltip. */
     .cta-reason {
@@ -572,6 +586,14 @@
       </button>
       <div class="hint">
         需要先登入健保存摺才能取得資料。已經登入過了？把那個分頁切回前景就會自動偵測。
+      </div>
+    </section>
+
+    <!-- ── 0b. Already on NHI tab but not logged in ─────────────────── -->
+    <section class="section" id="nhi-needs-login-section" hidden>
+      <div class="nhi-needs-login">
+        🔒 <b>偵測到健保存摺分頁，但你還沒登入。</b><br/>
+        請在那個分頁完成登入（健保卡 / 行動電話認證 / 自然人憑證 / TW FidO 任一），再回來按「取得」。
       </div>
     </section>
 
