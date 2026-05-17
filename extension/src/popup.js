@@ -150,11 +150,14 @@ function validateBirthDate() {
   // Chrome's native date input: partial entry (just year, just yyyy-mm)
   // surfaces here even though .value is "".
   if (el.validity && el.validity.badInput) {
-    return "生日請填完整年月日，或清空欄位";
+    return "生日請填完整年月日";
   }
   const s = (el.value || "").trim();
-  if (!s) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "生日請填完整年月日，或清空欄位";
+  // Birth date is now required — age affects every reference range
+  // and any downstream age-based UI; empty input lets a typo / browser
+  // quirk silently propagate as NaN.
+  if (!s) return "請填生日";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "生日請填完整年月日";
   const [y, m, d] = s.split("-").map(Number);
   const dt = new Date(s + "T00:00:00Z");
   if (
