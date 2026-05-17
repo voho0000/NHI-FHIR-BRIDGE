@@ -292,7 +292,7 @@ function _refreshButtonStates() {
   const modeOk = currentMode() === "local" || _connState === "ok";
   els.syncApiBtn.disabled = !(onNhi && modeOk);
   els.syncApiBtn.title = !onNhi
-    ? "請先切到健保存摺分頁再同步"
+    ? "請先切到健保存摺分頁再取得資料"
     : (!modeOk ? "後端尚未連線" : "");
 
   // Launch button: backend mode + conn ok + patient set + backend
@@ -310,7 +310,7 @@ function _refreshButtonStates() {
     currentMode() !== "backend"  ? "請切到「上傳後端」模式" :
     _connState !== "ok"           ? "後端尚未連線" :
     !ov?.id_no                    ? "請先填病人資料" :
-    !haveBackendPatient           ? "後端尚無此病人的資料 — 請先同步或上傳本地檔案" :
+    !haveBackendPatient           ? "後端尚無此病人的資料 — 請先取得資料或上傳本地檔案" :
                                     "";
 }
 
@@ -448,8 +448,8 @@ function _renderDataState() {
       // exists (otherwise the user goes hunting for an upload button
       // that's not there and concludes "there's no sync button at all").
       bs.textContent = localMatches
-        ? "⚠ 尚無此病人 — 請按上方「🔄 同步」或下方「📤 把本地檔案上傳到後端」"
-        : "⚠ 尚無此病人 — 請按上方「🔄 同步」抓資料到後端";
+        ? "⚠ 尚無此病人 — 請按上方「🔄 取得健保存摺資料」或下方「📤 把本地檔案上傳到後端」"
+        : "⚠ 尚無此病人 — 請按上方「🔄 取得健保存摺資料」抓資料到後端";
       break;
     case "present": {
       const count = _backendPatient.count;
@@ -980,13 +980,13 @@ async function stopSync() {
   await chrome.storage.local.set({
     syncStatus: {
       running: false,
-      progress: "⛔ 停止中，正在清除部分同步資料…",
+      progress: "⛔ 停止中，正在清除部分資料…",
       phase: "cancelled",
       ts: Date.now(),
       completed: Date.now(),
     },
   });
-  setStatus("⛔ 停止中，正在清除部分同步資料…", "info");
+  setStatus("⛔ 停止中，正在清除部分資料…", "info");
   chrome.runtime.sendMessage({ type: "stopSync" }).catch(() => {});
   els.stopBtn.hidden = true;
   _refreshButtonStates();
@@ -1066,7 +1066,7 @@ async function ensureBackendPermission(backendUrl) {
   }
   return granted
     ? { ok: true }
-    : { ok: false, reason: `未授權連線到 ${pattern} — 同步取消` };
+    : { ok: false, reason: `未授權連線到 ${pattern} — 取消` };
 }
 
 async function apiSyncNhi() {
@@ -1104,11 +1104,11 @@ async function apiSyncNhi() {
   await chrome.storage.local.set({
     syncStatus: {
       running: true,
-      progress: "🚀 開始同步健保存摺資料…",
+      progress: "🚀 開始取得健保存摺資料…",
       phase: "starting", started: Date.now(), ts: Date.now(),
     },
   });
-  setStatus("🚀 開始同步健保存摺資料…", "info");
+  setStatus("🚀 開始取得健保存摺資料…", "info");
 
   // Compute date range from the dropdown. "1" = NHI's default window;
   // anything else is "today back N years". Helper inside background.js
