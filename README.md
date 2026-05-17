@@ -2,7 +2,7 @@
 
 [![backend-ts + extension](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/backend-ts.yml/badge.svg)](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/backend-ts.yml)
 [![release](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/release.yml/badge.svg)](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/release.yml)
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![license](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 
 > 把台灣健保署**健康存摺**裡的就醫、用藥、檢驗、影像紀錄，**自動轉成 FHIR R4 標準格式**，讓任何 SMART on FHIR App 都能查得到。
 
@@ -388,7 +388,7 @@ cd extension && npm run dev
 
 ## 授權
 
-MIT License — 詳見 [LICENSE](LICENSE)。
+Apache License 2.0 — 詳見 [LICENSE](LICENSE)。
 
 ---
 
