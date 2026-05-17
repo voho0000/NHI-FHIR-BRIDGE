@@ -58,6 +58,44 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
+            ## 0.5.3 重點
+
+            這版主要是 popup UI 的大幅整理 + 一些 sync 流程的 bug 修正。
+
+            **UI 重新設計**
+            - 🪜 **3 步驟引導式 popup**：① 登入 → ② 您的資料 → ③ 取得
+            - 🎨 Step 3 從「動作卡 + 結果卡 + 下載卡 + Launch 卡」整併成**單一面板**，視覺壓力大幅降低
+            - 🎨 統一主色為藍色 (#2563eb)，綠色只用於成功狀態；SMART App 按鈕改 outline 藍框
+            - 🎨 Stepper 壓縮成 breadcrumb 形式（高度減半）
+            - 🪜 取得對象識別卡：step 3 頂端顯示「目前要抓誰」，點一下回 step 2 修改
+            - 🎨 取得 CTA 完成後自動降級為「重新取得」outline，讓下載按鈕變主動作
+            - 📋 完成後的明細從 dev jargon 改成中文（就醫 12 筆、處方 88 筆）
+
+            **病人資料 (step 2) 重新規劃**
+            - ⚠️ 必填欄位（生日、性別）放在最上方
+            - 🏥 姓名旁邊直接放遮罩 toggle + 說明（不再藏在進階設定）
+            - 💡 解釋填真名的好處：narrative 中的同名字串會自動一併遮罩
+            - 🆔 身分證移到最後（反正取得時自動帶入）
+
+            **Bug 修正**
+            - 🐞 NHI 沒回任何資料時不再顯示綠 ✅，改成 ⚠️ 警告 + 建議重新登入
+            - 🐞 Backend 模式 export URL 用 hashed Patient.id，不再永遠拿到空 bundle
+            - 🐞 Export 回 0 筆時不再覆蓋掉上傳的真實 total
+            - 🐞 Sync 進行中切回 popup，CTA 保持 disabled（不會被 onChanged 重設）
+            - 🐞 生日輸入到一半（只年份）會被攔下，不會 NaN 年齡
+            - 🐞 切換到 patient B 時，A 的下載 bundle / 狀態 / 後端 cache 都會清空
+            - 🐞 點 🗑 清除按鈕時，status banner 也跟著清掉
+            - 🐞 NHI 登入預檢：popup 一開就主動偵測 NHI 分頁 session 狀態
+            - 🐞 Sidebar 「📋 助理」面板 toggle 失效（讀錯 storage area）
+            - 🐞 Tombstone：sync 完自動清掉 NHI 已刪除的舊資料
+
+            **其他**
+            - 🧪 新增 80 個 mapper unit tests（從 107 → 187 tests）
+            - 📚 完整重寫 ARCHITECTURE.md（之前還是舊 Python 版內容）
+            - 🔒 Apache 2.0 license
+
+            ---
+
             ## 0.5.2 重點
 
             - 🐞 **生日驗證**：填到一半（例如只填年份）無法按「確定」或「取得」，避免下游年齡計算出現 NaN
