@@ -404,29 +404,24 @@
       align-self: flex-start;
     }
 
-    /* Side-by-side downstream actions: 下載 + 開啟 SMART App. */
-    .next-actions {
+    /* Primary post-sync action row: full-width 下載 button + small
+       trash icon. Launch button (backend-only) lives on a SEPARATE row
+       below so it doesn't crowd the primary action. */
+    .action-group {
       display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
+      gap: 6px;
+      align-items: stretch;
     }
-    .next-action-group {
-      display: flex;
-      gap: 4px;
-      flex: 1;
-      min-width: 0;
-    }
-    .next-action-group > .btn-primary { flex: 1; }
+    .action-group > .btn-primary { flex: 1; }
     .btn-icon-only {
-      flex: 0 0 32px;
-      width: 32px;
+      flex: 0 0 38px;
+      width: 38px;
       padding: 0;
-      font-size: 16px;
+      font-size: 14px;
       line-height: 1;
       color: #6b7280;
     }
     .btn-icon-only:hover:not(:disabled) { color: #ef4444; background: #fef2f2; }
-    .next-actions .btn-launch { flex: 1; min-width: 0; }
 
     .bundle-meta-block { margin-top: -4px; }
     .bundle-sync-hint {
@@ -1072,19 +1067,20 @@
             </button>
           </div>
 
-          <!-- Next-actions row: download + (backend) open SMART app
-               side-by-side so the user sees both possible next steps. -->
-          <div class="next-actions">
-            <div class="next-action-group" id="pending-bundle" hidden>
-              <button class="btn-primary" id="download-bundle-btn">
-                下載健康紀錄檔
-              </button>
-              <button class="btn-icon-only" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">×</button>
-            </div>
-            <button class="btn-secondary btn-launch backend-only" id="launch-btn" disabled>
-              開啟 SMART App
+          <!-- Primary post-sync action: download the bundle. Trash
+               icon at the right end clears the pending file. -->
+          <div class="action-group" id="pending-bundle" hidden>
+            <button class="btn-primary" id="download-bundle-btn">
+              下載健康紀錄檔
             </button>
+            <button class="btn-icon-only" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">🗑</button>
           </div>
+
+          <!-- Secondary action (backend mode only): open SMART App. On
+               its own row so it doesn't crowd the primary 下載 button. -->
+          <button class="btn-secondary btn-launch backend-only" id="launch-btn" disabled>
+            開啟 SMART App
+          </button>
 
           <!-- Bundle meta (filename + size · age) — single line each, muted. -->
           <div class="bundle-meta-block" id="bundle-meta-block" hidden>
