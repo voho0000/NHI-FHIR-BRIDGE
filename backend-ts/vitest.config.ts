@@ -10,11 +10,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: [
-        "src/fallback/**", // not exercised in CI (LLM optional)
-        "src/main.ts",
-        "src/**/index.ts",
-      ],
+      exclude: ["src/main.ts", "src/**/index.ts"],
       reporter: ["text", "lcov"],
     },
   },

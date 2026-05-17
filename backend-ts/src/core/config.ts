@@ -7,11 +7,6 @@
 
 import { z } from "zod";
 
-// "claude" was removed in v0.5.0 — sending PHI HTML to a third-party
-// cloud LLM contradicts the project's stated privacy posture. Ollama
-// stays as the only fallback option (runs locally, doesn't leave host).
-const LlmProviderSchema = z.enum(["ollama", "none"]).default("none");
-
 const SettingsSchema = z.object({
   // SQLite file path. The Python `DATABASE_URL` was a SQLAlchemy URL like
   // `sqlite+aiosqlite:///./data/ehr_bridge.db`. Drizzle / better-sqlite3
@@ -19,13 +14,6 @@ const SettingsSchema = z.object({
   // Default points to the same file the Python backend uses, so a single
   // SQLite file works across both backends during cutover.
   DATABASE_FILE: z.string().default("./data/ehr_bridge.db"),
-
-  // LLM provider for the fallback path. Default "none". Only Ollama
-  // (local) is supported; cloud providers are intentionally absent
-  // so PHI never leaves the host even on the fallback path.
-  LLM_PROVIDER: LlmProviderSchema,
-  OLLAMA_BASE_URL: z.string().default("http://host.docker.internal:11434"),
-  OLLAMA_MODEL: z.string().default("qwen2.5vl:7b"),
 
   // API key required as `X-Sync-API-Key` on PHI-writing endpoints.
   // Empty = no auth (single-user localhost only).

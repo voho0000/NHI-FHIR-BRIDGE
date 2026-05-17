@@ -134,10 +134,10 @@ alembic upgrade head
 ## 如何加入新的 NHI 頁面 / FHIR 資源類型
 
 1. **取得 NHI JSON 端點**：在 NHI 健康存摺頁面打開 DevTools → Network → 找出對應的 `/api/ihke3000/...` 端點
-2. **Extension 端**：在 `extension/background.js` 的 `runNhiApiSync` 加入 fetch 該端點 + 用 `adapt*()` 把 JSON 轉成 mapper-shape items
-3. **Backend mapper**：在 `backend/app/mapper/` 新增 mapper 函式，或擴充既有的
-4. **註冊**：把 mapper 加進 `backend/app/fallback/extractor.py` 的 `_LIST_HANDLERS` 或 `_GROUP_HANDLERS`
-5. **寫測試**：`backend/tests/unit/test_<resource>_mapper.py`
+2. **Extension 端**：在 `extension/src/background.js` 的 `runNhiApiSync` / `NHI_API_ENDPOINTS` 加入該端點 + 用 `adapt*()` 把 JSON 轉成 mapper-shape items
+3. **Mapper**：在 `packages/mapper/src/` 新增 mapper 函式（或擴充既有的）— 同一份程式碼會被 backend 和 extension 共用
+4. **註冊**：把 mapper 加進 `packages/mapper/src/dispatch.ts` 的 `LIST_HANDLERS` 或 `GROUP_HANDLERS`
+5. **寫測試**：`backend-ts/tests/unit/<resource>-mapper.test.ts`
 
 ---
 

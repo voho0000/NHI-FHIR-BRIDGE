@@ -14,7 +14,6 @@ const TEST_DB = join(TEST_DB_DIR, "test.db");
 
 // Set BEFORE imports — same pattern as the pytest conftest.
 process.env.DATABASE_FILE = TEST_DB;
-process.env.LLM_PROVIDER = process.env.LLM_PROVIDER ?? "none";
 
 // Best-effort cleanup at process exit.
 process.on("exit", () => {

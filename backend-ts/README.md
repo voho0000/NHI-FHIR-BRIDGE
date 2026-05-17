@@ -1,61 +1,62 @@
-# NHI-FHIR-Bridge backend (TypeScript port)
+# NHI-FHIR-Bridge backend
 
-Side-by-side TypeScript port of the FastAPI backend at `../backend/`.
-Public API surface is byte-for-byte identical — the Chrome extension,
-Next.js dashboard, and SMART apps work without any change.
+Hono + Drizzle + better-sqlite3. FHIR R4 store, SMART on FHIR OAuth2
+endpoints, and the `/sync/*` ingestion API the Chrome extension calls.
 
 ## Stack
 - Node 20 + Hono (web framework)
 - Drizzle ORM + better-sqlite3 (synchronous SQLite)
 - Zod (validation)
-- Vitest (tests) + Biome (lint+format)
+- Vitest (tests) + Biome (lint + format)
 
 ## Run
 
 ```sh
 npm install
-npm run dev               # tsx src/main.ts (auto-reload off; restart manually)
+npm run dev           # tsx watch src/main.ts
 ```
 
-Default port: `8010` (override via `PORT` env). DB file: `./data/ehr_bridge.db`
-(override via `DATABASE_FILE`). Same `.env` keys as the Python backend
-(`SYNC_API_KEY`, `LLM_PROVIDER`, `ANTHROPIC_API_KEY`, `OLLAMA_BASE_URL`,
-`OLLAMA_MODEL`, `FHIR_BASE_URL`, `ALLOW_CORS_ORIGINS`).
+Default port: `8010` (override via `PORT`). DB file: `./data/ehr_bridge.db`
+(override via `DATABASE_FILE`).
+
+Relevant env:
+- `SYNC_API_KEY` — required header on every PHI route. Empty = no auth (dev only)
+- `BIND_HOST` — default `127.0.0.1`. Docker compose sets `0.0.0.0` internally
+- `FHIR_BASE_URL` — advertised in CapabilityStatement
+- `ALLOWED_EXTENSION_IDS` — comma-separated chrome-extension IDs allowed via CORS
+- `ALLOW_CORS_ORIGINS` — extra origins beyond the built-in localhost defaults
+
+No LLM / AI integration of any kind. PHI never leaves the host.
 
 ## Tests + lint
 
 ```sh
-npx vitest run            # 83 tests
-npx biome check src tests
-npx tsc --noEmit
+npm test              # vitest run
+npm run lint
+npm run typecheck
 ```
 
 ## Docker
 
+Use the repo-root `docker-compose.yml`:
+
 ```sh
-docker compose -f ../docker-compose.ts.yml up --build
+docker compose up --build
 ```
 
-The `docker-compose.ts.yml` file lives alongside the original
-`docker-compose.yml` during cutover so both can boot side-by-side. Once
-extension + dashboard smoke-tests pass against the TS backend, rename
-`docker-compose.ts.yml` → `docker-compose.yml` and delete `../backend/`.
+## Source layout
 
-## Module map (Python → TypeScript)
+| Path | Purpose |
+|------|---------|
+| `src/api/fhir.ts`   | `/fhir/*` REST endpoints (Patient + 7 per-patient types) |
+| `src/api/smart.ts`  | SMART OAuth2 authorize/token/launch-context |
+| `src/api/sync.ts`   | `/sync/upload-structured` + audit/log/status reads |
+| `src/core/`         | config, sqlite, migrate, auth middleware |
+| `src/fhir/`         | FHIR store (upsert, search), CapabilityStatement |
+| `src/smart/oauth2.ts` | code/token storage, PKCE verification |
+| `src/models/schema.ts` | Drizzle schema |
+| `drizzle/`          | SQL migrations |
+| `tests/`            | Vitest unit tests |
 
-| Python                       | TypeScript                       |
-|------------------------------|----------------------------------|
-| `app/core/*.py`              | `src/core/*.ts`                  |
-| `app/models/fhir_store.py`   | `src/models/schema.ts` (Drizzle) |
-| `app/mapper/*.py`            | `src/mapper/*.ts`                |
-| `app/fhir/*.py`              | `src/fhir/*.ts`                  |
-| `app/smart/oauth2.py`        | `src/smart/oauth2.ts`            |
-| `app/api/{fhir,smart,sync}.py` | `src/api/{fhir,smart,sync}.ts` |
-| `app/fallback/*.py`          | `src/fallback/*.ts`              |
-| `app/main.py`                | `src/main.ts`                    |
-| `alembic/`                   | `drizzle/` + `drizzle.config.ts` |
-| `tests/`                     | `tests/`                         |
-
-The Python backend remains intact until the user has completed an
-end-to-end smoke (extension sync → dashboard view → SMART app launch)
-against the TS backend.
+The NHI → FHIR mapping logic lives in `../packages/mapper`, shared with
+the Chrome extension.
