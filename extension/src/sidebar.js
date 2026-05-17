@@ -15,6 +15,8 @@
 //   That comes once we confirm the basic embed renders.
 // - Per-HIS auth handoff (FHIR launch token, etc.).
 
+import { derivePatientId } from "@nhi-fhir-bridge/mapper";
+
 (() => {
   // Re-injection (e.g. background.js calling chrome.scripting.executeScript
   // after an extension update) means the script runs again on a page that
@@ -438,14 +440,21 @@
       "patientOverride", "backendUrl",
     ]).catch(() => ({}));
     const backend = (backendUrl || DEFAULT_BACKEND).replace(/\/$/, "");
-    const patientId = patientOverride?.id_no;
+    const rawId = patientOverride?.id_no;
     const appBase = await pickAppBase();
     const appHome = `${appBase}/`;
-    if (!patientId) {
+    if (!rawId) {
       // No patient context yet — load the app bare; user can fill the
-      // popup's 🪪 area and click 🔄 to relaunch with context.
+      // popup's 「您的資料」area and click reload to relaunch with context.
       return `${appHome}?${cacheBust}`;
     }
+    // Backend tracks Patient under its hashed FHIR id (since v0.5.0), not
+    // the raw national ID. Mirror the popup's launch handler so the SMART
+    // app receives a launch context that actually resolves to a patient
+    // on our backend — otherwise the iframe loads with an unresolvable
+    // patient ref and shows empty data. (This was the same drift v0.5.1
+    // fixed in the popup; sidebar got missed.)
+    const patientId = derivePatientId(rawId);
     try {
       const r = await fetch(`${backend}/smart/launch-context`, {
         method: "POST",
