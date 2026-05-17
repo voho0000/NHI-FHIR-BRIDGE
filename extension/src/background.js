@@ -1016,15 +1016,11 @@ function _assembleLocalBundle(byType, patientOverride, maskEnabled) {
 const PENDING_BUNDLE_KEY = "pendingFhirBundle";
 
 async function _stashFhirBundle(bundle, patientId, dateRange) {
-  // Filename: nhi-{pid}-{startYYYYMM}-{endYYYYMM}.json
-  // YYYYMM (not YYYYMMDD) keeps the filename short enough to render on
-  // one line in the 360px popup. Day precision was never load-bearing
-  // in the file name — the bundle's own resources carry exact dates.
-  // When no explicit dateRange (NHI default = 近 1 年), synthesize
-  // today-1y → today.
+  // Filename: nhi-{pid}-{startYYYYMMDD}-{endYYYYMMDD}.json
+  // When no explicit dateRange (NHI default = 近 1 年), synthesize today-1y → today.
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
-  const fmt = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}`;
+  const fmt = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
   // Half-mask the ID in the filename so the user's Downloads folder
   // doesn't leak the full 身分證 (would be visible to anyone seeing
   // a file listing or download-bar preview). `X` because `*` is
@@ -1032,11 +1028,11 @@ async function _stashFhirBundle(bundle, patientId, dateRange) {
   // ID under Patient.id — file owner knows whose data it is.
   const maskedPid = maskId(patientId || "unknown", "X");
   const safePid = maskedPid.replace(/[^A-Za-z0-9_-]/g, "_");
-  const compactMonth = (d) => (d || "").slice(0, 7).replace(/-/g, "");
+  const compact = (d) => (d || "").slice(0, 10).replace(/-/g, "");
   let s, e;
   if (dateRange && (dateRange.start || dateRange.end)) {
-    s = compactMonth(dateRange.start) || fmt(now);
-    e = compactMonth(dateRange.end) || fmt(now);
+    s = compact(dateRange.start) || fmt(now);
+    e = compact(dateRange.end) || fmt(now);
   } else {
     const oneYearAgo = new Date(now);
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
