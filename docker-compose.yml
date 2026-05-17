@@ -59,10 +59,6 @@ services:
       # NEVER prefix with NEXT_PUBLIC_ — that would inline it into the
       # browser bundle and leak it to anyone with DevTools.
       SYNC_API_KEY: ${SYNC_API_KEY:-}
-      # Optional shared-password gate for the dashboard itself. When set,
-      # every page + /api/backend/* call requires a session cookie minted
-      # by /api/dashboard-auth. Leave empty to disable (single-user POC).
-      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-}
     depends_on:
       - backend
 
