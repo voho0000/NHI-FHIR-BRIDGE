@@ -58,6 +58,16 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
+            ## 0.5.1 重點（v0.5.0 之後的 polish）
+
+            - 🆕 **資料退場**：每次 sync 會自動清掉同 patient/page_type 但本次沒回傳的舊資料 — NHI 後端刪掉的紀錄不會再永留本機
+            - ✨ **登入預檢**：popup 一開就確認健保存摺分頁有效 session；沒登入會直接跳紅色 banner，不會讓你按完 CTA 才被「🔒 尚未登入」打回票
+            - ✨ **明細人話化**：完成後的「查看明細」用「就醫 12 筆 · 處方 88 筆 · 檢驗 412 筆」取代 `encounters=12/12`；技術計時收到「技術細節」子摺
+            - 🐞 **修正 Patient.id 雜湊不一致**：0.5.0 因為兩邊各自 salt 導致「📤 把本地檔案上傳到後端」之後查不到病人，已修
+            - 🎨 status pill 改名字優先（`陳O新 · P12074****`）、加 keyboard focus-visible 環
+
+            ---
+
             ## 0.5.0 重點
 
             這版是一次比較大的安全 + 隱私強化，外加完全拿掉 AI／LLM 整合。
