@@ -11,7 +11,11 @@
 
 services:
   backend:
-    build: ./backend-ts
+    build:
+      # Build context = repo root so the workspaces package
+      # (packages/mapper) is reachable from the Dockerfile.
+      context: .
+      dockerfile: backend-ts/Dockerfile
     ports:
       # Loopback-only: backend stores PHI. Binding to 127.0.0.1 means
       # external network can't reach it; the only callers are the user's
@@ -32,8 +36,11 @@ services:
       # or `curl http://localhost:8010/fhir/export > bundle.json`.
       - ehr_data:/app/data
       # Live-mount source so code changes don't need a rebuild.
-      - ./backend-ts/src:/app/src
-      - ./backend-ts/drizzle:/app/drizzle
+      # Paths reflect the in-container layout established by the Dockerfile
+      # (WORKDIR ends at /app/backend-ts; shared mapper lives next door).
+      - ./backend-ts/src:/app/backend-ts/src
+      - ./backend-ts/drizzle:/app/backend-ts/drizzle
+      - ./packages/mapper/src:/app/packages/mapper/src
 
   frontend:
     build: ./frontend

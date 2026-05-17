@@ -1,0 +1,32 @@
+# Repo root is the build context for backend-ts/Dockerfile (workspaces
+# need access to packages/mapper). Trim everything the backend doesn't
+# need so the build context stays small.
+
+# Big install dirs — Docker's COPY would otherwise hand npm hundreds of MB
+node_modules
+**/node_modules
+.git
+.next
+**/.next
+dist
+**/dist
+build
+**/build
+
+# Other services / docs / tests not used by backend image
+frontend
+backend
+docs
+data
+dev-replay
+**/dev-replay
+test-results
+playwright-report
+
+# Local-only stuff
+.env
+.env.local
+.vscode
+.idea
+.DS_Store
+*.log
