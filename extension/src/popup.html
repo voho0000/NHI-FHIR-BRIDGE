@@ -358,6 +358,30 @@
       font-size: 11px;
     }
 
+    /* ── Backend↔local data state card ─────────────────────────────── */
+    .data-state-card {
+      padding: 8px 10px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .data-state-row {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+      line-height: 1.6;
+    }
+    .data-state-label {
+      flex: 0 0 70px;
+      color: #6b7280;
+      font-weight: 500;
+    }
+    .data-state-value { flex: 1; color: #111827; word-break: break-word; }
+    .data-state-value.empty { color: #b45309; }
+    .data-state-value.ok    { color: #047857; }
+    .data-state-value.fail  { color: #b91c1c; }
+
     /* ── Mode-conditional visibility ───────────────────────────────── */
     body[data-mode="local"] .backend-only { display: none !important; }
     body[data-mode="backend"] .local-only { display: none !important; }
@@ -486,6 +510,24 @@
           </div>
         </div>
       </details>
+    </section>
+
+    <!-- ── 1b. Backend ↔ local data state (backend mode only) ─────── -->
+    <section class="section backend-only" id="data-state-section" hidden>
+      <div class="data-state-card">
+        <div class="data-state-row">
+          <span class="data-state-label">後端</span>
+          <span class="data-state-value" id="backend-state">檢查中…</span>
+        </div>
+        <div class="data-state-row" id="local-state-row" hidden>
+          <span class="data-state-label">本地 Bundle</span>
+          <span class="data-state-value" id="local-state">—</span>
+        </div>
+        <button class="btn-secondary" id="push-local-btn" hidden
+                style="margin-top:8px; padding:6px 10px; font-size:12px">
+          📤 把本地 Bundle 上傳到後端
+        </button>
+      </div>
     </section>
 
     <!-- ── 2. Sync scope ─────────────────────────────────────────── -->

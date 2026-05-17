@@ -53,6 +53,11 @@ const els = {
   connMsg: document.getElementById("conn-msg"),
   connRetryBtn: document.getElementById("conn-retry-btn"),
   connHelp: document.getElementById("conn-help"),
+  dataStateSection: document.getElementById("data-state-section"),
+  backendState: document.getElementById("backend-state"),
+  localStateRow: document.getElementById("local-state-row"),
+  localState: document.getElementById("local-state"),
+  pushLocalBtn: document.getElementById("push-local-btn"),
 };
 
 const PENDING_BUNDLE_KEY = "pendingFhirBundle";
@@ -118,6 +123,11 @@ function refreshOverrideSummary() {
   }
   // Both launch + sync enabled state depend on patient + mode + conn.
   _refreshButtonStates();
+  // Changing patient ID invalidates the backend-state cache (the new
+  // patient might not be on backend) and the local-bundle row (might
+  // no longer match). Re-evaluate both.
+  _renderDataState();
+  if (currentMode() === "backend" && _connState === "ok") checkBackendPatient();
 }
 
 async function savePatientOverride() {
@@ -216,12 +226,23 @@ function _refreshButtonStates() {
     ? "請先切到健保存摺分頁再同步"
     : (!modeOk ? "後端尚未連線" : "");
 
-  // Launch button: backend mode + conn ok + patient set.
+  // Launch button: backend mode + conn ok + patient set + backend
+  // actually has this patient (otherwise the SMART app launches into
+  // an empty FHIR store — confusing blank screen).
   const ov = getPatientOverride();
-  els.launchBtn.disabled = !(currentMode() === "backend" && _connState === "ok" && !!ov?.id_no);
-  els.launchBtn.title = currentMode() !== "backend"
-    ? "請切到「上傳後端」模式"
-    : (_connState !== "ok" ? "後端尚未連線" : (!ov?.id_no ? "請先填病人資料" : ""));
+  const haveBackendPatient = _backendPatient.state === "present";
+  els.launchBtn.disabled = !(
+    currentMode() === "backend" &&
+    _connState === "ok" &&
+    !!ov?.id_no &&
+    haveBackendPatient
+  );
+  els.launchBtn.title =
+    currentMode() !== "backend"  ? "請切到「上傳後端」模式" :
+    _connState !== "ok"           ? "後端尚未連線" :
+    !ov?.id_no                    ? "請先填病人資料" :
+    !haveBackendPatient           ? "後端尚無此病人的資料 — 請先同步或上傳本地 Bundle" :
+                                    "";
 }
 
 async function testBackendConnection() {
@@ -262,10 +283,216 @@ async function testBackendConnection() {
 
   _renderConnBanner();
   _refreshButtonStates();
+  // Whenever connectivity flips, re-check whether this patient already
+  // exists on backend. (Stale "_backendPatient" state would otherwise
+  // cause Launch to look enabled / disabled wrongly.)
+  if (currentMode() === "backend") checkBackendPatient();
   return _connState === "ok";
 }
 
 els.connRetryBtn?.addEventListener("click", testBackendConnection);
+
+// ── Backend ↔ local data-state ───────────────────────────────────────
+//
+// Independent of the connection banner (which only tells us "can we
+// reach the backend"). This card answers two questions:
+//
+//   1. Does the backend already have this patient's data?
+//      → drives whether 🚀 Launch is allowed at all (Launch on an
+//        empty backend gives a confusing SMART-app blank).
+//   2. Does the user have a local Bundle that's newer than the
+//      backend's view?
+//      → offer "📤 上傳本地 Bundle 到後端" to push it via /fhir/import
+//        without re-fetching NHI (fast, non-destructive: stable IDs
+//        upsert so backend resources just bump versionId).
+//
+// We don't second-guess the user: even when local is clearly newer,
+// Launch stays enabled if the backend has the patient — they may
+// genuinely want to look at the older state. The UI lays out both
+// sides; user decides.
+
+let _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
+//   state: "unknown" | "checking" | "absent" | "present" | "fail"
+let _localBundle = { exists: false, count: 0, generatedAt: 0, patientId: null };
+
+function _fmtTimeShort(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function _fmtRelative(ms) {
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return `${Math.max(1, Math.round(diff / 1000))} 秒前`;
+  if (diff < 3600_000) return `${Math.round(diff / 60_000)} 分鐘前`;
+  if (diff < 86_400_000) return `${Math.round(diff / 3600_000)} 小時前`;
+  return _fmtTimeShort(new Date(ms).toISOString());
+}
+
+function _renderDataState() {
+  // Section only visible in backend mode (handled by .backend-only CSS),
+  // but we also explicitly hide when the popup has no patient_override
+  // set, since both checks key off patient_id.
+  const ov = getPatientOverride();
+  if (currentMode() !== "backend" || !ov?.id_no) {
+    els.dataStateSection.hidden = true;
+    return;
+  }
+  els.dataStateSection.hidden = false;
+
+  // Backend row
+  const bs = els.backendState;
+  switch (_backendPatient.state) {
+    case "checking":
+      bs.className = "data-state-value";
+      bs.textContent = "檢查中…";
+      break;
+    case "absent":
+      bs.className = "data-state-value empty";
+      bs.textContent = "⚠ 尚無此病人 — 請先按下方「同步」或上傳本地 Bundle";
+      break;
+    case "present": {
+      const count = _backendPatient.count;
+      const ts = _backendPatient.lastUpdated;
+      bs.className = "data-state-value ok";
+      bs.textContent = `✓ ${count > 0 ? `${count} 筆 · ` : ""}最後更新 ${_fmtTimeShort(ts) || "(unknown)"}`;
+      break;
+    }
+    case "fail":
+      bs.className = "data-state-value fail";
+      bs.textContent = "✗ 檢查失敗（看連線 banner）";
+      break;
+    default:
+      bs.className = "data-state-value";
+      bs.textContent = "—";
+  }
+
+  // Local row — show only when the pending bundle matches this patient.
+  const localMatches = _localBundle.exists && _localBundle.patientId === ov.id_no;
+  if (localMatches) {
+    els.localStateRow.hidden = false;
+    els.localState.className = "data-state-value ok";
+    els.localState.textContent =
+      `✓ ${_localBundle.count} 筆 · ${_fmtRelative(_localBundle.generatedAt)}產生`;
+  } else {
+    els.localStateRow.hidden = true;
+  }
+
+  // "📤 上傳本地 Bundle" button shows only when there's something to
+  // upload. Non-destructive (stable-ID upsert) so safe even when
+  // backend already has data — it'll just refresh / fill gaps.
+  els.pushLocalBtn.hidden = !localMatches;
+}
+
+async function _refreshLocalBundleState() {
+  const { [PENDING_BUNDLE_KEY]: pending } =
+    await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+  _localBundle = pending
+    ? {
+        exists: true,
+        count: Array.isArray(JSON.parse(pending.json)?.entry)
+          ? JSON.parse(pending.json).entry.length
+          : 0,
+        generatedAt: pending.generatedAt || 0,
+        patientId: pending.patientId || null,
+      }
+    : { exists: false, count: 0, generatedAt: 0, patientId: null };
+  _renderDataState();
+}
+
+async function checkBackendPatient() {
+  const ov = getPatientOverride();
+  if (currentMode() !== "backend" || !ov?.id_no || _connState !== "ok") {
+    _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
+    _renderDataState();
+    _refreshButtonStates();
+    return;
+  }
+  _backendPatient = { state: "checking", count: 0, lastUpdated: null };
+  _renderDataState();
+
+  const url = els.backendUrl.value.trim().replace(/\/$/, "");
+  const key = els.syncApiKey.value.trim();
+  const headers = key ? { "X-Sync-API-Key": key } : {};
+  try {
+    const pr = await fetch(`${url}/fhir/Patient/${encodeURIComponent(ov.id_no)}`, { headers });
+    if (pr.status === 404) {
+      _backendPatient = { state: "absent", count: 0, lastUpdated: null };
+      _renderDataState(); _refreshButtonStates();
+      return;
+    }
+    if (!pr.ok) {
+      _backendPatient = { state: "fail", count: 0, lastUpdated: null };
+      _renderDataState(); _refreshButtonStates();
+      return;
+    }
+    const patient = await pr.json();
+    const lastUpdated = patient?.meta?.lastUpdated ?? null;
+    // Count via /fhir/export — slightly heavier but it's the only
+    // off-the-shelf way to get total resources for a patient. Cap by
+    // 5s timeout so a slow backend doesn't lock the popup forever.
+    let count = 0;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const er = await fetch(`${url}/fhir/export?patient=${encodeURIComponent(ov.id_no)}`, {
+        headers, signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (er.ok) {
+        const bundle = await er.json();
+        if (Array.isArray(bundle.entry)) count = bundle.entry.length;
+      }
+    } catch { /* leave count = 0; not fatal */ }
+    _backendPatient = { state: "present", count, lastUpdated };
+  } catch (_e) {
+    _backendPatient = { state: "fail", count: 0, lastUpdated: null };
+  }
+  _renderDataState();
+  _refreshButtonStates();
+}
+
+async function pushLocalBundleToBackend() {
+  const ov = getPatientOverride();
+  if (!ov?.id_no || !_localBundle.exists || _localBundle.patientId !== ov.id_no) return;
+  const url = els.backendUrl.value.trim().replace(/\/$/, "");
+  const key = els.syncApiKey.value.trim();
+  const headers = {
+    "Content-Type": "application/json",
+    ...(key ? { "X-Sync-API-Key": key } : {}),
+  };
+  els.pushLocalBtn.disabled = true;
+  els.pushLocalBtn.textContent = "上傳中…";
+  try {
+    const { [PENDING_BUNDLE_KEY]: pending } =
+      await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+    if (!pending?.json) throw new Error("no local bundle");
+    const r = await fetch(`${url}/fhir/import`, {
+      method: "POST", headers, body: pending.json,
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`);
+    }
+    const result = await r.json();
+    setStatus(`✅ 已上傳 ${result.imported ?? "?"} 筆到後端`, "success");
+    await checkBackendPatient();
+  } catch (e) {
+    setStatus(`⛔ 上傳失敗：${e.message}`, "error");
+  } finally {
+    els.pushLocalBtn.disabled = false;
+    els.pushLocalBtn.textContent = "📤 把本地 Bundle 上傳到後端";
+  }
+}
+
+els.pushLocalBtn?.addEventListener("click", pushLocalBundleToBackend);
+
+// Local bundle state changes whenever the SW stashes a new sync.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
+});
 
 // ── Sync mode (local | backend) ──────────────────────────────────────
 async function loadSyncMode() {
@@ -294,10 +521,11 @@ for (const r of els.modeRadios()) {
     document.body.dataset.mode = mode;
     chrome.storage.sync.set({ syncMode: mode });
     if (mode === "backend") {
-      testBackendConnection();
+      testBackendConnection(); // triggers checkBackendPatient on success
     } else {
       _connState = "unknown"; _connFailReason = null;
-      _renderConnBanner(); _refreshButtonStates();
+      _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
+      _renderConnBanner(); _renderDataState(); _refreshButtonStates();
     }
   });
 }
@@ -413,11 +641,18 @@ els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);
 els.clearBundleBtn.addEventListener("click", clearPendingBundle);
 
 // Live update when background stashes a new bundle while popup is open.
+// (Note: another onChanged listener earlier in the file refreshes the
+// data-state card; we leave that one separate so failure of either path
+// doesn't take the other down.)
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
 });
 
 async function init() {
+  // Seed local bundle state from storage so the data-state card is
+  // populated as soon as the popup renders (no flash of "未產生").
+  await _refreshLocalBundleState();
+
   // Order matters: loadBackendUrl populates els.backendUrl.value, which
   // loadSyncMode() reads via testBackendConnection(). Reverse this and
   // the auto-test sees an empty URL and falsely reports "未設定 Backend URL"
@@ -497,6 +732,11 @@ function applySyncStatus(status) {
     // of unconditionally enabling — keeps the button disabled when we
     // know we shouldn't sync (e.g. backend down, off-NHI tab).
     _refreshButtonStates();
+    // Sync just finished — both sides may have changed (backend got
+    // new resources in backend mode, local bundle was stashed in either
+    // mode). Refresh data-state card so the user sees up-to-date counts.
+    _refreshLocalBundleState();
+    if (currentMode() === "backend" && _connState === "ok") checkBackendPatient();
   }
 }
 

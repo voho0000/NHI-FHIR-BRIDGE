@@ -94,6 +94,12 @@ export class FHIRServer {
   upsert(resource: FhirJson, dbi: DB = defaultDb): FhirJson {
     const rtype: string = resource.resourceType;
     const fid: string = resource.id;
+    const now = new Date();
+    // Stamp meta.lastUpdated alongside versionId so clients (extension's
+    // backend-state card, SMART apps, conditional reads) can tell when
+    // a resource was last touched without reading our internal columns.
+    // ISO 8601 with millisecond precision per FHIR R4 §2.21.0.4.
+    const isoNow = now.toISOString();
 
     const existing = dbi
       .select()
@@ -105,16 +111,20 @@ export class FHIRServer {
       const newVersion = String(Number.parseInt(existing.versionId, 10) + 1);
       resource.meta = resource.meta ?? {};
       resource.meta.versionId = newVersion;
+      resource.meta.lastUpdated = isoNow;
       dbi
         .update(fhirResources)
         .set({
           versionId: newVersion,
           resource,
-          updatedAt: new Date(),
+          updatedAt: now,
         })
         .where(eq(fhirResources.id, existing.id))
         .run();
     } else {
+      resource.meta = resource.meta ?? {};
+      resource.meta.versionId = "1";
+      resource.meta.lastUpdated = isoNow;
       dbi
         .insert(fhirResources)
         .values({
