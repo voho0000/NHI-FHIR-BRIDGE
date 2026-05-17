@@ -133,10 +133,12 @@ function refreshOverrideSummary() {
   }
   // Both launch + sync enabled state depend on patient + mode + conn.
   _refreshButtonStates();
-  // Changing patient ID invalidates the backend-state cache (the new
-  // patient might not be on backend) and the local-bundle row (might
-  // no longer match). Re-evaluate both.
+  // Changing patient ID invalidates: (a) backend-state cache (new
+  // patient might not be on backend); (b) local-bundle row in the
+  // data-state card; (c) the 📥 download bundle section, which would
+  // otherwise still show the previous patient's stashed file.
   _renderDataState();
+  refreshPendingBundle();
   if (currentMode() === "backend" && _connState === "ok") checkBackendPatient();
 }
 
@@ -149,8 +151,10 @@ async function savePatientOverride() {
   await chrome.storage.sync.set({ patientOverride: ov });
   refreshOverrideSummary();
   if (els.patientOverrideDetails) els.patientOverrideDetails.open = false;
+  // Make clear this is the identity save, not a medical-record sync —
+  // 「病人資料」alone reads as "patient data" (medical) for some users.
   setStatus(
-    `✅ 已儲存病人資料：${ov.id_no}${ov.name ? ` (${maskName(ov.name)})` : ""}`,
+    `✅ 病人身份已記住：${ov.id_no}${ov.name ? ` (${maskName(ov.name)})` : ""}`,
     "success",
   );
 }
@@ -674,6 +678,15 @@ async function refreshPendingBundle() {
   const { [PENDING_BUNDLE_KEY]: pending } =
     await chrome.storage.local.get(PENDING_BUNDLE_KEY);
   if (!pending || !pending.json) {
+    els.pendingBundle.hidden = true;
+    return;
+  }
+  // If the user has switched override to a different patient, the
+  // stashed bundle is for the *previous* patient. Hide it so they
+  // can't accidentally download the wrong file. The bundle stays in
+  // storage; re-entering the matching override will surface it again.
+  const ov = getPatientOverride();
+  if (ov?.id_no && pending.patientId && pending.patientId !== ov.id_no) {
     els.pendingBundle.hidden = true;
     return;
   }
