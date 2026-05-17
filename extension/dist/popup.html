@@ -119,6 +119,18 @@
       border-color: #2563eb;
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
     }
+    /* Keyboard-focus ring for everything that isn't text input — radios
+       (mode toggle), summary elements (collapsibles), buttons, and the
+       help icon. Without this the mode-opt radios are visually hidden
+       so their focus state used to be completely invisible. */
+    button:focus-visible,
+    summary:focus-visible,
+    .mode-opt:focus-within,
+    .help-icon:focus-visible {
+      outline: 2px solid #2563eb;
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
     .row { display: flex; gap: 8px; }
     .row > * { flex: 1; }
 
