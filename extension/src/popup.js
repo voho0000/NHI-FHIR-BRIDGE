@@ -69,6 +69,8 @@ const els = {
   openNhiSection: document.getElementById("open-nhi-section"),
   openNhiBtn: document.getElementById("open-nhi-btn"),
   nhiNeedsLoginSection: document.getElementById("nhi-needs-login-section"),
+  loginOkSection: document.getElementById("login-ok-section"),
+  wizardStepper: document.getElementById("wizard-stepper"),
 };
 
 const NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
@@ -344,6 +346,106 @@ function _renderConnBanner() {
   }
 }
 
+// ── 3-step wizard ────────────────────────────────────────────────────
+//
+// Conceptually:
+//   Step 1 — 登入：on NHI tab + session token is valid
+//   Step 2 — 設定：gender filled + (mode==local OR backend reachable)
+//                + birth_date if entered must be valid
+//   Step 3 — 取得：the action itself (sync CTA, status, results)
+//
+// Steps auto-advance when their precondition flips green; users can
+// click the stepper to revisit any step. We never auto-step BACK on
+// state change — once the user has moved forward, only an explicit
+// stepper click brings them back. Otherwise opening the popup mid-
+// sync would jerk them back to step 1.
+let _activeStep = 1;
+let _wizardInitialized = false;
+
+function _isStepDone(step) {
+  const onNhi = !els.syncApiBtn.dataset.offNhi;
+  const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
+  const modeOk = currentMode() === "local" || _connState === "ok";
+  const genderOk = !!els.ovGender?.value;
+  const dobError = validateBirthDate(els.ovBirthDate?.value?.trim() ?? "");
+  switch (step) {
+    case 1:
+      return onNhi && loggedIn;
+    case 2:
+      return genderOk && modeOk && !dobError;
+    case 3:
+      // Step 3 is the terminal action step; never "done" for progress
+      // purposes (the success banner inside the step is the indicator).
+      return false;
+    default:
+      return false;
+  }
+}
+
+function _setActiveStep(n, opts = {}) {
+  const clamped = Math.max(1, Math.min(3, n));
+  _activeStep = clamped;
+  document.body.dataset.activeStep = String(clamped);
+  _refreshWizardUi();
+  if (!opts.silent) {
+    // Auto-scroll the popup to the top of the step so users always
+    // see the step header / first input after navigation.
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+}
+
+function _refreshWizardUi() {
+  if (!els.wizardStepper) return;
+  const lis = els.wizardStepper.querySelectorAll("li[data-step]");
+  for (const li of lis) {
+    const n = Number(li.dataset.step);
+    const isActive = n === _activeStep;
+    const isDone = _isStepDone(n);
+    if (isActive) li.setAttribute("aria-current", "true");
+    else li.removeAttribute("aria-current");
+    if (isDone) li.dataset.done = "true";
+    else delete li.dataset.done;
+  }
+  // Step 1's three sub-cards (off-nhi / needs-login / login-ok) are
+  // mutually exclusive — pick the one that matches current state.
+  const onNhi = !els.syncApiBtn.dataset.offNhi;
+  const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
+  if (els.openNhiSection)
+    els.openNhiSection.hidden = onNhi;
+  if (els.nhiNeedsLoginSection)
+    els.nhiNeedsLoginSection.hidden = !onNhi || loggedIn;
+  if (els.loginOkSection)
+    els.loginOkSection.hidden = !(onNhi && loggedIn);
+}
+
+function _maybeAutoAdvance() {
+  // Only advance forward, never back. Save user's place if they've
+  // clicked into a later step manually.
+  if (_activeStep === 1 && _isStepDone(1)) _setActiveStep(2);
+  else if (_activeStep === 2 && _isStepDone(2)) _setActiveStep(3);
+}
+
+function _initWizard() {
+  if (_wizardInitialized) return;
+  _wizardInitialized = true;
+  // Initial step: whichever is the FIRST not-yet-done step at popup open.
+  // First-time user → step 1. Returning user with valid session + saved
+  // patient → step 3.
+  const start = _isStepDone(1) ? (_isStepDone(2) ? 3 : 2) : 1;
+  _setActiveStep(start, { silent: true });
+
+  // Stepper clicks → jump
+  for (const li of els.wizardStepper.querySelectorAll("li[data-step]")) {
+    li.addEventListener("click", () => _setActiveStep(Number(li.dataset.step)));
+    li.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        _setActiveStep(Number(li.dataset.step));
+      }
+    });
+  }
+}
+
 function _refreshButtonStates() {
   // Sync button. Conditions, in priority order:
   //   1. on an NHI tab
@@ -389,6 +491,14 @@ function _refreshButtonStates() {
     !ov?.id_no                    ? "請先填病人資料" :
     !haveBackendPatient           ? "後端尚無此病人的資料 — 請先取得資料或上傳本地檔案" :
                                     "";
+
+  // Wizard depends on the same inputs — refresh stepper + maybe auto-
+  // advance. Guard against the initial paint where _wizardInitialized
+  // hasn't run yet (init() calls _initWizard explicitly after).
+  if (_wizardInitialized) {
+    _refreshWizardUi();
+    _maybeAutoAdvance();
+  }
 }
 
 async function testBackendConnection() {
@@ -1037,6 +1147,11 @@ async function init() {
 
   _refreshButtonStates();
 
+  // Start the wizard AFTER all initial state is loaded — this picks
+  // the correct starting step (e.g. returning user with valid session
+  // lands on step 3 directly).
+  _initWizard();
+
   // Re-attach to any sync that's currently running in the service worker.
   // This is what lets the user close + reopen the popup mid-sync.
   await refreshSyncStatusFromBackground();
@@ -1076,6 +1191,12 @@ function applySyncStatus(status) {
   if (!status) return;
   _latestStatus = status;
   _renderStatus();
+  // Status banner lives inside step 3 — force-jump there so it's
+  // actually visible. Running sync OR a fresh completion both warrant
+  // being on the result step.
+  if (_wizardInitialized && _activeStep !== 3) {
+    _setActiveStep(3, { silent: true });
+  }
   if (status.running) {
     els.syncApiBtn.disabled = true;
     els.stopBtn.hidden = false;
