@@ -1050,9 +1050,9 @@ async function refreshPendingBundle() {
     return;
   }
   els.pendingBundle.hidden = false;
-  const ago = pending.generatedAt
-    ? `${Math.max(1, Math.round((Date.now() - pending.generatedAt) / 1000))} 秒前`
-    : "";
+  // Use the shared relative-time helper so "266 秒前" auto-rolls into
+  // "4 分鐘前" once the user leaves the popup open for a while.
+  const ago = pending.generatedAt ? _fmtRelative(pending.generatedAt) : "";
   // Render in two pieces so a long filename gets its own line + ellipsis,
   // and the size / age info stays compact below it. Avoids "filename ·
   // 169.7 KB · 1 秒前" wrapping awkwardly mid-word in a 360px popup.
