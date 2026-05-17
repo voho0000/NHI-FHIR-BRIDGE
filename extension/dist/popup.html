@@ -103,6 +103,23 @@
       line-height: 1.5;
     }
 
+    /* Two-line layout for the download bundle meta: filename on top
+       (truncates with ellipsis if it can't fit), size/age on a second
+       lighter line below. Avoids the bundle metadata wrapping mid-name. */
+    .bundle-filename {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 11px;
+      color: #6b7280;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .bundle-sizeage {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+
     /* ── Inputs ────────────────────────────────────────────────────── */
     input, select {
       width: 100%;

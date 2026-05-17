@@ -1053,7 +1053,19 @@ async function refreshPendingBundle() {
   const ago = pending.generatedAt
     ? `${Math.max(1, Math.round((Date.now() - pending.generatedAt) / 1000))} 秒前`
     : "";
-  els.bundleMeta.textContent = `${pending.filename} · ${_fmtBytes(pending.bytes || 0)}${ago ? ` · ${ago}` : ""}`;
+  // Render in two pieces so a long filename gets its own line + ellipsis,
+  // and the size / age info stays compact below it. Avoids "filename ·
+  // 169.7 KB · 1 秒前" wrapping awkwardly mid-word in a 360px popup.
+  els.bundleMeta.textContent = "";
+  const fname = document.createElement("div");
+  fname.className = "bundle-filename";
+  fname.textContent = pending.filename;
+  fname.title = pending.filename;
+  const sizeAge = document.createElement("div");
+  sizeAge.className = "bundle-sizeage";
+  sizeAge.textContent = `${_fmtBytes(pending.bytes || 0)}${ago ? ` · ${ago}` : ""}`;
+  els.bundleMeta.appendChild(fname);
+  els.bundleMeta.appendChild(sizeAge);
   if (_wizardInitialized) _refreshResultZone();
 }
 
