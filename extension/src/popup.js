@@ -65,7 +65,11 @@ const els = {
   syncStatusHint: document.getElementById("sync-status-hint"),
   sidebarEnabled: document.getElementById("sidebar-enabled"),
   maskNameEnabled: document.getElementById("mask-name-enabled"),
+  openNhiSection: document.getElementById("open-nhi-section"),
+  openNhiBtn: document.getElementById("open-nhi-btn"),
 };
+
+const NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
 
 const PENDING_BUNDLE_KEY = "pendingFhirBundle";
 
@@ -439,13 +443,13 @@ function _renderDataState() {
       break;
     case "absent":
       bs.className = "data-state-value empty";
-      // Card sits *below* the 📥 同步 button. Only mention the local-
+      // Card sits *below* the 🔄 同步 button. Only mention the local-
       // upload alternative when a matching pending Bundle actually
       // exists (otherwise the user goes hunting for an upload button
       // that's not there and concludes "there's no sync button at all").
       bs.textContent = localMatches
-        ? "⚠ 尚無此病人 — 請按上方「📥 同步」或下方「📤 上傳本地 Bundle」"
-        : "⚠ 尚無此病人 — 請按上方「📥 同步」抓資料到後端";
+        ? "⚠ 尚無此病人 — 請按上方「🔄 同步」或下方「📤 上傳本地 Bundle」"
+        : "⚠ 尚無此病人 — 請按上方「🔄 同步」抓資料到後端";
       break;
     case "present": {
       const count = _backendPatient.count;
@@ -589,6 +593,14 @@ async function pushLocalBundleToBackend() {
 }
 
 els.pushLocalBtn?.addEventListener("click", pushLocalBundleToBackend);
+
+// "🔗 開啟健保存摺登入" — opens the NHI landing page so the user
+// doesn't have to remember / google the URL. Closes the popup so
+// they don't have to dismiss it manually after the new tab opens.
+els.openNhiBtn?.addEventListener("click", async () => {
+  await chrome.tabs.create({ url: NHI_LANDING });
+  window.close();
+});
 
 // Local bundle state changes whenever the SW stashes a new sync.
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -889,9 +901,12 @@ async function init() {
 
   // Sync requires being on an NHI tab so cookies/session are usable from
   // the SW. Flag via dataset so _refreshButtonStates can combine this
-  // with the mode + conn state.
-  if (isNhiTab(tab.url)) delete els.syncApiBtn.dataset.offNhi;
+  // with the mode + conn state. When off-NHI, also surface the
+  // "🔗 開啟健保存摺登入" banner so users don't wonder where to go.
+  const onNhi = isNhiTab(tab.url);
+  if (onNhi) delete els.syncApiBtn.dataset.offNhi;
   else els.syncApiBtn.dataset.offNhi = "1";
+  if (els.openNhiSection) els.openNhiSection.hidden = onNhi;
   _refreshButtonStates();
 
   // Re-attach to any sync that's currently running in the service worker.

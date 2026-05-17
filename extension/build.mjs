@@ -10,11 +10,12 @@
  * Run `node build.mjs` for one-shot, `node build.mjs --watch` for dev.
  */
 
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 import * as esbuild from "esbuild";
+import { Resvg } from "@resvg/resvg-js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(__dirname, "dist");
@@ -52,6 +53,22 @@ const contexts = await Promise.all(
 const STATIC_FILES = ["manifest.json", "popup.html"];
 for (const f of STATIC_FILES) {
   copyFileSync(resolve(SRC, f), resolve(DIST, f));
+}
+
+// Render icon.svg → PNG at the four sizes Chrome ships icons in.
+// Doing it at build time keeps src/ clean (one SVG, not five blobs)
+// and means any tweak to the SVG flows through automatically.
+const ICON_SIZES = [16, 32, 48, 128];
+const iconSvg = readFileSync(resolve(SRC, "icons", "icon.svg"), "utf8");
+mkdirSync(resolve(DIST, "icons"), { recursive: true });
+for (const px of ICON_SIZES) {
+  const png = new Resvg(iconSvg, {
+    fitTo: { mode: "width", value: px },
+    background: "rgba(0,0,0,0)",
+  })
+    .render()
+    .asPng();
+  writeFileSync(resolve(DIST, "icons", `icon-${px}.png`), png);
 }
 
 if (watch) {

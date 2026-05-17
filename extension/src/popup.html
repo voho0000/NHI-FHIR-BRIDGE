@@ -541,16 +541,26 @@
 
   <div class="content">
 
+    <!-- ── 0a. Open-NHI shortcut (only shown when user is on another tab) -->
+    <section class="section" id="open-nhi-section" hidden>
+      <button class="btn-primary" id="open-nhi-btn" style="background:#0ea5e9">
+        🔗 開啟健保存摺登入
+      </button>
+      <div class="hint">
+        需要先登入健保存摺才能同步資料。已經登入過了？把那個分頁切回前景就會自動偵測。
+      </div>
+    </section>
+
     <!-- ── 0. Sync mode ───────────────────────────────────────────── -->
     <section class="section">
       <div class="mode-toggle" role="radiogroup" aria-label="輸出方式">
-        <label class="mode-opt" title="產生 FHIR JSON 檔下載到電腦，不經過後端">
+        <label class="mode-opt" title="產生 FHIR JSON 檔存到電腦，不經過後端">
           <input type="radio" name="sync-mode" value="local" checked />
-          下載到電腦
+          💾 存到電腦
         </label>
         <label class="mode-opt" title="寫入 NHI-FHIR-Bridge backend，可用 dashboard / SMART app">
           <input type="radio" name="sync-mode" value="backend" />
-          上傳後端
+          ☁️ 上傳後端
         </label>
       </div>
     </section>
@@ -604,7 +614,7 @@
             </div>
           </div>
           <div class="row" style="margin-top:10px">
-            <button class="btn-primary" id="ov-save-btn">儲存</button>
+            <button class="btn-primary" id="ov-save-btn">✓ 確定</button>
             <button class="btn-secondary" id="ov-clear-btn">清除</button>
           </div>
         </div>
@@ -626,7 +636,7 @@
     <!-- ── 3. Primary CTA ─────────────────────────────────────────── -->
     <section class="section">
       <button class="btn-cta" id="sync-api-btn" disabled>
-        📥 同步健保存摺資料
+        🔄 同步健保存摺資料
       </button>
       <button class="btn-danger" id="stop-btn" hidden style="margin-top:6px">
         停止同步
