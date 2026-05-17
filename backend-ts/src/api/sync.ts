@@ -9,6 +9,8 @@
  * was removed in v0.5.0 to keep PHI on-host unconditionally.
  */
 
+import { randomUUID } from "node:crypto";
+
 import { and, desc, eq, ne, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -16,7 +18,7 @@ import { z } from "zod";
 
 import { db as defaultDb, sqlite } from "@/core/database";
 import { requireSyncApiKey } from "@/core/security";
-import { fhirServer } from "@/fhir/server";
+import { fhirServer, tagSyncMetadata } from "@/fhir/server";
 import { type SyncLog, auditLog, fhirResources, patientSyncState, syncLogs } from "@/models/schema";
 import {
   GROUP_HANDLERS,
@@ -334,17 +336,38 @@ syncApi.post("/upload-structured", requireSyncApiKey, async (c) => {
   linkEncountersInResources(dbEncounters, resources);
   resolveSexStratifiedRanges(fhirServer.read("Patient", effectivePid), resources);
 
+  // Stamp each resource with the current run + page_type so we can
+  // tombstone stale rows after the upsert pass. Done once before the
+  // SQLite transaction so the upserts already include the tags.
+  const runId = randomUUID();
+  tagSyncMetadata(resources, payload.page_type, runId);
+
   // Wrap the upsert burst + audit log in a single SQLite transaction.
   // Without this, every fhirServer.upsert() commits and fsyncs separately
   // — fine on a local SSD (~1ms each) but devastating on macOS Docker
   // bind-mounts where each fsync hits the gRPC FUSE layer (~100ms each).
   // 1000-row sync drops from ~100s to <1s with one transaction.
   const upserted: Array<{ resourceType: string; id: string }> = [];
+  let tombstoned = 0;
   const runUpserts = sqlite.transaction(() => {
     for (const r of resources) {
       fhirServer.upsert(r);
       upserted.push({ resourceType: r.resourceType, id: r.id });
     }
+    // Tombstone resources for THIS (patient, page_type) that weren't
+    // touched this run. Scope to the resource types this run produced
+    // so unrelated page_types (e.g. a previous "screening" run's
+    // Observations) don't get caught. Patient itself is never
+    // tombstoned this way — it's handled by the patient_info branch.
+    const resourceTypes = Array.from(
+      new Set(resources.map((r) => r.resourceType).filter((t) => t !== "Patient")),
+    );
+    tombstoned = fhirServer.tombstoneStale({
+      patientId: effectivePid,
+      pageType: payload.page_type,
+      currentRunId: runId,
+      resourceTypes,
+    });
     defaultDb
       .insert(auditLog)
       .values({
@@ -363,6 +386,7 @@ syncApi.post("/upload-structured", requireSyncApiKey, async (c) => {
     patient_id: effectivePid,
     count: upserted.length,
     resources: upserted,
+    tombstoned,
   });
 });
 
