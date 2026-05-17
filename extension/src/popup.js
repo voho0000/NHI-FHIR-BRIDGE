@@ -588,12 +588,21 @@ function _refreshButtonStates() {
   else if (dobError) reason = `回 ② 您的資料：${dobError}`;
   else if (!modeOk) reason = "後端尚未連線 — 看上方紅色提示，或改回「💾 下載到電腦」";
 
-  els.syncApiBtn.disabled = reason !== "";
-  els.syncApiBtn.title = reason;
+  // Don't flip the CTA back to enabled if a sync is currently running
+  // — the SW updates `patientOverride` mid-sync (auto-fetched cid),
+  // which triggers storage.onChanged → loadPatientOverride →
+  // _refreshButtonStates. Without this guard the button would re-enable
+  // halfway through a sync and the user could click it again.
+  const syncRunning = _latestStatus?.running === true;
+  els.syncApiBtn.disabled = syncRunning || reason !== "";
+  els.syncApiBtn.title = syncRunning ? "" : reason;
   if (els.syncBlockedReason) {
-    els.syncBlockedReason.textContent = reason ? `⚠️ ${reason}` : "";
-    els.syncBlockedReason.hidden = reason === "";
+    els.syncBlockedReason.textContent = !syncRunning && reason ? `⚠️ ${reason}` : "";
+    els.syncBlockedReason.hidden = syncRunning || reason === "";
   }
+  // Mirror the stop-button visibility so the user can always cancel
+  // mid-sync even if the popup re-renders due to onChanged.
+  if (els.stopBtn) els.stopBtn.hidden = !syncRunning;
 
   // Launch button: backend mode + conn ok + patient set + backend
   // actually has this patient (otherwise the SMART app launches into
