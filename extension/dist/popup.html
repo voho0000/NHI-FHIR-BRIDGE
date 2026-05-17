@@ -409,17 +409,60 @@
     .data-state-value.ok    { color: #047857; }
     .data-state-value.fail  { color: #b91c1c; }
 
-    /* ── Inline help icon (native tooltip on hover) ───────────────── */
-    .help {
+    /* ── Inline help icon + CSS tooltip (no native delay) ─────────── */
+    .help-icon {
+      position: relative;
       display: inline-block;
       font-size: 11px;
       color: #9ca3af;
-      cursor: help;
+      cursor: pointer;     /* avoid the "?" help-cursor on macOS */
       user-select: none;
       margin-left: 2px;
       vertical-align: middle;
     }
-    .help:hover { color: #2563eb; }
+    .help-icon:hover { color: #2563eb; }
+    /* Tooltip sourced from data-tip; line breaks rendered via white-space:
+       pre-line (we used &#10; in HTML which decodes to a real newline). */
+    .help-icon::before {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      margin-bottom: 6px;
+      padding: 6px 8px;
+      background: #1f2937;
+      color: white;
+      font-size: 11px;
+      font-weight: normal;
+      line-height: 1.5;
+      border-radius: 4px;
+      white-space: pre-line;
+      width: 240px;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.1s;
+      z-index: 10;
+    }
+    .help-icon::after {
+      content: "";
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: #1f2937;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.1s;
+    }
+    .help-icon:hover::before,
+    .help-icon:hover::after {
+      opacity: 1;
+      visibility: visible;
+    }
 
     /* ── Toggle row (checkbox + label, used in settings) ─────────── */
     .toggle-row {
@@ -652,27 +695,27 @@
             <label class="toggle-row">
               <input type="checkbox" id="sidebar-enabled" checked />
               <span>在 NHI 頁面顯示「📋 助理」面板</span>
-              <span class="help" title="關閉後 NHI 頁面右側不會有 SMART App 嵌入面板。&#10;只想拿 FHIR 資料、不需要在 NHI 頁面直接看的人可以關掉。">ⓘ</span>
+              <span class="help-icon" data-tip="關閉後 NHI 頁面右側不會有 SMART App 嵌入面板。&#10;只想拿 FHIR 資料、不需要在 NHI 頁面直接看的人可以關掉。">ⓘ</span>
             </label>
           </div>
           <div class="field">
             <div class="label">
               Backend URL
-              <span class="help" title="本機 Docker 保留預設即可。&#10;指向其他 server（例如 http://192.168.1.100:8010）第一次同步時 Chrome 會跳出權限對話框。&#10;連線狀態顯示在 popup 最上方。">ⓘ</span>
+              <span class="help-icon" data-tip="本機 Docker 保留預設即可。&#10;指向其他 server（例如 http://192.168.1.100:8010）第一次同步時 Chrome 會跳出權限對話框。&#10;連線狀態顯示在 popup 最上方。">ⓘ</span>
             </div>
             <input type="text" id="backend-url" placeholder="http://localhost:8010" />
           </div>
           <div class="field">
             <div class="label">
               Sync API Key（選填）
-              <span class="help" title="Backend 沒設 SYNC_API_KEY（預設）時不用填。&#10;對外開放 backend 時設定來擋未授權的寫入。">ⓘ</span>
+              <span class="help-icon" data-tip="Backend 沒設 SYNC_API_KEY（預設）時不用填。&#10;對外開放 backend 時設定來擋未授權的寫入。">ⓘ</span>
             </div>
             <input type="password" id="sync-api-key" placeholder="留空 = 無認證" />
           </div>
           <div class="field">
             <div class="label">
               SMART App Launch URL
-              <span class="help" title="點擊「開啟 SMART App」要 launch 的 SMART on FHIR 應用入口。&#10;預設為 medical-note 示範 app；串接自己的 SMART app 時改這裡。">ⓘ</span>
+              <span class="help-icon" data-tip="點擊「開啟 SMART App」要 launch 的 SMART on FHIR 應用入口。&#10;預設為 medical-note 示範 app；串接自己的 SMART app 時改這裡。">ⓘ</span>
             </div>
             <input type="text" id="smart-app-url" placeholder="https://your-smart-app.example/smart/launch" />
           </div>
