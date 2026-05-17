@@ -42,8 +42,9 @@ describe("mapPatient", () => {
     const r = mapPatient({ identifier: PATIENT_ID, name: "陳大文" });
     expect(r.resourceType).toBe("Patient");
     expect(r.id).toBe(PATIENT_ID);
-    // Patient.name.text is the masked form (privacy by default).
-    expect(r.name.some((n: any) => n.text === "陳O文")).toBe(true);
+    // mapPatient transcribes the name as-given — the caller decides
+    // whether to pre-mask before calling.
+    expect(r.name.some((n: any) => n.text === "陳大文")).toBe(true);
   });
 
   test("TW national ID uses canonical system", () => {
@@ -72,21 +73,25 @@ describe("mapPatient", () => {
     expect(r.id).toBe("unknown");
   });
 
-  test("CJK name is partial-masked then split to family/given", () => {
+  test("CJK name splits to family/given (raw, no internal masking)", () => {
     const r = mapPatient({ identifier: PATIENT_ID, name: "陳大文" });
-    // text is masked, family preserves the original surname (= masked[0]),
-    // given is the masked tail.
+    expect(r.name[0].text).toBe("陳大文");
+    expect(r.name[0].family).toBe("陳");
+    expect(r.name[0].given).toEqual(["大文"]);
+  });
+
+  test("Western name splits to family/given (raw)", () => {
+    const r = mapPatient({ identifier: "P001", name: "John Doe" });
+    expect(r.name[0].text).toBe("John Doe");
+    expect(r.name[0].family).toBe("Doe");
+    expect(r.name[0].given).toEqual(["John"]);
+  });
+
+  test("caller can pre-mask the name (mapper transcribes verbatim)", () => {
+    const r = mapPatient({ identifier: PATIENT_ID, name: "陳O文" });
     expect(r.name[0].text).toBe("陳O文");
     expect(r.name[0].family).toBe("陳");
     expect(r.name[0].given).toEqual(["O文"]);
-  });
-
-  test("Western name is partial-masked then split to family/given", () => {
-    const r = mapPatient({ identifier: "P001", name: "John Doe" });
-    // "John Doe" → mask 2-token Western to "John D***"
-    expect(r.name[0].text).toBe("John D***");
-    expect(r.name[0].family).toBe("D***");
-    expect(r.name[0].given).toEqual(["John"]);
   });
 });
 

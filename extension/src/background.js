@@ -796,19 +796,52 @@ const _LOCAL_PAGE_TYPE_ORDER = [
   "procedures",
 ];
 
-function _buildOverridePatient(ov) {
+// Read the mask-name preference fresh from storage. We don't cache —
+// runNhiApiSync is invoked at most a few times per session and the SW
+// can be torn down + restarted any time, so a single get() per sync is
+// cheaper than syncing state across SW lifecycles.
+async function _isMaskEnabled() {
+  try {
+    const { maskNameEnabled } = await chrome.storage.sync.get("maskNameEnabled");
+    return maskNameEnabled === true;
+  } catch {
+    return false;
+  }
+}
+
+function _buildOverridePatient(ov, maskEnabled) {
+  const displayName = maskEnabled ? maskName(ov.name || "") : ov.name || "";
   const raw = {
     id: ov.id_no,
     identifier: ov.id_no,
-    name: ov.name || ov.id_no,
+    name: displayName || ov.id_no,
   };
   if (ov.birth_date) raw.birthDate = ov.birth_date;
   if (ov.gender) raw.gender = ov.gender;
   return mapPatient(raw);
 }
 
-function _assembleLocalBundle(byType, patientOverride) {
-  const patient = _buildOverridePatient(patientOverride);
+// Walk a JSON-like value and replace every string token equal to or
+// containing `needle` with `replacement`. Used to scrub the real
+// patient name out of NHI narrative fields (clinical_note, conclusion,
+// note, etc.) before the items reach the mapper. Only triggered when
+// the user has opted into masking AND supplied a name — and the
+// substitution is exact-token-replace, not fuzzy, so it can't surprise
+// the user by clobbering unrelated content.
+function _replaceNameDeep(value, needle, replacement) {
+  if (!needle || needle === replacement) return value;
+  if (typeof value === "string") return value.split(needle).join(replacement);
+  if (Array.isArray(value)) return value.map((v) => _replaceNameDeep(v, needle, replacement));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const k in value) out[k] = _replaceNameDeep(value[k], needle, replacement);
+    return out;
+  }
+  return value;
+}
+
+function _assembleLocalBundle(byType, patientOverride, maskEnabled) {
+  const patient = _buildOverridePatient(patientOverride, maskEnabled);
   const pid = patient.id;
   const all = [patient];
 
@@ -1258,6 +1291,18 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     (byType[ep.page_type] = byType[ep.page_type] || []).push(...items);
   }
 
+  // Mask gate is read fresh per sync — defaults OFF per the discussion
+  // (citizen-self-download doesn't need anonymization). When ON, also
+  // scrub the user's real name out of any NHI narrative field before
+  // it flows into the mapper.
+  const maskEnabled = await _isMaskEnabled();
+  if (maskEnabled && patientOverride.name) {
+    const replacement = maskName(patientOverride.name);
+    for (const key of Object.keys(byType)) {
+      byType[key] = _replaceNameDeep(byType[key], patientOverride.name, replacement);
+    }
+  }
+
   let total = 0;
   let _localFilename = null;
   if (mode === "local") {
@@ -1265,7 +1310,7 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     await setStatus({ progress: "🧬 轉換為 FHIR Bundle…", totalResources: 0 });
     let bundle;
     try {
-      bundle = _assembleLocalBundle(byType, patientOverride);
+      bundle = _assembleLocalBundle(byType, patientOverride, maskEnabled);
     } catch (e) {
       errors.push(`local mapping: ${e.message}`);
       bundle = null;
@@ -1281,6 +1326,14 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
       }
     }
   } else {
+    // Build the override we send to backend with the maybe-masked name
+    // so backend's auto-created Patient + the per-item subject.display
+    // see the same value the user opted into. Items themselves were
+    // already scrubbed above (byType pass), so this just covers the
+    // override-derived Patient.
+    const uploadOverride = maskEnabled && patientOverride.name
+      ? { ...patientOverride, name: maskName(patientOverride.name) }
+      : patientOverride;
     for (const [page_type, items] of Object.entries(byType)) {
       if (_cancelled) throw new Error(CANCEL_ERROR);
       await setStatus({
@@ -1288,7 +1341,7 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
         totalResources: total,
       });
       try {
-        const data = await _postStructured(backend, page_type, items, syncApiKey, patientOverride);
+        const data = await _postStructured(backend, page_type, items, syncApiKey, uploadOverride);
         total += data.count || 0;
       } catch (e) {
         errors.push(`upload ${page_type}: ${e.message}`);
@@ -1378,9 +1431,12 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
       body: JSON.stringify({
         status: errors.length ? "partial" : "success",
         patient_id: patientOverride.id_no || "",
-        // /sync/log lands in the dashboard's sync-history table; mask
-        // the name there too so the dashboard never sees the raw value.
-        patient_name: maskName(patientOverride.name || ""),
+        // /sync/log lands in the dashboard's sync-history row. Only
+        // mask when the user has opted in — otherwise dashboard sees
+        // the raw name they typed (consistent with "民眾自用" default).
+        patient_name: maskEnabled
+          ? maskName(patientOverride.name || "")
+          : patientOverride.name || "",
         total,
         breakdown,
         date_range: dateRangeLabel || "",

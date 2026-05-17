@@ -574,19 +574,24 @@
         </summary>
         <div class="patient-card-body">
           <div class="help">
-            身分證字號將作為 FHIR Patient 資源的唯一識別。儲存後同步將綁定此病人。
+            健康存摺沒有以下基本資料，請補上。考量隱私：
+            <ul style="margin:6px 0 0 16px; padding:0">
+              <li><b>姓名 + 完整生日</b>：可以填假，自用想填真也行。</li>
+              <li><b>出生年份 + 性別</b>：建議填真（AI 判讀年齡 / 性別會用到）。</li>
+              <li><b>身分證字號</b>：留空系統會自動產生 (`auto-XXXXXXXX`)。</li>
+            </ul>
           </div>
           <div class="field">
-            <div class="label">身分證字號 <span class="required">*</span></div>
-            <input type="text" id="ov-id-no" placeholder="A123456789" autocomplete="off" />
+            <div class="label">身分證字號（選填）</div>
+            <input type="text" id="ov-id-no" placeholder="留空 = 系統自動產生" autocomplete="off" />
           </div>
           <div class="field">
             <div class="label">姓名</div>
-            <input type="text" id="ov-name" placeholder="例：陳志明" />
+            <input type="text" id="ov-name" placeholder="例：陳志明 或 假名" />
           </div>
           <div class="row">
             <div class="field" style="flex:2">
-              <div class="label">生日</div>
+              <div class="label">生日（建議真實年份）</div>
               <input type="date" id="ov-birth-date" />
             </div>
             <div class="field" style="flex:1">
@@ -685,6 +690,13 @@
               <input type="checkbox" id="sidebar-enabled" checked />
               <span>在 NHI 頁面顯示「📋 助理」面板</span>
               <span class="help-icon" data-tip="關閉後 NHI 頁面右側不會有 SMART App 嵌入面板。&#10;只想拿 FHIR 資料、不需要在 NHI 頁面直接看的人可以關掉。">ⓘ</span>
+            </label>
+          </div>
+          <div class="field">
+            <label class="toggle-row">
+              <input type="checkbox" id="mask-name-enabled" />
+              <span>對外輸出時遮罩病人姓名（郭一新 → 郭O新）</span>
+              <span class="help-icon" data-tip="預設關閉 — 民眾下載自己資料時不必遮。&#10;開啟後：popup 摘要、FHIR Bundle、Dashboard、SMART App 看到的姓名都會遮罩。&#10;NHI 報告內容裡跟「姓名」欄位完全相同的字串也會被取代成遮罩版。&#10;適合多病人診間 / 教學展示 / 螢幕分享情境。">ⓘ</span>
             </label>
           </div>
           <div class="field">

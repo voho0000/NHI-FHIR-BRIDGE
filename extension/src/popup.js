@@ -64,6 +64,7 @@ const els = {
   pushLocalBtn: document.getElementById("push-local-btn"),
   syncStatusHint: document.getElementById("sync-status-hint"),
   sidebarEnabled: document.getElementById("sidebar-enabled"),
+  maskNameEnabled: document.getElementById("mask-name-enabled"),
 };
 
 const PENDING_BUNDLE_KEY = "pendingFhirBundle";
@@ -101,18 +102,29 @@ async function loadPatientOverride() {
 }
 
 function getPatientOverride() {
-  // Returns {id_no, name, birth_date, gender} only if id_no has a value.
-  // Backend treats id_no as the trigger — without it, override is ignored.
+  // Returns {id_no, name, birth_date, gender}.
+  // id_no is optional in the UI; if blank the popup auto-generates an
+  // "auto-XXXXXXXX" identifier at save time. Returns null when both
+  // id_no and name are empty (nothing identifying to save).
   const id_no = els.ovIdNo.value.trim();
-  if (!id_no) return null;
-  const out = { id_no };
   const name = els.ovName.value.trim();
+  if (!id_no && !name) return null;
+  const out = id_no ? { id_no } : {};
+  if (name) out.name = name;
   const birth_date = els.ovBirthDate.value.trim();
   const gender = els.ovGender.value;
-  if (name) out.name = name;
   if (birth_date) out.birth_date = birth_date;
   if (gender) out.gender = gender;
   return out;
+}
+
+// Random "auto-XXXXXXXX" — 8 hex chars from crypto.getRandomValues so
+// every fresh popup install gets a different ID and re-syncs are stable.
+function _generateAutoPatientId() {
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `auto-${hex}`;
 }
 
 function refreshOverrideSummary() {
@@ -122,12 +134,11 @@ function refreshOverrideSummary() {
     els.ovSummary.textContent = "未設定";
     if (card) card.dataset.state = "empty";
   } else {
-    // Show the masked name in the collapsed summary so the popup is
-    // safe to display on a shared screen. The raw value is still in
-    // chrome.storage and visible in the input fields when the card
-    // is expanded (it's the user's own data, they typed it).
+    // Summary line uses the masked form only when the user opted in
+    // (maskNameEnabled). Raw input is always in chrome.storage and
+    // visible in the input fields when the card is expanded.
     const parts = [ov.id_no];
-    if (ov.name) parts.push(maskName(ov.name));
+    if (ov.name) parts.push(_maybeMask(ov.name));
     els.ovSummary.textContent = `✓ ${parts.join("  ·  ")}`;
     if (card) card.dataset.state = "filled";
   }
@@ -161,18 +172,23 @@ function _clearStaleSyncStatus(ov) {
 async function savePatientOverride() {
   const ov = getPatientOverride();
   if (!ov) {
-    setStatus("身分證字號為必填", "error");
+    setStatus("⛔ 請至少填寫姓名或身分證字號", "error");
     return;
+  }
+  // ID auto-generation: if user left id_no blank, mint an "auto-XXXX"
+  // and stash it in the UI so subsequent re-syncs use the same FHIR
+  // Patient.id (storage persistence keeps it stable across re-opens).
+  if (!ov.id_no) {
+    ov.id_no = _generateAutoPatientId();
+    els.ovIdNo.value = ov.id_no;
   }
   await chrome.storage.sync.set({ patientOverride: ov });
   refreshOverrideSummary();
   if (els.patientOverrideDetails) els.patientOverrideDetails.open = false;
   // Make clear this is the identity save, not a medical-record sync —
   // 「病人資料」alone reads as "patient data" (medical) for some users.
-  setStatus(
-    `✅ 病人身份已記住：${ov.id_no}${ov.name ? ` (${maskName(ov.name)})` : ""}`,
-    "success",
-  );
+  const displayName = ov.name ? ` (${_maybeMask(ov.name)})` : "";
+  setStatus(`✅ 病人身份已記住：${ov.id_no}${displayName}`, "success");
 }
 
 async function clearPatientOverride() {
@@ -630,6 +646,29 @@ els.sidebarEnabled?.addEventListener("change", () => {
   chrome.storage.sync.set({ sidebarEnabled: els.sidebarEnabled.checked });
 });
 
+// Mask-patient-name toggle — defaults OFF (citizens downloading their
+// own data don't need anonymization). When ON: popup summary, FHIR
+// Bundle output, sync-log, and NHI report narrative all use the
+// masked form (郭一新 → 郭O新) instead of the real name.
+let _maskNameEnabled = false;
+async function loadMaskNameEnabled() {
+  const { maskNameEnabled } = await chrome.storage.sync.get("maskNameEnabled");
+  _maskNameEnabled = maskNameEnabled === true;
+  if (els.maskNameEnabled) els.maskNameEnabled.checked = _maskNameEnabled;
+}
+
+function _maybeMask(name) {
+  return _maskNameEnabled ? maskName(name) : name || "";
+}
+
+els.maskNameEnabled?.addEventListener("change", async () => {
+  _maskNameEnabled = els.maskNameEnabled.checked;
+  await chrome.storage.sync.set({ maskNameEnabled: _maskNameEnabled });
+  // Re-render popup chrome (summary line is the only spot that reads
+  // _maybeMask reactively; everywhere else samples it just-in-time).
+  refreshOverrideSummary();
+});
+
 els.smartAppUrl.addEventListener("change", () => {
   // Persist trimmed value. Empty string → restore default on next load.
   const v = els.smartAppUrl.value.trim();
@@ -809,6 +848,7 @@ document.addEventListener("mouseout", (e) => {
 
 async function init() {
   await loadSidebarEnabled();
+  await loadMaskNameEnabled();
 
   // Seed local bundle state from storage so the data-state card is
   // populated as soon as the popup renders (no flash of "未產生").

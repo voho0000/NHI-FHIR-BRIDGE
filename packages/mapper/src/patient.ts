@@ -6,7 +6,6 @@
  *   - mapPatient(raw) — main entry
  */
 
-import { maskName } from "./helpers";
 import * as systems from "./systems";
 
 // Taiwan national ID: 1 letter + 9 digits (A123456789). Used to decide
@@ -24,15 +23,14 @@ export function mapPatient(raw: Record<string, any>): Record<string, any> {
 
   // Use `??` (not just default arg) so explicit null from the LLM also
   // falls back. Local models sometimes emit null instead of omitting.
-  const rawNameText = (raw.name ?? null) || "Unknown";
+  // The caller decides whether `raw.name` is the user's real name or
+  // already-masked — mapPatient just transcribes. Masking policy lives
+  // at the UI / extension layer (driven by the user-toggleable
+  // `maskNameEnabled` setting) so the same mapper is correct for both
+  // "民眾自用 = real name" and "醫療人員多病人 = masked" workflows.
+  const nameText = (raw.name ?? null) || "Unknown";
   const phone = (raw.phone ?? null) || "";
   const address = (raw.address ?? null) || "";
-
-  // Partial-anonymize before it goes anywhere downstream. The Patient
-  // resource, its FHIR Bundle, the backend store, the dashboard, and
-  // any SMART app launches all consume this output, so the raw name
-  // never leaves the user's popup input field.
-  const nameText = maskName(rawNameText);
 
   const [family, given] = splitName(nameText);
   const nameEntry: Record<string, any> = { use: "official", text: nameText };
