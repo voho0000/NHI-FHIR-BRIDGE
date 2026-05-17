@@ -1065,6 +1065,15 @@ async function downloadPendingBundle() {
 async function clearPendingBundle() {
   await chrome.storage.local.remove(PENDING_BUNDLE_KEY);
   await refreshPendingBundle();
+  // Clearing the download is the user's "I'm done with this result"
+  // gesture — wipe the completion status banner too so the result zone
+  // collapses entirely instead of lingering with a stale "✅ 取得完成"
+  // and no download button next to it.
+  _latestStatus = null;
+  setStatus("", null);
+  await chrome.runtime
+    .sendMessage({ type: "clearSyncStatus" })
+    .catch(() => {});
 }
 
 els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);
