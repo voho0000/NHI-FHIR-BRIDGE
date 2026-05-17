@@ -830,17 +830,35 @@ function _assembleLocalBundle(byType, patientOverride) {
     all.push(...mapped);
   }
 
+  // Dedup by (resourceType, id) before assembling the Bundle. Multiple
+  // NHI endpoints can feed the same page_type (e.g. encounters /
+  // inpatient / inpatient_legacy all → page_type="encounters"), and the
+  // mapper produces deterministic stable IDs — so two raw items that
+  // describe the same medical event collapse to one resource. Backend
+  // upsert handles this automatically (same stable ID = same DB row);
+  // local mode has to do it explicitly. Without this dedup, the local
+  // Bundle ends up inflated relative to what backend stores from the
+  // identical NHI input.
+  const seen = new Set();
+  const unique = [];
+  for (const r of all) {
+    const key = `${r.resourceType}/${r.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(r);
+  }
+
   // Linker + sex-stratified resolver run once over the full assembled
   // list (same pipeline backend's /sync/upload-structured runs, just
   // against an in-memory candidate array instead of a SQLite query).
-  linkEncountersInResources(all, all);
-  resolveSexStratifiedRanges(patient, all);
+  linkEncountersInResources(unique, unique);
+  resolveSexStratifiedRanges(patient, unique);
 
   return {
     resourceType: "Bundle",
     type: "collection",
     timestamp: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
-    entry: all.map((r) => ({
+    entry: unique.map((r) => ({
       fullUrl: `${r.resourceType}/${r.id}`,
       resource: r,
     })),
