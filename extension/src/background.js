@@ -962,14 +962,15 @@ function _assembleLocalBundle(byType, patientOverride, maskEnabled) {
 const PENDING_BUNDLE_KEY = "pendingFhirBundle";
 
 async function _stashFhirBundle(bundle, patientId, dateRange) {
-  // Filename per spec: nhi-{patient_id}-{YYYYMMDD-HHMM}[_YYYY[-YYYY]].json
+  // Filename:
+  //   with range:    nhi-{pid}-{YYYYMMDD}-{YYYYMMDD}-{HHMM}.json
+  //   without range: nhi-{pid}-{YYYYMMDD}-{HHMM}.json
   // toISOString() returns UTC; user expects local-clock time on disk.
   // Build the stamp from local-time components instead.
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
-  const ts =
-    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
-    `-${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const today = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const hm = `${pad(now.getHours())}${pad(now.getMinutes())}`;
   // Half-mask the ID in the filename so the user's Downloads folder
   // doesn't leak the full 身分證 (would be visible to anyone seeing
   // a file listing or download-bar preview). `X` because `*` is
@@ -977,15 +978,16 @@ async function _stashFhirBundle(bundle, patientId, dateRange) {
   // ID under Patient.id — file owner knows whose data it is.
   const maskedPid = maskId(patientId || "unknown", "X");
   const safePid = maskedPid.replace(/[^A-Za-z0-9_-]/g, "_");
-  let rangeSuffix = "";
+  const compact = (d) => (d || "").slice(0, 10).replace(/-/g, "");
+  let datePart;
   if (dateRange && (dateRange.start || dateRange.end)) {
-    const sy = (dateRange.start || "").slice(0, 4);
-    const ey = (dateRange.end || "").slice(0, 4);
-    if (sy && ey) rangeSuffix = sy === ey ? `_${sy}` : `_${sy}-${ey}`;
-    else if (sy) rangeSuffix = `_${sy}-`;
-    else if (ey) rangeSuffix = `_-${ey}`;
+    const s = compact(dateRange.start) || today;
+    const e = compact(dateRange.end) || today;
+    datePart = `${s}-${e}`;
+  } else {
+    datePart = today;
   }
-  const filename = `nhi-${safePid}-${ts}${rangeSuffix}.json`;
+  const filename = `nhi-${safePid}-${datePart}-${hm}.json`;
   const json = JSON.stringify(bundle, null, 2);
   await chrome.storage.local.set({
     [PENDING_BUNDLE_KEY]: {
