@@ -173,35 +173,39 @@
     .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
     .btn-primary:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
 
+    /* Primary "go" action. Single accent color (blue) sitewide —
+       green is reserved for success state indicators only. */
     .btn-cta {
-      background: #10b981;
+      background: #2563eb;
       color: white;
       font-size: 14px;
       padding: 12px 14px;
+      font-weight: 600;
     }
-    .btn-cta:hover:not(:disabled) { background: #059669; }
+    .btn-cta:hover:not(:disabled) { background: #1d4ed8; }
     .btn-cta:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
 
     /* ── 3-step wizard ─────────────────────────────────────────────── */
+    /* Compact breadcrumb-style stepper. Number circle + label sit on
+       ONE horizontal line so the strip is ~24px tall — was ~52px when
+       the label sat below the circle. */
     .wizard-stepper {
       display: flex;
       list-style: none;
       padding: 0;
-      margin: 0 0 14px 0;
-      gap: 6px;
+      margin: 0 0 12px 0;
+      gap: 4px;
       align-items: center;
     }
     .wizard-stepper li {
-      flex: 1;
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
       cursor: pointer;
-      padding: 4px 2px;
-      border-radius: 6px;
+      padding: 4px 6px;
+      border-radius: 4px;
       transition: background 0.15s ease;
-      position: relative;
       user-select: none;
     }
     .wizard-stepper li:hover { background: rgba(37, 99, 235, 0.06); }
@@ -213,17 +217,18 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 24px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       background: #e5e7eb;
       color: #6b7280;
-      font-size: 12px;
+      font-size: 10px;
       font-weight: 700;
       transition: background 0.2s ease, color 0.2s ease;
+      flex-shrink: 0;
     }
     .wizard-stepper .step-label {
-      font-size: 11px;
+      font-size: 12px;
       color: #6b7280;
       font-weight: 500;
     }
@@ -233,7 +238,7 @@
     }
     .wizard-stepper li[aria-current="true"] .step-label {
       color: #1e3a8a;
-      font-weight: 700;
+      font-weight: 600;
     }
     .wizard-stepper li[data-done="true"] .step-num {
       background: #10b981;
@@ -241,22 +246,23 @@
     }
     .wizard-stepper li[data-done="true"] .step-num::before {
       content: "✓";
+      font-size: 11px;
     }
     .wizard-stepper li[data-done="true"] .step-num > .step-num-text {
       display: none;
     }
-    /* Connector lines between step circles */
-    .wizard-stepper li + li::before {
-      content: "";
-      position: absolute;
-      top: 16px;
-      left: -6px;
-      width: 12px;
-      height: 2px;
-      background: #e5e7eb;
+    /* Thin separator between steps */
+    .wizard-stepper li + li {
+      position: relative;
+      padding-left: 14px;
     }
-    .wizard-stepper li[data-done="true"] + li::before {
-      background: #10b981;
+    .wizard-stepper li + li::before {
+      content: "/";
+      position: absolute;
+      left: 4px;
+      color: #d1d5db;
+      font-size: 11px;
+      pointer-events: none;
     }
 
     /* Hide steps not matching the active step. The body element carries
@@ -289,113 +295,88 @@
       font-weight: 500;
     }
 
-    /* ── Step 3 zones ─────────────────────────────────────────────────
-       The pre-action controls (mode / conn / date / CTA) and the
-       post-action results (status / data-state / bundle / launch) are
-       wrapped in separate "zones" so the user's eye lands on one or the
-       other, not on a five-card stack. The result zone only renders
-       when there's a sync in flight or a completion to show. */
-    .action-zone {
+    /* ── Step 3 panel ─────────────────────────────────────────────────
+       One single panel: action controls at the top, result section
+       below an internal divider once a sync has run. No nested cards. */
+    .panel {
       background: #ffffff;
       border: 1px solid #e5e7eb;
       border-radius: 10px;
-      padding: 12px;
+      padding: 14px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
     }
-    .action-zone .mode-toggle { margin: 0; }
-    .action-zone .conn-block { margin: 0; }
+    .panel-divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 4px -14px;
+    }
 
-    /* "取得對象" reminder at the top of step 3 — mirrors step 2's
-       saved identity so the user can confirm WHO they're fetching
-       without scrolling back. Click jumps to step 2 to edit. */
-    .active-patient {
+    /* Identity row at the top of step 3 — name + masked ID, with an
+       "編輯" text button on the right. Plain text style, not card. */
+    .identity-row {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 10px;
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-radius: 6px;
+      padding: 6px 0;
       cursor: pointer;
-      transition: background 0.15s ease;
     }
-    .active-patient:hover { background: #dbeafe; }
-    .active-patient:focus-visible {
+    .identity-row:hover .identity-edit { color: #1d4ed8; }
+    .identity-row:focus-visible {
       outline: 2px solid #2563eb;
-      outline-offset: 1px;
+      outline-offset: 2px;
+      border-radius: 4px;
     }
-    .active-patient-label {
+    .identity-text { flex: 1; min-width: 0; }
+    .identity-label {
       font-size: 11px;
-      color: #1e40af;
-      font-weight: 600;
-      flex-shrink: 0;
+      color: #6b7280;
+      margin-bottom: 1px;
     }
-    .active-patient-value {
-      flex: 1;
-      font-size: 12px;
-      color: #1e3a8a;
+    .identity-value {
+      font-size: 13px;
+      color: #111827;
       font-weight: 500;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .active-patient-edit {
-      color: #2563eb;
-      font-size: 13px;
-      opacity: 0.6;
-    }
-    .active-patient:hover .active-patient-edit { opacity: 1; }
-    /* Date range inline so it doesn't take a whole stacked block. */
-    .range-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .range-label {
+    .identity-edit {
       font-size: 12px;
-      color: #6b7280;
+      color: #2563eb;
+      font-weight: 500;
       flex-shrink: 0;
     }
-    .range-row select { flex: 1; }
 
-    .result-zone {
-      margin-top: 12px;
+    /* "label : control" row — same shape for 儲存位置 + 日期範圍. */
+    .setting-row {
       display: flex;
-      flex-direction: column;
-      gap: 8px;
+      align-items: center;
+      gap: 12px;
     }
-    .result-zone:empty { display: none; }
-    /* Subtle divider between result zone and step 3's action zone. */
-    .result-zone::before {
-      content: "";
-      display: block;
-      height: 1px;
-      background: linear-gradient(to right, transparent, #d1d5db, transparent);
-      margin: -2px 12px 4px;
+    .setting-label {
+      width: 64px;
+      flex-shrink: 0;
+      font-size: 12px;
+      color: #6b7280;
+      font-weight: 500;
     }
+    .setting-row > select,
+    .setting-row > .mode-toggle { flex: 1; }
+    .setting-row > .mode-toggle { margin: 0; }
 
-    /* Each .result-card holds ONE thing inside the result zone so the
-       visual hierarchy is: summary (heavy) → download (primary)
-       → launch (secondary). Light gray card chrome consistent across. */
-    .result-card {
-      background: #ffffff;
-      border: 1px solid #e5e7eb;
-      border-radius: 10px;
-      padding: 10px 12px;
-    }
-    .result-card.summary-card { padding: 8px 12px; }
-    .result-card.summary-card > .status { margin: 0; }
-    .result-card.summary-card > .status:empty { display: none; }
+    /* Result section lives in the SAME panel. Hidden when no result.
+       Each child gets vertical gap from .panel's flex layout. */
+    .result-section { display: contents; }
+    .result-section[hidden] { display: none; }
 
-    /* Inline state rows inside the summary card. Used in backend mode
-       to show 後端 ↔ 本地 reconciliation. Two compact rows + a small
-       upload button when there's something to push. */
+    /* Status banner inside the merged panel — pad less, no card border. */
+    .panel #status { margin: 0; }
+    .panel #status:empty { display: none; }
+
+    /* Inline 後端 / 本地 reconciliation rows. */
     .state-rows {
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px dashed #e5e7eb;
       display: flex;
       flex-direction: column;
       gap: 4px;
@@ -417,10 +398,42 @@
     .state-value.ok    { color: #047857; }
     .state-value.fail  { color: #b91c1c; }
     .push-local-btn {
-      margin-top: 6px;
+      margin-top: 4px;
       padding: 5px 10px;
       font-size: 12px;
       align-self: flex-start;
+    }
+
+    /* Side-by-side downstream actions: 下載 + 開啟 SMART App. */
+    .next-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .next-action-group {
+      display: flex;
+      gap: 4px;
+      flex: 1;
+      min-width: 0;
+    }
+    .next-action-group > .btn-primary { flex: 1; }
+    .btn-icon-only {
+      flex: 0 0 32px;
+      width: 32px;
+      padding: 0;
+      font-size: 16px;
+      line-height: 1;
+      color: #6b7280;
+    }
+    .btn-icon-only:hover:not(:disabled) { color: #ef4444; background: #fef2f2; }
+    .next-actions .btn-launch { flex: 1; min-width: 0; }
+
+    .bundle-meta-block { margin-top: -4px; }
+    .bundle-sync-hint {
+      font-size: 11px;
+      color: #047857;
+      font-weight: 500;
+      margin-top: 2px;
     }
 
     /* "On NHI tab but not logged in" banner — bigger than .cta-reason
@@ -970,122 +983,119 @@
     </div><!-- /STEP 2 -->
 
     <!-- ── STEP 3: 取得資料 + 看結果 ─────────────────────────────── -->
+    <!--
+      Single panel. Action stuff at the top, result stuff below the
+      same container's internal divider once a sync has run. No nested
+      "result-card" / "summary-card" / "launch-block" tower — every
+      sub-element shares the outer panel's frame.
+    -->
     <div class="wizard-step" data-step="3">
+      <div class="panel">
 
-    <!-- 3-A. Action zone: everything the user touches BEFORE pressing 取得.
-              Wrapped in a card so it visually decouples from the result. -->
-    <div class="action-zone">
-      <!-- Active-patient banner: mirrors step 2's summary so the user can
-           see WHO they're about to fetch without scrolling back up. Click
-           to jump back to step 2 to edit. -->
-      <div class="active-patient" id="active-patient" hidden
-           role="button" tabindex="0"
-           title="點此回 ② 您的資料 修改" aria-label="點此回 ② 您的資料 修改">
-        <span class="active-patient-label">取得對象</span>
-        <span class="active-patient-value" id="active-patient-value"></span>
-        <span class="active-patient-edit">✎</span>
-      </div>
-
-      <!-- Mode toggle — "where does this run write to?" -->
-      <div class="mode-toggle" role="radiogroup" aria-label="輸出方式">
-        <label class="mode-opt" title="只在你自己電腦上：產生 FHIR 紀錄檔下載到下載夾，完全不經過任何後端">
-          <input type="radio" name="sync-mode" value="local" checked />
-          💾 下載到電腦
-        </label>
-        <label class="mode-opt" title="進階：寫入你自己機器跑的本機 Docker 後端，搭配 Dashboard / SMART App 使用。仍然不上 NHI 或雲端。">
-          <input type="radio" name="sync-mode" value="backend" />
-          🏥 本機後端 (進階)
-        </label>
-      </div>
-
-      <!-- Backend connection status — only when in backend mode. -->
-      <div class="backend-only conn-block" id="conn-section">
-        <div class="conn-banner" id="conn-banner" data-state="unknown">
-          <span class="conn-dot" id="conn-dot"></span>
-          <span class="conn-msg" id="conn-msg">未檢測</span>
-          <button class="conn-retry" id="conn-retry-btn" hidden>重試</button>
-        </div>
-        <div class="conn-help" id="conn-help" hidden></div>
-      </div>
-
-      <!-- Date range. Inline label so it sits compactly next to the select. -->
-      <div class="range-row">
-        <span class="range-label">日期範圍</span>
-        <select id="api-sync-range">
-          <option value="1">最近 1 年</option>
-          <option value="3" selected>最近 3 年</option>
-          <option value="5">最近 5 年</option>
-          <option value="10">最近 10 年</option>
-          <option value="all">全部歷史紀錄</option>
-        </select>
-      </div>
-
-      <!-- Primary CTA -->
-      <button class="btn-cta" id="sync-api-btn" disabled>
-        🔄 取得健保存摺資料
-      </button>
-      <div id="sync-blocked-reason" class="cta-reason" hidden></div>
-      <button class="btn-danger" id="stop-btn" hidden style="margin-top:6px">
-        停止
-      </button>
-    </div>
-
-    <!-- 3-B. Result zone: appears only after a sync starts or completes.
-              Three sub-cards, each does ONE thing:
-                · summary card — what just happened (status + state)
-                · download card — get the file
-                · launch card   — open the SMART app (backend only)
-              No section escapes its card; visual weight goes from heavy
-              (summary) → primary action (download) → secondary (launch). -->
-    <div class="result-zone" id="result-zone" hidden>
-
-      <!-- Summary card: status banner + breakdown + (backend) backend
-           presence + local bundle presence in one consolidated block. -->
-      <div class="result-card summary-card" id="summary-card" hidden>
-        <div id="status" class="status"></div>
-
-        <!-- Backend mode adds two inline rows for the backend ↔ local
-             reconciliation. Hidden in local mode. -->
-        <div class="state-rows backend-only" id="data-state-section" hidden>
-          <div class="state-row">
-            <span class="state-label">後端</span>
-            <span class="state-value" id="backend-state">檢查中…</span>
+        <!-- Active patient identity. Inline row, not a card. -->
+        <div class="identity-row" id="active-patient" hidden
+             role="button" tabindex="0"
+             title="點此回 ② 您的資料 修改" aria-label="點此回 ② 您的資料 修改">
+          <div class="identity-text">
+            <div class="identity-label">取得對象</div>
+            <div class="identity-value" id="active-patient-value"></div>
           </div>
-          <div class="state-row" id="local-state-row" hidden>
-            <span class="state-label">本地</span>
-            <span class="state-value" id="local-state">—</span>
+          <span class="identity-edit">編輯</span>
+        </div>
+
+        <!-- "label : control" rows — same shape for both inputs. -->
+        <div class="setting-row">
+          <span class="setting-label">儲存位置</span>
+          <div class="mode-toggle" role="radiogroup" aria-label="輸出方式">
+            <label class="mode-opt" title="只在你自己電腦上：產生 FHIR 紀錄檔下載到下載夾，完全不經過任何後端">
+              <input type="radio" name="sync-mode" value="local" checked />
+              下載到電腦
+            </label>
+            <label class="mode-opt" title="進階：寫入你自己機器跑的本機 Docker 後端，搭配 Dashboard / SMART App 使用。仍然不上 NHI 或雲端。">
+              <input type="radio" name="sync-mode" value="backend" />
+              本機後端
+            </label>
           </div>
-          <button class="btn-secondary push-local-btn" id="push-local-btn" hidden>
-            📤 把本地檔案上傳到後端
-          </button>
         </div>
-      </div>
 
-      <!-- Download card: appears once the local bundle exists. -->
-      <div class="result-card" id="pending-bundle" hidden>
-        <div class="bundle-row">
-          <button class="btn-primary" id="download-bundle-btn" style="background:#0ea5e9; flex:1">
-            📥 下載健康紀錄檔
-          </button>
-          <button class="btn-secondary btn-icon" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">🗑️</button>
+        <div class="setting-row">
+          <span class="setting-label">日期範圍</span>
+          <select id="api-sync-range">
+            <option value="1">最近 1 年</option>
+            <option value="3" selected>最近 3 年</option>
+            <option value="5">最近 5 年</option>
+            <option value="10">最近 10 年</option>
+            <option value="all">全部歷史紀錄</option>
+          </select>
         </div>
-        <div class="hint" id="bundle-meta"></div>
-        <!-- Quiet confirmation that the in-extension bundle and the backend
-             store agree on count (backend mode only). -->
-        <div class="hint backend-only" id="sync-status-hint" hidden
-             style="color:#047857; font-weight:500">
-          ✓ 本地檔案已與後端同步
-        </div>
-      </div>
 
-      <!-- Launch card (backend mode only) — secondary "open in app". -->
-      <div class="result-card backend-only launch-block">
-        <button class="btn-secondary btn-launch" id="launch-btn" disabled>
-          🚀 開啟 SMART App
+        <!-- Backend connection status — only in backend mode. -->
+        <div class="backend-only conn-block" id="conn-section">
+          <div class="conn-banner" id="conn-banner" data-state="unknown">
+            <span class="conn-dot" id="conn-dot"></span>
+            <span class="conn-msg" id="conn-msg">未檢測</span>
+            <button class="conn-retry" id="conn-retry-btn" hidden>重試</button>
+          </div>
+          <div class="conn-help" id="conn-help" hidden></div>
+        </div>
+
+        <!-- Primary CTA -->
+        <button class="btn-cta" id="sync-api-btn" disabled>
+          取得健保存摺資料
         </button>
-      </div>
-    </div>
+        <div id="sync-blocked-reason" class="cta-reason" hidden></div>
+        <button class="btn-danger" id="stop-btn" hidden>
+          停止
+        </button>
 
+        <!-- ── Result section ─────────────────────────────────────────
+             Same panel; just a thin divider above. Hidden when no
+             sync has run / no bundle / no usable result yet. -->
+        <div class="result-section" id="result-zone" hidden>
+          <div class="panel-divider"></div>
+
+          <!-- Sync completion status -->
+          <div id="status" class="status"></div>
+
+          <!-- Backend mode: compact 後端 / 本地 reconciliation rows -->
+          <div class="state-rows backend-only" id="data-state-section" hidden>
+            <div class="state-row">
+              <span class="state-label">後端</span>
+              <span class="state-value" id="backend-state">檢查中…</span>
+            </div>
+            <div class="state-row" id="local-state-row" hidden>
+              <span class="state-label">本地</span>
+              <span class="state-value" id="local-state">—</span>
+            </div>
+            <button class="btn-secondary push-local-btn" id="push-local-btn" hidden>
+              把本地檔案上傳到後端
+            </button>
+          </div>
+
+          <!-- Next-actions row: download + (backend) open SMART app
+               side-by-side so the user sees both possible next steps. -->
+          <div class="next-actions">
+            <div class="next-action-group" id="pending-bundle" hidden>
+              <button class="btn-primary" id="download-bundle-btn">
+                下載健康紀錄檔
+              </button>
+              <button class="btn-icon-only" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">×</button>
+            </div>
+            <button class="btn-secondary btn-launch backend-only" id="launch-btn" disabled>
+              開啟 SMART App
+            </button>
+          </div>
+
+          <!-- Bundle meta (filename + size · age) — single line each, muted. -->
+          <div class="bundle-meta-block" id="bundle-meta-block" hidden>
+            <div class="bundle-filename" id="bundle-filename"></div>
+            <div class="bundle-sizeage" id="bundle-sizeage"></div>
+            <div class="bundle-sync-hint backend-only" id="sync-status-hint" hidden>
+              ✓ 本地檔案已與後端同步
+            </div>
+          </div>
+        </div>
+      </div>
     </div><!-- /STEP 3 -->
 
     <!-- ── Advanced settings ────────────────────────────────────────
