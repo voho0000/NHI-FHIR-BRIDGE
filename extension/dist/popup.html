@@ -299,23 +299,24 @@
       display: none;
     }
 
-    /* Step 1 "logged in" reassurance card — replaces login/open-NHI
-       sections when the user actually IS logged in. */
+    /* Step 1 "logged in" reassurance card. White-panel + thin left
+       color bar matches the result-zone status banner pattern in step
+       3 (.status.success) so step 1 doesn't read as a louder, older
+       visual layer than the rest of the popup. */
     .login-ok {
-      padding: 14px 16px;
-      background: #ecfdf5;
-      border: 1px solid #a7f3d0;
-      border-left: 4px solid #10b981;
+      padding: 12px 14px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-left: 3px solid #10b981;
       border-radius: 6px;
       color: #065f46;
       font-size: 13px;
-      line-height: 1.5;
-      text-align: center;
+      line-height: 1.55;
     }
-    .login-ok b { display: block; margin-bottom: 2px; font-size: 14px; }
+    .login-ok b { display: block; margin-bottom: 2px; font-size: 13px; color: #064e3b; }
     .login-ok .next-hint {
       display: inline-block;
-      margin-top: 10px;
+      margin-top: 8px;
       color: #047857;
       font-size: 12px;
       font-weight: 500;
@@ -459,17 +460,20 @@
       margin-top: 2px;
     }
 
-    /* "On NHI tab but not logged in" banner — bigger than .cta-reason
-       because this is the single biggest first-run failure mode. */
+    /* "On NHI tab but not logged in" banner — white panel + 3px red
+       left bar, mirroring the .status.success / .login-ok pattern so
+       step 1's three states share one visual language. Still the
+       loudest thing on the popup when visible (it's the single biggest
+       first-run failure mode), but no longer a saturated red wash. */
     .nhi-needs-login {
-      padding: 10px 12px;
-      background: #fef2f2;
-      border: 1px solid #fecaca;
-      border-left: 4px solid #dc2626;
+      padding: 12px 14px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-left: 3px solid #dc2626;
       border-radius: 6px;
       color: #991b1b;
       font-size: 13px;
-      line-height: 1.5;
+      line-height: 1.55;
     }
     .nhi-needs-login b { color: #7f1d1d; }
 
@@ -789,30 +793,6 @@
       color: #374151;
     }
 
-    /* ── Backend↔local data state card ─────────────────────────────── */
-    .data-state-card {
-      padding: 6px 10px;
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
-      font-size: 12px;
-    }
-    .data-state-row {
-      display: flex;
-      gap: 8px;
-      align-items: baseline;
-      line-height: 1.5;
-    }
-    .data-state-label {
-      flex: 0 0 40px;
-      color: #6b7280;
-      font-weight: 500;
-    }
-    .data-state-value { flex: 1; color: #111827; word-break: break-word; }
-    .data-state-value.empty { color: #b45309; }
-    .data-state-value.ok    { color: #047857; }
-    .data-state-value.fail  { color: #b91c1c; }
-
     /* ── Inline help icon + CSS tooltip (no native delay) ─────────── */
     .help-icon {
       position: relative;
@@ -971,7 +951,7 @@
       <!-- 1a. User isn't on the NHI tab — shortcut to open it. -->
       <section class="section" id="open-nhi-section" hidden>
         <button class="btn-primary" id="open-nhi-btn">
-          🔗 開啟健保存摺登入
+          開啟健保存摺登入
         </button>
         <div class="hint">
           需要先登入健保存摺才能取得資料。已經登入過了？把那個分頁切回前景就會自動偵測。
@@ -981,7 +961,7 @@
       <!-- 1b. On NHI tab but no active session. -->
       <section class="section" id="nhi-needs-login-section" hidden>
         <div class="nhi-needs-login">
-          🔒 <b>偵測到健保存摺分頁，但你還沒登入。</b><br/>
+          <b>偵測到健保存摺分頁，但你還沒登入。</b><br/>
           請在那個分頁完成登入（健保卡 / 行動電話認證 / 自然人憑證 / TW FidO 任一）。登入後這個視窗會自動跳到下一步。
         </div>
       </section>
@@ -989,7 +969,7 @@
       <!-- 1c. Login confirmed — quick "done" card with hand-off to step 2. -->
       <section class="section" id="login-ok-section" hidden>
         <div class="login-ok">
-          <b>✅ 健保存摺已登入</b>
+          <b>健保存摺已登入</b>
           可以開始取得資料了。
           <span class="next-hint" id="login-ok-next"
                 style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">
@@ -1041,8 +1021,7 @@
               <span>輸出時遮罩姓名（陳志明 → 陳O明）</span>
             </label>
             <div class="field-hint">
-              填真名的好處：下載檔／Dashboard／報告 narrative 中出現的同名字串會一併自動遮罩。<br>
-              自己用可不勾，要分享或多人展示時建議勾起來。
+              填真名可協助遮罩報告內容；分享或展示時建議勾選遮罩。
             </div>
           </div>
 
@@ -1155,7 +1134,9 @@
             <button class="btn-primary" id="download-bundle-btn">
               下載健康紀錄檔
             </button>
-            <button class="btn-icon-only" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">
+            <button class="btn-icon-only" id="clear-bundle-btn"
+                    title="清除待下載檔案（不會刪除已下載到電腦的檔案）"
+                    aria-label="清除待下載檔案（不會刪除已下載到電腦的檔案）">
               <!-- lucide Trash2 — explicit SVG so the icon looks the
                    same on every OS (no emoji-font drift). -->
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
