@@ -182,6 +182,14 @@ async function savePatientOverride() {
     setStatus("⛔ 請至少填寫姓名或身分證字號", "error");
     return;
   }
+  // Gender is mandatory — downstream sex-stratified reference ranges
+  // (CBC, liver enzymes, etc.) and any AI age/sex判讀 rely on it. UI
+  // marks it with a red asterisk; this is the matching validation.
+  if (!ov.gender) {
+    setStatus("⛔ 請選擇性別", "error");
+    els.ovGender.focus();
+    return;
+  }
   // ID auto-generation: if user left id_no blank, mint an "auto-XXXX"
   // and stash it in the UI so subsequent re-syncs use the same FHIR
   // Patient.id (storage persistence keeps it stable across re-opens).

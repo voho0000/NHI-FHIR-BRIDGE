@@ -598,7 +598,7 @@
             健康存摺只能抓到病歷資料，<b>身分證字號</b>會在取得資料時自動帶入，其他基本資料請補上。考量隱私：
             <ul style="margin:6px 0 0 16px; padding:0">
               <li><b>姓名 + 完整生日</b>：可以填假，自用想填真也行。</li>
-              <li><b>出生年份 + 性別</b>：建議填真（AI 判讀年齡 / 性別會用到）。</li>
+              <li><b>出生年份 + 性別</b>：建議填真（AI 判讀年齡 / 性別會用到）。<b>性別</b>為必填。</li>
             </ul>
           </div>
           <div class="field">
@@ -615,7 +615,7 @@
               <input type="date" id="ov-birth-date" />
             </div>
             <div class="field" style="flex:1">
-              <div class="label">性別</div>
+              <div class="label">性別 <span class="required">*</span></div>
               <select id="ov-gender">
                 <option value="">—</option>
                 <option value="male">男</option>
