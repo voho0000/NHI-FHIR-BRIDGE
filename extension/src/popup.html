@@ -185,6 +185,24 @@
     .btn-cta:hover:not(:disabled) { background: #1d4ed8; }
     .btn-cta:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
 
+    /* Post-sync demotion: once the user has a result on screen the
+       big blue "取得" stops being THE primary action — the user's
+       next move is usually 下載 / 開啟 App. JS toggles this class
+       on the CTA after a successful run; clicking still works (you
+       can re-sync) but it no longer competes for the eye. */
+    .btn-cta.is-secondary {
+      background: white;
+      color: #2563eb;
+      border: 1px solid #bfdbfe;
+      font-size: 13px;
+      padding: 8px 14px;
+      font-weight: 500;
+    }
+    .btn-cta.is-secondary:hover:not(:disabled) {
+      background: #eff6ff;
+      border-color: #93c5fd;
+    }
+
     /* ── 3-step wizard ─────────────────────────────────────────────── */
     /* Compact breadcrumb-style stepper. Number circle + label sit on
        ONE horizontal line so the strip is ~24px tall — was ~52px when
@@ -240,16 +258,24 @@
       color: #1e3a8a;
       font-weight: 600;
     }
+    /* Done state is reference info for returning users, not the focus.
+       Outline green check on neutral background; label stays gray. */
     .wizard-stepper li[data-done="true"] .step-num {
-      background: #10b981;
-      color: white;
+      background: transparent;
+      color: #10b981;
+      border: 1px solid #d1fae5;
     }
     .wizard-stepper li[data-done="true"] .step-num::before {
       content: "✓";
       font-size: 11px;
+      font-weight: 700;
     }
     .wizard-stepper li[data-done="true"] .step-num > .step-num-text {
       display: none;
+    }
+    .wizard-stepper li[data-done="true"] .step-label {
+      color: #9ca3af;
+      font-weight: 500;
     }
     /* Thin separator between steps */
     .wizard-stepper li + li {
@@ -417,11 +443,13 @@
       flex: 0 0 38px;
       width: 38px;
       padding: 0;
-      font-size: 14px;
-      line-height: 1;
       color: #6b7280;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
     .btn-icon-only:hover:not(:disabled) { color: #ef4444; background: #fef2f2; }
+    .btn-icon-only > svg { display: block; }
 
     .bundle-meta-block { margin-top: -4px; }
     .bundle-sync-hint {
@@ -466,18 +494,23 @@
     .btn-secondary:hover:not(:disabled) { background: #f9fafb; }
     .btn-secondary:disabled { color: #9ca3af; cursor: not-allowed; }
 
-    /* Launch SMART App — outline-ish "open in new window" style. Reads
-       as secondary to the bright 📥 download CTA above; doesn't fight
-       with the green 🔄 取得 button in the action zone. */
+    /* Launch SMART App — white-bg blue-outline, same palette family as
+       the primary 下載 / 取得 buttons so it doesn't look like a
+       different product. Reads as a secondary "open in app" action. */
     .btn-launch {
-      color: #4338ca;
-      border-color: #c7d2fe;
-      background: #eef2ff;
-      font-weight: 600;
+      color: #2563eb;
+      border-color: #bfdbfe;
+      background: white;
+      font-weight: 500;
     }
-    .btn-launch:hover:not(:disabled) { background: #e0e7ff; color: #3730a3; }
+    .btn-launch:hover:not(:disabled) {
+      background: #eff6ff;
+      border-color: #93c5fd;
+    }
     .btn-launch:disabled {
-      color: #9ca3af; background: white; border-color: #e5e7eb;
+      color: #9ca3af;
+      background: white;
+      border-color: #e5e7eb;
     }
 
     .btn-danger {
@@ -584,18 +617,19 @@
       line-height: 1.55;
       word-break: break-word;
     }
-    .status.info {
-      display: block;
-      background: #eff6ff;
-      color: #1e40af;
-      border: 1px solid #bfdbfe;
-    }
+    /* Status reads as a subtle summary line, not an alert box. Only
+       errors keep the loud border — success / info use a left color
+       bar so the result section feels like part of the same panel. */
+    .status.info,
     .status.success {
       display: block;
-      background: #f0fdf4;
-      color: #047857;
-      border: 1px solid #bbf7d0;
+      background: transparent;
+      color: #111827;
+      border: none;
+      border-left: 3px solid #2563eb;
+      padding: 4px 0 4px 10px;
     }
+    .status.success { border-left-color: #10b981; }
     .status.error {
       display: block;
       background: #fef2f2;
@@ -1073,7 +1107,19 @@
             <button class="btn-primary" id="download-bundle-btn">
               下載健康紀錄檔
             </button>
-            <button class="btn-icon-only" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">🗑</button>
+            <button class="btn-icon-only" id="clear-bundle-btn" title="清除待下載檔案" aria-label="清除待下載檔案">
+              <!-- lucide Trash2 — explicit SVG so the icon looks the
+                   same on every OS (no emoji-font drift). -->
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                   stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 6h18"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                <line x1="10" y1="11" x2="10" y2="17"/>
+                <line x1="14" y1="11" x2="14" y2="17"/>
+              </svg>
+            </button>
           </div>
 
           <!-- Secondary action (backend mode only): open SMART App. On
@@ -1102,7 +1148,7 @@
          disappear in local mode. -->
     <section class="section" style="margin-top:16px">
       <details class="settings">
-        <summary>⚙️ 進階設定</summary>
+        <summary>進階設定</summary>
         <div class="settings-body">
           <div class="field">
             <label class="toggle-row">
