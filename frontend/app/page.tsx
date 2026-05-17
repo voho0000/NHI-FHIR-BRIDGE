@@ -1,18 +1,16 @@
 "use client";
 import { useEffect, useState, useCallback, useRef, ChangeEvent } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8010";
-
-// When SYNC_API_KEY is set on the backend (production deployments), every
-// PHI-touching endpoint requires the header. The dashboard reads its copy
-// from NEXT_PUBLIC_SYNC_API_KEY at build time. Empty string = no header
-// sent, which the backend accepts in POC mode (settings.SYNC_API_KEY == "").
-const SYNC_API_KEY = process.env.NEXT_PUBLIC_SYNC_API_KEY || "";
+// Dashboard's PHI calls go to its own /api/backend proxy route handler,
+// which injects X-Sync-API-Key server-side. The key never reaches the
+// browser bundle. SMART app launch flow uses the public backend URL
+// (NEXT_PUBLIC_API_URL) because that's the OAuth2 issuer the SMART app
+// will redirect users back through.
+const API = "/api/backend";
+const PUBLIC_API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8010";
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  return SYNC_API_KEY
-    ? { ...extra, "X-Sync-API-Key": SYNC_API_KEY }
-    : extra;
+  return extra;
 }
 
 interface Patient {
@@ -168,7 +166,10 @@ export default function Dashboard() {
         // fall back to default launch context
       }
     }
-    const params = new URLSearchParams({ iss: `${API}/fhir`, launch: launchToken });
+    // SMART app needs the public backend URL — it will OAuth-redirect
+    // users through it and call /fhir/* directly with a Bearer token.
+    // The dashboard's /api/backend proxy is dashboard-internal.
+    const params = new URLSearchParams({ iss: `${PUBLIC_API}/fhir`, launch: launchToken });
     window.open(`${launchUrl}?${params}`, "_blank", "noopener");
   };
 

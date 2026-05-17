@@ -52,8 +52,16 @@ services:
     ports:
       - "127.0.0.1:3010:3000"
     environment:
+      # Public backend URL — exposed to the browser via NEXT_PUBLIC_*.
+      # Used by the SMART on FHIR launch flow (iss, /smart/authorize).
       NEXT_PUBLIC_API_URL: http://localhost:8010
-      NEXT_PUBLIC_SYNC_API_KEY: ${SYNC_API_KEY:-}
+      # Internal backend URL — server-side only. Used by the dashboard's
+      # /api/backend/[...path] proxy to forward PHI calls with the API key.
+      BACKEND_INTERNAL_URL: http://backend:8010
+      # SYNC_API_KEY is read server-side ONLY by the proxy route handler.
+      # NEVER prefix with NEXT_PUBLIC_ — that would inline it into the
+      # browser bundle and leak it to anyone with DevTools.
+      SYNC_API_KEY: ${SYNC_API_KEY:-}
     depends_on:
       - backend
 
