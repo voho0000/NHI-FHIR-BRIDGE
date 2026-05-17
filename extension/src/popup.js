@@ -748,17 +748,33 @@ function setStatus(text, kind, breakdown) {
     summary.textContent = "查看明細";
     details.appendChild(summary);
 
-    if (phaseRows.length) {
-      const phases = document.createElement("div");
-      phases.className = "status-phases";
-      phases.textContent = phaseRows.map((p) => p.replace(/^⏱\s*/, "")).join(" · ");
-      details.appendChild(phases);
-    }
     if (otherRows.length) {
       const body = document.createElement("div");
       body.className = "status-breakdown";
-      body.textContent = otherRows.join(" · ");
+      // One item per line so "就醫 12 筆 / 處方 88 筆 / 檢驗 412 筆"
+      // is readable; the 360px popup would have wrapped a flat
+      // separator-joined string into a tangled mess.
+      for (const row of otherRows) {
+        const line = document.createElement("div");
+        line.textContent = row;
+        body.appendChild(line);
+      }
       details.appendChild(body);
+    }
+    if (phaseRows.length) {
+      // Phase timings are dev info — tuck them inside a second toggle
+      // so end users don't see "nhi-parallel=8s" right after a success
+      // banner and think something's wrong.
+      const techDetails = document.createElement("details");
+      techDetails.className = "status-detail status-tech";
+      const techSummary = document.createElement("summary");
+      techSummary.textContent = "技術細節";
+      techDetails.appendChild(techSummary);
+      const phases = document.createElement("div");
+      phases.className = "status-phases";
+      phases.textContent = phaseRows.map((p) => p.replace(/^⏱\s*/, "")).join(" · ");
+      techDetails.appendChild(phases);
+      details.appendChild(techDetails);
     }
     els.status.appendChild(details);
   }
