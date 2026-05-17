@@ -418,9 +418,13 @@ function _renderDataState() {
       break;
     case "absent":
       bs.className = "data-state-value empty";
-      // Card sits *below* the 📥 同步 button in the popup layout, so
-      // tell the user to look up, not down.
-      bs.textContent = "⚠ 尚無此病人 — 請先按上方「同步」或下方上傳本地 Bundle";
+      // Card sits *below* the 📥 同步 button. Only mention the local-
+      // upload alternative when a matching pending Bundle actually
+      // exists (otherwise the user goes hunting for an upload button
+      // that's not there and concludes "there's no sync button at all").
+      bs.textContent = localMatches
+        ? "⚠ 尚無此病人 — 請按上方「📥 同步」或下方「📤 上傳本地 Bundle」"
+        : "⚠ 尚無此病人 — 請按上方「📥 同步」抓資料到後端";
       break;
     case "present": {
       const count = _backendPatient.count;
