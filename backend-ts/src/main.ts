@@ -12,6 +12,7 @@ import { randomBytes } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 
 import { setStableIdSalt } from "@nhi-fhir-bridge/mapper";
@@ -119,6 +120,18 @@ export function createApp(): Hono {
     c.res.headers.delete("Access-Control-Allow-Credentials");
     c.res.headers.set("Vary", "Origin");
   });
+
+  // 32 MB cap on any request body. A typical NHI sync POSTs ~1 MB
+  // structured JSON; the LLM HTML fallback can hit ~5 MB. 32 MB leaves
+  // generous headroom while preventing a 10 GB body from OOMing the
+  // process. Applies to every route (Hono handles GETs harmlessly).
+  app.use(
+    "*",
+    bodyLimit({
+      maxSize: 32 * 1024 * 1024,
+      onError: (c) => c.json({ detail: "Request body exceeds 32 MB limit" }, 413),
+    }),
+  );
 
   // Strict CORS for everything else (PHI paths, auth endpoints, /sync/*).
   app.use(

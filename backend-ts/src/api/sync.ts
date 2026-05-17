@@ -4,7 +4,7 @@
  * Port of `backend/app/api/sync.py`. Mounted at `/sync` from main.ts.
  * The extension's primary path is /sync/upload-structured (no LLM).
  * /sync/upload-html (LLM fallback) is wired up but stays disabled
- * unless LLM_PROVIDER is set to `claude` or `ollama`.
+ * unless LLM_PROVIDER is set to `ollama`.
  */
 
 import { and, desc, eq, like, ne, or } from "drizzle-orm";
@@ -461,7 +461,7 @@ syncApi.post("/upload-html", requireSyncApiKey, async (c) => {
     return c.json(
       {
         detail:
-          "LLM fallback path is disabled. Set LLM_PROVIDER=claude or LLM_PROVIDER=ollama in .env to enable /sync/upload-html.",
+          "LLM fallback path is disabled. Set LLM_PROVIDER=ollama in .env to enable /sync/upload-html.",
       },
       503,
     );
