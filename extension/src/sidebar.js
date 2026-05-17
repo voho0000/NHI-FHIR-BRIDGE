@@ -34,18 +34,21 @@
   // The SMART launch entry that fhirclient expects to handle the iss+launch
   // params and run FHIR.oauth2.authorize().
   const APP_LAUNCH_PATH = "/smart/launch";
-  // Chrome's Private Network Access blocks fetches from public origins
-  // (github.io) into loopback (localhost) even when the server returns
-  // Access-Control-Allow-Private-Network: true — apparently this is being
-  // tightened to "always block" in newer Chromes. Easiest fix is to point
-  // the iframe at the local dev server of medical-note (localhost:3001),
-  // same scheme as backend, so no PNA crossing happens at all. Falls back
-  // to the deployed github.io app when the local one isn't running.
-  // Local Next.js dev server: runs at root (no /medical-note-smart-on-fhir
-  // prefix — the launch page detects window.location.pathname and sets
-  // prefix = "" when not on the github.io repo subpath).
-  const APP_BASE_LOCAL = "http://localhost:3001";
+  // Default to the deployed github.io build so users don't need a
+  // local Next.js dev server running just to open the helper.
+  //
+  // Trade-off: the iframe sits on a public origin (github.io) while
+  // the backend it talks to lives on loopback (localhost). Chrome's
+  // Private Network Access can block those cross-origin fetches even
+  // when the server returns Access-Control-Allow-Private-Network: true,
+  // and newer Chromes are tightening this to "always block". If a user
+  // hits that wall, they can flip back to the local dev server by
+  // setting chrome.storage.local.sidebarAppBase = "http://localhost:3001"
+  // (Next.js dev server runs at root, no /medical-note-smart-on-fhir
+  // prefix — the launch page detects window.location.pathname and
+  // sets prefix = "" when not on the github.io repo subpath).
   const APP_BASE_DEPLOYED = "https://voho0000.github.io/medical-note-smart-on-fhir";
+  const APP_BASE_LOCAL = "http://localhost:3001";
   const DEFAULT_BACKEND = "http://localhost:8010";
 
   // Host element + Shadow root so the host page's CSS never touches us.
@@ -408,14 +411,14 @@
     try { return !!chrome.runtime?.id; } catch { return false; }
   }
 
-  // Always prefer the local Next.js dev server (PNA-free path). The
-  // content script can't probe localhost from the NHI origin (PNA again),
-  // so we just trust the user to have `npm run dev` running and let the
-  // iframe surface a "connection refused" if they don't. A future setting
-  // can let users flip to the deployed URL.
+  // Default to the deployed github.io build — see APP_BASE_DEPLOYED
+  // comment above for the PNA trade-off. Users who need PNA-free
+  // calls into a local backend can stash sidebarAppBase = APP_BASE_LOCAL
+  // via DevTools to flip; the content script can't probe localhost
+  // from the NHI origin (PNA again) so we don't auto-detect.
   async function pickAppBase() {
     const { sidebarAppBase } = await chrome.storage.local.get("sidebarAppBase").catch(() => ({}));
-    return sidebarAppBase || APP_BASE_LOCAL;
+    return sidebarAppBase || APP_BASE_DEPLOYED;
   }
 
   async function buildIframeUrl() {
