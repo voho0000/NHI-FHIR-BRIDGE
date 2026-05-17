@@ -20,6 +20,7 @@ import {
   dedupAdmissionDayAmb,
   linkEncountersInResources,
   mapPatient,
+  maskName,
   resolveSexStratifiedRanges,
 } from "@nhi-fhir-bridge/mapper";
 
@@ -1377,7 +1378,9 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
       body: JSON.stringify({
         status: errors.length ? "partial" : "success",
         patient_id: patientOverride.id_no || "",
-        patient_name: patientOverride.name || "",
+        // /sync/log lands in the dashboard's sync-history table; mask
+        // the name there too so the dashboard never sees the raw value.
+        patient_name: maskName(patientOverride.name || ""),
         total,
         breakdown,
         date_range: dateRangeLabel || "",

@@ -6,6 +6,7 @@
  *   - mapPatient(raw) — main entry
  */
 
+import { maskName } from "./helpers";
 import * as systems from "./systems";
 
 // Taiwan national ID: 1 letter + 9 digits (A123456789). Used to decide
@@ -23,9 +24,15 @@ export function mapPatient(raw: Record<string, any>): Record<string, any> {
 
   // Use `??` (not just default arg) so explicit null from the LLM also
   // falls back. Local models sometimes emit null instead of omitting.
-  const nameText = (raw.name ?? null) || "Unknown";
+  const rawNameText = (raw.name ?? null) || "Unknown";
   const phone = (raw.phone ?? null) || "";
   const address = (raw.address ?? null) || "";
+
+  // Partial-anonymize before it goes anywhere downstream. The Patient
+  // resource, its FHIR Bundle, the backend store, the dashboard, and
+  // any SMART app launches all consume this output, so the raw name
+  // never leaves the user's popup input field.
+  const nameText = maskName(rawNameText);
 
   const [family, given] = splitName(nameText);
   const nameEntry: Record<string, any> = { use: "official", text: nameText };

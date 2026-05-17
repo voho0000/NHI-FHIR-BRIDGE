@@ -7,6 +7,8 @@
 //   4. Progress streamed back via chrome.storage.local.syncStatus.
 //   5. After sync completes, "🚀 開啟 SMART App" launches with that patient.
 
+import { maskName } from "@nhi-fhir-bridge/mapper";
+
 const DEFAULT_BACKEND = "http://localhost:8010";
 // Default SMART app for a fresh install. Users can override via
 // the '⚙️ 進階設定 → SMART App Launch URL' field; the value is
@@ -120,8 +122,12 @@ function refreshOverrideSummary() {
     els.ovSummary.textContent = "未設定";
     if (card) card.dataset.state = "empty";
   } else {
+    // Show the masked name in the collapsed summary so the popup is
+    // safe to display on a shared screen. The raw value is still in
+    // chrome.storage and visible in the input fields when the card
+    // is expanded (it's the user's own data, they typed it).
     const parts = [ov.id_no];
-    if (ov.name) parts.push(ov.name);
+    if (ov.name) parts.push(maskName(ov.name));
     els.ovSummary.textContent = `✓ ${parts.join("  ·  ")}`;
     if (card) card.dataset.state = "filled";
   }
@@ -143,7 +149,10 @@ async function savePatientOverride() {
   await chrome.storage.sync.set({ patientOverride: ov });
   refreshOverrideSummary();
   if (els.patientOverrideDetails) els.patientOverrideDetails.open = false;
-  setStatus(`✅ 已儲存病人資料：${ov.id_no}${ov.name ? ` (${ov.name})` : ""}`, "success");
+  setStatus(
+    `✅ 已儲存病人資料：${ov.id_no}${ov.name ? ` (${maskName(ov.name)})` : ""}`,
+    "success",
+  );
 }
 
 async function clearPatientOverride() {
