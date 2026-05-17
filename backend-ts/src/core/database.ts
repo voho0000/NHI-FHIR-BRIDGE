@@ -26,6 +26,16 @@ export const sqlite = new Database(settings.DATABASE_FILE);
 // path that writes audit_log entries while the dashboard polls FHIR.
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
+// synchronous=NORMAL is safe under WAL (durability guaranteed at commit,
+// not after every write). Cuts fsync count from 1-per-statement to
+// 1-per-transaction. Default FULL hits ~100ms/upsert on macOS Docker
+// bind-mounts (gRPC FUSE) — NORMAL drops it to <1ms.
+sqlite.pragma("synchronous = NORMAL");
+// Keep temp tables in RAM rather than spilling to disk.
+sqlite.pragma("temp_store = MEMORY");
+// 256 MB mmap — speeds up read-heavy paths (search / list) by skipping
+// the page cache copy. Harmless on smaller DBs; cap matters at 100MB+.
+sqlite.pragma("mmap_size = 268435456");
 
 export const db = drizzle(sqlite, { schema });
 

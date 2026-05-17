@@ -8,12 +8,7 @@
 
 import { describe, expect, test } from "vitest";
 
-import {
-  parseRange,
-  parseRangeMulti,
-  toUcum,
-  tryParseQuantity,
-} from "@/mapper/parsers";
+import { parseRange, parseRangeMulti, toUcum, tryParseQuantity } from "@nhi-fhir-bridge/mapper";
 
 describe("toUcum", () => {
   test("pass-through canonical UCUM", () => {
@@ -185,12 +180,8 @@ describe("parseRangeMulti — sex-stratified", () => {
   test("'[男:13.7 女:11.1][男:17.0 女:15.0]'", () => {
     const rs = parseRangeMulti("[男:13.7 女:11.1][男:17.0 女:15.0]", "g/dL");
     expect(rs).toHaveLength(2);
-    const male = rs.find(
-      (r) => r.appliesTo?.[0]?.coding[0]?.code === "male",
-    );
-    const female = rs.find(
-      (r) => r.appliesTo?.[0]?.coding[0]?.code === "female",
-    );
+    const male = rs.find((r) => r.appliesTo?.[0]?.coding[0]?.code === "male");
+    const female = rs.find((r) => r.appliesTo?.[0]?.coding[0]?.code === "female");
     expect(male?.low?.value).toBe(13.7);
     expect(male?.high?.value).toBe(17);
     expect(female?.low?.value).toBe(11.1);
@@ -207,9 +198,7 @@ describe("parseRangeMulti — sex-stratified", () => {
   test("dedup when 男 and 男性 both appear", () => {
     // Should emit only one "male" entry — later one with same FHIR code wins.
     const rs = parseRangeMulti("[男:13.7 男性:14.0][]", "g/dL");
-    const maleEntries = rs.filter(
-      (r) => r.appliesTo?.[0]?.coding[0]?.code === "male",
-    );
+    const maleEntries = rs.filter((r) => r.appliesTo?.[0]?.coding[0]?.code === "male");
     expect(maleEntries).toHaveLength(1);
   });
 

@@ -1,0 +1,18 @@
+{
+  "name": "@nhi-fhir-bridge/mapper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": ["src"],
+  "dependencies": {
+    "js-sha1": "^0.7.0"
+  }
+}

@@ -6,7 +6,7 @@
  *   - mapPatient(raw) — main entry
  */
 
-import * as systems from "@/fhir/systems";
+import * as systems from "./systems";
 
 // Taiwan national ID: 1 letter + 9 digits (A123456789). Used to decide
 // whether the popup-supplied patient_id should be coded under the
@@ -84,9 +84,7 @@ function splitName(fullName: string): [string, string[]] {
   // surrogate-pair characters (rare in Chinese names but possible)
   // don't get split mid-character.
   const codepoints = Array.from(name);
-  return codepoints.length > 1
-    ? [codepoints[0]!, [codepoints.slice(1).join("")]]
-    : [name, []];
+  return codepoints.length > 1 ? [codepoints[0]!, [codepoints.slice(1).join("")]] : [name, []];
 }
 
 function mapGender(gender: unknown): string {

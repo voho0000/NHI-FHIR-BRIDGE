@@ -1,0 +1,15 @@
+{
+  "name": "nhi-fhir-bridge",
+  "version": "0.2.0",
+  "private": true,
+  "description": "NHI 健康存摺 → FHIR R4 bridge with extension, backend, and dashboard.",
+  "workspaces": [
+    "packages/*",
+    "backend-ts",
+    "extension"
+  ],
+  "scripts": {
+    "build:extension": "npm run build --workspace extension",
+    "test:backend": "npm run test --workspace backend-ts"
+  }
+}

@@ -4,8 +4,8 @@
 
 import { describe, expect, test } from "vitest";
 
-import * as systems from "@/fhir/systems";
-import { looksLikeTwNationalId, mapPatient } from "@/mapper/patient";
+import * as systems from "@nhi-fhir-bridge/mapper";
+import { looksLikeTwNationalId, mapPatient } from "@nhi-fhir-bridge/mapper";
 
 const PATIENT_ID = "A123456789";
 

@@ -6,8 +6,8 @@
  * that would duplicate a proper Observation.
  */
 
-import * as systems from "@/fhir/systems";
-import { stableId } from "@/mapper/helpers";
+import * as systems from "./systems";
+import { stableId } from "./helpers";
 
 const V2_0074 = "http://terminology.hl7.org/CodeSystem/v2-0074";
 
@@ -69,9 +69,7 @@ export function mapDiagnosticReport(
   const catEntry = CATEGORY_MAP[catKeyRaw];
   if (catEntry) {
     const [catSys, catCode, catDisplay] = catEntry;
-    resource.category = [
-      { coding: [{ system: catSys, code: catCode, display: catDisplay }] },
-    ];
+    resource.category = [{ coding: [{ system: catSys, code: catCode, display: catDisplay }] }];
   }
 
   if (raw.date) {

@@ -39,8 +39,7 @@ export function buildCapabilityStatement(): Record<string, any> {
             {
               coding: [
                 {
-                  system:
-                    "http://terminology.hl7.org/CodeSystem/restful-security-service",
+                  system: "http://terminology.hl7.org/CodeSystem/restful-security-service",
                   code: "SMART-on-FHIR",
                 },
               ],

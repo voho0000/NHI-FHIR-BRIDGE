@@ -49,9 +49,7 @@ export const syncLogs = sqliteTable("sync_logs", {
   status: text("status", { length: 32 }).notNull().default("running"),
   patientId: text("patient_id", { length: 255 }),
   message: text("message"),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`CURRENT_TIMESTAMP`),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`CURRENT_TIMESTAMP`),
   completedAt: integer("completed_at", { mode: "timestamp" }),
 });
 
@@ -69,9 +67,7 @@ export const oauthClients = sqliteTable("oauth_clients", {
     .notNull()
     .default(sql`'[]'`),
   isConfidential: integer("is_confidential", { mode: "boolean" }).notNull().default(false),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`CURRENT_TIMESTAMP`),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 /** Short-lived OAuth2 authorization codes. */
@@ -79,18 +75,13 @@ export const authorizationCodes = sqliteTable("authorization_codes", {
   code: text("code", { length: 255 }).primaryKey(),
   clientId: text("client_id", { length: 255 }).notNull(),
   redirectUri: text("redirect_uri", { length: 1024 }).notNull(),
-  scopes: text("scopes", { mode: "json" })
-    .$type<string[]>()
-    .notNull()
-    .default(sql`'[]'`),
+  scopes: text("scopes", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
   patientId: text("patient_id", { length: 255 }),
   codeChallenge: text("code_challenge", { length: 255 }),
   codeChallengeMethod: text("code_challenge_method", { length: 16 }),
   expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
   used: integer("used", { mode: "boolean" }).notNull().default(false),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`CURRENT_TIMESTAMP`),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 /** Active access tokens issued to SMART apps. */
@@ -100,15 +91,10 @@ export const oauthTokens = sqliteTable("oauth_tokens", {
     .$defaultFn(() => randomUUID()),
   clientId: text("client_id", { length: 255 }).notNull(),
   accessToken: text("access_token", { length: 512 }).notNull().unique(),
-  scopes: text("scopes", { mode: "json" })
-    .$type<string[]>()
-    .notNull()
-    .default(sql`'[]'`),
+  scopes: text("scopes", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
   patientId: text("patient_id", { length: 255 }),
   expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`CURRENT_TIMESTAMP`),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 /**

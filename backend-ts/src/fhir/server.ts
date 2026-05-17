@@ -9,7 +9,7 @@
 
 import { and, eq } from "drizzle-orm";
 
-import { db as defaultDb, type DB } from "@/core/database";
+import { type DB, db as defaultDb } from "@/core/database";
 import { fhirResources } from "@/models/schema";
 
 type FhirJson = Record<string, any>;

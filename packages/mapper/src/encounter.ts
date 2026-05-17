@@ -6,7 +6,7 @@
  * Encounter (the post-mapping linker depends on this).
  */
 
-import { stableId } from "@/mapper/helpers";
+import { stableId } from "./helpers";
 
 const ACTCODE_SYSTEM = "http://terminology.hl7.org/CodeSystem/v3-ActCode";
 
@@ -16,21 +16,13 @@ const CLASS_MAP: Record<string, [string, string, string]> = {
   EMER: [ACTCODE_SYSTEM, "EMER", "emergency"],
 };
 
-export function mapEncounter(
-  raw: Record<string, any>,
-  patientId: string,
-): Record<string, any> {
+export function mapEncounter(raw: Record<string, any>, patientId: string): Record<string, any> {
   const encClass = String(raw.class ?? "AMB").toUpperCase();
   const classEntry = CLASS_MAP[encClass] ?? CLASS_MAP.AMB!;
 
   const resource: Record<string, any> = {
     resourceType: "Encounter",
-    id: stableId(
-      patientId,
-      raw.date ?? "",
-      encClass,
-      ((raw.hospital ?? "") as string).trim(),
-    ),
+    id: stableId(patientId, raw.date ?? "", encClass, ((raw.hospital ?? "") as string).trim()),
     meta: { versionId: "1", source: "nhi-fhir-bridge/scraper" },
     status: "finished",
     class: {

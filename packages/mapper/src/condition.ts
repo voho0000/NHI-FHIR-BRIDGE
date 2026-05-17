@@ -6,8 +6,8 @@
  * back into NHI's un-dotted codes ("E1122" → "E11.22").
  */
 
-import * as systems from "@/fhir/systems";
-import { stableId } from "@/mapper/helpers";
+import * as systems from "./systems";
+import { stableId } from "./helpers";
 
 // ICD-10-CM canonical form is 'XXX.YYY[A-Z]' (category 3 chars + optional
 // dot + subdivision + optional 7th-character extension). NHI 健保 sends
@@ -46,10 +46,7 @@ function mapSystem(systemHint: unknown): string {
   return systems.HIS_LOCAL_CONDITION_CODE;
 }
 
-export function mapCondition(
-  raw: Record<string, any>,
-  patientId: string,
-): Record<string, any> {
+export function mapCondition(raw: Record<string, any>, patientId: string): Record<string, any> {
   const resource: Record<string, any> = {
     resourceType: "Condition",
     id: stableId(patientId, raw.code ?? "", raw.onset_date ?? ""),

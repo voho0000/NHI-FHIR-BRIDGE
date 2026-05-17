@@ -1,4 +1,4 @@
-CREATE TABLE `audit_log` (
+CREATE TABLE IF NOT EXISTS `audit_log` (
 	`id` text(36) PRIMARY KEY NOT NULL,
 	`timestamp` integer DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	`his_user` text(64),
@@ -12,10 +12,10 @@ CREATE TABLE `audit_log` (
 	`auth_token_hint` text(64)
 );
 --> statement-breakpoint
-CREATE INDEX `ix_audit_log_timestamp` ON `audit_log` (`timestamp`);--> statement-breakpoint
-CREATE INDEX `ix_audit_log_his_user` ON `audit_log` (`his_user`);--> statement-breakpoint
-CREATE INDEX `ix_audit_log_patient_id` ON `audit_log` (`patient_id`);--> statement-breakpoint
-CREATE TABLE `authorization_codes` (
+CREATE INDEX IF NOT EXISTS `ix_audit_log_timestamp` ON `audit_log` (`timestamp`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `ix_audit_log_his_user` ON `audit_log` (`his_user`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `ix_audit_log_patient_id` ON `audit_log` (`patient_id`);--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `authorization_codes` (
 	`code` text(255) PRIMARY KEY NOT NULL,
 	`client_id` text(255) NOT NULL,
 	`redirect_uri` text(1024) NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE `authorization_codes` (
 	`created_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `fhir_resources` (
+CREATE TABLE IF NOT EXISTS `fhir_resources` (
 	`id` text(36) PRIMARY KEY NOT NULL,
 	`resource_type` text(64) NOT NULL,
 	`fhir_id` text(255) NOT NULL,
@@ -38,9 +38,9 @@ CREATE TABLE `fhir_resources` (
 	`updated_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX `ix_fhir_resources_resource_type` ON `fhir_resources` (`resource_type`);--> statement-breakpoint
-CREATE INDEX `ix_fhir_resources_fhir_id` ON `fhir_resources` (`fhir_id`);--> statement-breakpoint
-CREATE TABLE `oauth_clients` (
+CREATE INDEX IF NOT EXISTS `ix_fhir_resources_resource_type` ON `fhir_resources` (`resource_type`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `ix_fhir_resources_fhir_id` ON `fhir_resources` (`fhir_id`);--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `oauth_clients` (
 	`client_id` text(255) PRIMARY KEY NOT NULL,
 	`client_secret` text(255),
 	`client_name` text(255) NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE `oauth_clients` (
 	`created_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `oauth_tokens` (
+CREATE TABLE IF NOT EXISTS `oauth_tokens` (
 	`id` text(36) PRIMARY KEY NOT NULL,
 	`client_id` text(255) NOT NULL,
 	`access_token` text(512) NOT NULL,
@@ -60,14 +60,14 @@ CREATE TABLE `oauth_tokens` (
 	`created_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `oauth_tokens_access_token_unique` ON `oauth_tokens` (`access_token`);--> statement-breakpoint
-CREATE TABLE `patient_sync_state` (
+CREATE UNIQUE INDEX IF NOT EXISTS `oauth_tokens_access_token_unique` ON `oauth_tokens` (`access_token`);--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `patient_sync_state` (
 	`patient_id` text(255) PRIMARY KEY NOT NULL,
 	`last_synced_at` integer,
 	`sync_log_id` text(36)
 );
 --> statement-breakpoint
-CREATE TABLE `sync_logs` (
+CREATE TABLE IF NOT EXISTS `sync_logs` (
 	`id` text(36) PRIMARY KEY NOT NULL,
 	`status` text(32) DEFAULT 'running' NOT NULL,
 	`patient_id` text(255),

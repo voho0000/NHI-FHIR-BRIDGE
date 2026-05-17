@@ -98,7 +98,7 @@ const UCUM_OVERRIDES: Record<string, string | null> = {
   mmHg: "mm[Hg]",
   MMHG: "mm[Hg]",
   // Common Chinese 'no unit' placeholders → drop UCUM code
-  "無": null,
+  無: null,
   "": null,
   "—": null,
   "-": null,
@@ -162,8 +162,7 @@ export function parseRangeMulti(rawRange: string, unit: string): RangeEntry[] {
     for (const sm of highBlob.matchAll(RR_SEX_NUM_G)) {
       if (sm[1] && sm[2]) highBySex[sm[1]] = sm[2];
     }
-    usedMulti =
-      Object.keys(lowBySex).length > 0 || Object.keys(highBySex).length > 0;
+    usedMulti = Object.keys(lowBySex).length > 0 || Object.keys(highBySex).length > 0;
   } else {
     // Single-bracket: each per-sex value's comparator decides low vs high.
     const single = s.match(RR_SINGLE_BRACKET);
@@ -174,9 +173,7 @@ export function parseRangeMulti(rawRange: string, unit: string): RangeEntry[] {
         const valStr = sm[2] ?? "";
         // Find the comparator immediately preceding this number.
         // Mirror the Python: rebuild a per-sex-key search.
-        const pat = new RegExp(
-          `${escapeRegex(sexKey)}\\s*[:：]?\\s*([<>≧≦]=?)?\\s*-?\\d`,
-        );
+        const pat = new RegExp(`${escapeRegex(sexKey)}\\s*[:：]?\\s*([<>≧≦]=?)?\\s*-?\\d`);
         const cm = inner.match(pat);
         const op = cm?.[1] ?? "";
         if (op === ">" || op === ">=") {
@@ -187,8 +184,7 @@ export function parseRangeMulti(rawRange: string, unit: string): RangeEntry[] {
           lowBySex[sexKey] = valStr;
         }
       }
-      usedMulti =
-        Object.keys(lowBySex).length > 0 || Object.keys(highBySex).length > 0;
+      usedMulti = Object.keys(lowBySex).length > 0 || Object.keys(highBySex).length > 0;
     }
   }
 
@@ -313,7 +309,6 @@ export function parseRange(rawRange: string, unit: string): RangeEntry | null {
         const v = tryParseFloat(qm[2]!);
         if (v !== null) {
           entry.high = makeQuantity(v, unit);
-          continue;
         }
       }
     }

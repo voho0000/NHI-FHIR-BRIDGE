@@ -7,8 +7,8 @@
  * / etc. which are clinically wrong.
  */
 
-import * as systems from "@/fhir/systems";
-import { stableId } from "@/mapper/helpers";
+import * as systems from "./systems";
+import { stableId } from "./helpers";
 
 function mapSystem(systemHint: unknown): string {
   const s = typeof systemHint === "string" ? systemHint.toLowerCase() : "";

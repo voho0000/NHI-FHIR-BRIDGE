@@ -5,8 +5,8 @@
 
 import { describe, expect, test } from "vitest";
 
-import * as systems from "@/fhir/systems";
-import { mapCondition, normalizeIcd10Cm } from "@/mapper/condition";
+import * as systems from "@nhi-fhir-bridge/mapper";
+import { mapCondition, normalizeIcd10Cm } from "@nhi-fhir-bridge/mapper";
 
 const PATIENT_ID = "A123456789";
 
@@ -76,10 +76,7 @@ describe("mapCondition", () => {
   });
 
   test("onset date ISO with TW timezone", () => {
-    const r = mapCondition(
-      { code: "E11.9", display: "DM2", onset_date: "2020-01-15" },
-      PATIENT_ID,
-    );
+    const r = mapCondition({ code: "E11.9", display: "DM2", onset_date: "2020-01-15" }, PATIENT_ID);
     expect(r.onsetDateTime).toBe("2020-01-15T00:00:00+08:00");
   });
 });
