@@ -58,11 +58,29 @@ const EXTRA_CORS_ORIGINS = (settings.ALLOW_CORS_ORIGINS ?? "")
   .filter(Boolean);
 
 const CORS_ALLOWED_ORIGINS = new Set([...DEFAULT_CORS_ORIGINS, ...EXTRA_CORS_ORIGINS]);
-const CHROME_EXTENSION_RE = /^chrome-extension:\/\/[a-z0-9]+$/;
+
+// Pin to specific extension IDs rather than accepting every
+// chrome-extension://* origin. Without this, any malicious extension
+// the user installs could make credentialed calls to the backend's
+// PHI endpoints. IDs come from ALLOWED_EXTENSION_IDS env (comma-sep).
+// When the env is empty (e.g. unpacked dev install), fall back to the
+// permissive regex so first-run UX still works; deployments meant to
+// share with anyone else MUST set ALLOWED_EXTENSION_IDS.
+const ALLOWED_EXTENSION_IDS = (process.env.ALLOWED_EXTENSION_IDS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const ALLOWED_EXTENSION_ORIGINS = new Set(
+  ALLOWED_EXTENSION_IDS.map((id) => `chrome-extension://${id}`),
+);
+const CHROME_EXTENSION_RE = /^chrome-extension:\/\/[a-p]{32}$/;
 
 function corsOriginCheck(origin: string): string | null {
   if (CORS_ALLOWED_ORIGINS.has(origin)) return origin;
-  if (CHROME_EXTENSION_RE.test(origin)) return origin;
+  if (ALLOWED_EXTENSION_ORIGINS.has(origin)) return origin;
+  if (ALLOWED_EXTENSION_IDS.length === 0 && CHROME_EXTENSION_RE.test(origin)) {
+    return origin;
+  }
   return null;
 }
 
