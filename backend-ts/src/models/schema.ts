@@ -109,13 +109,16 @@ export const patientSyncState = sqliteTable("patient_sync_state", {
 });
 
 /**
- * Per-capture audit trail for /sync/upload-html.
+ * Per-sync audit trail.
  *
- * Records WHO synced WHAT WHEN, sourced from the HIS user identifier in
- * the captured HTML's navbar (e.g. 使用者:XXXX or 操作人員:XXXX).
+ * Records WHO synced WHAT WHEN. `/sync/upload-structured` writes a row
+ * per page_type ingest. The his_user column is a leftover from the
+ * (now-removed) HTML/LLM fallback path that scraped navbar identifiers
+ * out of captured HTML; the column stays for backward compatibility
+ * with existing rows but new writes leave it null.
  *
- * PHI scope: stores patient_id and his_user (a hospital staff identifier).
- * Both are sensitive; live in the same SQLite DB as the FHIR data.
+ * PHI scope: stores patient_id (already hashed). Lives in the same
+ * SQLite DB as the FHIR data.
  */
 export const auditLog = sqliteTable(
   "audit_log",
