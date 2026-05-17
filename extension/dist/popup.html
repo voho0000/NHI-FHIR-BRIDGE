@@ -165,6 +165,113 @@
     .btn-cta:hover:not(:disabled) { background: #059669; }
     .btn-cta:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
 
+    /* ── 3-step wizard ─────────────────────────────────────────────── */
+    .wizard-stepper {
+      display: flex;
+      list-style: none;
+      padding: 0;
+      margin: 0 0 14px 0;
+      gap: 6px;
+      align-items: center;
+    }
+    .wizard-stepper li {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      padding: 4px 2px;
+      border-radius: 6px;
+      transition: background 0.15s ease;
+      position: relative;
+      user-select: none;
+    }
+    .wizard-stepper li:hover { background: rgba(37, 99, 235, 0.06); }
+    .wizard-stepper li:focus-visible {
+      outline: 2px solid #2563eb;
+      outline-offset: 1px;
+    }
+    .wizard-stepper .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #e5e7eb;
+      color: #6b7280;
+      font-size: 12px;
+      font-weight: 700;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+    .wizard-stepper .step-label {
+      font-size: 11px;
+      color: #6b7280;
+      font-weight: 500;
+    }
+    .wizard-stepper li[aria-current="true"] .step-num {
+      background: #2563eb;
+      color: white;
+    }
+    .wizard-stepper li[aria-current="true"] .step-label {
+      color: #1e3a8a;
+      font-weight: 700;
+    }
+    .wizard-stepper li[data-done="true"] .step-num {
+      background: #10b981;
+      color: white;
+    }
+    .wizard-stepper li[data-done="true"] .step-num::before {
+      content: "✓";
+    }
+    .wizard-stepper li[data-done="true"] .step-num > .step-num-text {
+      display: none;
+    }
+    /* Connector lines between step circles */
+    .wizard-stepper li + li::before {
+      content: "";
+      position: absolute;
+      top: 16px;
+      left: -6px;
+      width: 12px;
+      height: 2px;
+      background: #e5e7eb;
+    }
+    .wizard-stepper li[data-done="true"] + li::before {
+      background: #10b981;
+    }
+
+    /* Hide steps not matching the active step. The body element carries
+       data-active-step so individual sections opt in via data-step. */
+    body[data-active-step="1"] .wizard-step:not([data-step="1"]),
+    body[data-active-step="2"] .wizard-step:not([data-step="2"]),
+    body[data-active-step="3"] .wizard-step:not([data-step="3"]) {
+      display: none;
+    }
+
+    /* Step 1 "logged in" reassurance card — replaces login/open-NHI
+       sections when the user actually IS logged in. */
+    .login-ok {
+      padding: 14px 16px;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      border-left: 4px solid #10b981;
+      border-radius: 6px;
+      color: #065f46;
+      font-size: 13px;
+      line-height: 1.5;
+      text-align: center;
+    }
+    .login-ok b { display: block; margin-bottom: 2px; font-size: 14px; }
+    .login-ok .next-hint {
+      display: inline-block;
+      margin-top: 10px;
+      color: #047857;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
     /* "On NHI tab but not logged in" banner — bigger than .cta-reason
        because this is the single biggest first-run failure mode. */
     .nhi-needs-login {
@@ -603,26 +710,58 @@
 
   <div class="content">
 
-    <!-- ── 0a. Open-NHI shortcut (only shown when user is on another tab) -->
-    <section class="section" id="open-nhi-section" hidden>
-      <button class="btn-primary" id="open-nhi-btn" style="background:#0ea5e9">
-        🔗 開啟健保存摺登入
-      </button>
-      <div class="hint">
-        需要先登入健保存摺才能取得資料。已經登入過了？把那個分頁切回前景就會自動偵測。
-      </div>
-    </section>
+    <!-- 3-step progress indicator. Click to jump back/forward. -->
+    <ol class="wizard-stepper" id="wizard-stepper" role="tablist" aria-label="三步驟引導">
+      <li data-step="1" role="tab" tabindex="0">
+        <span class="step-num"><span class="step-num-text">1</span></span>
+        <span class="step-label">登入</span>
+      </li>
+      <li data-step="2" role="tab" tabindex="0">
+        <span class="step-num"><span class="step-num-text">2</span></span>
+        <span class="step-label">設定</span>
+      </li>
+      <li data-step="3" role="tab" tabindex="0">
+        <span class="step-num"><span class="step-num-text">3</span></span>
+        <span class="step-label">取得</span>
+      </li>
+    </ol>
 
-    <!-- ── 0b. Already on NHI tab but not logged in ─────────────────── -->
-    <section class="section" id="nhi-needs-login-section" hidden>
-      <div class="nhi-needs-login">
-        🔒 <b>偵測到健保存摺分頁，但你還沒登入。</b><br/>
-        請在那個分頁完成登入（健保卡 / 行動電話認證 / 自然人憑證 / TW FidO 任一），再回來按「取得」。
-      </div>
-    </section>
+    <!-- ── STEP 1: 登入健保存摺 ─────────────────────────────────── -->
+    <div class="wizard-step" data-step="1">
 
-    <!-- ── 0. Sync mode ───────────────────────────────────────────── -->
-    <section class="section">
+      <!-- 1a. User isn't on the NHI tab — shortcut to open it. -->
+      <section class="section" id="open-nhi-section" hidden>
+        <button class="btn-primary" id="open-nhi-btn" style="background:#0ea5e9">
+          🔗 開啟健保存摺登入
+        </button>
+        <div class="hint">
+          需要先登入健保存摺才能取得資料。已經登入過了？把那個分頁切回前景就會自動偵測。
+        </div>
+      </section>
+
+      <!-- 1b. On NHI tab but no active session. -->
+      <section class="section" id="nhi-needs-login-section" hidden>
+        <div class="nhi-needs-login">
+          🔒 <b>偵測到健保存摺分頁，但你還沒登入。</b><br/>
+          請在那個分頁完成登入（健保卡 / 行動電話認證 / 自然人憑證 / TW FidO 任一）。登入後這個視窗會自動跳到下一步。
+        </div>
+      </section>
+
+      <!-- 1c. Login confirmed — quick "done" card with hand-off to step 2. -->
+      <section class="section" id="login-ok-section" hidden>
+        <div class="login-ok">
+          <b>✅ 健保存摺已登入</b>
+          可以開始取得資料了。
+          <span class="next-hint">↓ 接著確認下方資料</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── STEP 2: 確認資料 + 設定 ──────────────────────────────── -->
+    <div class="wizard-step" data-step="2">
+
+      <!-- 2a. Sync mode (local vs backend) ─────────────────── -->
+      <section class="section">
       <div class="mode-toggle" role="radiogroup" aria-label="輸出方式">
         <label class="mode-opt" title="只在你自己電腦上：產生 FHIR 紀錄檔下載到下載夾，完全不經過任何後端">
           <input type="radio" name="sync-mode" value="local" checked />
@@ -699,7 +838,12 @@
       </select>
     </section>
 
-    <!-- ── 3. Primary CTA ─────────────────────────────────────────── -->
+    </div><!-- /STEP 2 -->
+
+    <!-- ── STEP 3: 取得資料 + 看結果 ─────────────────────────────── -->
+    <div class="wizard-step" data-step="3">
+
+    <!-- 3a. Primary CTA ─────────────────────────────────── -->
     <section class="section">
       <button class="btn-cta" id="sync-api-btn" disabled>
         🔄 取得健保存摺資料
@@ -710,10 +854,10 @@
       </button>
     </section>
 
-    <!-- ── 4. Status ─────────────────────────────────────────────── -->
+    <!-- 3b. Status banner (updated during sync + on completion) -->
     <div id="status" class="status"></div>
 
-    <!-- ── 4b. Backend ↔ local data state (backend mode only) ──── -->
+    <!-- 3c. Backend ↔ local data state (backend mode only) -->
     <section class="section backend-only" id="data-state-section" hidden>
       <div class="data-state-card">
         <div class="data-state-row">
@@ -749,18 +893,21 @@
       </div>
     </section>
 
-    <!-- ── 5. Launch SMART App (backend mode only) ───────────────── -->
+    <!-- 3e. Launch SMART App (backend mode only) -->
     <section class="section backend-only" style="margin-top:14px">
       <button class="btn-primary" id="launch-btn" disabled>
         🚀 開啟 SMART App
       </button>
     </section>
 
-    <!-- ── 6. Advanced settings ─────────────────────────────────────
-         The section header itself is mode-agnostic so the mask-name
-         toggle (relevant in both modes) is reachable from "下載到電腦"
-         too. Individual rows that only make sense in backend mode
-         carry .backend-only and disappear in local mode. -->
+    </div><!-- /STEP 3 -->
+
+    <!-- ── Advanced settings ────────────────────────────────────────
+         Reachable from any step (collapsed by default) so users can
+         tweak mask / backend URL / SMART app URL mid-flow without
+         backing out. The section header is mode-agnostic; rows that
+         only make sense in backend mode carry .backend-only and
+         disappear in local mode. -->
     <section class="section">
       <details class="settings">
         <summary>⚙️ 進階設定</summary>
