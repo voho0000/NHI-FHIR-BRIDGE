@@ -100,14 +100,18 @@ async function loadPatientOverride() {
     els.ovBirthDate.value = patientOverride.birth_date || "";
     els.ovGender.value = patientOverride.gender || "";
   }
-  // Step 2 is where the required-field action lives. Auto-expand the
-  // card whenever the required fields (gender + birth_date) aren't
-  // both filled — covers first-time AND returning users whose previous
-  // save was incomplete. Once required fields are done, collapse to
-  // give breathing room.
+  // A stored override with both required fields counts as "step 2
+  // already confirmed" — returning user shouldn't be forced to click
+  // ✓ 確定 again to advance the wizard.
+  _markStep2Confirmed(
+    !!(patientOverride?.gender && patientOverride?.birth_date),
+  );
+  // Auto-expand the card whenever the required fields aren't already
+  // saved — covers first-time AND returning users whose previous save
+  // was incomplete. Once required fields are saved, collapse to give
+  // breathing room.
   if (els.patientOverrideDetails) {
-    const hasRequired = !!patientOverride?.gender && !!patientOverride?.birth_date;
-    els.patientOverrideDetails.open = !hasRequired;
+    els.patientOverrideDetails.open = !_step2Confirmed;
   }
   refreshOverrideSummary();
 }
@@ -268,6 +272,7 @@ async function savePatientOverride() {
     els.ovIdNo.value = ov.id_no;
   }
   await chrome.storage.local.set({ patientOverride: ov });
+  _markStep2Confirmed(true);
   refreshOverrideSummary();
   _refreshButtonStates();
   if (els.patientOverrideDetails) els.patientOverrideDetails.open = false;
@@ -285,6 +290,7 @@ async function clearPatientOverride() {
   els.ovName.value = "";
   els.ovBirthDate.value = "";
   els.ovGender.value = "";
+  _markStep2Confirmed(false);
   refreshOverrideSummary();
   _refreshButtonStates();
   if (els.patientOverrideDetails) els.patientOverrideDetails.open = true;
@@ -379,19 +385,29 @@ function _renderConnBanner() {
 // sync would jerk them back to step 1.
 let _activeStep = 1;
 let _wizardInitialized = false;
+// Step 2 is "done" only after the user has clicked ✓ 確定 with valid
+// inputs. We track this with a boolean rather than reading live DOM
+// state — otherwise the wizard would auto-advance the moment the
+// fields happened to look right, before the user had a chance to
+// review. Flipped true in savePatientOverride success, false in
+// clearPatientOverride and on a load that yields no saved record.
+let _step2Confirmed = false;
+
+function _markStep2Confirmed(yes) {
+  _step2Confirmed = !!yes;
+}
 
 function _isStepDone(step) {
   const onNhi = !els.syncApiBtn.dataset.offNhi;
   const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
-  const genderOk = !!els.ovGender?.value;
-  const dobError = validateBirthDate();
   switch (step) {
     case 1:
       return onNhi && loggedIn;
     case 2:
-      // Mode selection moved to step 3, so step 2's only requirement
-      // is the patient identity (gender + valid dob).
-      return genderOk && !dobError;
+      // Confirmed = user clicked ✓ 確定 AND the override is currently
+      // valid (so revisits with a now-invalid override don't show a
+      // false green check).
+      return _step2Confirmed;
     case 3:
       // Step 3 is the terminal action step; never "done" for progress
       // purposes (the success banner inside the step is the indicator).
