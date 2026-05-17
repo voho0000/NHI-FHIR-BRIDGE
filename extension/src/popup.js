@@ -124,6 +124,41 @@ function getPatientOverride() {
   return out;
 }
 
+/**
+ * Validate the patient card's birth-date input. Returns null when OK,
+ * otherwise a user-facing error string.
+ *
+ * Allowed states:
+ *   - empty (the field is optional)
+ *   - full ISO YYYY-MM-DD that round-trips through Date()
+ * Rejected:
+ *   - year-only ("1960"), year+month ("1960-05"), or any malformed
+ *     value. Native <input type="date"> normally produces only ""
+ *     or YYYY-MM-DD, but paste / autofill / odd locales have been
+ *     observed to leak partial values that pass through and break
+ *     downstream age math (NaN years old).
+ *   - dates in the future
+ *   - implausibly old dates (year < 1900)
+ */
+function validateBirthDate(s) {
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "生日請填完整年月日，或留空";
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(s + "T00:00:00Z");
+  if (
+    Number.isNaN(dt.getTime()) ||
+    dt.getUTCFullYear() !== y ||
+    dt.getUTCMonth() + 1 !== m ||
+    dt.getUTCDate() !== d
+  ) {
+    return "生日不是有效日期";
+  }
+  const now = new Date();
+  if (dt.getTime() > now.getTime()) return "生日不能是未來";
+  if (y < 1900) return "生日年份太早，請確認";
+  return null;
+}
+
 // Random "auto-XXXXXXXX" — 8 hex chars from crypto.getRandomValues so
 // every fresh popup install gets a different ID and re-syncs are stable.
 function _generateAutoPatientId() {
@@ -194,6 +229,15 @@ async function savePatientOverride() {
   if (!ov.gender) {
     setStatus("⛔ 請選擇性別", "error");
     els.ovGender.focus();
+    return;
+  }
+  // Birth-date may be empty (it's optional), but if present must be a
+  // full valid ISO date — partial values silently break age math
+  // downstream (years comes back as NaN).
+  const dobError = validateBirthDate(els.ovBirthDate.value.trim());
+  if (dobError) {
+    setStatus(`⛔ ${dobError}`, "error");
+    els.ovBirthDate.focus();
     return;
   }
   // ID auto-generation: if user left id_no blank, mint an "auto-XXXX"
@@ -312,12 +356,14 @@ function _refreshButtonStates() {
   const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
   const modeOk = currentMode() === "local" || _connState === "ok";
   const genderOk = !!els.ovGender?.value;
+  const dobError = validateBirthDate(els.ovBirthDate?.value?.trim() ?? "");
 
   let reason = "";
   if (!onNhi) reason = "請先切到健保存摺分頁";
   else if (!loggedIn) reason = "健保存摺分頁尚未登入";
   else if (!modeOk) reason = "後端尚未連線（看上方紅色提示）";
   else if (!genderOk) reason = "請先在上方填「性別」並按確定";
+  else if (dobError) reason = dobError;
 
   els.syncApiBtn.disabled = reason !== "";
   els.syncApiBtn.title = reason;
