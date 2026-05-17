@@ -533,6 +533,22 @@ function _refreshResultZone() {
   if (els.launchBtn) {
     els.launchBtn.hidden = currentMode() !== "backend" || !launchUsable;
   }
+
+  // Demote the 取得 CTA once we have a result + a usable next-step
+  // action. The "primary action" baton passes to 下載 / 開啟 App so
+  // the user's eye lands on what's next, not on "redo the thing".
+  const hasResultArtifact = bundleShown || launchUsable;
+  if (els.syncApiBtn) {
+    const shouldDemote = hasResultArtifact && !els.syncApiBtn.disabled;
+    els.syncApiBtn.classList.toggle("is-secondary", shouldDemote);
+    // Relabel to match the new role. While the sync is running we keep
+    // the prompt mid-render text alone (applySyncStatus owns that).
+    if (!_latestStatus?.running) {
+      els.syncApiBtn.textContent = shouldDemote
+        ? "重新取得"
+        : "取得健保存摺資料";
+    }
+  }
 }
 
 function _maybeAutoAdvance() {
