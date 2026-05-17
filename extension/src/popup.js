@@ -12,7 +12,7 @@ import { maskId, maskName } from "@nhi-fhir-bridge/mapper";
 const DEFAULT_BACKEND = "http://localhost:8010";
 // Default SMART app for a fresh install. Users can override via
 // the '⚙️ 進階設定 → SMART App Launch URL' field; the value is
-// persisted in chrome.storage.sync under `smartAppLaunchUrl`.
+// persisted in chrome.storage.local under `smartAppLaunchUrl`.
 const DEFAULT_SMART_APP_LAUNCH = "https://voho0000.github.io/medical-note-smart-on-fhir/smart/launch";
 
 // True if the active tab is an NHI 健康存摺 page (real site).
@@ -75,7 +75,7 @@ const PENDING_BUNDLE_KEY = "pendingFhirBundle";
 
 // Persisted-state keys. Backend URL and API key persist across browser sessions.
 async function loadBackendUrl() {
-  const { backendUrl, syncApiKey, smartAppLaunchUrl } = await chrome.storage.sync.get(
+  const { backendUrl, syncApiKey, smartAppLaunchUrl } = await chrome.storage.local.get(
     ["backendUrl", "syncApiKey", "smartAppLaunchUrl"]
   );
   els.backendUrl.value = backendUrl || DEFAULT_BACKEND;
@@ -89,7 +89,7 @@ async function loadBackendUrl() {
 // fills these once and they're sent with every upload call until cleared.
 
 async function loadPatientOverride() {
-  const { patientOverride } = await chrome.storage.sync.get("patientOverride");
+  const { patientOverride } = await chrome.storage.local.get("patientOverride");
   if (patientOverride) {
     els.ovIdNo.value = patientOverride.id_no || "";
     els.ovName.value = patientOverride.name || "";
@@ -197,7 +197,7 @@ async function savePatientOverride() {
     ov.id_no = _generateAutoPatientId();
     els.ovIdNo.value = ov.id_no;
   }
-  await chrome.storage.sync.set({ patientOverride: ov });
+  await chrome.storage.local.set({ patientOverride: ov });
   refreshOverrideSummary();
   if (els.patientOverrideDetails) els.patientOverrideDetails.open = false;
   // Make clear this is the identity save, not a medical-record sync —
@@ -209,7 +209,7 @@ async function savePatientOverride() {
 }
 
 async function clearPatientOverride() {
-  await chrome.storage.sync.remove("patientOverride");
+  await chrome.storage.local.remove("patientOverride");
   els.ovIdNo.value = "";
   els.ovName.value = "";
   els.ovBirthDate.value = "";
@@ -617,7 +617,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // ── Sync mode (local | backend) ──────────────────────────────────────
 async function loadSyncMode() {
-  const { syncMode } = await chrome.storage.sync.get("syncMode");
+  const { syncMode } = await chrome.storage.local.get("syncMode");
   const mode = syncMode === "backend" ? "backend" : DEFAULT_MODE;
   for (const r of els.modeRadios()) r.checked = r.value === mode;
   document.body.dataset.mode = mode;
@@ -640,7 +640,7 @@ for (const r of els.modeRadios()) {
   r.addEventListener("change", () => {
     const mode = currentMode();
     document.body.dataset.mode = mode;
-    chrome.storage.sync.set({ syncMode: mode });
+    chrome.storage.local.set({ syncMode: mode });
     if (mode === "backend") {
       testBackendConnection(); // triggers checkBackendPatient on success
     } else {
@@ -652,23 +652,23 @@ for (const r of els.modeRadios()) {
 }
 
 els.backendUrl.addEventListener("change", () => {
-  chrome.storage.sync.set({ backendUrl: els.backendUrl.value.trim() });
+  chrome.storage.local.set({ backendUrl: els.backendUrl.value.trim() });
   els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
   if (currentMode() === "backend") testBackendConnection();
 });
 els.syncApiKey.addEventListener("change", () => {
-  chrome.storage.sync.set({ syncApiKey: els.syncApiKey.value.trim() });
+  chrome.storage.local.set({ syncApiKey: els.syncApiKey.value.trim() });
 });
-// Sidebar "📋 助理" toggle — persists in chrome.storage.sync so the
+// Sidebar "📋 助理" toggle — persists in chrome.storage.local so the
 // preference is sticky across reinstalls. sidebar.js listens to the
 // same key and hides itself when set to false.
 async function loadSidebarEnabled() {
-  const { sidebarEnabled } = await chrome.storage.sync.get("sidebarEnabled");
+  const { sidebarEnabled } = await chrome.storage.local.get("sidebarEnabled");
   els.sidebarEnabled.checked = sidebarEnabled !== false; // default ON
 }
 
 els.sidebarEnabled?.addEventListener("change", () => {
-  chrome.storage.sync.set({ sidebarEnabled: els.sidebarEnabled.checked });
+  chrome.storage.local.set({ sidebarEnabled: els.sidebarEnabled.checked });
 });
 
 // Mask-patient-name toggle — defaults OFF (citizens downloading their
@@ -677,7 +677,7 @@ els.sidebarEnabled?.addEventListener("change", () => {
 // masked form (郭一新 → 郭O新) instead of the real name.
 let _maskNameEnabled = false;
 async function loadMaskNameEnabled() {
-  const { maskNameEnabled } = await chrome.storage.sync.get("maskNameEnabled");
+  const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
   _maskNameEnabled = maskNameEnabled === true;
   if (els.maskNameEnabled) els.maskNameEnabled.checked = _maskNameEnabled;
 }
@@ -688,7 +688,7 @@ function _maybeMask(name) {
 
 els.maskNameEnabled?.addEventListener("change", async () => {
   _maskNameEnabled = els.maskNameEnabled.checked;
-  await chrome.storage.sync.set({ maskNameEnabled: _maskNameEnabled });
+  await chrome.storage.local.set({ maskNameEnabled: _maskNameEnabled });
   // Re-render popup chrome (summary line is the only spot that reads
   // _maybeMask reactively; everywhere else samples it just-in-time).
   refreshOverrideSummary();
@@ -698,9 +698,9 @@ els.smartAppUrl.addEventListener("change", () => {
   // Persist trimmed value. Empty string → restore default on next load.
   const v = els.smartAppUrl.value.trim();
   if (v) {
-    chrome.storage.sync.set({ smartAppLaunchUrl: v });
+    chrome.storage.local.set({ smartAppLaunchUrl: v });
   } else {
-    chrome.storage.sync.remove("smartAppLaunchUrl");
+    chrome.storage.local.remove("smartAppLaunchUrl");
     els.smartAppUrl.value = DEFAULT_SMART_APP_LAUNCH;
   }
 });
@@ -821,7 +821,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // the download button. Reload the override into the inputs whenever
 // storage changes so every downstream guard sees consistent values.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "sync" && changes.patientOverride) loadPatientOverride();
+  if (area === "local" && changes.patientOverride) loadPatientOverride();
 });
 
 // ── ⓘ Help-icon tooltip ─────────────────────────────────────────────
