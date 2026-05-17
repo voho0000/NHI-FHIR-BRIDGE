@@ -100,11 +100,14 @@ async function loadPatientOverride() {
     els.ovBirthDate.value = patientOverride.birth_date || "";
     els.ovGender.value = patientOverride.gender || "";
   }
-  // First-time UX: if no id_no is stored, auto-expand the patient-data
-  // details so the user immediately sees the required fields. Once
-  // they've saved a value, default to collapsed.
+  // Step 2 is where the required-field action lives. Auto-expand the
+  // card whenever the required fields (gender + birth_date) aren't
+  // both filled — covers first-time AND returning users whose previous
+  // save was incomplete. Once required fields are done, collapse to
+  // give breathing room.
   if (els.patientOverrideDetails) {
-    els.patientOverrideDetails.open = !patientOverride?.id_no;
+    const hasRequired = !!patientOverride?.gender && !!patientOverride?.birth_date;
+    els.patientOverrideDetails.open = !hasRequired;
   }
   refreshOverrideSummary();
 }
@@ -233,28 +236,30 @@ function _clearStaleSyncStatus(ov) {
 }
 
 async function savePatientOverride() {
-  const ov = getPatientOverride();
-  if (!ov) {
-    setStatus("⛔ 請至少填寫姓名或身分證字號", "error");
-    return;
-  }
-  // Gender is mandatory — downstream sex-stratified reference ranges
-  // (CBC, liver enzymes, etc.) and any AI age/sex判讀 rely on it. UI
-  // marks it with a red asterisk; this is the matching validation.
-  if (!ov.gender) {
+  // Gender + birth_date are required. id_no / name are optional —
+  // id_no will be auto-fetched on sync, name can be left blank or fake.
+  if (!els.ovGender.value) {
     setStatus("⛔ 請選擇性別", "error");
     els.ovGender.focus();
     return;
   }
-  // Birth-date may be empty (it's optional), but if present must be a
-  // full valid ISO date — partial values silently break age math
-  // downstream (years comes back as NaN).
   const dobError = validateBirthDate();
   if (dobError) {
     setStatus(`⛔ ${dobError}`, "error");
     els.ovBirthDate.focus();
     return;
   }
+  // Build the override directly so we don't depend on
+  // getPatientOverride's "must have id_no or name" null-return — the
+  // required-field path above has already validated what matters.
+  const ov = {
+    id_no: els.ovIdNo.value.trim() || null,
+    name: els.ovName.value.trim() || null,
+    birth_date: els.ovBirthDate.value.trim(),
+    gender: els.ovGender.value,
+  };
+  if (!ov.id_no) delete ov.id_no;
+  if (!ov.name) delete ov.name;
   // ID auto-generation: if user left id_no blank, mint an "auto-XXXX"
   // and stash it in the UI so subsequent re-syncs use the same FHIR
   // Patient.id (storage persistence keeps it stable across re-opens).
@@ -473,12 +478,16 @@ function _refreshButtonStates() {
   const genderOk = !!els.ovGender?.value;
   const dobError = validateBirthDate();
 
+  // Each blocking reason names the step that needs attention so the
+  // user knows exactly which stepper pill to click. Step 3 (取得)
+  // is where the CTA lives; any unmet precondition lives in step 1
+  // or step 2.
   let reason = "";
-  if (!onNhi) reason = "請先切到健保存摺分頁";
-  else if (!loggedIn) reason = "健保存摺分頁尚未登入";
-  else if (!modeOk) reason = "後端尚未連線（看上方紅色提示）";
-  else if (!genderOk) reason = "請先在上方填「性別」並按確定";
-  else if (dobError) reason = dobError;
+  if (!onNhi) reason = "回 ① 登入：請切到健保存摺分頁";
+  else if (!loggedIn) reason = "回 ① 登入：健保存摺分頁尚未登入";
+  else if (!modeOk) reason = "回 ② 設定：後端尚未連線";
+  else if (!genderOk) reason = "回 ② 設定：請選擇性別並按確定";
+  else if (dobError) reason = `回 ② 設定：${dobError}`;
 
   els.syncApiBtn.disabled = reason !== "";
   els.syncApiBtn.title = reason;
@@ -499,10 +508,10 @@ function _refreshButtonStates() {
     haveBackendPatient
   );
   els.launchBtn.title =
-    currentMode() !== "backend"  ? "請切到「上傳後端」模式" :
-    _connState !== "ok"           ? "後端尚未連線" :
-    !ov?.id_no                    ? "請先填病人資料" :
-    !haveBackendPatient           ? "後端尚無此病人的資料 — 請先取得資料或上傳本地檔案" :
+    currentMode() !== "backend"  ? "回 ② 設定：切到「🏥 本機後端 (進階)」模式" :
+    _connState !== "ok"           ? "回 ② 設定：後端尚未連線" :
+    !ov?.id_no                    ? "回 ② 設定：請填病人資料" :
+    !haveBackendPatient           ? "後端尚無此病人資料 — 先按「🔄 取得健保存摺資料」或下方「📤 把本地檔案上傳到後端」" :
                                     "";
 
   // Wizard depends on the same inputs — refresh stepper + maybe auto-
@@ -643,13 +652,13 @@ function _renderDataState() {
       break;
     case "absent":
       bs.className = "data-state-value empty";
-      // Card sits *below* the 🔄 同步 button. Only mention the local-
-      // upload alternative when a matching pending Bundle actually
-      // exists (otherwise the user goes hunting for an upload button
-      // that's not there and concludes "there's no sync button at all").
+      // Card sits within step 3 — both CTAs are visible nearby. Only
+      // mention the local-upload alternative when a matching pending
+      // Bundle actually exists (otherwise users go hunting for an
+      // upload button that's not there).
       bs.textContent = localMatches
-        ? "⚠ 尚無此病人 — 請按上方「🔄 取得健保存摺資料」或下方「📤 把本地檔案上傳到後端」"
-        : "⚠ 尚無此病人 — 請按上方「🔄 取得健保存摺資料」抓資料到後端";
+        ? "⚠ 後端尚無此病人 — 按「🔄 取得健保存摺資料」或「📤 把本地檔案上傳到後端」"
+        : "⚠ 後端尚無此病人 — 按「🔄 取得健保存摺資料」抓資料到後端";
       break;
     case "present": {
       const count = _backendPatient.count;
@@ -1334,7 +1343,7 @@ async function ensureBackendPermission(backendUrl) {
 async function apiSyncNhi() {
   const ov = getPatientOverride();
   if (!ov) {
-    setStatus("⛔ 請先填寫上方病人資料（身分證字號）", "error");
+    setStatus("⛔ 回 ② 設定：請選擇性別、填生日後按確定", "error");
     return;
   }
 
@@ -1344,7 +1353,7 @@ async function apiSyncNhi() {
   try { url = new URL(tab.url); } catch { setStatus("active tab has no URL", "error"); return; }
   const onLogin = await isOnNhiLoginPage(tab.id, url);
   if (onLogin) {
-    setStatus("🔒 尚未登入健保存摺 — 請先登入後再試", "error");
+    setStatus("🔒 回 ① 登入：尚未登入健保存摺", "error");
     return;
   }
 
@@ -1421,7 +1430,7 @@ async function launch() {
   const rawId = ov?.id_no;
   const smartAppLaunch = els.smartAppUrl.value.trim() || DEFAULT_SMART_APP_LAUNCH;
   if (!rawId) {
-    setStatus("沒有病人身分證字號可以 launch — 請先填寫病人資料", "error");
+    setStatus("⛔ 還沒有病人身分證 — 請先按「🔄 取得健保存摺資料」抓一次", "error");
     return;
   }
   // Backend tracks Patient under its hashed FHIR id, not the raw national ID.
