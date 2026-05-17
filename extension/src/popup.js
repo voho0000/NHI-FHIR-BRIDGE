@@ -383,14 +383,15 @@ let _wizardInitialized = false;
 function _isStepDone(step) {
   const onNhi = !els.syncApiBtn.dataset.offNhi;
   const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
-  const modeOk = currentMode() === "local" || _connState === "ok";
   const genderOk = !!els.ovGender?.value;
   const dobError = validateBirthDate();
   switch (step) {
     case 1:
       return onNhi && loggedIn;
     case 2:
-      return genderOk && modeOk && !dobError;
+      // Mode selection moved to step 3, so step 2's only requirement
+      // is the patient identity (gender + valid dob).
+      return genderOk && !dobError;
     case 3:
       // Step 3 is the terminal action step; never "done" for progress
       // purposes (the success banner inside the step is the indicator).
@@ -478,16 +479,16 @@ function _refreshButtonStates() {
   const genderOk = !!els.ovGender?.value;
   const dobError = validateBirthDate();
 
-  // Each blocking reason names the step that needs attention so the
-  // user knows exactly which stepper pill to click. Step 3 (取得)
-  // is where the CTA lives; any unmet precondition lives in step 1
-  // or step 2.
+  // Each blocking reason names the step that needs attention. Mode +
+  // connection now live in step 3 alongside the CTA itself, so those
+  // reasons reference what's directly above the button rather than
+  // sending the user back through the stepper.
   let reason = "";
   if (!onNhi) reason = "回 ① 登入：請切到健保存摺分頁";
   else if (!loggedIn) reason = "回 ① 登入：健保存摺分頁尚未登入";
-  else if (!modeOk) reason = "回 ② 設定：後端尚未連線";
-  else if (!genderOk) reason = "回 ② 設定：請選擇性別並按確定";
-  else if (dobError) reason = `回 ② 設定：${dobError}`;
+  else if (!genderOk) reason = "回 ② 您的資料：請選擇性別並按確定";
+  else if (dobError) reason = `回 ② 您的資料：${dobError}`;
+  else if (!modeOk) reason = "後端尚未連線 — 看上方紅色提示，或改回「💾 下載到電腦」";
 
   els.syncApiBtn.disabled = reason !== "";
   els.syncApiBtn.title = reason;
@@ -508,9 +509,9 @@ function _refreshButtonStates() {
     haveBackendPatient
   );
   els.launchBtn.title =
-    currentMode() !== "backend"  ? "回 ② 設定：切到「🏥 本機後端 (進階)」模式" :
-    _connState !== "ok"           ? "回 ② 設定：後端尚未連線" :
-    !ov?.id_no                    ? "回 ② 設定：請填病人資料" :
+    currentMode() !== "backend"  ? "請切到「🏥 本機後端 (進階)」模式" :
+    _connState !== "ok"           ? "後端尚未連線" :
+    !ov?.id_no                    ? "回 ② 您的資料：請填病人資料" :
     !haveBackendPatient           ? "後端尚無此病人資料 — 先按「🔄 取得健保存摺資料」或下方「📤 把本地檔案上傳到後端」" :
                                     "";
 
@@ -1343,7 +1344,7 @@ async function ensureBackendPermission(backendUrl) {
 async function apiSyncNhi() {
   const ov = getPatientOverride();
   if (!ov) {
-    setStatus("⛔ 回 ② 設定：請選擇性別、填生日後按確定", "error");
+    setStatus("⛔ 回 ② 您的資料：請選擇性別、填生日後按確定", "error");
     return;
   }
 

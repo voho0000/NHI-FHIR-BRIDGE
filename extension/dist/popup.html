@@ -718,7 +718,7 @@
       </li>
       <li data-step="2" role="tab" tabindex="0">
         <span class="step-num"><span class="step-num-text">2</span></span>
-        <span class="step-label">設定</span>
+        <span class="step-label">您的資料</span>
       </li>
       <li data-step="3" role="tab" tabindex="0">
         <span class="step-num"><span class="step-num-text">3</span></span>
@@ -757,34 +757,10 @@
       </section>
     </div>
 
-    <!-- ── STEP 2: 確認資料 + 設定 ──────────────────────────────── -->
+    <!-- ── STEP 2: 您的基本資料 ─────────────────────────────────── -->
     <div class="wizard-step" data-step="2">
 
-      <!-- 2a. Sync mode (local vs backend) ─────────────────── -->
-      <section class="section">
-      <div class="mode-toggle" role="radiogroup" aria-label="輸出方式">
-        <label class="mode-opt" title="只在你自己電腦上：產生 FHIR 紀錄檔下載到下載夾，完全不經過任何後端">
-          <input type="radio" name="sync-mode" value="local" checked />
-          💾 下載到電腦
-        </label>
-        <label class="mode-opt" title="進階：寫入你自己機器跑的本機 Docker 後端，搭配 Dashboard / SMART App 使用。仍然不上 NHI 或雲端。">
-          <input type="radio" name="sync-mode" value="backend" />
-          🏥 本機後端 (進階)
-        </label>
-      </div>
-    </section>
-
-    <!-- ── 0b. Backend connection status (backend mode only) ───────── -->
-    <section class="section backend-only" id="conn-section">
-      <div class="conn-banner" id="conn-banner" data-state="unknown">
-        <span class="conn-dot" id="conn-dot"></span>
-        <span class="conn-msg" id="conn-msg">未檢測</span>
-        <button class="conn-retry" id="conn-retry-btn" hidden>重試</button>
-      </div>
-      <div class="conn-help" id="conn-help" hidden></div>
-    </section>
-
-    <!-- ── 1. Patient data (NHI required) ────────────────────────── -->
+    <!-- 2a. Patient data card (gender + dob required) ─────────── -->
     <section class="section">
       <details class="patient-card" id="patient-override" data-state="empty">
         <summary>
@@ -831,8 +807,32 @@
     <!-- ── STEP 3: 取得資料 + 看結果 ─────────────────────────────── -->
     <div class="wizard-step" data-step="3">
 
-    <!-- 3a. Date range — "what to grab" belongs with the action, not
-         with the one-time identity / mode setup. -->
+    <!-- 3a. Output mode — "where does this run write to?" is part of
+         the action choice, not a one-time setup. -->
+    <section class="section">
+      <div class="mode-toggle" role="radiogroup" aria-label="輸出方式">
+        <label class="mode-opt" title="只在你自己電腦上：產生 FHIR 紀錄檔下載到下載夾，完全不經過任何後端">
+          <input type="radio" name="sync-mode" value="local" checked />
+          💾 下載到電腦
+        </label>
+        <label class="mode-opt" title="進階：寫入你自己機器跑的本機 Docker 後端，搭配 Dashboard / SMART App 使用。仍然不上 NHI 或雲端。">
+          <input type="radio" name="sync-mode" value="backend" />
+          🏥 本機後端 (進階)
+        </label>
+      </div>
+    </section>
+
+    <!-- 3b. Backend connection status — only when in backend mode. -->
+    <section class="section backend-only" id="conn-section">
+      <div class="conn-banner" id="conn-banner" data-state="unknown">
+        <span class="conn-dot" id="conn-dot"></span>
+        <span class="conn-msg" id="conn-msg">未檢測</span>
+        <button class="conn-retry" id="conn-retry-btn" hidden>重試</button>
+      </div>
+      <div class="conn-help" id="conn-help" hidden></div>
+    </section>
+
+    <!-- 3c. Date range — what slice of NHI data to grab this run. -->
     <section class="section">
       <div class="label">日期範圍</div>
       <select id="api-sync-range">
@@ -844,7 +844,7 @@
       </select>
     </section>
 
-    <!-- 3b. Primary CTA ─────────────────────────────────── -->
+    <!-- 3d. Primary CTA ─────────────────────────────────── -->
     <section class="section">
       <button class="btn-cta" id="sync-api-btn" disabled>
         🔄 取得健保存摺資料
@@ -930,7 +930,7 @@
           <div class="field backend-only">
             <div class="label">
               Backend URL
-              <span class="help-icon" data-tip="本機 Docker 保留預設即可。&#10;指向其他 server（例如 http://192.168.1.100:8010）第一次取得資料時 Chrome 會跳出權限對話框。&#10;連線狀態顯示在 ② 設定步驟頂端。">ⓘ</span>
+              <span class="help-icon" data-tip="本機 Docker 保留預設即可。&#10;指向其他 server（例如 http://192.168.1.100:8010）第一次取得資料時 Chrome 會跳出權限對話框。&#10;連線狀態顯示在 ③ 取得步驟的模式選擇下方。">ⓘ</span>
             </div>
             <input type="text" id="backend-url" placeholder="http://localhost:8010" />
           </div>
