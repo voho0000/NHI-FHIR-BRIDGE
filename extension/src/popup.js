@@ -99,8 +99,16 @@ async function loadBackendUrl() {
 // NHI 健康存摺 doesn't expose the user's national ID in the URL. The user
 // fills these once and they're sent with every upload call until cleared.
 
+// id_no is no longer a UI field, so getPatientOverride() (sync, called
+// in many hot paths) can't read it from the form. Cache it here from
+// storage; loadPatientOverride / savePatientOverride / clear keep it
+// fresh, and applySyncStatus pokes it when background swaps the
+// placeholder for the real cid.
+let _storedIdNo = null;
+
 async function loadPatientOverride() {
   const { patientOverride } = await chrome.storage.local.get("patientOverride");
+  _storedIdNo = patientOverride?.id_no || null;
   if (patientOverride) {
     els.ovName.value = patientOverride.name || "";
     els.ovBirthDate.value = patientOverride.birth_date || "";
@@ -119,16 +127,18 @@ async function loadPatientOverride() {
 }
 
 function getPatientOverride() {
-  // Returns {name, birth_date, gender}.
-  // id_no is no longer a UI field — it's auto-minted at save time and
-  // replaced with the real cid by background's NHI fetch on first sync.
-  // Returns null when nothing identifying is filled (name empty).
+  // Returns {id_no, name?, birth_date?, gender?}.
+  // id_no comes from the storage cache (_storedIdNo) since it's no
+  // longer a UI field — it's auto-minted at save time and replaced
+  // with the real cid by background's NHI fetch on first sync.
+  // Returns null when nothing identifying is filled.
   const name = els.ovName.value.trim();
-  if (!name) return null;
-  const out = {};
-  if (name) out.name = name;
   const birth_date = els.ovBirthDate.value.trim();
   const gender = els.ovGender.value;
+  if (!_storedIdNo && !name && !birth_date && !gender) return null;
+  const out = {};
+  if (_storedIdNo) out.id_no = _storedIdNo;
+  if (name) out.name = name;
   if (birth_date) out.birth_date = birth_date;
   if (gender) out.gender = gender;
   return out;
@@ -284,6 +294,7 @@ async function savePatientOverride() {
   const prevStored = (await chrome.storage.local.get("patientOverride"))
     .patientOverride;
   ov.id_no = prevStored?.id_no || _generateAutoPatientId();
+  _storedIdNo = ov.id_no;
 
   const patientChanged =
     prevStored?.id_no && ov.id_no && prevStored.id_no !== ov.id_no;
@@ -319,6 +330,7 @@ async function savePatientOverride() {
 
 async function clearPatientOverride() {
   await chrome.storage.local.remove("patientOverride");
+  _storedIdNo = null;
   els.ovName.value = "";
   els.ovBirthDate.value = "";
   els.ovGender.value = "";
