@@ -5,51 +5,37 @@
 import { sha1 } from "js-sha1";
 
 /**
- * Per-install salt mixed into every stableId() and derivePatientId() call.
- *
- * The salt protects against bundle-leak de-anonymization: without it,
- * `sha1(nationalId|...)` is reversible for any of the ~30M Taiwanese
- * national IDs by brute force. Backend generates one at first startup
- * and persists it in the settings table; extension generates one in
- * chrome.storage.local at SW init.
- *
- * Default empty so legacy callers and pure unit tests (which want
- * reproducible IDs without persistence) keep working.
- */
-let _salt = "";
-
-export function setStableIdSalt(salt: string): void {
-  _salt = salt ?? "";
-}
-
-export function getStableIdSalt(): string {
-  return _salt;
-}
-
-/**
  * Deterministic 32-char hex ID derived from the patient ID + arbitrary
- * key parts. Salted with the install-local secret so the output can't
- * be reversed even when bundles leak.
+ * key parts. Same SHA-1 + truncate-32 algorithm used in both backend
+ * and extension so the two produce identical IDs for the same input —
+ * this is what makes "extension local bundle → backend /fhir/import"
+ * work without producing duplicate Patient rows.
+ *
+ * Note: deterministic + no salt means an attacker who obtains a hashed
+ * Patient.id (e.g. via HTTP log) can brute-force the ~30M Taiwanese
+ * national ID space and recover the raw ID. We accept this because
+ * Patient.identifier[].value already carries the raw national ID in
+ * any leaked bundle — the realistic leak scenarios disclose both
+ * fields together, so a salt would not move the needle.
  *
  * Uses `js-sha1` (pure JS) instead of `node:crypto` so the same mapper
  * code runs unmodified in the Chrome extension's local-only mode.
  */
 export function stableId(patientId: string, ...parts: string[]): string {
-  const key = [_salt, patientId, ...parts].join("|");
-  return sha1(key).slice(0, 32);
+  return sha1([patientId, ...parts].join("|")).slice(0, 32);
 }
 
 /**
  * Map a raw national ID (or any patient identifier) to its 32-char hex
  * FHIR `Patient.id`. The raw value is kept in `Patient.identifier[].value`
- * — only the FHIR logical id is hashed. Same install-local salt as
- * stableId() so all references stay consistent.
+ * — only the FHIR logical id is hashed so it doesn't leak into URLs,
+ * subject.reference fields, audit logs, or SMART token payloads.
  *
  * FHIR R4 §2.20 says "logical id … SHOULD NOT contain identifying
  * information" — this is the function that enforces it.
  */
 export function derivePatientId(nationalId: string): string {
-  return sha1([_salt, "patient", nationalId].join("|")).slice(0, 32);
+  return sha1(["patient", nationalId].join("|")).slice(0, 32);
 }
 
 /**
