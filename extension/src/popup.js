@@ -74,6 +74,8 @@ const els = {
   resultZone: document.getElementById("result-zone"),
   summaryCard: document.getElementById("summary-card"),
   launchBlock: document.querySelector(".launch-block"),
+  activePatient: document.getElementById("active-patient"),
+  activePatientValue: document.getElementById("active-patient-value"),
 };
 
 const NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
@@ -196,6 +198,7 @@ function _generateAutoPatientId() {
 function refreshOverrideSummary() {
   const ov = getPatientOverride();
   const card = els.patientOverrideDetails;
+  let summaryText = "";
   if (!ov) {
     els.ovSummary.textContent = "未設定";
     if (card) card.dataset.state = "empty";
@@ -212,8 +215,18 @@ function refreshOverrideSummary() {
     const parts = [];
     if (ov.name) parts.push(_maybeMask(ov.name));
     parts.push(maskId(ov.id_no));
-    els.ovSummary.textContent = `✓ ${parts.join("  ·  ")}`;
+    summaryText = parts.join("  ·  ");
+    els.ovSummary.textContent = `✓ ${summaryText}`;
     if (card) card.dataset.state = "filled";
+  }
+  // Mirror the same summary onto step 3's "取得對象" banner so the
+  // user knows who they're about to fetch without scrolling back to
+  // step 2. Only when step 2 has been confirmed AND the override
+  // actually has an id_no.
+  if (els.activePatient && els.activePatientValue) {
+    const showActive = _step2Confirmed && !!ov?.id_no;
+    els.activePatient.hidden = !showActive;
+    if (showActive) els.activePatientValue.textContent = summaryText;
   }
   // Both launch + sync enabled state depend on patient + mode + conn.
   _refreshButtonStates();
@@ -1576,4 +1589,19 @@ els.ovClearBtn.addEventListener("click", clearPatientOverride);
   el.addEventListener("input", refreshOverrideSummary)
 );
 els.launchBtn.addEventListener("click", launch);
+
+// "取得對象" banner: click / Enter / Space jumps back to step 2 and
+// expands the patient card so the user can adjust the identity.
+function _gotoStep2Edit() {
+  _setActiveStep(2);
+  if (els.patientOverrideDetails) els.patientOverrideDetails.open = true;
+}
+els.activePatient?.addEventListener("click", _gotoStep2Edit);
+els.activePatient?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    _gotoStep2Edit();
+  }
+});
+
 init();
