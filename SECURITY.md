@@ -35,9 +35,6 @@ NHI 健康存摺). We take security reports seriously.
 
 - Local LPE on the machine running the backend (you already own that machine)
 - Issues that require already-compromised browser sessions
-- The LLM fallback path (`/sync/upload-html` + Claude/Ollama) is disabled
-  by default (`LLM_PROVIDER=none`); only opt-in users exercise it. Issues
-  there are accepted but not blockers.
 - Functional bugs (open an Issue instead)
 
 ## Security Architecture
@@ -54,5 +51,5 @@ Key invariants:
 - Patient-scoped tokens use **exact** match against `Patient/<id>`, not
   substring (Taiwan national IDs are fixed-length with no separator, so
   substring matching could leak A12345678 → A123456789)
-- Default `LLM_PROVIDER=none` so a fresh install never sends PHI to a
-  third party without explicit opt-in
+- No AI / LLM integration of any kind — PHI never leaves the user's
+  machine through any third-party API call

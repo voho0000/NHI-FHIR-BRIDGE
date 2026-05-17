@@ -1,18 +1,19 @@
 /**
  * Sync API — capture endpoints + logs + audit.
  *
- * Port of `backend/app/api/sync.py`. Mounted at `/sync` from main.ts.
- * The extension's primary path is /sync/upload-structured (no LLM).
- * /sync/upload-html (LLM fallback) is wired up but stays disabled
- * unless LLM_PROVIDER is set to `ollama`.
+ * Mounted at `/sync` from main.ts. The only ingest path is
+ * /sync/upload-structured — the extension calls NHI's JSON
+ * endpoints in-browser, adapts the shape, and POSTs structured
+ * items here. There is no LLM-based fallback; previous versions
+ * had /sync/upload-html (HTML scraping + LLM extraction) but it
+ * was removed in v0.5.0 to keep PHI on-host unconditionally.
  */
 
-import { and, desc, eq, like, ne, or } from "drizzle-orm";
+import { and, desc, eq, ne, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { settings } from "@/core/config";
 import { db as defaultDb, sqlite } from "@/core/database";
 import { requireSyncApiKey } from "@/core/security";
 import { fhirServer } from "@/fhir/server";
@@ -28,35 +29,6 @@ import {
 } from "@nhi-fhir-bridge/mapper";
 
 export const syncApi = new Hono();
-
-// ── HIS-user extraction ──────────────────────────────────────────────
-
-// Regex extractors for the HIS user identifier shown in the captured
-// HTML's navbar. We deliberately avoid generic English patterns like
-// "user:..." because inlined JS may contain variable assignments such
-// as `userid: TRAID,` that would otherwise match against JS code rather
-// than UI text.
-const HIS_USER_PATTERNS: RegExp[] = [
-  /使用者[:：]\s*([A-Za-z0-9_\-]+)/g,
-  /操作人員[:：]\s*([A-Za-z0-9_\-]+)/g,
-];
-
-function parseHisUser(html: string): string | null {
-  if (!html) return null;
-  for (const rx of HIS_USER_PATTERNS) {
-    rx.lastIndex = 0;
-    while (true) {
-      const m = rx.exec(html);
-      if (m === null) break;
-      // Reject JS-comment occurrences (line starts with //).
-      const lineStart = html.lastIndexOf("\n", m.index - 1) + 1;
-      const linePrefix = html.slice(lineStart, m.index);
-      if (linePrefix.trimStart().startsWith("//")) continue;
-      return m[1] ?? null;
-    }
-  }
-  return null;
-}
 
 // `dedupAdmissionDayAmb`, `linkEncountersInResources`, and
 // `resolveSexStratifiedRanges` live in `@nhi-fhir-bridge/mapper`
@@ -74,14 +46,6 @@ const PatientOverrideSchema = z
   })
   .nullable()
   .optional();
-
-const UploadHTMLPayloadSchema = z.object({
-  page_type: z.string(),
-  html: z.string(),
-  patient_id: z.string().nullable().optional(),
-  host: z.string().nullable().optional(),
-  patient_override: PatientOverrideSchema,
-});
 
 const UploadStructuredPayloadSchema = z.object({
   page_type: z.string(),
@@ -402,105 +366,8 @@ syncApi.post("/upload-structured", requireSyncApiKey, async (c) => {
   });
 });
 
-// ── Upload-html (LLM fallback) ───────────────────────────────────────
-
-syncApi.post("/upload-html", requireSyncApiKey, async (c) => {
-  let payload: z.infer<typeof UploadHTMLPayloadSchema>;
-  try {
-    const raw = await c.req.json();
-    payload = UploadHTMLPayloadSchema.parse(raw);
-  } catch (e: any) {
-    return c.json({ detail: e?.message ?? "Invalid payload" }, 400);
-  }
-
-  const hisUser = parseHisUser(payload.html);
-  const override = payload.patient_override ?? null;
-  const overrideId = override?.id_no?.trim() || null;
-  const rawPid = overrideId ?? payload.patient_id ?? null;
-  const effectivePid = rawPid ? derivePatientId(rawPid) : null;
-
-  const writeAudit = (extra: Partial<typeof auditLog.$inferInsert> = {}) => {
-    defaultDb
-      .insert(auditLog)
-      .values({
-        hisUser,
-        hisHost: payload.host ?? null,
-        pageType: payload.page_type,
-        patientId: extra.patientId ?? effectivePid ?? null,
-        htmlSize: payload.html.length,
-        resourcesUpserted: extra.resourcesUpserted ?? 0,
-        success: extra.success ?? true,
-        error: extra.error ?? null,
-      })
-      .run();
-  };
-
-  // Patient_info + override → bypass LLM.
-  if (payload.page_type === "patient_info" && overrideId) {
-    const patient = buildOverridePatient(override!);
-    fhirServer.upsert(patient);
-    writeAudit({ patientId: patient.id, resourcesUpserted: 1 });
-    return c.json({
-      page_type: "patient_info",
-      patient_id: patient.id,
-      count: 1,
-      resources: [{ resourceType: "Patient", id: patient.id }],
-      his_user: hisUser,
-      patient_source: "manual_override",
-    });
-  }
-
-  // Non-patient_info + override → ensure Patient exists, then run LLM.
-  if (overrideId && effectivePid && payload.page_type !== "patient_info") {
-    if (!fhirServer.read("Patient", effectivePid)) {
-      fhirServer.upsert(buildOverridePatient(override!));
-    }
-  }
-
-  if (settings.LLM_PROVIDER === "none") {
-    return c.json(
-      {
-        detail:
-          "LLM fallback path is disabled. Set LLM_PROVIDER=ollama in .env to enable /sync/upload-html.",
-      },
-      503,
-    );
-  }
-
-  let extractAndMap: typeof import("@/fallback/extractor").extractAndMap;
-  try {
-    ({ extractAndMap } = await import("@/fallback/extractor"));
-  } catch (e: any) {
-    return c.json({ detail: `LLM fallback module unavailable: ${e?.message ?? e}` }, 503);
-  }
-
-  let resources: Record<string, any>[];
-  try {
-    resources = await extractAndMap(payload.html, payload.page_type, effectivePid, {
-      host: payload.host ?? null,
-    });
-  } catch (e: any) {
-    const msg = String(e?.message ?? e).slice(0, 500);
-    writeAudit({ success: false, error: msg });
-    return c.json({ detail: msg }, 400);
-  }
-
-  const upserted: Array<{ resourceType: string; id: string }> = [];
-  for (const r of resources) {
-    fhirServer.upsert(r);
-    upserted.push({ resourceType: r.resourceType, id: r.id });
-  }
-
-  const resolvedPid =
-    payload.page_type === "patient_info" && upserted.length > 0 ? upserted[0]!.id : effectivePid;
-
-  writeAudit({ patientId: resolvedPid, resourcesUpserted: upserted.length });
-
-  return c.json({
-    page_type: payload.page_type,
-    patient_id: resolvedPid,
-    count: upserted.length,
-    resources: upserted,
-    his_user: hisUser,
-  });
-});
+// /sync/upload-html (the LLM fallback path) was removed in v0.5.0.
+// Reason: every NHI page-type we support has a stable JSON endpoint
+// the extension hits directly, so the LLM path was paying for
+// dependencies (Anthropic SDK, Ollama, cheerio) and a privacy footgun
+// (raw HTML containing PHI shipped to an LLM) without delivering value.

@@ -187,13 +187,11 @@ https://your-smart-app.example.com/launch
 
 | 變數 | 預設 | 用途 |
 |------|------|------|
-| `SYNC_API_KEY` | (空) | 保護所有 PHI 寫入端點 (`/sync/*`、`/smart/launch-context`、`/fhir/import`、`/fhir/export`)。**任何網路可達的部署必設**，否則局網內任何人都能寫/讀資料 |
+| `SYNC_API_KEY` | (空) | 保護所有 PHI 端點 (`/sync/*`、`/fhir/*`、`/smart/launch-context`、`/fhir/import`、`/fhir/export`)。**任何網路可達的部署必設**；空值時後端會印 console 警告 |
+| `ALLOWED_EXTENSION_IDS` | (空) | 允許走 CORS 的 chrome-extension ID（逗號分隔）。Production 部署建議只放發佈用的 ID |
+| `BIND_HOST` | `127.0.0.1` | 本機綁定 host。對 LAN 開放才需要設成 `0.0.0.0`（Docker compose 自動處理） |
 | `ALLOW_CORS_ORIGINS` | (空) | 額外允許的 CORS origin（逗號分隔） |
 | `FHIR_BASE_URL` | `http://localhost:8010/fhir` | 對外公開的 FHIR base URL（SMART CapabilityStatement 會用到） |
-| `LLM_PROVIDER` | `none` | 控制 fallback 路徑：`none`（預設，停用）/ `claude`（雲端）/ `ollama`（本機） |
-| `ANTHROPIC_API_KEY` | — | `LLM_PROVIDER=claude` 時填 |
-| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | `LLM_PROVIDER=ollama` 時 |
-| `OLLAMA_MODEL` | `qwen2.5vl:7b` | Ollama 模型名 |
 
 需要時 `cp .env.example .env` 編輯即可。
 
@@ -239,12 +237,11 @@ docker compose logs --tail=100 backend | grep -E "upload-structured|ERROR"
 
 ### Q5: 我的資料會被傳到哪裡？
 
-預設安裝（`LLM_PROVIDER=none`）：
-
 - ✅ 健保存摺 → 你電腦上的擴充功能 → 你電腦上的 backend → 你電腦上的 SQLite
-- ✅ **沒有任何資料傳到第三方雲端**
+- ✅ **沒有 AI、沒有 LLM、沒有任何第三方 API 呼叫**
+- ✅ FHIR 轉換是純確定性程式碼（packages/mapper）
 
-只有當你**主動把 `LLM_PROVIDER` 改為 `claude`** 並使用 `/sync/upload-html` endpoint 才會把擷取的 HTML 送到 Anthropic Claude API。改成 `ollama` 則只送到你本機 Ollama，仍不離開內網。
+這個專案有意完全不整合 AI／LLM —— PHI 永遠不離開你機器。
 
 ### Q6: 如果想清空所有資料重來？
 
@@ -292,20 +289,9 @@ chrome.storage 裡的暫存 Bundle；下次 sync 會重新產生。Extension 自
 2. 用內建 200+ 條 `NHI_TO_LOINC` 對照表，把每個項目代碼對應到 LOINC
 3. **去重**：健康存摺常把同一筆檢驗以中英文各列一次（例 `醣化血紅素 5.9%` + `HbA1c 5.9%`），自動合併
 
-### LLM 備援路徑（預設不用）
+### 不使用 AI / LLM
 
-當 NHI 改 JSON API 格式時，可以切換到 HTML 擷取 + Claude/Ollama 萃取的備援路徑。設定方式：
-
-```bash
-# .env
-LLM_PROVIDER=claude
-ANTHROPIC_API_KEY=sk-ant-api03-...
-# 或本機 Ollama
-LLM_PROVIDER=ollama
-OLLAMA_MODEL=qwen2.5vl:7b
-```
-
-詳見 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+刻意設計：每個支援的 NHI 頁面都有穩定的 JSON 端點，extension 在瀏覽器內直接呼叫並進行確定性的 FHIR 轉換。沒有 AI、沒有 prompt engineering、沒有送 PHI 到雲端的疑慮。也減少了 ~600 LOC 程式 + Anthropic SDK / cheerio / Ollama 依賴。NHI 真的改 API 時，這個專案會直接壞掉，靠社群 PR 修 endpoint 對應；不會偷偷把 PHI 送出去當 fallback。
 
 ---
 
@@ -341,7 +327,6 @@ NHI-FHIR-BRIDGE/                     # npm workspaces monorepo
 │   │   ├── core/                    # config, database, security, migrate
 │   │   ├── fhir/                    # FHIR store, CapabilityStatement
 │   │   ├── smart/                   # SMART OAuth2 + PKCE
-│   │   ├── fallback/                # LLM HTML 萃取備援 (預設關閉)
 │   │   └── main.ts                  # Hono app + CORS + lifespan
 │   ├── drizzle/                     # SQL migration (idempotent)
 │   └── tests/                       # vitest 單元測試

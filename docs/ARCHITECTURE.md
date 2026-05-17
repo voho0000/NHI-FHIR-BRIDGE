@@ -48,7 +48,6 @@ NHI-FHIR-BRIDGE/                     # npm workspaces
 │   │   ├── core/{config,database,security,migrate}.ts
 │   │   ├── fhir/{server,capability,systems}.ts
 │   │   ├── smart/oauth2.ts
-│   │   ├── fallback/                # LLM HTML 萃取備援
 │   │   ├── models/schema.ts         # Drizzle ORM
 │   │   └── main.ts                  # Hono app + CORS + lifespan
 │   ├── drizzle/                     # SQL migration
@@ -101,40 +100,9 @@ sequenceDiagram
 
 **關鍵設計**：
 
-- **主要路徑完全 bypass LLM**：extension 在瀏覽器端取得結構化 JSON 後直接餵 mapper，沒有 AI 推論或不確定性
+- **完全沒有 AI / LLM**：extension 直接打 NHI 的 JSON 端點取得結構化資料，mapper 是純確定性 TypeScript。PHI 永不送雲端、無 prompt engineering、無 AI 推論不確定性。NHI 真的改 API 時專案會直接壞掉（靠 PR 修），不會偷偷把 PHI 送出去 fallback
 - **共用 mapper**：`packages/mapper` 同時被 backend (Hono) 和 extension (service worker) import。模式 A 在 SW 內完成 FHIR 轉換，模式 B 則由後端執行——同一份 mapper 程式碼，輸出相同
 - **stableId + 雜湊 Patient.id**：身分證從不出現在 FHIR `Patient.id` 或 `subject.reference`；只存在 `Patient.identifier[].value`。安裝時各自產生隨機 salt（後端存 `app_settings`，extension 存 `chrome.storage.local`），讓 Bundle 即使外流也無法以暴力枚舉反推身分證
-
----
-
-## 資料流程：fallback 路徑（HTML + LLM，預設不啟用）
-
-```mermaid
-sequenceDiagram
-  participant Caller as 手動 client (curl / 自製 ext)
-  participant API as Hono /sync/upload-html
-  participant Pre as fallback/preprocessor
-  participant LLM as Claude / Ollama
-  participant Map as packages/mapper
-  participant DB as SQLite
-
-  Caller->>API: POST /sync/upload-html {html, page_type, host}
-  API->>Pre: preprocess(html, host, page_type)
-  Note over Pre: strip 95% noise (.main_ctn only)
-  API->>LLM: extract structured data (system schema)
-  LLM-->>API: JSON items
-  API->>Map: mapper handler(items, patientId)
-  Map-->>API: FHIR resources
-  API->>DB: upsert
-```
-
-何時觸發 fallback：
-
-- NHI 改 API 格式時的緊急替代方案
-- 某些新頁面 NHI 尚未開 JSON 端點
-- Debug 用
-
-目前 extension 不會自動切到這條路徑——只有手動呼叫 `/sync/upload-html` 才會。
 
 ---
 
