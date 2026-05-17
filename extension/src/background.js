@@ -1371,7 +1371,7 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   let _localFilename = null;
   if (mode === "local") {
     if (_cancelled) throw new Error(CANCEL_ERROR);
-    await setStatus({ progress: "🧬 轉換為 FHIR Bundle…", totalResources: 0 });
+    await setStatus({ progress: "🧬 轉換為健康紀錄檔…", totalResources: 0 });
     let bundle;
     try {
       bundle = _assembleLocalBundle(byType, patientOverride, maskEnabled);
@@ -1419,7 +1419,7 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     // mode's "just this sync" bundle.
     if (patientOverride.id_no) {
       try {
-        await setStatus({ progress: "📦 取得後端完整 Bundle…", totalResources: total });
+        await setStatus({ progress: "📦 取得後端完整資料…", totalResources: total });
         const expUrl = `${backend}/fhir/export?patient=${encodeURIComponent(patientOverride.id_no)}`;
         const r = await fetch(expUrl, {
           headers: syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {},

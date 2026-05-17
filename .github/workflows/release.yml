@@ -58,18 +58,56 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
-            ## 🚀 快速開始
+            ## 這個是什麼
 
-            ### 🟢 純 Extension（本地模式，不需後端）
+            一個 Chrome 擴充功能，可以把你在**健保存摺** (myhealthbank.nhi.gov.tw) 看到的就醫紀錄、用藥、檢驗報告、影像報告，**整理成 FHIR R4 標準格式的健康紀錄檔**。檔案可以：
+            - 下載到自己電腦（供臨床研究、AI 判讀、轉給其他醫療系統用）
+            - 或上傳到本機 Docker 後端，配合 Dashboard / SMART App 看資料
 
-            1. 在下方下載 `nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip`。
-            2. 解壓到任意位置（例如 `~/nhi-fhir-bridge/`）。
-            3. Chrome 網址列輸入 `chrome://extensions/` → 右上角開啟「**開發人員模式**」→ 左上角點「**載入未封裝項目**」→ 選擇剛解壓出來的 **`dist/` 資料夾**。
-            4. 開健康存摺登入 → 點工具列 🏥 圖示 → 填身分證字號 → 按「**📥 同步健保存摺資料**」→ 跑完後按「**📥 下載 FHIR Bundle**」把檔案存到電腦。
+            ---
 
-            ### 🔵 Extension + Backend（含 Dashboard / SMART App）
+            ## 🟢 安裝（純 Extension，最快 2 分鐘）
 
-            需要 [Docker Desktop](https://docs.docker.com/get-docker/)。
+            如果只是要**把健保資料下載成 FHIR 檔**，這條路就夠了，完全不用裝 Docker。
+
+            1. 下方下載 `nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip`
+            2. 解壓到電腦任意位置（例如 `~/nhi-fhir-bridge/`）
+            3. Chrome 網址列輸入 `chrome://extensions/`
+            4. 右上角開啟「**開發人員模式**」
+            5. 左上角點「**載入未封裝項目**」→ 選擇剛解壓的 `dist/` 資料夾
+            6. 工具列會出現 NHI-FHIR Bridge 圖示（藍綠橘配色）
+
+            ---
+
+            ## 怎麼用
+
+            1. 開新分頁登入 https://myhealthbank.nhi.gov.tw/（若沒登入，extension 會帶按鈕提示你開）
+            2. 點 Chrome 工具列上的 NHI-FHIR Bridge 圖示
+            3. 病人資料卡填**姓名 + 出生年份**（性別、完整生日可選；身分證字號會自動從健保存摺帶入）
+            4. 按「**🔄 取得健保存摺資料**」— 通常 15–30 秒，看 NHI 那邊速度
+            5. 跑完後出現「**📥 下載健康紀錄檔**」按鈕，按下去檔案就到你的下載夾
+
+            檔名格式：`nhi-P12074XXXX-20260517-1430.json`（身分證後 4 碼半遮罩防止外洩）
+
+            ---
+
+            ## 隱私說明（重要）
+
+            - 你輸入的姓名、生日 → **只存在你自己的瀏覽器**，extension 不會上傳給任何第三方
+            - 身分證字號 → **顯示時自動半遮罩**（`P12074****`），但檔案內容是真實值（FHIR 規範需要）
+            - 預設下載的健康紀錄檔**包含真實姓名**（民眾自用情境）
+            - 如要在多病人診間 / 教學展示用，可以打開「進階設定 → 對外輸出時遮罩病人姓名」，輸出檔的姓名就會變成 `郭O新` 之類遮罩版
+
+            ---
+
+            ## 🔵 進階：搭配 Backend + Dashboard
+
+            如果要：
+            - 多次同步累積在本地 FHIR Server
+            - 用 Dashboard 看多個病人
+            - 一鍵 launch SMART on FHIR App
+
+            那加跑後端（需要 [Docker Desktop](https://docs.docker.com/get-docker/)）：
 
             ```sh
             git clone https://github.com/${{ github.repository }}.git
@@ -77,7 +115,8 @@ jobs:
             docker compose up -d
             ```
 
-            然後 Extension popup 上方「輸出方式」切到「**上傳後端**」即可。
-            Dashboard 在 http://localhost:3010 ，可以多病人瀏覽 + 一鍵 launch SMART app。
+            然後 Extension popup 上方切到「**☁️ 上傳後端**」即可。Dashboard 在 http://localhost:3010。
 
-            詳細說明見 [README](https://github.com/${{ github.repository }}#readme)。
+            ---
+
+            詳細說明、架構圖、FAQ 見 [README](https://github.com/${{ github.repository }}#readme)。
