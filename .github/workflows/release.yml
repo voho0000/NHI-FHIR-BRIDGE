@@ -58,6 +58,35 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
+            ## 0.5.4 重點
+
+            v0.5.3 的 popup UX 收尾 polish + 一個功能簡化。
+
+            **使用體驗修正**
+            - 🔢 Footer 版本號改為從 manifest 動態讀取（過去寫死在 v0.2.0）
+            - ⏳ CTA 按下後文字會變「取得中…」，比單純 disabled 更清楚有反應
+            - 🎨 「開啟健保存摺登入」按鈕回歸全站統一藍（先前是 out-of-palette 的 sky）
+            - 🔘 停止按鈕邊框加粗、加深，不會在 CTA 旁邊消失
+            - 🆗 Step 1 「步驟 ② 確認您的資料」變成可點的連結，直接帶進下一步
+            - 📛 模式「本機後端」改名「本機伺服器」(降低工程術語)
+
+            **Step 2 / Step 3 重新整理**
+            - ✂️ **拿掉身分證字號輸入框** — 取得時會從 NHI 自動帶入，過去 placeholder 已寫「留空 = 取得時自動帶入」。Step 2 現在就是三個真正需要決定的欄位：生日 / 性別 / 姓名
+            - 📝 姓名提示從兩行壓成一行（"填真名可協助遮罩報告內容；分享或展示時建議勾選遮罩"）
+            - 🚀 「開啟 SMART App」從蒼白白底改成淡藍底 + 粗體字，明確讀作次要動作（過去太像 disabled）
+            - 🎨 Step 1 三段 banner（需登入 / 已登入）改成白底 + 細色條，與 Step 2/3 視覺一致；移除 🔗 🔒 ✅ emoji
+            - 🗑 垃圾桶 tooltip 加註「不會刪除已下載到電腦的檔案」(醫療資料情境降焦慮)
+            - 🎛 「進階設定」只在 Step 3 + 本機伺服器模式下出現，不再浮在 Step 1/2 底下顯示空摺疊
+
+            **Bug 修正**
+            - 🐞 移除身分證欄位後，「開啟 SMART App」按鈕一度永遠 disabled — `getPatientOverride()` 不再包含 `id_no`，導致 launch 判斷邏輯失效。改用模組級快取從 storage 維持 `id_no`，背景在 sync 時將 placeholder 換成真實 cid 也會經由 `storage.onChanged` 自動更新
+
+            **內部**
+            - 🧹 刪除 dead CSS（`.data-state-card` / `.data-state-row` / `.data-state-value`，已被 `.state-rows` 取代）
+            - 🧹 popup.js 狀態訊息與 tooltip 引用按鈕標籤的舊 emoji 一併清掉
+
+            ---
+
             ## 0.5.3 重點
 
             這版主要是 popup UI 的大幅整理 + 一些 sync 流程的 bug 修正。
