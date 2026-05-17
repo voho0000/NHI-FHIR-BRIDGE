@@ -7,7 +7,7 @@
 //   4. Progress streamed back via chrome.storage.local.syncStatus.
 //   5. After sync completes, "🚀 開啟 SMART App" launches with that patient.
 
-import { maskId, maskName } from "@nhi-fhir-bridge/mapper";
+import { derivePatientId, maskId, maskName } from "@nhi-fhir-bridge/mapper";
 
 const DEFAULT_BACKEND = "http://localhost:8010";
 // Default SMART app for a fresh install. Users can override via
@@ -541,8 +541,11 @@ async function checkBackendPatient() {
   const url = els.backendUrl.value.trim().replace(/\/$/, "");
   const key = els.syncApiKey.value.trim();
   const headers = key ? { "X-Sync-API-Key": key } : {};
+  // Backend stores Patient under the hashed FHIR id, never under the raw
+  // national ID — query / export by the hashed form.
+  const fhirPid = derivePatientId(ov.id_no);
   try {
-    const pr = await fetch(`${url}/fhir/Patient/${encodeURIComponent(ov.id_no)}`, { headers });
+    const pr = await fetch(`${url}/fhir/Patient/${encodeURIComponent(fhirPid)}`, { headers });
     if (pr.status === 404) {
       _backendPatient = { state: "absent", count: 0, lastUpdated: null };
       _renderDataState(); _refreshButtonStates();
@@ -562,7 +565,7 @@ async function checkBackendPatient() {
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 5000);
-      const er = await fetch(`${url}/fhir/export?patient=${encodeURIComponent(ov.id_no)}`, {
+      const er = await fetch(`${url}/fhir/export?patient=${encodeURIComponent(fhirPid)}`, {
         headers, signal: ctrl.signal,
       });
       clearTimeout(timer);
@@ -1105,7 +1108,7 @@ async function apiSyncNhi() {
   try { url = new URL(tab.url); } catch { setStatus("active tab has no URL", "error"); return; }
   const onLogin = await isOnNhiLoginPage(tab.id, url);
   if (onLogin) {
-    setStatus("🔒 尚未登入健保存摺 — 請先以健保卡登入後再試", "error");
+    setStatus("🔒 尚未登入健保存摺 — 請先登入後再試", "error");
     return;
   }
 
@@ -1179,12 +1182,14 @@ async function apiSyncNhi() {
 async function launch() {
   const backend = els.backendUrl.value.trim();
   const ov = getPatientOverride();
-  const patientId = ov?.id_no;
+  const rawId = ov?.id_no;
   const smartAppLaunch = els.smartAppUrl.value.trim() || DEFAULT_SMART_APP_LAUNCH;
-  if (!patientId) {
+  if (!rawId) {
     setStatus("沒有病人身分證字號可以 launch — 請先填寫病人資料", "error");
     return;
   }
+  // Backend tracks Patient under its hashed FHIR id, not the raw national ID.
+  const patientId = derivePatientId(rawId);
   // Re-test connection even if banner shows ok — backend may have gone
   // down since the last probe.
   const ok = await testBackendConnection();
