@@ -591,12 +591,28 @@ function _refreshButtonStates() {
   // connection now live in step 3 alongside the CTA itself, so those
   // reasons reference what's directly above the button rather than
   // sending the user back through the stepper.
-  let reason = "";
-  if (!onNhi) reason = "回 ① 登入：請切到健保存摺分頁";
-  else if (!loggedIn) reason = "回 ① 登入：健保存摺分頁尚未登入";
-  else if (!genderOk) reason = "回 ② 您的資料：請選擇性別並按確定";
-  else if (dobError) reason = `回 ② 您的資料：${dobError}`;
-  else if (!modeOk) reason = "後端尚未連線 — 看上方紅色提示，或改回「💾 下載到電腦」";
+  //
+  // EXCEPT the conn-failed case: the conn banner directly above the
+  // CTA already shouts "✗ 連不上後端" + retry button + help. Adding
+  // another inline strip just to repeat the same fact (with a slightly
+  // longer sentence) is noise — silently disable the CTA instead, with
+  // a tooltip explanation. inlineReason is what shows in the warning
+  // strip; tooltipReason is what the disabled button advertises on hover.
+  let inlineReason = "";
+  let tooltipReason = "";
+  if (!onNhi) {
+    inlineReason = tooltipReason = "回 ① 登入：請切到健保存摺分頁";
+  } else if (!loggedIn) {
+    inlineReason = tooltipReason = "回 ① 登入：健保存摺分頁尚未登入";
+  } else if (!genderOk) {
+    inlineReason = tooltipReason = "回 ② 您的資料：請選擇性別並按確定";
+  } else if (dobError) {
+    inlineReason = tooltipReason = `回 ② 您的資料：${dobError}`;
+  } else if (!modeOk) {
+    inlineReason = "";              // conn banner above carries the message
+    tooltipReason = "後端尚未連線";
+  }
+  const reason = tooltipReason;
 
   // Don't flip the CTA back to enabled if a sync is currently running
   // — the SW updates `patientOverride` mid-sync (auto-fetched cid),
@@ -604,11 +620,11 @@ function _refreshButtonStates() {
   // _refreshButtonStates. Without this guard the button would re-enable
   // halfway through a sync and the user could click it again.
   const syncRunning = _latestStatus?.running === true;
-  els.syncApiBtn.disabled = syncRunning || reason !== "";
-  els.syncApiBtn.title = syncRunning ? "" : reason;
+  els.syncApiBtn.disabled = syncRunning || tooltipReason !== "";
+  els.syncApiBtn.title = syncRunning ? "" : tooltipReason;
   if (els.syncBlockedReason) {
-    els.syncBlockedReason.textContent = !syncRunning && reason ? `⚠️ ${reason}` : "";
-    els.syncBlockedReason.hidden = syncRunning || reason === "";
+    els.syncBlockedReason.textContent = !syncRunning && inlineReason ? `⚠️ ${inlineReason}` : "";
+    els.syncBlockedReason.hidden = syncRunning || inlineReason === "";
   }
   // Mirror the stop-button visibility so the user can always cancel
   // mid-sync even if the popup re-renders due to onChanged.
