@@ -961,8 +961,8 @@ function _assembleLocalBundle(byType, patientOverride, maskEnabled) {
 // well under 2 MB.
 const PENDING_BUNDLE_KEY = "pendingFhirBundle";
 
-async function _stashFhirBundle(bundle, patientId) {
-  // Filename per spec: nhi-{patient_id}-{YYYYMMDD-HHMM}.json
+async function _stashFhirBundle(bundle, patientId, dateRange) {
+  // Filename per spec: nhi-{patient_id}-{YYYYMMDD-HHMM}[_YYYY[-YYYY]].json
   // toISOString() returns UTC; user expects local-clock time on disk.
   // Build the stamp from local-time components instead.
   const now = new Date();
@@ -977,7 +977,15 @@ async function _stashFhirBundle(bundle, patientId) {
   // ID under Patient.id — file owner knows whose data it is.
   const maskedPid = maskId(patientId || "unknown", "X");
   const safePid = maskedPid.replace(/[^A-Za-z0-9_-]/g, "_");
-  const filename = `nhi-${safePid}-${ts}.json`;
+  let rangeSuffix = "";
+  if (dateRange && (dateRange.start || dateRange.end)) {
+    const sy = (dateRange.start || "").slice(0, 4);
+    const ey = (dateRange.end || "").slice(0, 4);
+    if (sy && ey) rangeSuffix = sy === ey ? `_${sy}` : `_${sy}-${ey}`;
+    else if (sy) rangeSuffix = `_${sy}-`;
+    else if (ey) rangeSuffix = `_-${ey}`;
+  }
+  const filename = `nhi-${safePid}-${ts}${rangeSuffix}.json`;
   const json = JSON.stringify(bundle, null, 2);
   await chrome.storage.local.set({
     [PENDING_BUNDLE_KEY]: {
@@ -1383,7 +1391,7 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
       total = bundle.entry.length;
       await setStatus({ progress: `💾 準備 ${total} 筆 FHIR 資源…`, totalResources: total });
       try {
-        const dl = await _stashFhirBundle(bundle, patientOverride.id_no);
+        const dl = await _stashFhirBundle(bundle, patientOverride.id_no, dateRange);
         _localFilename = dl.filename;
       } catch (e) {
         errors.push(`stash bundle: ${e.message}`);
