@@ -58,6 +58,15 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
+            ## 0.5.2 重點
+
+            - 🐞 **生日驗證**：填到一半（例如只填年份）無法按「確定」或「取得」，避免下游年齡計算出現 NaN
+            - ✨ **Sidebar 助理 pill 更顯眼**：加大尺寸 + 開頁 3 秒微脈動，讓使用者一眼看到那是可點的按鈕
+            - 🧪 **Mapper 測試大幅補齊**：新增 80 個 unit test（107 → 187），覆蓋 allergy / procedure / encounter / diagnostic-report / linker / dispatch
+            - 📚 文件清理殘留的 `/sync/upload-html` 參照
+
+            ---
+
             ## 0.5.1 重點（v0.5.0 之後的 polish）
 
             - 🆕 **資料退場**：每次 sync 會自動清掉同 patient/page_type 但本次沒回傳的舊資料 — NHI 後端刪掉的紀錄不會再永留本機
