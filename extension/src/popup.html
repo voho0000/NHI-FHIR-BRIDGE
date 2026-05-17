@@ -972,7 +972,7 @@
 
       <!-- Summary card: status banner + breakdown + (backend) backend
            presence + local bundle presence in one consolidated block. -->
-      <div class="result-card summary-card">
+      <div class="result-card summary-card" id="summary-card" hidden>
         <div id="status" class="status"></div>
 
         <!-- Backend mode adds two inline rows for the backend ↔ local
@@ -1025,7 +1025,7 @@
          backing out. The section header is mode-agnostic; rows that
          only make sense in backend mode carry .backend-only and
          disappear in local mode. -->
-    <section class="section">
+    <section class="section" style="margin-top:16px">
       <details class="settings">
         <summary>⚙️ 進階設定</summary>
         <div class="settings-body">

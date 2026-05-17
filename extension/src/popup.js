@@ -72,6 +72,8 @@ const els = {
   loginOkSection: document.getElementById("login-ok-section"),
   wizardStepper: document.getElementById("wizard-stepper"),
   resultZone: document.getElementById("result-zone"),
+  summaryCard: document.getElementById("summary-card"),
+  launchBlock: document.querySelector(".launch-block"),
 };
 
 const NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
@@ -456,23 +458,33 @@ function _refreshWizardUi() {
   _refreshResultZone();
 }
 
-// Show/hide the step-3 result zone based on whether anything inside
-// has content. Without this, an empty .result-zone leaves a faint
-// divider + bottom spacing visible even on a fresh popup.
+// Show/hide step-3 result cards based on whether each has content.
+// Empty cards (e.g. a summary card with no status + no data-state in
+// local mode pre-sync) used to render as a blank stripe — now they
+// stay collapsed individually, and the whole zone goes away when all
+// three cards would be empty.
 function _refreshResultZone() {
   if (!els.resultZone) return;
   const hasStatus = (els.status?.textContent ?? "").trim() !== "";
-  const bundleShown =
-    els.pendingBundle && !els.pendingBundle.hidden;
   const dataStateShown =
     els.dataStateSection && !els.dataStateSection.hidden;
-  // Launch button only counts when the user is in backend mode AND
-  // would actually be able to use it — i.e. when a patient exists on
-  // the backend (`launchBtn.disabled === false`). Showing the result
-  // zone solely for a perma-disabled Launch button would defeat the
-  // "appears only when there's a result" intent.
+  const bundleShown =
+    els.pendingBundle && !els.pendingBundle.hidden;
+  // Launch button only counts when usable — backend mode + the patient
+  // actually exists on the backend (`launchBtn.disabled === false`).
+  // A perma-disabled button shouldn't pin the zone open.
   const launchUsable =
     currentMode() === "backend" && els.launchBtn && !els.launchBtn.disabled;
+
+  if (els.summaryCard) {
+    els.summaryCard.hidden = !(hasStatus || dataStateShown);
+  }
+  if (els.launchBlock) {
+    // Hide the launch card outright when it'd be just a disabled button
+    // — keeps backend mode's pre-sync result zone from showing a faint
+    // outlined-but-disabled "🚀 開啟 SMART App" with no context.
+    els.launchBlock.hidden = !launchUsable;
+  }
   els.resultZone.hidden = !(hasStatus || bundleShown || dataStateShown || launchUsable);
 }
 
