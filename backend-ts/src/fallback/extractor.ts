@@ -215,12 +215,8 @@ async function defaultProvider(): Promise<LLMProvider> {
     const { OllamaProvider } = await import("@/fallback/llm/ollama");
     return new OllamaProvider(settings.OLLAMA_BASE_URL, settings.OLLAMA_MODEL);
   }
-  if (settings.LLM_PROVIDER === "claude") {
-    const { ClaudeProvider } = await import("@/fallback/llm/claude");
-    return new ClaudeProvider(settings.ANTHROPIC_API_KEY);
-  }
   throw new Error(
-    "LLM fallback path is disabled. Set LLM_PROVIDER=claude or LLM_PROVIDER=ollama in .env to enable /sync/upload-html.",
+    "LLM fallback path is disabled. Set LLM_PROVIDER=ollama in .env to enable /sync/upload-html.",
   );
 }
 
