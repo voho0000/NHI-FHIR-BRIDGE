@@ -69,6 +69,7 @@ jobs:
 
             Bug fixes
             - v0.6.3 refactor 漏掉 adaptEncounterFromMedExpense 的 import；每次 sync 在 encounter detail 階段炸一次。Re-import + 加靜態檢查測試防止再犯。
+            - 重新取得時 id_no 不更新：如果先在錯誤的 NHI 帳號下抓資料，stored id_no 變成 B 的 cid；切回 A 重新取得，原本會繼續用 B 的 cid。改成每次 sync 都從 NHI session 抓 cid (authoritative)，識別到 patient switch 也順手清掉舊的下載 bundle。
 
             內部
             - 測試 68 → 78，新增 ihke3209 fixture、background-imports 靜態防呆、condition mapper 4 個新 case。
