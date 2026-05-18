@@ -454,6 +454,12 @@ let _wizardInitialized = false;
 // clearPatientOverride and on a load that yields no saved record.
 let _step2Confirmed = false;
 
+// Step number rendered as a circled digit glyph — matches the
+// "回 ① 登入" copy elsewhere in the popup and the wizard stepper labels.
+function _stepNumGlyph(n) {
+  return n === 1 ? "①" : n === 2 ? "②" : "③";
+}
+
 function _markStep2Confirmed(yes) {
   _step2Confirmed = !!yes;
 }
@@ -618,21 +624,29 @@ function _refreshButtonStates() {
   // longer sentence) is noise — silently disable the CTA instead, with
   // a tooltip explanation. inlineReason is what shows in the warning
   // strip; tooltipReason is what the disabled button advertises on hover.
-  let inlineReason = "";
+  // Reason for blocked CTA. inlineMsg renders in the warning strip;
+  // tooltip is what the disabled button advertises on hover; jumpTo
+  // (when set) makes the strip a clickable shortcut back to that step.
+  let inlineMsg = "";
+  let jumpTo = null;       // { step: 1|2, label: "登入" | "您的資料" }
   let tooltipReason = "";
   if (!onNhi) {
-    inlineReason = tooltipReason = "回 ① 登入：請切到健保存摺分頁";
+    inlineMsg = "請切到健保存摺分頁";
+    jumpTo = { step: 1, label: "登入" };
   } else if (!loggedIn) {
-    inlineReason = tooltipReason = "回 ① 登入：健保存摺分頁尚未登入";
+    inlineMsg = "健保存摺分頁尚未登入";
+    jumpTo = { step: 1, label: "登入" };
   } else if (!genderOk) {
-    inlineReason = tooltipReason = "回 ② 您的資料：請選擇性別並按確定";
+    inlineMsg = "請選擇性別並按確定";
+    jumpTo = { step: 2, label: "您的資料" };
   } else if (dobError) {
-    inlineReason = tooltipReason = `回 ② 您的資料：${dobError}`;
+    inlineMsg = dobError;
+    jumpTo = { step: 2, label: "您的資料" };
   } else if (!modeOk) {
-    inlineReason = "";              // conn banner above carries the message
+    inlineMsg = "";                 // conn banner above carries the message
     tooltipReason = "後端尚未連線";
   }
-  const reason = tooltipReason;
+  if (jumpTo) tooltipReason = `回 ${_stepNumGlyph(jumpTo.step)} ${jumpTo.label}：${inlineMsg}`;
 
   // Don't flip the CTA back to enabled if a sync is currently running
   // — the SW updates `patientOverride` mid-sync (auto-fetched cid),
@@ -643,8 +657,26 @@ function _refreshButtonStates() {
   els.syncApiBtn.disabled = syncRunning || tooltipReason !== "";
   els.syncApiBtn.title = syncRunning ? "" : tooltipReason;
   if (els.syncBlockedReason) {
-    els.syncBlockedReason.textContent = !syncRunning && inlineReason ? `⚠️ ${inlineReason}` : "";
-    els.syncBlockedReason.hidden = syncRunning || inlineReason === "";
+    const show = !syncRunning && inlineMsg !== "";
+    els.syncBlockedReason.hidden = !show;
+    if (show) {
+      // Build the strip's content: "⚠ {msg}    回 ① 登入 →" so the
+      // user sees both the reason and where the click will take them.
+      els.syncBlockedReason.textContent = "";
+      const msgEl = document.createElement("span");
+      msgEl.className = "cta-reason-msg";
+      msgEl.textContent = `⚠️ ${inlineMsg}`;
+      els.syncBlockedReason.appendChild(msgEl);
+      if (jumpTo) {
+        const jumpEl = document.createElement("span");
+        jumpEl.className = "cta-reason-jump";
+        jumpEl.textContent = `回 ${_stepNumGlyph(jumpTo.step)} ${jumpTo.label} →`;
+        els.syncBlockedReason.appendChild(jumpEl);
+        els.syncBlockedReason.dataset.targetStep = String(jumpTo.step);
+      } else {
+        delete els.syncBlockedReason.dataset.targetStep;
+      }
+    }
   }
   // Mirror the stop-button visibility so the user can always cancel
   // mid-sync even if the popup re-renders due to onChanged.
@@ -956,6 +988,15 @@ async function pushLocalBundleToBackend() {
 }
 
 els.pushLocalBtn?.addEventListener("click", pushLocalBundleToBackend);
+
+// The blocked-reason warning strip doubles as a "jump back to the
+// relevant step" button when there's a known target step. Click
+// anywhere on it to navigate; the trailing "回 ① 登入 →" hint
+// telegraphs where the click will land.
+els.syncBlockedReason?.addEventListener("click", () => {
+  const target = Number(els.syncBlockedReason.dataset.targetStep);
+  if (target >= 1 && target <= 3) _setActiveStep(target);
+});
 
 // "🔗 開啟健保存摺登入" — opens the NHI landing page so the user
 // doesn't have to remember / google the URL. Closes the popup so
