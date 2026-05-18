@@ -66,6 +66,7 @@ const els = {
   pushLocalBtn: document.getElementById("push-local-btn"),
   syncStatusHint: document.getElementById("sync-status-hint"),
   maskNameEnabled: document.getElementById("mask-name-enabled"),
+  backendModeEnabled: document.getElementById("backend-mode-enabled"),
   openNhiSection: document.getElementById("open-nhi-section"),
   openNhiBtn: document.getElementById("open-nhi-btn"),
   nhiNeedsLoginSection: document.getElementById("nhi-needs-login-section"),
@@ -958,10 +959,48 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
 });
 
+// ── Backend mode feature gate ────────────────────────────────────────
+// Layperson default: backend mode (Docker server + Dashboard + SMART
+// App) is hidden behind a toggle in 進階設定. When OFF (default), the
+// mode-toggle row in step 3 doesn't render and syncMode is forced to
+// "local" regardless of what's in storage.
+async function loadBackendModeEnabled() {
+  const { backendModeEnabled } = await chrome.storage.local.get("backendModeEnabled");
+  const enabled = backendModeEnabled === true;
+  els.backendModeEnabled.checked = enabled;
+  document.body.dataset.backendEnabled = enabled ? "true" : "false";
+}
+
+els.backendModeEnabled?.addEventListener("change", async () => {
+  const enabled = els.backendModeEnabled.checked;
+  document.body.dataset.backendEnabled = enabled ? "true" : "false";
+  await chrome.storage.local.set({ backendModeEnabled: enabled });
+  if (enabled) {
+    // Auto-switch to backend mode so the user immediately sees the
+    // mode tab + the backend config fields they just unlocked. Beats
+    // "I enabled it but nothing happened".
+    for (const r of els.modeRadios()) r.checked = r.value === "backend";
+    document.body.dataset.mode = "backend";
+    await chrome.storage.local.set({ syncMode: "backend" });
+    testBackendConnection();
+  } else {
+    // Force back to local; clear any leftover backend connection state
+    // so the next time they re-enable it doesn't show stale "已連線".
+    for (const r of els.modeRadios()) r.checked = r.value === "local";
+    document.body.dataset.mode = "local";
+    await chrome.storage.local.set({ syncMode: "local" });
+    _connState = "unknown"; _connFailReason = null;
+    _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
+    _renderConnBanner(); _renderDataState(); _refreshButtonStates();
+  }
+});
+
 // ── Sync mode (local | backend) ──────────────────────────────────────
 async function loadSyncMode() {
   const { syncMode } = await chrome.storage.local.get("syncMode");
-  const mode = syncMode === "backend" ? "backend" : DEFAULT_MODE;
+  // Backend mode disabled in 進階設定 → ignore any stored backend mode.
+  const backendEnabled = document.body.dataset.backendEnabled === "true";
+  const mode = (backendEnabled && syncMode === "backend") ? "backend" : DEFAULT_MODE;
   for (const r of els.modeRadios()) r.checked = r.value === mode;
   document.body.dataset.mode = mode;
   if (mode === "backend") {
@@ -1265,7 +1304,10 @@ async function init() {
   // Order matters: loadBackendUrl populates els.backendUrl.value, which
   // loadSyncMode() reads via testBackendConnection(). Reverse this and
   // the auto-test sees an empty URL and falsely reports "未設定 Backend URL"
-  // on every popup open.
+  // on every popup open. loadBackendModeEnabled also has to land before
+  // loadSyncMode: the latter consults body[data-backend-enabled] to
+  // decide whether a stored "backend" mode is honored or forced to local.
+  await loadBackendModeEnabled();
   await loadBackendUrl();
   await loadSyncMode();
   await loadPatientOverride();
