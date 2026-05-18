@@ -464,7 +464,12 @@
        left bar, mirroring the .status.success / .login-ok pattern so
        step 1's three states share one visual language. Still the
        loudest thing on the popup when visible (it's the single biggest
-       first-run failure mode), but no longer a saturated red wash. */
+       first-run failure mode), but no longer a saturated red wash.
+
+       Two-case body: "haven't logged in yet" vs "logged in earlier but
+       got auto-signed-out". Same banner, different remedies. The second
+       case ships with a one-click 重新整理頁面 button so the user
+       doesn't need to know what F5 is, or even switch to the NHI tab. */
     .nhi-needs-login {
       padding: 12px 14px;
       background: white;
@@ -476,6 +481,43 @@
       line-height: 1.55;
     }
     .nhi-needs-login b { color: #7f1d1d; }
+    .nhi-needs-login-cases {
+      list-style: none;
+      margin: 8px 0 10px;
+      padding: 0;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .nhi-needs-login-cases li {
+      position: relative;
+      padding-left: 14px;
+    }
+    .nhi-needs-login-cases li + li { margin-top: 6px; }
+    .nhi-needs-login-cases li::before {
+      content: "•";
+      position: absolute;
+      left: 4px;
+      top: 0;
+    }
+    .nhi-reload-btn {
+      width: auto;
+      display: block;
+      margin-left: auto;
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      background: white;
+      color: #b91c1c;
+      border: 1px solid #fca5a5;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .nhi-reload-btn:hover { background: #fef2f2; border-color: #f87171; }
+    .nhi-reload-btn:focus-visible {
+      outline: 2px solid #f87171;
+      outline-offset: 2px;
+    }
 
     /* Reason shown below the CTA whenever it's blocked. Replaces the
        invisible-on-mobile/popup tooltip. */
@@ -969,8 +1011,12 @@
       <!-- 1b. On NHI tab but no active session. -->
       <section class="section" id="nhi-needs-login-section" hidden>
         <div class="nhi-needs-login">
-          <b>偵測到健保存摺分頁，但你還沒登入。</b><br/>
-          請在那個分頁完成登入（健保卡 / 行動電話認證 / 自然人憑證 / TW FidO 任一）。登入後這個視窗會自動跳到下一步。
+          <b>偵測到健保存摺分頁，但目前沒有登入狀態。</b>
+          <ul class="nhi-needs-login-cases">
+            <li><b>還沒登入</b> — 請在那個分頁完成登入（健保卡 / 行動電話認證 / 自然人憑證 / TW FidO 任一）</li>
+            <li><b>之前登入過、放著沒動</b> — 健保系統為了安全會自動把你登出。請按下方按鈕重新整理頁面後再登入一次</li>
+          </ul>
+          <button class="nhi-reload-btn" id="nhi-reload-btn" type="button">重新整理頁面</button>
         </div>
       </section>
 
