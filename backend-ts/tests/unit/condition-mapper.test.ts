@@ -102,10 +102,7 @@ describe("mapCondition", () => {
   });
 
   test("recordedDate maps with TW timezone when present", () => {
-    const r = mapCondition(
-      { display: "x", recorded_date: "2022-11-16" },
-      PATIENT_ID,
-    );
+    const r = mapCondition({ display: "x", recorded_date: "2022-11-16" }, PATIENT_ID);
     expect(r.recordedDate).toBe("2022-11-16T00:00:00+08:00");
   });
 
