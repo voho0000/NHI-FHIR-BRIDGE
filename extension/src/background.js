@@ -383,13 +383,23 @@ function adaptProcedure(item) {
 // (an exam was performed) rather than DiagnosticReport (which needs a
 // narrative). If/when we fetch the actual report this becomes a DR.
 // IHKE3408S02 detail provides the full radiology / endoscopy report in
-// `desc`. Combined with order_NAME + func_DATE this is a proper FHIR
+// `desc`. Combined with order_NAME + the exam date this is a proper FHIR
 // DiagnosticReport. List-only entries (where the detail fetch returned
 // no `desc`) get dropped — without a narrative the report mapper would
 // reject them anyway.
+//
+// Date field choice — IHKE3408S01 list payload exposes both real_INSPECT_DATE
+// (when the imaging was actually performed) and func_DATE (visit/admission
+// day); the S02 detail carries the same row. For an inpatient who had a
+// CT on day 3 of a 5-day admission, func_DATE = admission day, but FHIR's
+// DiagnosticReport.effectiveDateTime should be the exam day. Same family
+// of bug as adaptLabItem; same fix.
 function adaptImagingReportFromDetail(item) {
   if (!item || typeof item !== "object") return null;
-  const date = rocToISO(item.func_DATE || item.func_date || "");
+  const date = rocToISO(
+    item.real_INSPECT_DATE || item.real_inspect_date ||
+    item.func_DATE || item.func_date || "",
+  );
   const display = pickEnglish(item.order_NAME || item.order_name || "");
   const conclusion = (item.desc || "").trim();
   if (!date || !display || !conclusion) return null;
@@ -406,24 +416,6 @@ function adaptImagingReportFromDetail(item) {
     // was finalised in NHI's system — maps to DiagnosticReport.issued.
     // Falls back to None if NHI didn't ship one.
     issued: rocToISO((item.assay_UPLOAD_DATE || "").split(/\s+/)[0]),
-  };
-}
-
-function adaptDiagReport(item) {
-  if (!item || typeof item !== "object") return null;
-  const date = rocToISO(item.funC_DATE);
-  const display = item.ordeR_NAME || item.assaY_ITEM_NAME || item.examName || "";
-  if (!date || !display) return null;
-  const conclusion =
-    item.report || item.findingS || item.imP_DATA || item.consulT_VALUE || "";
-  if (!conclusion) return null;
-  return {
-    date,
-    code: item.ordeR_CODE || "",
-    system: "",
-    display,
-    category: "RAD",
-    conclusion,
   };
 }
 
