@@ -47,9 +47,21 @@ function mapSystem(systemHint: unknown): string {
 }
 
 export function mapCondition(raw: Record<string, any>, patientId: string): Record<string, any> {
+  const display = raw.display ?? "Unknown Condition";
+  let code = raw.code as string | null | undefined;
+  const system = mapSystem(raw.system ?? "");
+  if (system === systems.ICD_10_CM && code) {
+    code = normalizeIcd10Cm(code);
+  }
+
   const resource: Record<string, any> = {
     resourceType: "Condition",
-    id: stableId(patientId, raw.code ?? "", raw.onset_date ?? ""),
+    // Stable id falls back to display when no code is present (catastrophic
+    // illness rows from IHKE3209 carry the Chinese narrative only). Mirrors
+    // the same `code || display` pattern in diagnostic-report.ts and
+    // allergy.ts — avoids hash collisions between two same-day code-less
+    // conditions.
+    id: stableId(patientId, code || display, raw.onset_date ?? ""),
     meta: { versionId: "1", source: "nhi-fhir-bridge/scraper" },
     subject: { reference: `Patient/${patientId}` },
     clinicalStatus: {
@@ -70,12 +82,26 @@ export function mapCondition(raw: Record<string, any>, patientId: string): Recor
     },
   };
 
-  const display = raw.display ?? "Unknown Condition";
-  let code = raw.code as string | null | undefined;
-  const system = mapSystem(raw.system ?? "");
-  if (system === systems.ICD_10_CM && code) {
-    code = normalizeIcd10Cm(code);
+  // Category routes the Condition into the right downstream view.
+  // - "problem-list-item" → SMART / IPS Problem List section
+  // - "encounter-diagnosis" → per-encounter diagnoses
+  // - "health-concern" → IPS Health Concerns
+  // Adapter-level decision: 重大傷病 rows mark category="problem-list-item";
+  // generic encounter-derived conditions can omit, defaulting to no
+  // explicit category (SMART apps fall through to all-conditions view).
+  if (raw.category) {
+    resource.category = [
+      {
+        coding: [
+          {
+            system: "http://terminology.hl7.org/CodeSystem/condition-category",
+            code: raw.category,
+          },
+        ],
+      },
+    ];
   }
+
   resource.code = {
     coding: [{ system, code: code || display, display }],
     text: display,
@@ -88,6 +114,9 @@ export function mapCondition(raw: Record<string, any>, patientId: string): Recor
 
   if (raw.onset_date) {
     resource.onsetDateTime = `${raw.onset_date}T00:00:00+08:00`;
+  }
+  if (raw.recorded_date) {
+    resource.recordedDate = `${raw.recorded_date}T00:00:00+08:00`;
   }
 
   return resource;

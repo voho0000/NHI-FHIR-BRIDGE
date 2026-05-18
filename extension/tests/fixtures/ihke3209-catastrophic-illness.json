@@ -1,0 +1,11 @@
+{
+  "_source": "IHKE3209S01 (重大傷病) — single row captured live from NHI",
+  "_note": "Prostate cancer entry. Validity span 2022-11-16 → 2027-11-15 (5y card window). Note: payload returns icD10CM_CNAME (Chinese label) only — no machine-readable ICD code.",
+  "rownum": 1,
+  "hosP_ID": "0601160016",
+  "hosP_ABBR": "臺北榮總",
+  "icD10CM_CNAME": "攝護腺惡性腫瘤",
+  "valiD_S_DATE": "111/11/16",
+  "valiD_E_DATE": "116/11/15",
+  "hosP_URL": "https://info.nhi.gov.tw/inae1000/inae1000s03?id=0601160016"
+}

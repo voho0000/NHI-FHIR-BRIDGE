@@ -58,6 +58,24 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
+            ## 0.6.4 重點
+
+            **新功能**
+            - 🏥 **加抓「重大傷病」registry (IHKE3209S01)**：NHI 官方審查通過的重大慢性疾病登錄（癌症、自體免疫、洗腎、移植後 ...）一次抓進來。每筆映射為 FHIR `Condition` 加上 `category: problem-list-item`，正好餵進 SMART app / IPS profile 的 problem-list view。這是健保存摺裡**最接近真正 problem list 的資料**，比從 encounter ICD 反推可靠太多。Popup「查看明細」會多一行「重大傷病：N 筆」。沒有重大傷病登錄的使用者該行就不會出現。
+            - 📋 **mapCondition 新增 `category` 欄位支援**：之前 Condition resource 沒有 category，下游 SMART app 沒辦法分辨 problem list 跟 encounter diagnosis。現在 adapter 端把 `category: "problem-list-item"` 傳進來，mapper 會輸出 `Condition.category[].coding[]` 標準 FHIR 形狀。
+
+            **UX 修補**
+            - 🪟 **失敗明細浮上來給使用者看**：sync 完成的「⚠️ N 項失敗」之前需要打開 DevTools 才看得到具體錯誤訊息。新增「查看明細 → 失敗明細 (N)」摺疊區，琥珀色背景列出每筆 error string。
+
+            **Bug fixes**
+            - 🐛 **`adaptEncounterFromMedExpense is not defined` regression**：v0.6.3 把 endpoint registry 抽出來時誤刪了 background.js 的這個 import；它從 IHKE3303S02 detail fan-out 被直接呼叫（用來把 classHint 從 AMB 覆蓋成 IMP / EMER），結果每次 sync 都會在「encounter detail」階段炸一次。Re-import + 加新的 `background-imports.test.js` 靜態檢查防止再犯。
+
+            **內部 (測試 + 文件)**
+            - 🧪 +10 個測試（68 → 78），3 個新測試檔案：`background-imports.test.js`（靜態防呆）、`adaptCatastrophicIllness` 7 個 unit + 1 個 snapshot、condition mapper 加 4 個 case（category passthrough / recordedDate / stableId fallback）
+            - 📦 新增 `ihke3209-catastrophic-illness.json` fixture
+
+            ---
+
             ## 0.6.3 重點
 
             純 dev-side patch — 沒有使用者可見的功能變動，全部是 v0.6.2「補測試」工程的延伸。建議所有開發者升級，但一般民眾沒差。

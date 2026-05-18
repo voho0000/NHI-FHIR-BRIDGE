@@ -129,6 +129,52 @@ export function adaptMedication() { return null; }
 // the list adapter ensures no half-formed DiagnosticReports leak through.
 export function adaptImagingListStub() { return null; }
 
+// IHKE3209S01 (重大傷病) — NHI's officially-vetted catastrophic-illness
+// registry. Each row is a serious chronic condition (cancer, autoimmune,
+// transplant follow-up, dialysis, etc.) the patient is currently
+// registered for. This is the closest thing 健康存摺 exposes to a
+// curated problem list — far stronger signal than reverse-engineering
+// chronic conditions from encounter ICDs.
+//
+// Maps to FHIR Condition with category=problem-list-item so downstream
+// SMART apps / IPS profiles surface it in their problem-list view.
+//
+// Payload shape (live capture):
+//   sP_IHKE3209S01: [
+//     { hosP_ID, hosP_ABBR, hosP_URL,
+//       icD10CM_CNAME: "攝護腺惡性腫瘤",  ← Chinese narrative only
+//       valiD_S_DATE:  "111/11/16",       ← certification valid-from (ROC)
+//       valiD_E_DATE:  "116/11/15" }      ← certification valid-until (ROC, ~5y)
+//   ]
+//
+// Caveats deliberately encoded:
+//   - NHI doesn't return the ICD-10-CM code in this endpoint, only the
+//     Chinese label. We leave `code` empty; mapCondition falls back to
+//     display-as-id for stableId (mirroring diagnostic-report.ts).
+//   - valiD_E_DATE is when the CARD expires (renewed every ~5y), NOT
+//     when the disease resolved. We deliberately do NOT map it to
+//     abatementDateTime — that would falsely imply the condition stopped.
+//   - All rows here are currently active by definition; NHI only returns
+//     valid certifications. clinical_status hard-coded to "active".
+//   - severity stored as text ("Severe (重大傷病)") because the formal
+//     severity code mapping (SNOMED 24484000 etc.) needs more thought.
+export function adaptCatastrophicIllness(item) {
+  if (!item || typeof item !== "object") return null;
+  const display = pickEnglish(item.icD10CM_CNAME || item.icd10cm_cname || "");
+  if (!display) return null;
+  return {
+    display,
+    code: "",
+    system: "",
+    onset_date: rocToISO(item.valiD_S_DATE || item.valid_s_date || ""),
+    recorded_date: rocToISO(item.valiD_S_DATE || item.valid_s_date || ""),
+    category: "problem-list-item",
+    severity: "Severe (重大傷病)",
+    hospital: item.hosP_ABBR || item.hosp_abbr || "",
+    clinical_status: "active",
+  };
+}
+
 // IHKE3402S01 (成人預防保健結果) — one row per screening event, flat
 // schema. NHI runs the panel itself and returns vitals + a fixed
 // battery of lab values pre-computed (BMI / waist / BP / lipids / LFT

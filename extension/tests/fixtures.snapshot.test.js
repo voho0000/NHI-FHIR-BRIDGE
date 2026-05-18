@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import {
   adaptAdultPreventive,
   adaptAllergy,
+  adaptCatastrophicIllness,
   adaptEncounterFromMedExpense,
   adaptImagingReportFromDetail,
   adaptLabItem,
@@ -139,6 +140,22 @@ describe("adapter fixture snapshots", () => {
         "display": "Penicillin",
         "reaction": "rash, dyspnea",
         "recorded_date": "2023-03-15",
+      }
+    `);
+  });
+
+  test("IHKE3209 catastrophic illness (problem-list Condition)", () => {
+    expect(adaptCatastrophicIllness(load("ihke3209-catastrophic-illness.json"))).toMatchInlineSnapshot(`
+      {
+        "category": "problem-list-item",
+        "clinical_status": "active",
+        "code": "",
+        "display": "攝護腺惡性腫瘤",
+        "hospital": "臺北榮總",
+        "onset_date": "2022-11-16",
+        "recorded_date": "2022-11-16",
+        "severity": "Severe (重大傷病)",
+        "system": "",
       }
     `);
   });

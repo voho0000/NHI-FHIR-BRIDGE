@@ -15,6 +15,7 @@
 import {
   adaptAdultPreventive,
   adaptAllergy,
+  adaptCatastrophicIllness,
   adaptEncounterFromMedExpense,
   adaptImagingListStub,
   adaptInpatientEncounter,
@@ -40,6 +41,7 @@ export const ENDPOINT_LABEL_ZH = {
   cancer_screening: "癌症篩檢",
   imaging: "影像檢查",
   other_labs: "檢驗",
+  catastrophic_illness: "重大傷病",
 };
 
 // page_type → backend page_type string used by mappers.
@@ -104,4 +106,10 @@ export const NHI_API_ENDPOINTS = [
   // other_labs already uses /search; same ISO-dash date format works.
   { name: "other_labs",          path: "/api/ihke3000/ihke3409s01/search?s_type=&s_date=&e_date=&s_sort=A1",
     page_type: "observations",      adapt: adaptLabItem, supportsDateRange: true },
+  // IHKE3209S01 (重大傷病) — NHI-vetted catastrophic-illness registry.
+  // Each row → a FHIR Condition with category=problem-list-item, the
+  // closest 健康存摺 equivalent to a curated problem list. Endpoint
+  // doesn't accept date params (NHI returns currently-valid certs only).
+  { name: "catastrophic_illness", path: "/api/ihke3000/ihke3209s01/SP_IHKE3209S01",
+    page_type: "conditions",        adapt: adaptCatastrophicIllness },
 ];

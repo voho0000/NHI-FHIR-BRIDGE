@@ -22,6 +22,7 @@ import { dirname, resolve } from "node:path";
 import {
   adaptAdultPreventive,
   adaptAllergy,
+  adaptCatastrophicIllness,
   adaptEncounterFromMedExpense,
   adaptImagingReportFromDetail,
   adaptInpatientEncounter,
@@ -360,6 +361,78 @@ describe("adaptImagingListStub", () => {
     const { adaptImagingListStub } = await import("../src/nhi-adapters.js");
     expect(adaptImagingListStub()).toBeNull();
     expect(adaptImagingListStub({ anything: "ignored" })).toBeNull();
+  });
+});
+
+// ── adaptCatastrophicIllness — IHKE3209S01 (重大傷病) ──────────────────
+
+describe("adaptCatastrophicIllness", () => {
+  test("maps a prostate-cancer row to a problem-list Condition shape", () => {
+    expect(
+      adaptCatastrophicIllness({
+        icD10CM_CNAME: "攝護腺惡性腫瘤",
+        valiD_S_DATE: "111/11/16",
+        valiD_E_DATE: "116/11/15",
+        hosP_ABBR: "臺北榮總",
+      }),
+    ).toEqual({
+      display: "攝護腺惡性腫瘤",
+      code: "",
+      system: "",
+      onset_date: "2022-11-16",
+      recorded_date: "2022-11-16",
+      category: "problem-list-item",
+      severity: "Severe (重大傷病)",
+      hospital: "臺北榮總",
+      clinical_status: "active",
+    });
+  });
+
+  test("hard-codes category=problem-list-item (the whole point of this endpoint)", () => {
+    const r = adaptCatastrophicIllness({
+      icD10CM_CNAME: "白血病",
+      valiD_S_DATE: "112/01/01",
+    });
+    expect(r.category).toBe("problem-list-item");
+  });
+
+  test("does NOT map valid_e_date to abatement (card expiry ≠ disease resolution)", () => {
+    // The "validity end" date is when NHI's catastrophic-illness card
+    // expires (renewed every ~5 years), not when the patient stopped
+    // having the condition. We deliberately omit it from the adapter
+    // output so mapCondition can't accidentally surface it as
+    // abatementDateTime.
+    const r = adaptCatastrophicIllness({
+      icD10CM_CNAME: "攝護腺惡性腫瘤",
+      valiD_S_DATE: "111/11/16",
+      valiD_E_DATE: "116/11/15",
+    });
+    expect(Object.keys(r)).not.toContain("abatement_date");
+    expect(Object.keys(r)).not.toContain("abatementDateTime");
+  });
+
+  test("returns null when icD10CM_CNAME is missing (no name = useless row)", () => {
+    expect(adaptCatastrophicIllness({ valiD_S_DATE: "111/11/16" })).toBeNull();
+  });
+
+  test("returns null on null / non-object input", () => {
+    expect(adaptCatastrophicIllness(null)).toBeNull();
+    expect(adaptCatastrophicIllness("not an object")).toBeNull();
+  });
+
+  test("clinical_status hard-coded to 'active' (NHI only returns valid certs)", () => {
+    expect(adaptCatastrophicIllness({
+      icD10CM_CNAME: "x",
+      valiD_S_DATE: "111/01/01",
+    }).clinical_status).toBe("active");
+  });
+
+  test("handles bilingual icD10CM_CNAME (中文||English) by preferring English", () => {
+    const r = adaptCatastrophicIllness({
+      icD10CM_CNAME: "攝護腺惡性腫瘤||Malignant neoplasm of prostate",
+      valiD_S_DATE: "111/11/16",
+    });
+    expect(r.display).toBe("Malignant neoplasm of prostate");
   });
 });
 

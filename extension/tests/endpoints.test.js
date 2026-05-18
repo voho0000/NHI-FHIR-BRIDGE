@@ -21,6 +21,7 @@ const KNOWN_PAGE_TYPES = new Set([
   "allergies",
   "observations",
   "diagnostic_reports",
+  "conditions",
 ]);
 
 describe("NHI endpoint registry", () => {

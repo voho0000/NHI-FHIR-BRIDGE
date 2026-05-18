@@ -79,4 +79,41 @@ describe("mapCondition", () => {
     const r = mapCondition({ code: "E11.9", display: "DM2", onset_date: "2020-01-15" }, PATIENT_ID);
     expect(r.onsetDateTime).toBe("2020-01-15T00:00:00+08:00");
   });
+
+  test("category=problem-list-item lands in Condition.category[].coding (for SMART/IPS problem list)", () => {
+    const r = mapCondition(
+      {
+        display: "攝護腺惡性腫瘤",
+        category: "problem-list-item",
+        onset_date: "2022-11-16",
+      },
+      PATIENT_ID,
+    );
+    expect(r.category).toHaveLength(1);
+    expect(r.category[0].coding[0]).toEqual({
+      system: "http://terminology.hl7.org/CodeSystem/condition-category",
+      code: "problem-list-item",
+    });
+  });
+
+  test("no category key when raw.category absent", () => {
+    const r = mapCondition({ code: "E11.9", display: "DM2" }, PATIENT_ID);
+    expect(r.category).toBeUndefined();
+  });
+
+  test("recordedDate maps with TW timezone when present", () => {
+    const r = mapCondition(
+      { display: "x", recorded_date: "2022-11-16" },
+      PATIENT_ID,
+    );
+    expect(r.recordedDate).toBe("2022-11-16T00:00:00+08:00");
+  });
+
+  test("stableId falls back to display when no code (two same-day code-less rows must not collide)", () => {
+    // Catastrophic-illness rows carry only a Chinese narrative, no ICD code.
+    // Two such rows with different display + same date must hash differently.
+    const a = mapCondition({ display: "Cancer A", onset_date: "2022-01-01" }, PATIENT_ID);
+    const b = mapCondition({ display: "Cancer B", onset_date: "2022-01-01" }, PATIENT_ID);
+    expect(a.id).not.toBe(b.id);
+  });
 });
