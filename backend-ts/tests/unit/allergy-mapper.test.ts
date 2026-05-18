@@ -27,10 +27,7 @@ describe("mapAllergyIntolerance", () => {
   });
 
   test("system hint maps to RxNorm", () => {
-    const r = mapAllergyIntolerance(
-      { display: "Aspirin", code: "1191", system: "RxNorm" },
-      PID,
-    );
+    const r = mapAllergyIntolerance({ display: "Aspirin", code: "1191", system: "RxNorm" }, PID);
     expect(r.code.coding[0].system).toBe("http://www.nlm.nih.gov/research/umls/rxnorm");
   });
 
@@ -64,10 +61,7 @@ describe("mapAllergyIntolerance", () => {
   });
 
   test("reaction note becomes a single reaction entry", () => {
-    const r = mapAllergyIntolerance(
-      { display: "?", reaction: "rash and dyspnea" },
-      PID,
-    );
+    const r = mapAllergyIntolerance({ display: "?", reaction: "rash and dyspnea" }, PID);
     expect(r.reaction).toHaveLength(1);
     expect(r.reaction[0].description).toBe("rash and dyspnea");
   });

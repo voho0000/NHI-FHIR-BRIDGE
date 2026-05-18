@@ -39,11 +39,7 @@ function getTagCode(resource: FhirJson, system: string): string | null {
  * Append (or replace) the sync-run + page-type tags on each resource.
  * Mutates in place. Idempotent within a single run.
  */
-export function tagSyncMetadata(
-  resources: FhirJson[],
-  pageType: string,
-  runId: string,
-): void {
+export function tagSyncMetadata(resources: FhirJson[], pageType: string, runId: string): void {
   for (const r of resources) {
     r.meta = r.meta ?? {};
     const existing: any[] = Array.isArray(r.meta.tag) ? r.meta.tag : [];

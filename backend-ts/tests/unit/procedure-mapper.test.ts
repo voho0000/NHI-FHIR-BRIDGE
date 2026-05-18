@@ -48,10 +48,7 @@ describe("mapProcedure", () => {
   });
 
   test("system hint maps to ICD-10-PCS", () => {
-    const r = mapProcedure(
-      { display: "?", code: "0DTJ4ZZ", system: "ICD-10-PCS", note: "x" },
-      PID,
-    );
+    const r = mapProcedure({ display: "?", code: "0DTJ4ZZ", system: "ICD-10-PCS", note: "x" }, PID);
     expect(r!.code.coding[0].system).toContain("icd-10");
   });
 
@@ -66,14 +63,8 @@ describe("mapProcedure", () => {
   });
 
   test("same input → same stable id", () => {
-    const a = mapProcedure(
-      { display: "Appendectomy", date: "2024-03-01", note: "x" },
-      PID,
-    );
-    const b = mapProcedure(
-      { display: "Appendectomy", date: "2024-03-01", note: "x" },
-      PID,
-    );
+    const a = mapProcedure({ display: "Appendectomy", date: "2024-03-01", note: "x" }, PID);
+    const b = mapProcedure({ display: "Appendectomy", date: "2024-03-01", note: "x" }, PID);
     expect(a!.id).toBe(b!.id);
   });
 });

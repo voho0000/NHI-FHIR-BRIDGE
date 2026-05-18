@@ -17,19 +17,13 @@ describe("mapDiagnosticReport", () => {
   // every panel row creates a duplicate of its own Observation.
   test("LAB category with lab-value-only conclusion returns null", () => {
     expect(
-      mapDiagnosticReport(
-        { display: "HbA1c", category: "LAB", conclusion: "5.9%" },
-        PID,
-      ),
+      mapDiagnosticReport({ display: "HbA1c", category: "LAB", conclusion: "5.9%" }, PID),
     ).toBeNull();
   });
 
   test("LAB category with lab value + reference range still returns null", () => {
     expect(
-      mapDiagnosticReport(
-        { display: "ALT", category: "LAB", conclusion: "42 U/L" },
-        PID,
-      ),
+      mapDiagnosticReport({ display: "ALT", category: "LAB", conclusion: "42 U/L" }, PID),
     ).toBeNull();
   });
 
@@ -38,10 +32,7 @@ describe("mapDiagnosticReport", () => {
       "Complete blood count shows mild anemia with no evidence of " +
       "thrombocytopenia. Differential is within normal limits and no " +
       "blast cells are observed. Recommend follow-up in 3 months.";
-    const r = mapDiagnosticReport(
-      { display: "CBC", category: "LAB", conclusion },
-      PID,
-    );
+    const r = mapDiagnosticReport({ display: "CBC", category: "LAB", conclusion }, PID);
     expect(r).not.toBeNull();
     expect(r!.conclusion).toBe(conclusion);
   });
@@ -78,18 +69,12 @@ describe("mapDiagnosticReport", () => {
   });
 
   test("unknown system falls back to local report code", () => {
-    const r = mapDiagnosticReport(
-      { display: "?", category: "RAD", conclusion: "narrative" },
-      PID,
-    );
+    const r = mapDiagnosticReport({ display: "?", category: "RAD", conclusion: "narrative" }, PID);
     expect(r!.code.coding[0].system).toContain("his-local-report");
   });
 
   test("subject reference uses patient id", () => {
-    const r = mapDiagnosticReport(
-      { display: "?", category: "RAD", conclusion: "x" },
-      PID,
-    );
+    const r = mapDiagnosticReport({ display: "?", category: "RAD", conclusion: "x" }, PID);
     expect(r!.subject.reference).toBe(`Patient/${PID}`);
   });
 
@@ -118,10 +103,7 @@ describe("mapDiagnosticReport", () => {
   });
 
   test("status defaults to 'final'", () => {
-    const r = mapDiagnosticReport(
-      { display: "?", category: "RAD", conclusion: "x" },
-      PID,
-    );
+    const r = mapDiagnosticReport({ display: "?", category: "RAD", conclusion: "x" }, PID);
     expect(r!.status).toBe("final");
   });
 
