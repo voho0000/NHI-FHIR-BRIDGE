@@ -53,7 +53,7 @@ NHI-FHIR-BRIDGE/                     # npm workspaces
 │   ├── drizzle/                     # SQL migration
 │   └── tests/                       # vitest
 ├── extension/                       # Chrome MV3
-│   ├── src/{background,popup,sidebar}.js
+│   ├── src/{background,popup}.js
 │   └── build.mjs                    # esbuild + Resvg icon render
 ├── frontend/                        # Next.js Dashboard
 │   └── app/
