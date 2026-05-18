@@ -388,12 +388,19 @@ function adaptProcedure(item) {
 // no `desc`) get dropped — without a narrative the report mapper would
 // reject them anyway.
 //
-// Date field choice — IHKE3408S01 list payload exposes both real_INSPECT_DATE
-// (when the imaging was actually performed) and func_DATE (visit/admission
-// day); the S02 detail carries the same row. For an inpatient who had a
-// CT on day 3 of a 5-day admission, func_DATE = admission day, but FHIR's
-// DiagnosticReport.effectiveDateTime should be the exam day. Same family
-// of bug as adaptLabItem; same fix.
+// Date field choice — IHKE3408S02 detail payload exposes:
+//   - real_INSPECT_DATE  實際採檢/做影像日 (most accurate when present)
+//   - func_DATE          就診/入院日 (visit anchor)
+//   - assay_UPLOAD_DATE  報告上傳時間 (often weeks after the exam —
+//                        belongs to DiagnosticReport.issued, NOT
+//                        effectiveDateTime)
+// In practice real_INSPECT_DATE is often null on the S02 detail
+// (confirmed against live NHI payloads); we then fall back to
+// func_DATE rather than the upload time. Falling back to the
+// upload date would land the exam in a date that's even further
+// from reality (e.g. CT done 2026/01/14, upload 2026/02/24 → using
+// upload date would say "had a CT on 2026/02/24" which is wrong).
+// func_DATE at worst means "exam happened during this admission".
 function adaptImagingReportFromDetail(item) {
   if (!item || typeof item !== "object") return null;
   const date = rocToISO(
