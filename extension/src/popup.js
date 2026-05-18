@@ -82,6 +82,11 @@ const els = {
 };
 
 const NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
+// Direct URL of the login picker page (a generic landing → login redirect
+// happens automatically for unauthenticated visits, but going straight
+// here also handles users sitting on a public sub-page like 問答專區
+// where a plain reload would just re-render the same un-auth page).
+const NHI_LOGIN_URL = "https://myhealthbank.nhi.gov.tw/IHKE3000/IHKE3095S01";
 
 const PENDING_BUNDLE_KEY = "pendingFhirBundle";
 
@@ -960,23 +965,27 @@ els.openNhiBtn?.addEventListener("click", async () => {
   window.close();
 });
 
-// "重新整理頁面" inside the needs-login banner. Covers the case where
-// the user IS on the NHI tab but their login expired silently — they
-// see step 1 saying "please log in" and get confused ("I AM logged
-// in"). One click reloads the NHI tab (so the login page appears)
-// and focuses it, then closes the popup so the user is staring at
-// the page they need to act on.
+// "前往登入頁面" inside the needs-login banner. Covers both:
+//   1. Session expired silently while on a logged-in page (looks
+//      "still logged in" to the user → they're confused why we say
+//      otherwise).
+//   2. User is on a public sub-page like 問答專區 — a plain reload
+//      would just re-render the same un-auth page without surfacing
+//      a login form. Navigating directly to the login URL handles
+//      both cases identically.
+// Drives chrome.tabs.update with a url so the existing NHI tab
+// goes straight to the login picker; focuses + closes popup so the
+// user lands on the page they need to act on.
 els.nhiReloadBtn?.addEventListener("click", async () => {
   if (!_nhiTabId) {
     // Defensive: banner shouldn't be visible when off-NHI, but if
-    // something went sideways just open the landing page.
-    await chrome.tabs.create({ url: NHI_LANDING });
+    // something went sideways just open the login page in a new tab.
+    await chrome.tabs.create({ url: NHI_LOGIN_URL });
     window.close();
     return;
   }
   try {
-    await chrome.tabs.reload(_nhiTabId);
-    await chrome.tabs.update(_nhiTabId, { active: true });
+    await chrome.tabs.update(_nhiTabId, { url: NHI_LOGIN_URL, active: true });
   } catch {}
   window.close();
 });
