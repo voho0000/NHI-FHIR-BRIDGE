@@ -26,6 +26,15 @@ import {
   resolveSexStratifiedRanges,
 } from "@nhi-fhir-bridge/mapper";
 import {
+  // adaptEncounterFromMedExpense is invoked directly from the
+  // IHKE3303S02 detail fan-out (overrides the registry's classHint
+  // with 急診/住院 derived from the detail body), so it needs to be
+  // a named import — not only reachable via NHI_API_ENDPOINTS[i].adapt.
+  // Forgetting this re-import after extracting the endpoint registry
+  // in v0.6.3 shipped a ReferenceError that only fired in production
+  // syncs with non-empty encounters. Tests don't exercise that path
+  // — see TODO_FOLLOWUP for a SW-flow integration test idea.
+  adaptEncounterFromMedExpense,
   adaptImagingReportFromDetail,
   adaptMedicationFromDetail,
   isoToROC,
