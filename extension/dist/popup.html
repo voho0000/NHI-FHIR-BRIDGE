@@ -983,6 +983,21 @@
     }
     .footer a { color: #6b7280; text-decoration: none; }
     .footer a:hover { color: #2563eb; }
+    /* Compact data-accuracy disclaimer sitting above the footer.
+       NHI is the source of truth — anything the extension produces
+       can drift due to mapper bugs / NHI schema changes / unhandled
+       edge cases. We surface this in every popup open so users have
+       a default-cautious mental model when handing the JSON to a
+       clinician or third party. */
+    .disclaimer {
+      padding: 8px 16px;
+      background: #fffbeb;
+      border-top: 1px solid #fde68a;
+      font-size: 11px;
+      color: #78350f;
+      line-height: 1.45;
+    }
+    .disclaimer b { color: #92400e; }
 
   </style>
 </head>
@@ -1300,6 +1315,13 @@
       </details>
     </section>
 
+  </div>
+
+  <div class="disclaimer">
+    <b>免責聲明</b>：本工具僅供參考。產生的資料無法保證完全準確，請以
+    <a href="https://myhealthbank.nhi.gov.tw/" target="_blank" rel="noopener"
+       style="color:inherit;text-decoration:underline">健保署健康存摺</a>
+    顯示的內容為主。
   </div>
 
   <footer class="footer">

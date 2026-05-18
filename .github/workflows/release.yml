@@ -58,6 +58,22 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
+            ## 0.6.2 重點
+
+            **使用者可見**
+            - ⚠️ **加上資料正確性免責聲明**：popup 底部 + README 開頭都加上小型警示——本工具僅供參考，無法保證資料完全準確；臨床判讀請以健保署健康存摺顯示為主。NHI schema 偶有變動 + 任何 mapper bug 都可能造成輸出與真實情況不一致。
+
+            **內部品質工程**
+            這版底層做了一輪結構性投資，是 v0.6.1 那批「資料正確性 bug」事件後的根本反省：bug 之所以漏出來是 extension adapter 完全沒有 unit test，sit 在 SW context 裡無法隔離測試。這版花力氣補上：
+
+            - 🔧 **adapter 抽 module**：把 `extension/src/background.js` 裡的 12 個 `adapt*` + helper 函式抽到獨立的 `extension/src/nhi-adapters.js`，可以在 vitest 下純函式測試。background.js 從 1700 多行縮到 1400 多行。
+            - 🧪 **52 個 adapter 單元測試**：每個 adapter 至少測「正常路徑」、「缺欄位 fallback」、「null/型別防禦」、「日期欄位優先順序」。v0.6.1 那兩個 bug 都有對應 regression test，再犯立刻 CI 紅燈。
+            - 📦 **真實 NHI payload 作為測試 fixture**：把 IHKE3409（lab）、IHKE3408S02（imaging）、IHKE3301S05（procedure）三個 endpoint 的活捕獲 payload 收進 `extension/tests/fixtures/`，每次跑測試都會用真實資料形狀驗證 adapter 輸出。
+            - 🛠️ **`scripts/verify-sync.mjs` 偵錯工具**：對任何 FHIR JSON 跑啟發式檢查（日期 clustering、缺 meta tag、檔名 vs 實際資料 span），用來抓 v0.6.1 那種「住院期間檢驗全擠到一天」的 smell。`node scripts/verify-sync.mjs path/to/file.json` 一句搞定。
+            - 🤖 **CI 接上**：`backend-ts + extension` workflow 現在會跑 `npm run test --workspace extension`。
+
+            ---
+
             ## 0.6.1 重點
 
             資料正確性 patch — 修兩個系統性的「日期欄位選錯」bug，會影響有住院期間檢驗 / 影像的使用者。

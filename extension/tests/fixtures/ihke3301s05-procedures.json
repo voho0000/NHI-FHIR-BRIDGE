@@ -1,0 +1,32 @@
+{
+  "_source": "IHKE3301S05 (處置/手術) main_data — two rows captured live from NHI",
+  "_note": "One inpatient row (func_date != out_date) and one outpatient row (out_date == '--'). NHI doesn't expose a separate procedure-performed date here; both use func_date as the only anchor.",
+  "main_data": [
+    {
+      "hosp_url": "https://info.nhi.gov.tw/inae1000/inae1000s03?id=0601160016",
+      "ori_type_name": "住院",
+      "hosp_id": "0601160016",
+      "func_date": "105/09/23",
+      "out_date": "105/09/26",
+      "hosp_abbr": "臺北榮總",
+      "icd9cm_code": "H35372",
+      "ori_type": "3",
+      "op_code_cname": "經皮左側玻璃體部分切除術",
+      "row_id": "AAF9xlAILAANeYPAAS",
+      "icd9cm_code_cname": "左側眼黃斑部皺褶"
+    },
+    {
+      "hosp_url": "https://info.nhi.gov.tw/inae1000/inae1000s03?id=1122010012",
+      "ori_type_name": "門診",
+      "hosp_id": "1122010012",
+      "func_date": "105/01/14",
+      "out_date": "--",
+      "hosp_abbr": "嘉基醫院",
+      "icd9cm_code": "H4011X0",
+      "ori_type": "5",
+      "op_code_cname": "經皮眼睛其他治療物質輸入",
+      "row_id": "AAFxzWAAIAAIATTAAY",
+      "icd9cm_code_cname": "原發性隅角開放性青光眼，未明示期別"
+    }
+  ]
+}

@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "build:extension": "npm run build --workspace extension",
-    "test:backend": "npm run test --workspace backend-ts"
+    "test:backend": "npm run test --workspace backend-ts",
+    "test:extension": "npm run test --workspace extension"
   }
 }

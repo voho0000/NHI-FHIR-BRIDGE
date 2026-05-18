@@ -41,6 +41,9 @@ jobs:
           DATABASE_FILE: /tmp/ci.db
         run: npx tsx src/core/migrate.ts
 
+      - name: Test (extension adapters via vitest)
+        run: npm run test --workspace extension
+
       - name: Build extension
         run: npm run build --workspace extension
 
