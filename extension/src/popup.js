@@ -70,6 +70,7 @@ const els = {
   openNhiSection: document.getElementById("open-nhi-section"),
   openNhiBtn: document.getElementById("open-nhi-btn"),
   nhiNeedsLoginSection: document.getElementById("nhi-needs-login-section"),
+  nhiReloadBtn: document.getElementById("nhi-reload-btn"),
   loginOkSection: document.getElementById("login-ok-section"),
   wizardStepper: document.getElementById("wizard-stepper"),
   resultZone: document.getElementById("result-zone"),
@@ -105,6 +106,11 @@ async function loadBackendUrl() {
 // fresh, and applySyncStatus pokes it when background swaps the
 // placeholder for the real cid.
 let _storedIdNo = null;
+
+// NHI tab id, captured in init() when the active tab is the NHI page.
+// Used by the "重新整理頁面" button in the needs-login banner so the
+// user doesn't have to know F5 / switch tabs themselves.
+let _nhiTabId = null;
 
 async function loadPatientOverride() {
   const { patientOverride } = await chrome.storage.local.get("patientOverride");
@@ -954,6 +960,27 @@ els.openNhiBtn?.addEventListener("click", async () => {
   window.close();
 });
 
+// "重新整理頁面" inside the needs-login banner. Covers the case where
+// the user IS on the NHI tab but their login expired silently — they
+// see step 1 saying "please log in" and get confused ("I AM logged
+// in"). One click reloads the NHI tab (so the login page appears)
+// and focuses it, then closes the popup so the user is staring at
+// the page they need to act on.
+els.nhiReloadBtn?.addEventListener("click", async () => {
+  if (!_nhiTabId) {
+    // Defensive: banner shouldn't be visible when off-NHI, but if
+    // something went sideways just open the landing page.
+    await chrome.tabs.create({ url: NHI_LANDING });
+    window.close();
+    return;
+  }
+  try {
+    await chrome.tabs.reload(_nhiTabId);
+    await chrome.tabs.update(_nhiTabId, { active: true });
+  } catch {}
+  window.close();
+});
+
 // Local bundle state changes whenever the SW stashes a new sync.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
@@ -1329,6 +1356,9 @@ async function init() {
   if (onNhi) delete els.syncApiBtn.dataset.offNhi;
   else els.syncApiBtn.dataset.offNhi = "1";
   if (els.openNhiSection) els.openNhiSection.hidden = onNhi;
+  // Stash the NHI tab id so the "重新整理頁面" button inside the
+  // needs-login banner can reload it without having to re-query tabs.
+  _nhiTabId = onNhi ? tab.id : null;
 
   // When on the NHI tab, ask background to verify there's an active
   // session. The SW probes IHKE3410 with sessionStorage.token — cheap
