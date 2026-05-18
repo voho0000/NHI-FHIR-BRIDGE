@@ -853,7 +853,7 @@ async function _checkNhiLoginState(tabId) {
 
 // NHI 健康存摺 endpoint IHKE3410S01 (我接種紀錄 / COVID 篩檢紀錄) happens
 // to carry the logged-in user's real citizen ID in the response (`cid`
-// field, e.g. "P123456789"). Use it to fill the patient_override's
+// field, e.g. "P123450866"). Use it to fill the patient_override's
 // id_no when the user left it blank — that way they don't have to type
 // their own 身分證字號 just to seed FHIR's Patient.id.
 //

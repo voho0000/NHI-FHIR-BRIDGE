@@ -212,7 +212,7 @@ function _generateAutoPatientId() {
   return `auto-${hex}`;
 }
 
-// Format id_no for display. Real NHI cids (P123456789 → P12345****)
+// Format id_no for display. Real NHI cids (P123450866 → P12345****)
 // get shown half-masked so the user has visual confirmation we
 // captured their real identity. The internal auto-XXXXXXXX placeholder
 // is hidden — it's a system-generated string that means nothing to
