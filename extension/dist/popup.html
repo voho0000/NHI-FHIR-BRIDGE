@@ -790,6 +790,27 @@
       border-top: 1px dashed rgba(0, 0, 0, 0.08);
     }
     .status-tech > summary { opacity: 0.5; }
+    /* "失敗明細" sub-toggle — same shape as 技術細節 but warning-tinted
+       so the user notices it exists. Each error reads "• imaging detail:
+       HTTP 504" or similar; not exactly user-friendly copy but beats
+       "1 項失敗" with no surface at all. */
+    .status-errors {
+      margin-top: 4px;
+      padding-top: 4px;
+      border-top: 1px dashed rgba(0, 0, 0, 0.08);
+    }
+    .status-errors > summary { color: #b45309; }
+    .status-error-list {
+      margin-top: 4px;
+      padding: 6px 10px;
+      font-size: 11px;
+      line-height: 1.55;
+      background: #fef3c7;
+      border-radius: 4px;
+      color: #78350f;
+      word-break: break-word;
+    }
+    .status-error-list > div + div { margin-top: 2px; }
 
     /* ── Connection banner (backend mode) ───────────────────────────
        Single card: status row at top + (when present) help body below.

@@ -1172,20 +1172,25 @@ els.smartAppUrl.addEventListener("change", () => {
   }
 });
 
-function setStatus(text, kind, breakdown) {
+function setStatus(text, kind, breakdown, errors) {
   // Build with DOM API — avoids innerHTML / XSS risk.
   // breakdown is an array of mixed entries:
   //   - phase timings prefixed with "⏱"  → 階段耗時
   //   - per-endpoint counts                → 各 endpoint 抓到幾筆
-  // Both kinds are tucked inside a single "查看明細" toggle so the
+  // errors (optional) is the raw `${ep}: ${msg}` strings from the SW,
+  // surfaced under a "失敗明細" sub-section so the user can see what
+  // the "N 項失敗" summary actually points at (no longer DevTools-only).
+  // Both groups are tucked inside a single "查看明細" toggle so the
   // popup stays compact by default.
   els.status.className = kind || "";
   els.status.textContent = "";
-  if (!text && !(breakdown && breakdown.length)) return;
+  const hasErrors = Array.isArray(errors) && errors.length > 0;
+  if (!text && !(breakdown && breakdown.length) && !hasErrors) return;
   els.status.appendChild(document.createTextNode(text || ""));
-  if (breakdown && breakdown.length) {
-    const phaseRows = breakdown.filter((b) => b.startsWith("⏱"));
-    const otherRows = breakdown.filter((b) => !b.startsWith("⏱"));
+  if ((breakdown && breakdown.length) || hasErrors) {
+    const bd = breakdown || [];
+    const phaseRows = bd.filter((b) => b.startsWith("⏱"));
+    const otherRows = bd.filter((b) => !b.startsWith("⏱"));
 
     const details = document.createElement("details");
     details.className = "status-detail";
@@ -1205,6 +1210,27 @@ function setStatus(text, kind, breakdown) {
         body.appendChild(line);
       }
       details.appendChild(body);
+    }
+    if (hasErrors) {
+      // Failure-detail nested section. Per-error raw messages are
+      // dev-ish (e.g. "imaging detail: HTTP 504") but surfacing them
+      // beats the previous "N 項失敗 — DevTools to read" UX. Folded
+      // by default so the success summary stays the dominant signal
+      // when something did still get through.
+      const errDetails = document.createElement("details");
+      errDetails.className = "status-detail status-errors";
+      const errSummary = document.createElement("summary");
+      errSummary.textContent = `失敗明細（${errors.length}）`;
+      errDetails.appendChild(errSummary);
+      const errBody = document.createElement("div");
+      errBody.className = "status-error-list";
+      for (const e of errors) {
+        const line = document.createElement("div");
+        line.textContent = `• ${e}`;
+        errBody.appendChild(line);
+      }
+      errDetails.appendChild(errBody);
+      details.appendChild(errDetails);
     }
     if (phaseRows.length) {
       // Phase timings are dev info — tuck them inside a second toggle
@@ -1504,7 +1530,8 @@ function _renderStatus() {
   }
   const kind = status.running ? "info" : (status.phase === "error" ? "error" : "success");
   const breakdown = status.running ? null : status.breakdown;
-  setStatus(text, kind, breakdown);
+  const errors = status.running ? null : status.errors;
+  setStatus(text, kind, breakdown, errors);
 }
 
 function applySyncStatus(status) {
