@@ -212,7 +212,7 @@ function _generateAutoPatientId() {
   return `auto-${hex}`;
 }
 
-// Format id_no for display. Real NHI cids (P120740866 → P12074****)
+// Format id_no for display. Real NHI cids (P123450866 → P12345****)
 // get shown half-masked so the user has visual confirmation we
 // captured their real identity. The internal auto-XXXXXXXX placeholder
 // is hidden — it's a system-generated string that means nothing to
@@ -343,7 +343,7 @@ async function savePatientOverride() {
   // Make clear this is the identity save, not a medical-record sync —
   // 「病人資料」alone reads as "patient data" (medical) for some users.
   // _displayId suppresses the auto-XXXX placeholder (no value to the
-  // user) but keeps the masked real cid (P12074****) when it's
+  // user) but keeps the masked real cid (P12345****) when it's
   // available — confirms we captured their actual identity.
   const idLabel = _displayId(ov.id_no);
   const tail = idLabel ? ` · ${idLabel}` : "";

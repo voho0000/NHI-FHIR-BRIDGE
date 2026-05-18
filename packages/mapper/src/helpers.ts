@@ -60,7 +60,7 @@ export function derivePatientId(nationalId: string): string {
 /**
  * Half-mask a Taiwan national ID for shoulder-surfing-safe display.
  * Matches NHI 健康存摺's own `hid` convention (first 6 visible, last
- * 4 hidden): `P120740866` → `P12074****`.
+ * 4 hidden): `P123450866` → `P12345****`.
  *
  * `char` defaults to `*` for popup/toast display. Use `X` for filenames
  * since `*` is invalid in Windows paths. The auto-generated
