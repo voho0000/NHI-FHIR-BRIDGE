@@ -109,9 +109,23 @@ function pickEnglish(s) {
 
 // Adapter for NHI lab/observation JSON shape (confirmed for IHKE3409S01;
 // other lab endpoints likely use the same fields).
+//
+// Date field choice — IHKE3409 returns three date-ish fields per row:
+//   - funC_DATE          就診日 / 入院日 (visit registration / admission)
+//   - reaL_INSPECT_DATE  實際採檢日 (actual sample-collection date)
+//   - assaY_UPLOAD_DATE  上傳日 (when the result hit NHI's server)
+// For an inpatient, funC_DATE is the admission day and every lab drawn
+// during the stay carries the same funC_DATE — using it as Observation.
+// effectiveDateTime made all 住院期間 labs look like they were drawn
+// on day 1. FHIR's "physiologically relevant time" for a lab Observation
+// is the sample-collection date, so prefer reaL_INSPECT_DATE when NHI
+// returns it; fall back to funC_DATE only when the inspect field is
+// missing (older rows / endpoints that don't carry it).
 function adaptLabItem(item) {
   if (!item || typeof item !== "object") return null;
-  const date = rocToISO(item.funC_DATE);
+  const date = rocToISO(
+    item.reaL_INSPECT_DATE || item.real_inspect_date || item.funC_DATE,
+  );
   const value = item.assaY_VALUE;
   if (!date || value === undefined || value === null || value === "") return null;
   // IMPORTANT: `order_shortname` is NHI's UI-truncated label (~15 chars
