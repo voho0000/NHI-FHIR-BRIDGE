@@ -37,10 +37,7 @@ describe("mapEncounter", () => {
   });
 
   test("end_date adds a period.end", () => {
-    const r = mapEncounter(
-      { class: "IMP", date: "2024-05-01", end_date: "2024-05-05" },
-      PID,
-    );
+    const r = mapEncounter({ class: "IMP", date: "2024-05-01", end_date: "2024-05-05" }, PID);
     expect(r.period.start).toBe("2024-05-01T00:00:00+08:00");
     expect(r.period.end).toBe("2024-05-05T00:00:00+08:00");
   });

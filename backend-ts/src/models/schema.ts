@@ -156,9 +156,7 @@ export const auditLog = sqliteTable(
 export const appSettings = sqliteTable("app_settings", {
   key: text("key", { length: 64 }).primaryKey(),
   value: text("value").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`CURRENT_TIMESTAMP`),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Convenience type exports for use elsewhere.
