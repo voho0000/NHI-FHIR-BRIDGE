@@ -58,6 +58,22 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
+            ## 0.6.1 重點
+
+            資料正確性 patch — 修兩個系統性的「日期欄位選錯」bug，會影響有住院期間檢驗 / 影像的使用者。
+
+            **Bug 修正**
+            - 🩺 **實驗室檢驗用採檢日，不再用入院日**：NHI 的 lab row 同時帶 `funC_DATE`（就診/入院日）和 `reaL_INSPECT_DATE`（實際採檢日）。原本 adapter 只看 `funC_DATE`，結果**住院期間每一筆 lab 都被擠到入院當天**。例如使用者 5/18 入院、5/22 抽到 191 mg/dL 血糖 → FHIR 卻顯示在 5/18。改成 `reaL_INSPECT_DATE` 優先（缺則回落 `funC_DATE`）。影響 IHKE3409（其他檢驗）+ IHKE3404（癌篩）兩個 endpoint。
+            - 🖼️ **影像報告同樣的問題**：DiagnosticReport.effectiveDateTime 原本用 `func_DATE`，住院期間做的 CT/X-ray 全部錯標成入院日。同 pattern 修法（IHKE3408S02 detail adapter）。
+
+            **內部**
+            - 🧹 刪掉死碼 `adaptDiagReport`（定義但無 call site）
+            - 📋 對所有 adapter 跑了一次 date-field 系統性審查；其他 adapter（Encounter / 預防保健 / 過敏 / 處方 / 處置）的 date 欄位選擇 audit 過、語意正確
+
+            建議 reload extension 後重新「取得健保存摺資料」，新檔的 lab / imaging 日期就會對。
+
+            ---
+
             ## 0.6.0 重點
 
             這版是 extension 的**定位轉折**：從「附帶嵌入 SMART App 面板的開發者友善工具」收斂為「面向一般民眾、進階模式選擇性開啟」的健保資料下載工具。
