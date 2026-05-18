@@ -7,7 +7,7 @@
 //   4. Progress streamed back via chrome.storage.local.syncStatus.
 //   5. After sync completes, "🚀 開啟 SMART App" launches with that patient.
 
-import { derivePatientId, maskId, maskName } from "@nhi-fhir-bridge/mapper";
+import { derivePatientId, maskName } from "@nhi-fhir-bridge/mapper";
 
 const DEFAULT_BACKEND = "http://localhost:8010";
 // Default SMART app for a fresh install. Users can override via
@@ -216,32 +216,27 @@ function refreshOverrideSummary() {
   const ov = getPatientOverride();
   const card = els.patientOverrideDetails;
   let summaryText = "";
-  if (!ov) {
+  // Identity summary is name-only now. The id_no field is purely
+  // internal (auto-minted on save → swapped for real NHI cid on first
+  // sync) and showing it to users — masked or otherwise — was just
+  // noise: 民眾 don't need their own ID echoed back, and the auto-
+  // placeholder string (auto-XXXXXXXX) is meaningless to them. Name
+  // is required as of the step-2 promotion, so we can rely on it.
+  if (!ov || !ov.name) {
     els.ovSummary.textContent = "未設定";
     if (card) card.dataset.state = "empty";
   } else {
-    // Name first (when present), then masked ID. Name → "the patient
-    // I'm working with" reads naturally first; ID is the technical
-    // detail. Previously the order was reversed, putting `P12074****`
-    // ahead of the actual person's name.
-    // ID always half-masked (P120740866 → P12074****) — matches NHI
-    // 健康存摺's own UI convention and removes a stable shoulder-
-    // surfing target. Raw value still in storage + the input field.
     // Name follows the mask toggle (民眾自用 預設關 = 真名 /
     // multi-patient demo 開啟 = 遮罩).
-    const parts = [];
-    if (ov.name) parts.push(_maybeMask(ov.name));
-    parts.push(maskId(ov.id_no));
-    summaryText = parts.join("  ·  ");
+    summaryText = _maybeMask(ov.name);
     els.ovSummary.textContent = `✓ ${summaryText}`;
     if (card) card.dataset.state = "filled";
   }
-  // Mirror the same summary onto step 3's "取得對象" banner so the
-  // user knows who they're about to fetch without scrolling back to
-  // step 2. Only when step 2 has been confirmed AND the override
-  // actually has an id_no.
+  // Mirror onto step 3's "取得對象" banner so the user knows who
+  // they're about to fetch without scrolling back to step 2. Only
+  // when step 2 has been confirmed (which now implies a saved name).
   if (els.activePatient && els.activePatientValue) {
-    const showActive = _step2Confirmed && !!ov?.id_no;
+    const showActive = _step2Confirmed && !!summaryText;
     els.activePatient.hidden = !showActive;
     if (showActive) els.activePatientValue.textContent = summaryText;
   }
@@ -338,10 +333,10 @@ async function savePatientOverride() {
   if (_wizardInitialized) _maybeAutoAdvance();
   // Make clear this is the identity save, not a medical-record sync —
   // 「病人資料」alone reads as "patient data" (medical) for some users.
-  // ID half-masked in the toast for the same shoulder-surfing reason
-  // as the summary line above.
-  const displayName = ov.name ? ` (${_maybeMask(ov.name)})` : "";
-  setStatus(`✅ 病人身份已記住：${maskId(ov.id_no)}${displayName}`, "success");
+  // id_no intentionally omitted: it's an internal key (auto-XXXX or
+  // the real cid swapped in on first sync), shown in neither summary
+  // nor toast since users don't need their own ID echoed back.
+  setStatus(`✅ 病人身份已記住：${_maybeMask(ov.name)}`, "success");
 }
 
 async function clearPatientOverride() {
