@@ -273,8 +273,8 @@ function _clearStaleSyncStatus(ov) {
 }
 
 async function savePatientOverride() {
-  // Gender + birth_date are required. id_no / name are optional —
-  // id_no will be auto-fetched on sync, name can be left blank or fake.
+  // Gender + birth_date + name are required. id_no is the only optional
+  // field — it's auto-fetched from NHI on sync, never user-entered.
   if (!els.ovGender.value) {
     setStatus("⛔ 請選擇性別", "error");
     els.ovGender.focus();
@@ -284,6 +284,11 @@ async function savePatientOverride() {
   if (dobError) {
     setStatus(`⛔ ${dobError}`, "error");
     els.ovBirthDate.focus();
+    return;
+  }
+  if (!els.ovName.value.trim()) {
+    setStatus("⛔ 請填寫姓名", "error");
+    els.ovName.focus();
     return;
   }
   // Build the override directly so we don't depend on
@@ -610,7 +615,11 @@ function _refreshButtonStates() {
   const onNhi = !els.syncApiBtn.dataset.offNhi;
   const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
   const modeOk = currentMode() === "local" || _connState === "ok";
-  const genderOk = !!els.ovGender?.value;
+  // Step 2 hard requirements: gender, birth_date (valid), and name.
+  // Tracked as one rolled-up flag so the blocked-CTA strip says
+  // "complete the basic info" generically regardless of which field
+  // is missing first.
+  const step2BasicOk = !!els.ovGender?.value && !!els.ovName?.value?.trim();
   const dobError = validateBirthDate();
 
   // Each blocking reason names the step that needs attention. Mode +
@@ -636,11 +645,12 @@ function _refreshButtonStates() {
   } else if (!loggedIn) {
     inlineMsg = "健保存摺分頁尚未登入";
     jumpTo = { step: 1, label: "登入" };
-  } else if (!genderOk) {
+  } else if (!step2BasicOk) {
     // Don't enumerate which field is missing — there could be more
-    // than one, and step 2 already marks each required field with a
-    // red * the user will see after the one-click jump. Keep the
-    // message about the high-level action (complete + confirm).
+    // than one (gender, name, both), and step 2 already marks each
+    // required field with a red * the user will see after the one-
+    // click jump. Keep the message about the high-level action
+    // (complete + confirm).
     inlineMsg = "請完成基本資料並按確定";
     jumpTo = { step: 2, label: "您的資料" };
   } else if (dobError) {
