@@ -58,6 +58,37 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
+            ## 0.6.0 重點
+
+            這版是 extension 的**定位轉折**：從「附帶嵌入 SMART App 面板的開發者友善工具」收斂為「面向一般民眾、進階模式選擇性開啟」的健保資料下載工具。
+
+            **重大改動**
+            - ✂️ **拿掉嵌入式 SMART App 助理面板**：右側 pill + iframe 機制整套移除（-1.8k 行）。原因是 Chrome 的 Private Network Access 會擋 iframe（public origin）→ localhost backend 的 fetch，導致面板永遠卡在「Launching SMART…」。要打開 SMART App 改走 popup 既有的「開啟 SMART App」按鈕在新 tab 開啟（top-level browsing context 可繞 PNA 限制）。
+            - 🎛 **本機伺服器模式藏進進階設定**：預設只剩「下載到電腦」一條路。99% 民眾用不到 Docker backend，「伺服器」這個詞對非工程使用者來說容易誤解（以為資料會上傳到雲端）。需要 Dashboard / SMART App 的開發者勾選「啟用本機伺服器模式」即可解鎖既有 UI（mode toggle + Backend URL / API Key / SMART App URL 欄位）。
+            - ✋ **姓名升為必填**：跟 生日 / 性別 一致打紅星。step 2 的三個欄位現在都是真實必填。
+
+            **使用體驗修正**
+            - 🆙 **Step 1 banner 改寫**：以前只一句「請完成登入」，民眾常常在 NHI 分頁看起來「還在登入狀態」（其實 session 已逾時）→ 看到 popup 說沒登入會困惑「明明已經登入了」。新版分兩種情境條列，加一顆「前往登入頁面」按鈕一鍵帶到 NHI 登入畫面（不用懂 F5、不用記登入 URL）。
+            - 🎯 **Step 3 阻塞 strip 變跳轉按鈕**：CTA 被擋下時的 ⚠️ 警告整列可點，一鍵跳回該補的步驟（不用爬 stepper）。涵蓋「不在 NHI 分頁」、「未登入」、「基本資料未填」、「生日格式錯誤」四種狀況。
+            - 🆔 **隱藏 auto-XXXXXXXX 內部 ID**：第一次儲存（還沒同步）只顯示姓名；同步完從 NHI 拿到真實 cid 後，顯示半遮罩版本（`P12345****`）。
+            - 🧹 **Step 1 / Step 2 視覺一致化**：拿掉 🔗 🔒 ✅ 等 emoji；Step 1 三段 banner 改成白底 + 細色條，跟 Step 2 / 3 同調。
+            - 📛 **「本機後端」→「本機伺服器」** label 改名（降低工程術語感）。
+            - 🚀 **「開啟 SMART App」按鈕視覺升級**：從蒼白 outline 改為淡藍底 + 粗體字，明確讀作次要動作。
+
+            **Bug 修正**
+            - 🐞 **SMART App launch context patient_id 雜湊不一致**：v0.5.1 修了 popup 但漏修 sidebar，現在 sidebar 整個砍掉，等於問題自動消失（且 popup 那條路本來就是 hash 過的）。
+            - 🐞 **「開啟 SMART App」按鈕在拿掉身分證輸入框後永遠 disabled**：getPatientOverride() 不再包含 id_no 導致 launch 判斷失效，已改用模組級 cache。
+
+            **內部**
+            - 🧹 manifest.json 移除 content_scripts + web_accessible_resources 兩整塊（只為 sidebar.js 存在）
+            - 🧹 background.js 移除 syncRunning storage flag、onInstalled 重注入、sidebarEnabled migration key
+            - 🧹 popup.js 內 `derivePatientId` import 重新啟用（給流程一致化）
+            - 🧹 backend-ts biome 自動格式化收尾（v0.5.3 mapper 測試補的格式漂移）
+            - 🧹 死 CSS（`.data-state-card` / `.data-state-row` / `.data-state-value`）刪除
+            - 🧹 dist 產物從 3 個 bundle 降到 2 個（少了 sidebar.js）
+
+            ---
+
             ## 0.5.4 重點
 
             v0.5.3 的 popup UX 收尾 polish + 一個功能簡化。
