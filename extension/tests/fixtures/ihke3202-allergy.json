@@ -1,0 +1,7 @@
+{
+  "_source": "IHKE3202S01 (藥物過敏) — synthetic row per adapter shape",
+  "_note": "Common allergen with reaction; key names follow the variations the adapter handles.",
+  "allergen_name": "Penicillin",
+  "reactioN": "rash, dyspnea",
+  "funC_DATE": "112/03/15"
+}

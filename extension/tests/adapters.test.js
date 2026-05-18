@@ -355,6 +355,14 @@ describe("adaptMedicationFromDetail", () => {
   });
 });
 
+describe("adaptImagingListStub", () => {
+  test("always returns null — imaging list rows carry no narrative", async () => {
+    const { adaptImagingListStub } = await import("../src/nhi-adapters.js");
+    expect(adaptImagingListStub()).toBeNull();
+    expect(adaptImagingListStub({ anything: "ignored" })).toBeNull();
+  });
+});
+
 // ── adaptInpatientEncounter — IHKE3309 / IHKE3308 ──────────────────────
 
 describe("adaptInpatientEncounter", () => {

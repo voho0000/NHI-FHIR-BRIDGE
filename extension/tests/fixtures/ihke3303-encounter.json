@@ -1,0 +1,15 @@
+{
+  "_source": "IHKE3303S01 (醫療費用申報) — synthetic row, fields per the adapter's documented shape",
+  "_note": "Outpatient (門診) case from IC card; no class hint so adapter should default to AMB.",
+  "hosP_ID": "1140010510",
+  "hosP_ABBR": "長庚嘉義",
+  "hosp_url": "https://info.nhi.gov.tw/inae1000/inae1000s03?id=1140010510",
+  "funC_DATE": "114/05/18",
+  "icD9CM_CODE": "I10",
+  "icD9CM_CODE_CNAME": "原發性高血壓||Essential hypertension",
+  "orI_TYPE": "1",
+  "orI_TYPE_NAME": "IC卡資料",
+  "part_AMT": 50,
+  "appl_DOT": 100,
+  "roW_ID": "AAFxzWAAIAAIATTAAY"
+}

@@ -53,7 +53,12 @@ NHI-FHIR-BRIDGE/                     # npm workspaces
 │   ├── drizzle/                     # SQL migration
 │   └── tests/                       # vitest
 ├── extension/                       # Chrome MV3
-│   ├── src/{background,popup}.js
+│   ├── src/
+│   │   ├── background.js            # service worker — sync flow + Chrome APIs
+│   │   ├── popup.{html,js}          # extension popup UI
+│   │   ├── nhi-adapters.js          # pure NHI JSON → normalized shape adapters
+│   │   └── nhi-endpoints.js         # endpoint URL registry + 中文 label map
+│   ├── tests/                       # vitest — see extension/tests/README.md
 │   └── build.mjs                    # esbuild + Resvg icon render
 ├── frontend/                        # Next.js Dashboard
 │   └── app/

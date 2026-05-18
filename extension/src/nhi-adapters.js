@@ -123,6 +123,12 @@ export function adaptMedicationFromDetail(drug, visit) {
 // so we always return null and rely on the 2-step detail fetch above.
 export function adaptMedication() { return null; }
 
+// Same shape as adaptMedication: IHKE3408S01 (imaging list) only carries
+// order-level data; the actual report narrative comes from the IHKE3408S02
+// detail fan-out (see adaptImagingReportFromDetail). Returning null from
+// the list adapter ensures no half-formed DiagnosticReports leak through.
+export function adaptImagingListStub() { return null; }
+
 // IHKE3402S01 (成人預防保健結果) — one row per screening event, flat
 // schema. NHI runs the panel itself and returns vitals + a fixed
 // battery of lab values pre-computed (BMI / waist / BP / lipids / LFT

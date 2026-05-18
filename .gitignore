@@ -48,5 +48,9 @@ Thumbs.db
 /test-results/
 /playwright-report/
 
+# Vitest v8 coverage HTML report — regenerate locally with
+# `npm run test:coverage`; CI shouldn't push to the repo.
+**/coverage/
+
 # Logs
 *.log
