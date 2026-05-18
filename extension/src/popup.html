@@ -857,6 +857,14 @@
     body[data-mode="local"] .backend-only { display: none !important; }
     body[data-mode="backend"] .local-only { display: none !important; }
 
+    /* ── Backend-mode feature gate ─────────────────────────────────────
+       Lay-user default: backend mode (Docker server + Dashboard + SMART
+       App) is hidden. They get a single "下載到電腦" path with no
+       segmented control to choose from. Power users flip the toggle in
+       進階設定 → "啟用本機伺服器模式" to reveal the mode tab + the
+       backend config fields. */
+    body[data-backend-enabled="false"] .mode-toggle-row { display: none !important; }
+
     /* ── Mode toggle (compact segmented control) ───────────────────── */
     .mode-toggle {
       display: flex;
@@ -908,7 +916,7 @@
 
   </style>
 </head>
-<body>
+<body data-backend-enabled="false">
 
   <header class="header">
     <div class="header-text">
@@ -1056,8 +1064,11 @@
           <span class="identity-edit">編輯</span>
         </div>
 
-        <!-- "label : control" rows — same shape for both inputs. -->
-        <div class="setting-row">
+        <!-- "label : control" rows — same shape for both inputs.
+             The 儲存位置 row is mode-toggle-row, hidden when the user
+             hasn't enabled backend mode in 進階設定 (default for the
+             lay-user citizen flow). -->
+        <div class="setting-row mode-toggle-row">
           <span class="setting-label">儲存位置</span>
           <div class="mode-toggle" role="radiogroup" aria-label="輸出方式">
             <label class="mode-opt" title="只在你自己電腦上：產生 FHIR 紀錄檔下載到下載夾，完全不經過任何後端">
@@ -1170,18 +1181,26 @@
     </div><!-- /STEP 3 -->
 
     <!-- ── Advanced settings ────────────────────────────────────────
-         Pinned to step 3 (取得) — every row inside concerns the sync
-         destination / SMART app launch, none of which is relevant to
-         step 1 (登入) or step 2 (您的資料). Wrapping in a wizard-step
-         block lets the existing data-active-step CSS hide it on the
-         other two steps. Also .backend-only because every row inside
-         is backend-only after the mask-name toggle moved into step 2. -->
-    <section class="section wizard-step backend-only" data-step="3" style="margin-top:16px">
+         Pinned to step 3 (取得). The wrapper is NOT .backend-only any
+         more, because the "啟用本機伺服器模式" toggle inside it has
+         to be reachable in local mode — that's the only way for a
+         power user to flip into backend mode. Sub-fields below the
+         toggle keep their .backend-only class so they only appear
+         once the user has both enabled backend mode AND switched the
+         step-3 mode tab to 本機伺服器. -->
+    <section class="section wizard-step" data-step="3" style="margin-top:16px">
       <details class="settings">
         <summary>進階設定</summary>
         <div class="settings-body">
           <!-- mask-name-enabled lives in step 2's name field now —
                adjacent to the input it actually affects. -->
+          <div class="field">
+            <label class="toggle-row">
+              <input type="checkbox" id="backend-mode-enabled" />
+              <span>啟用本機伺服器模式</span>
+              <span class="help-icon" data-tip="開啟後 ③ 取得步驟會多出「儲存位置：下載到電腦／本機伺服器」切換。&#10;本機伺服器模式需要自己跑 Docker 後端，搭配 Dashboard / SMART App 使用。&#10;一般民眾下載自己的健保紀錄不需要開啟。">ⓘ</span>
+            </label>
+          </div>
           <div class="field backend-only">
             <div class="label">
               Backend URL
