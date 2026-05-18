@@ -7,7 +7,7 @@
 //   4. Progress streamed back via chrome.storage.local.syncStatus.
 //   5. After sync completes, "🚀 開啟 SMART App" launches with that patient.
 
-import { derivePatientId, maskName } from "@nhi-fhir-bridge/mapper";
+import { derivePatientId, maskId, maskName } from "@nhi-fhir-bridge/mapper";
 
 const DEFAULT_BACKEND = "http://localhost:8010";
 // Default SMART app for a fresh install. Users can override via
@@ -212,23 +212,32 @@ function _generateAutoPatientId() {
   return `auto-${hex}`;
 }
 
+// Format id_no for display. Real NHI cids (P120740866 → P12074****)
+// get shown half-masked so the user has visual confirmation we
+// captured their real identity. The internal auto-XXXXXXXX placeholder
+// is hidden — it's a system-generated string that means nothing to
+// the user and just creates "what's that gibberish?" friction until
+// the real cid arrives via background's NHI fetch on first sync.
+function _displayId(idNo) {
+  if (!idNo || idNo.startsWith("auto-")) return "";
+  return maskId(idNo);
+}
+
 function refreshOverrideSummary() {
   const ov = getPatientOverride();
   const card = els.patientOverrideDetails;
   let summaryText = "";
-  // Identity summary is name-only now. The id_no field is purely
-  // internal (auto-minted on save → swapped for real NHI cid on first
-  // sync) and showing it to users — masked or otherwise — was just
-  // noise: 民眾 don't need their own ID echoed back, and the auto-
-  // placeholder string (auto-XXXXXXXX) is meaningless to them. Name
-  // is required as of the step-2 promotion, so we can rely on it.
   if (!ov || !ov.name) {
     els.ovSummary.textContent = "未設定";
     if (card) card.dataset.state = "empty";
   } else {
-    // Name follows the mask toggle (民眾自用 預設關 = 真名 /
-    // multi-patient demo 開啟 = 遮罩).
-    summaryText = _maybeMask(ov.name);
+    // Name (mask toggle: 民眾自用 預設關 = 真名 / multi-patient demo
+    // 開啟 = 遮罩) + masked real cid when available. Auto-placeholder
+    // is suppressed via _displayId.
+    const parts = [_maybeMask(ov.name)];
+    const idLabel = _displayId(ov.id_no);
+    if (idLabel) parts.push(idLabel);
+    summaryText = parts.join("  ·  ");
     els.ovSummary.textContent = `✓ ${summaryText}`;
     if (card) card.dataset.state = "filled";
   }
@@ -333,10 +342,12 @@ async function savePatientOverride() {
   if (_wizardInitialized) _maybeAutoAdvance();
   // Make clear this is the identity save, not a medical-record sync —
   // 「病人資料」alone reads as "patient data" (medical) for some users.
-  // id_no intentionally omitted: it's an internal key (auto-XXXX or
-  // the real cid swapped in on first sync), shown in neither summary
-  // nor toast since users don't need their own ID echoed back.
-  setStatus(`✅ 病人身份已記住：${_maybeMask(ov.name)}`, "success");
+  // _displayId suppresses the auto-XXXX placeholder (no value to the
+  // user) but keeps the masked real cid (P12074****) when it's
+  // available — confirms we captured their actual identity.
+  const idLabel = _displayId(ov.id_no);
+  const tail = idLabel ? ` · ${idLabel}` : "";
+  setStatus(`✅ 病人身份已記住：${_maybeMask(ov.name)}${tail}`, "success");
 }
 
 async function clearPatientOverride() {
