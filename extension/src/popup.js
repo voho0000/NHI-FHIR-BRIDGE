@@ -637,7 +637,11 @@ function _refreshButtonStates() {
     inlineMsg = "健保存摺分頁尚未登入";
     jumpTo = { step: 1, label: "登入" };
   } else if (!genderOk) {
-    inlineMsg = "請選擇性別並按確定";
+    // Don't enumerate which field is missing — there could be more
+    // than one, and step 2 already marks each required field with a
+    // red * the user will see after the one-click jump. Keep the
+    // message about the high-level action (complete + confirm).
+    inlineMsg = "請完成基本資料並按確定";
     jumpTo = { step: 2, label: "您的資料" };
   } else if (dobError) {
     inlineMsg = dobError;
