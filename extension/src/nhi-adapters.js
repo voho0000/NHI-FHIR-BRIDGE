@@ -447,23 +447,33 @@ export function adaptProcedure(item) {
 // no `desc`) get dropped — without a narrative the report mapper would
 // reject them anyway.
 //
-// Date field choice — IHKE3408S02 detail payload exposes:
-//   - real_INSPECT_DATE  實際採檢/做影像日 (most accurate when present)
-//   - func_DATE          就診/入院日 (visit anchor)
-//   - assay_UPLOAD_DATE  報告上傳時間 (often weeks after the exam —
-//                        belongs to DiagnosticReport.issued, NOT
-//                        effectiveDateTime)
-// In practice real_INSPECT_DATE is often null on the S02 detail
-// (confirmed against live NHI payloads); we then fall back to
-// func_DATE rather than the upload time. Falling back to the
-// upload date would land the exam in a date that's even further
-// from reality (e.g. CT done 2026/01/14, upload 2026/02/24 → using
-// upload date would say "had a CT on 2026/02/24" which is wrong).
-// func_DATE at worst means "exam happened during this admission".
+// Date field choice — IHKE3408S02 detail payload exposes (in order
+// of accuracy for "when did the patient actually have the exam"):
+//   - real_INSPECT_DATE  實際採檢/做影像日 — most accurate but NHI
+//                        commonly ships this as null on S02 detail
+//   - main_tit           簽收日 — the card's prominent header date
+//                        in NHI's own UI. Semantically this is when
+//                        the exam was performed and signed off (NOT
+//                        the order day). Closest proxy when
+//                        real_INSPECT_DATE is null.
+//   - func_DATE          門診開單日 (OPD) / 入院日 (inpatient) — the
+//                        date the order was written, NOT the date
+//                        the exam happened. For OPD imaging that is
+//                        scheduled later (e.g. echo ordered 1/31,
+//                        done 2/29) using func_DATE shifts the exam
+//                        back to the order day — wrong.
+//   - assay_UPLOAD_DATE  NHI 收檔時間 — internal data-pipeline
+//                        timestamp; belongs to DiagnosticReport.issued.
+// Fallback chain: real_INSPECT_DATE → main_tit → func_DATE. main_tit
+// goes above func_DATE because main_tit IS what NHI itself displays
+// to the patient as "this report's date" and reflects the sign-off /
+// exam day. func_DATE remains as last resort so a malformed row
+// without main_tit still produces some date instead of being dropped.
 export function adaptImagingReportFromDetail(item) {
   if (!item || typeof item !== "object") return null;
   const date = rocToISO(
     item.real_INSPECT_DATE || item.real_inspect_date ||
+    item.main_tit || item.main_TIT ||
     item.func_DATE || item.func_date || "",
   );
   const display = pickEnglish(item.order_NAME || item.order_name || "");

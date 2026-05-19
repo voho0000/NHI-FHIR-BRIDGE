@@ -318,6 +318,37 @@ describe("adaptImagingReportFromDetail", () => {
     expect(adaptImagingReportFromDetail(item).date).not.toBe("2026-02-24");
   });
 
+  test("date prefers main_tit over func_DATE when real_INSPECT_DATE is null", () => {
+    // OPD case: order written 1/31, exam actually done + signed off 2/29.
+    // func_DATE is the order day (wrong as exam date), main_tit is the
+    // sign-off / exam day (correct).
+    const item = {
+      main_tit: "113/02/29",
+      func_DATE: "113/01/31",
+      real_INSPECT_DATE: null,
+      assay_UPLOAD_DATE: "113/03/12 03:01",
+      order_NAME: "ECG",
+      desc: "SINUS RHYTHM",
+    };
+    expect(adaptImagingReportFromDetail(item).date).toBe("2024-02-29");
+    expect(adaptImagingReportFromDetail(item).date).not.toBe("2024-01-31");
+  });
+
+  test("date still falls back to func_DATE when main_tit also missing", () => {
+    // Defensive: a malformed row without main_tit and without
+    // real_INSPECT_DATE shouldn't be dropped — func_DATE keeps the
+    // resource alive even if the date may be the order day.
+    const item = {
+      func_DATE: "115/01/14",
+      real_INSPECT_DATE: null,
+      main_tit: null,
+      assay_UPLOAD_DATE: "115/02/24 12:03",
+      order_NAME: "CT",
+      desc: "report body",
+    };
+    expect(adaptImagingReportFromDetail(item).date).toBe("2026-01-14");
+  });
+
   test("issued field parses assay_UPLOAD_DATE date portion (drops time)", () => {
     const item = {
       func_DATE: "115/01/14",
@@ -351,6 +382,20 @@ describe("adaptImagingReportFromDetail", () => {
     expect(r.display).toContain("電腦斷層造影");
     expect(r.code).toBe("33070B");
     expect(r.hospital).toBe("長庚嘉義");
+  });
+
+  test("end-to-end fixture: delayed-signoff ECG uses main_tit as exam date", () => {
+    // Anonymized capture: OPD ECG, real_INSPECT_DATE null, main_tit
+    // and func_DATE differ by ~1 month. Regression for the case where
+    // SMART apps saw the exam dated to the order day instead of the
+    // sign-off / actual exam day.
+    const fixture = readFixture("ihke3408-ecg-delayed-signoff.json");
+    const r = adaptImagingReportFromDetail(fixture);
+    expect(r.date).toBe("2024-02-29");
+    expect(r.issued).toBe("2024-03-12");
+    expect(r.category).toBe("RAD");
+    expect(r.code).toBe("18001C");
+    expect(r.hospital).toBe("臺北榮總");
   });
 });
 
