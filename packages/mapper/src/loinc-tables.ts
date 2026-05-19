@@ -53,8 +53,11 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "12052B": "10873-8", // β2-微球蛋白
   // ── Immunology / proteins ─────────────────────────
   "09065B": "90991-1", // 蛋白電泳分析
-  "12028B": "14002-0", // IgM 單向免疫擴散
-  "12029B": "14002-0", // IgM 免疫比濁法
+  // 12028B / 12029B IgM (serum, immunodiffusion / nephelometry) — previously
+  // both mapped to LOINC 14002-0 which is actually 'IgM [Units/volume] in
+  // Cord blood' (neonatal specimen, verified loinc.org/14002-0/). Wrong
+  // specimen for an adult serum order. Leaving unmapped; falls through to
+  // NHI-code-only coding. See docs/LOINC_AUDIT_2026_05_19.md.
   "12103B": "95801-7", // 免疫電泳分析
   "12160B": "15189-4", // IgG κ/λ
   "12171B": "17351-8", // 抗嗜中性球細胞質抗體 (ANCA)
@@ -105,7 +108,10 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "09027C": "6768-6", // ALK-P — Alkaline phosphatase Activity S/P
   "09031C": "2324-2", // γ-GT — Gamma glutamyl transferase Activity S/P
   "09035C": "2500-7", // TIBC — Iron binding capacity Mass/vol S/P
-  "09037C": "1827-5", // Ammonia — Plasma
+  // 09037C 血氨 — previously mapped to LOINC 1827-5 which is actually
+  // 'Alpha 1 antitrypsin MS [Mass/volume] in Serum or Plasma' (verified
+  // loinc.org/1827-5/). Wrong analyte entirely. Leaving unmapped; falls
+  // through to NHI-code-only coding. See docs/LOINC_AUDIT_2026_05_19.md.
   "09064C": "3040-3", // Lipase — Activity S/P
   "09059B": "14118-4", // Lactate — Mass/vol Plasma
   // ── Hematology extras ─────────────────────────────
@@ -156,7 +162,11 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "12025B": "2465-3", // IgG — Mass/vol S/P
   "12027B": "2458-8", // IgA — Mass/vol S/P
   "12031C": "19113-0", // IgE — Mass/vol S/P
-  "12069B": "5132-6", // Cryptococcus Ag — Mass/vol S/P
+  // 12069B Cryptococcus Ag — previously mapped to LOINC 5132-6 which is
+  // actually 'DNA single strand Ab [Units/volume] in Serum' (anti-ssDNA,
+  // lupus serology — verified loinc.org/5132-6/). Completely wrong
+  // analyte. Leaving unmapped; falls through to NHI-code-only coding.
+  // See docs/LOINC_AUDIT_2026_05_19.md.
   "12079C": "24108-3", // CA 19-9 — Mass/vol S/P
   // ── Blood type ────────────────────────────────────
   "11001C": "882-1", // 血型鑑定 — ABO + Rh group
@@ -168,11 +178,21 @@ export const NHI_TO_LOINC: Record<string, string> = {
   // right family is 6463-4 / 11268-0 (Bacteria identified by aerobe
   // culture) but the source row doesn't tell us specimen — leaving
   // unmapped so we don't lie. Falls through to NHI-code-only coding.
-  "13013C": "31952-5", // TB Culture — Mycobacterium tuberculosis culture
+  // 13013C TB Culture — previously mapped to LOINC 31952-5 which is
+  // actually 'Rinderpest virus Ag [Presence] in Exudate' (cattle
+  // morbillivirus, verified loinc.org/31952-5/). Wrong organism entirely.
+  // Leaving unmapped; falls through to NHI-code-only coding. See
+  // docs/LOINC_AUDIT_2026_05_19.md.
   "13016B": "600-7", // Blood Culture — Bacteria identified in Blood
   // ── Virology ──────────────────────────────────────
-  "14004B": "7849-3", // CMV IgG — Ab S/P
-  "14048B": "7850-1", // CMV IgM — Ab S/P
+  // 14004B CMV IgG — previously mapped to LOINC 7849-3 which is actually
+  // 'Taenia solium larva IgM Ab [Presence] in Serum' (pork tapeworm,
+  // verified loinc.org/7849-3/). Wrong organism entirely. Leaving
+  // unmapped; falls through to NHI-code-only coding.
+  // 14048B CMV IgM — previously mapped to LOINC 7850-1 which is actually
+  // 'Taenia solium larva Ab [Units/volume] in Serum' (verified
+  // loinc.org/7850-1/). Same copy-paste-wrong-LOINC pattern as 14004B.
+  // Leaving unmapped. See docs/LOINC_AUDIT_2026_05_19.md.
   "14066C": "80383-3", // Influenza A — Ag Respiratory
   "14084C": "94558-4", // SARS-CoV-2 Ag — Respiratory
   "12184C": "88157-3", // CMV DNA quant PCR — Plasma

@@ -255,6 +255,42 @@ describe("findLoinc", () => {
     // a word boundary). Longest-match picks the more specific.
     expect(findLoinc("", "LDL Cholesterol")).toBe("13457-7");
   });
+
+  // ── LOINC audit 2026-05-19 — wrong-analyte regressions ────────────
+  // Seven NHI codes were silently mapped to LOINCs that mean entirely
+  // different analytes (same copy-paste-wrong-LOINC pattern as the
+  // FSH/Estradiol and Free T4 bugs). Each bad LOINC verified against
+  // loinc.org. These tests assert that re-introducing any of the wrong
+  // LOINCs (or restoring the original buggy NHI_TO_LOINC entries) fails
+  // CI. See docs/LOINC_AUDIT_2026_05_19.md for full evidence.
+
+  test("CMV IgG (NHI 14004B) does NOT map to 7849-3 (Taenia solium larva IgM Ab)", () => {
+    expect(findLoinc("14004B", "CMV IgG")).not.toBe("7849-3");
+  });
+
+  test("CMV IgM (NHI 14048B) does NOT map to 7850-1 (Taenia solium larva Ab)", () => {
+    expect(findLoinc("14048B", "CMV IgM")).not.toBe("7850-1");
+  });
+
+  test("TB Culture (NHI 13013C) does NOT map to 31952-5 (Rinderpest virus Ag)", () => {
+    expect(findLoinc("13013C", "TB Culture")).not.toBe("31952-5");
+  });
+
+  test("Ammonia (NHI 09037C) does NOT map to 1827-5 (Alpha 1 antitrypsin)", () => {
+    expect(findLoinc("09037C", "Ammonia")).not.toBe("1827-5");
+  });
+
+  test("IgM 單向免疫擴散 (NHI 12028B) does NOT map to 14002-0 (IgM in Cord blood)", () => {
+    expect(findLoinc("12028B", "IgM")).not.toBe("14002-0");
+  });
+
+  test("IgM 免疫比濁法 (NHI 12029B) does NOT map to 14002-0 (IgM in Cord blood)", () => {
+    expect(findLoinc("12029B", "IgM")).not.toBe("14002-0");
+  });
+
+  test("Cryptococcus Ag (NHI 12069B) does NOT map to 5132-6 (DNA single strand Ab)", () => {
+    expect(findLoinc("12069B", "Cryptococcus Ag")).not.toBe("5132-6");
+  });
 });
 
 describe("mapObservation — source_program → meta.tag", () => {
