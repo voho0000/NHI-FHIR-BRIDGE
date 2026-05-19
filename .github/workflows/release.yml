@@ -57,6 +57,36 @@ jobs:
           name: NHI-FHIR-Bridge ${{ steps.ver.outputs.tag }}
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
+          # ── KEEP THIS BODY MINIMAL ──────────────────────────────────
+          # GitHub Actions's YAML parser has bitten us TWICE (v0.6.4 and
+          # v0.6.6) on rich-markdown release bodies. Symptoms:
+          #   - `gh workflow list` shows this workflow's name as the
+          #     file path instead of "release"
+          #   - tag push triggers a 0s `event=push ref=main` run instead
+          #     of a `ref=v0.x.y` tag run
+          #   - release never publishes
+          # Python's yaml.safe_load doesn't catch the same break — only
+          # GitHub Actions's stricter parser does, and only in production.
+          #
+          # Confirmed-safe patterns:
+          #   plain Chinese / English prose
+          #   bullets with leading "- "
+          #   `## heading` lines
+          #
+          # Confirmed-unsafe (or at least suspect) when MIXED in the body:
+          #   • inline ASCII commas inside parens like "(a, b, c)"
+          #   • URLs with colons like "http://x/y"  (use plain text refs)
+          #   • backtick-quoted-strings followed immediately by ":"
+          #     like `code:` "value" — feels like the parser tries to
+          #     interpret as a mapping mid-scalar
+          #
+          # Safe workflow for adding rich release notes:
+          #   1. Keep the body here as a 1-2 line summary placeholder
+          #      that always parses.
+          #   2. After the tag push succeeds and the release publishes,
+          #      run `gh release edit <tag> -F notes.md` with the full
+          #      curated changelog. That side doesn't go through GH
+          #      Actions's parser.
           body: |
             ## 0.6.6 重點
 
