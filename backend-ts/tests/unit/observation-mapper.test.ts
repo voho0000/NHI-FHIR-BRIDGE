@@ -229,11 +229,11 @@ describe("findLoinc", () => {
     expect(findLoinc("", "MCHC")).not.toBe("785-6");
   });
 
-  test("findLoinc(\"14032C\", \"HBsAg\") routes through NHI_TO_LOINC and returns correct HBsAg LOINC", () => {
+  test('findLoinc("14032C", "HBsAg") routes through NHI_TO_LOINC and returns correct HBsAg LOINC', () => {
     expect(findLoinc("14032C", "HBsAg")).toBe("5196-1");
   });
 
-  test("findLoinc(\"14051C\", \"Anti-HCV\") routes through NHI_TO_LOINC and returns correct HCV Ab LOINC", () => {
+  test('findLoinc("14051C", "Anti-HCV") routes through NHI_TO_LOINC and returns correct HCV Ab LOINC', () => {
     expect(findLoinc("14051C", "Anti-HCV")).toBe("13955-0");
   });
 

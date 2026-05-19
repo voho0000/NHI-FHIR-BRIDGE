@@ -60,21 +60,21 @@ jobs:
           body: |
             ## 0.6.6 重點
 
-            這版聚焦在「檢驗結果的識別準確度」，連改多個系統性 bug。
+            這版聚焦在檢驗結果的識別準確度，連改多個系統性 bug。
 
             Bug fixes
-            - Lab observation 用 NHI 醫令碼當 FHIR code，醫院 free-text 改放在 display。先前同一筆血肌酐 醫院 A 上傳 Crea、醫院 B 上傳 Crea, 被 SMART app 認為兩種檢驗，現在用穩定 醫令碼 group 在一起。
-            - 成人預防保健 全部 9 個檢驗項目（總膽固醇 / TG / HDL / LDL / AST / ALT / BUN / Creatinine / 尿酸）硬編 NHI 醫令碼，繞過 keyword search 避免誤對映。
+            - Lab observation 用 NHI 醫令碼當 FHIR code，醫院自填文字改放在 display。先前同一筆血肌酐被 SMART app 視為兩種檢驗（醫院 A 上傳乾淨文字、醫院 B 上傳帶逗點的文字），現在用穩定醫令碼 group 在一起。
+            - 成人預防保健全部 9 個檢驗項目（總膽固醇、TG、HDL、LDL、AST、ALT、BUN、Creatinine、尿酸）硬編 NHI 醫令碼，繞過 keyword search 避免誤對映。
             - HBsAg 不再被誤標為 Hemoglobin LOINC。Anti-HCV 對映到正確的 HCV antibody LOINC。
-            - findLoinc 的 keyword search 從 first-match 改為 longest-match，且兩側 word boundary。系統性消除 hb 抓 hbsag / ph 抓 phosphate / mch 抓 mchc 這類 prefix collision bug。
-            - 拿掉 Urine UA 假觀察值。NHI 介面實際沒有「尿液 UA」這個項目，先前的 adapter 從 NHI legacy schema 欄位生出空 observation。
+            - findLoinc 的 keyword search 從 first-match 改為 longest-match，且兩側 word boundary。系統性消除 hb 抓 hbsag、ph 抓 phosphate、mch 抓 mchc 這類 prefix collision bug 家族。
+            - 拿掉 Urine UA 假觀察值。NHI 介面實際沒有尿液 UA 這個項目，先前的 adapter 從 NHI legacy schema 欄位生出空 observation。
 
             新增
-            - 成人預防保健的每個 observation 帶 source-program tag（http://nhi-fhir-bridge/source-program code adult-preventive），下游 SMART app 可用 _tag 參數 filter。
+            - 成人預防保健的每個 observation 帶 source-program tag，code 為 adult-preventive。下游 SMART app 可用 FHIR _tag 參數 filter。
 
             內部
-            - 89 個 extension tests + 25 個 observation-mapper tests，全部覆蓋 NHI 醫令碼 pinning、source-program tag、LOINC collision regression。
-            - 真實 IHKE3402 / IHKE3409 payload 升級為 fixtures，snapshot tests 鎖住完整輸出形狀。
+            - 89 個 extension tests 加 25 個 observation-mapper tests，全部覆蓋 NHI 醫令碼 pinning、source-program tag、LOINC collision regression。
+            - 真實 IHKE3402 與 IHKE3409 payload 升級為 fixtures，snapshot tests 鎖住完整輸出形狀。
 
             ---
 
