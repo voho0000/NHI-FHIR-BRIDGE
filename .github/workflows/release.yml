@@ -58,6 +58,18 @@ jobs:
           generate_release_notes: true
           files: nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip
           body: |
+            ## 0.6.5 重點
+
+            Bug fix
+            - 成人預防保健的 HBsAg / Anti-HCV / Urine Protein / Urine UA 之前顯示成數字狀態碼（HBsAg 會看到 "1"），現在正確顯示「陰性」等真實結果。NHI 對這些定性檢查回傳的是「狀態碼 + 中文文字」一對，先前 adapter 誤用狀態碼當值，被當成 valueQuantity 解析。v0.6.3 重構時不慎把這個之前修好的 fix 又改回舊版，本版徹底修回並補上回歸測試。
+
+            內部
+            - adaptAdultPreventive 用真實 payload 取代合成測試 fixture，避免「合成資料看不出來的 bug」漏網。
+            - push() 過濾邏輯區分「em-dash 哨兵」與「臨床陰性 -」。前者繼續略過，後者保留為合法值。
+            - 加 4 個專屬單元測試 + 整段 snapshot test 鎖住 HBsAg / Anti-HCV / Urine Protein / Urine UA 的輸出形狀。82 個 extension 測試全綠。
+
+            ---
+
             ## 0.6.4 重點
 
             新功能
