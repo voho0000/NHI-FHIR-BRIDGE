@@ -1,178 +1,175 @@
-# LOINC Mapping Audit — 2026-05-19
+# LOINC 對映表 Audit — 2026-05-19
 
-## Why this audit ran
+## 為什麼要做這次 audit
 
-`packages/mapper/src/loinc-tables.ts` is the source of truth for every LOINC code the bridge
-attaches to a 健保 lab observation. Downstream SMART clinical apps route lab values into
-clinical columns **by LOINC**, so a wrong LOINC isn't a cosmetic bug — it silently routes a
-value into the wrong clinical column (data looks present in the EMR but the actual reading
-is missing from where it should appear).
+`packages/mapper/src/loinc-tables.ts` 是這個 bridge 在每一筆 lab observation 上標 LOINC code
+的唯一來源。下游 SMART 臨床 app 是**靠 LOINC** 把檢驗值路由進病歷的對應欄位，所以 LOINC 標錯
+不是顯示瑕疵——它會把值靜默地路由到錯誤的臨床欄位（EMR 看起來有資料，但實際讀數沒出現在該
+出現的地方）。
 
-Two prior dual-reviewer audits caught copy-paste bugs of the exact same pattern:
+這個專案先前已經有兩次 dual-reviewer audit 抓到了相同 pattern 的 copy-paste 錯誤：
 
-1. **FSH (09125C) and Estradiol (09127C)** were once mislabeled with TSH / LH LOINCs
-   (corrected in an earlier audit; see inline comments around `NHI_TO_LOINC["09125C"]` in
-   the source).
-2. **Free T4 (09106C)** was recently (commit
-   [`9da5e5b`](https://github.com/voho0000/NHI-FHIR-BRIDGE/commit/9da5e5b)) re-mapped from
-   3024-7 → 14920-3 because 3024-7 was thought to be Total T4. **This audit pass discovered
-   that premise was inverted** — see finding F below.
+1. **FSH (09125C) 和 Estradiol (09127C)** 曾經被誤標成 TSH / LH 的 LOINC（早一輪 audit 已
+   修正；可看 source 裡 `NHI_TO_LOINC["09125C"]` 附近的 inline comment）。
+2. **Free T4 (09106C)** 最近被 commit
+   [`9da5e5b`](https://github.com/voho0000/NHI-FHIR-BRIDGE/commit/9da5e5b) 從 3024-7 改成
+   14920-3，理由是「3024-7 其實是 Total T4」。**本次 audit 發現該前提是反的**——見下方 F 點。
 
-This pass verified every LOINC code flagged by an initial scan against
-[loinc.org](https://loinc.org) (the source of truth) and turned up **seven critical
-wrong-analyte mappings**, three high-severity wrong-domain/wrong-specimen mappings, four
-mechanical display-string corruptions, and one issue with the recent Free T4 commit.
+這次 audit 對初步掃描所標記的每個 LOINC code 都直接到 [loinc.org](https://loinc.org)
+(source of truth) 確認過，找到 **7 筆 critical wrong-analyte mapping**、3 筆 high-severity
+wrong-domain / wrong-specimen mapping、4 筆顯示字串機械性損壞，以及最近 Free T4 commit
+的 1 個前提錯誤。
 
-## Methodology and confidence
+## 方法與信心度
 
-- The flagged codes below were each verified by fetching `https://loinc.org/<code>/`
-  directly and reading the Long Common Name / Component / Property fields.
-- All seven entries in section A were independently fetched and confirmed (8/8 confirmation
-  rate on the flagging agent's hits — the agent was reliable at *finding* wrong LOINCs).
-- The agent's *suggested replacement* LOINCs were NOT all reliable (spot-checks showed
-  2/3 were also wrong: 2686-4 is Orotate-Urine not Ammonia; 2459-6 is IgA-monoclonal not
-  IgM). Hence this audit does **not** propose new LOINCs for the removed entries; that
-  decision is deferred to project owner with verified-loinc.org evidence required.
-- The audit was NOT a full manual sweep of every single one of the ~115 NHI_TO_LOINC
-  entries. It (a) verified every flagged hit, and (b) spot-checked a sample of "verified
-  correct" entries (AST 1920-8, Leukocytes 6690-2, HbA1c 4548-4, TSH 3016-3, PSA 83112-3,
-  Free PSA 83113-1 — all confirmed correct). Entries not on this list are presumed correct
-  but were not individually fetched.
+- 下面 A 段每一筆 flagged code 都個別 fetch `https://loinc.org/<code>/` 並讀取
+  Long Common Name / Component / Property 欄位確認。
+- A 段 7 筆都獨立驗證過（flagging agent 8/8 命中率——agent 找 wrong LOINC 很可靠）。
+- Agent 給的「**建議替代 LOINC**」並不可靠（spot-check 顯示 2/3 也是錯的：2686-4 是
+  Orotate-Urine 不是 Ammonia；2459-6 是 IgA monoclonal 不是 IgM）。所以這份 audit **不**
+  提議新 LOINC 給被刪除的 entry——那個決策留給 project owner，且需要 loinc.org 確認過的證據
+  才能用。
+- 這次 audit **不是**對全部 ~115 筆 NHI_TO_LOINC entry 做完整人工掃描。它做的是：
+  (a) 驗證所有被 flag 的命中，以及 (b) spot-check 一部分被列為「verified correct」的 entry
+  （AST 1920-8、Leukocytes 6690-2、HbA1c 4548-4、TSH 3016-3、PSA 83112-3、Free PSA 83113-1
+  ——全都確認正確）。不在 flag 清單上的 entry 推測為正確，但沒有逐一 fetch 確認。
 
-## Findings
+## 發現
 
-### A. NHI_TO_LOINC — wrong analyte entirely (CRITICAL) — REMOVED in this pass
+### A. NHI_TO_LOINC — 整個分析物（analyte）完全錯（CRITICAL）— 本次已刪除
 
-Each row: NHI 醫令碼 → current LOINC → what loinc.org actually says that LOINC means.
+每一列：NHI 醫令碼 → 目前的 LOINC → loinc.org 實際說該 LOINC 是什麼。
 
-| NHI code | NHI comment in file | LOINC | loinc.org Long Common Name | Evidence |
+| NHI 醫令碼 | 檔案內 NHI comment | LOINC | loinc.org Long Common Name | 證據 |
 |---|---|---|---|---|
-| 14004B | CMV IgG — Ab S/P | 7849-3 | **Taenia solium larva IgM Ab [Presence] in Serum** (pork tapeworm IgM antibody) | https://loinc.org/7849-3/ |
+| 14004B | CMV IgG — Ab S/P | 7849-3 | **Taenia solium larva IgM Ab [Presence] in Serum**（豬肉絛蟲 IgM 抗體） | https://loinc.org/7849-3/ |
 | 14048B | CMV IgM — Ab S/P | 7850-1 | **Taenia solium larva Ab [Units/volume] in Serum** | https://loinc.org/7850-1/ |
-| 13013C | TB Culture | 31952-5 | **Rinderpest virus Ag [Presence] in Exudate** (cattle morbillivirus) | https://loinc.org/31952-5/ |
+| 13013C | TB Culture | 31952-5 | **Rinderpest virus Ag [Presence] in Exudate**（牛瘟病毒，cattle morbillivirus） | https://loinc.org/31952-5/ |
 | 09037C | Ammonia — Plasma | 1827-5 | **Alpha 1 antitrypsin MS [Mass/volume] in Serum or Plasma** | https://loinc.org/1827-5/ |
-| 12028B | IgM 單向免疫擴散 | 14002-0 | **IgM [Units/volume] in Cord blood** (neonatal cord-blood specimen) | https://loinc.org/14002-0/ |
-| 12029B | IgM 免疫比濁法 | 14002-0 | (same as 12028B) | https://loinc.org/14002-0/ |
-| 12069B | Cryptococcus Ag — Mass/vol S/P | 5132-6 | **DNA single strand Ab [Units/volume] in Serum** (anti-ssDNA, lupus serology) | https://loinc.org/5132-6/ |
+| 12028B | IgM 單向免疫擴散 | 14002-0 | **IgM [Units/volume] in Cord blood**（新生兒臍帶血檢體） | https://loinc.org/14002-0/ |
+| 12029B | IgM 免疫比濁法 | 14002-0 | （同 12028B） | https://loinc.org/14002-0/ |
+| 12069B | Cryptococcus Ag — Mass/vol S/P | 5132-6 | **DNA single strand Ab [Units/volume] in Serum**（anti-ssDNA、紅斑性狼瘡 serology） | https://loinc.org/5132-6/ |
 
-**Action taken (commit `fix(mapper): remove 7 NHI codes mapped to clinically unrelated LOINCs`)**:
-deleted each entry from `NHI_TO_LOINC`, leaving an inline `// previously mapped to … which is
-actually …` comment in the same style as the existing 13007C / 16008C precedents in the same
-file. Bridge now falls back to NHI-code-only coding (no `http://loinc.org` system entry) for
-these seven NHI codes — the same fallback path 13007C and 16008C have used in production for
-months. Regression tests added in
-[`backend-ts/tests/unit/observation-mapper.test.ts`](../backend-ts/tests/unit/observation-mapper.test.ts)
-to assert these wrong LOINCs cannot silently come back.
+**已採取的動作**（commit `fix(mapper): remove 7 NHI codes mapped to clinically unrelated LOINCs`）：
+每一筆都從 `NHI_TO_LOINC` 刪掉，並用與檔案內現有 13007C / 16008C 同樣風格的 inline
+`// previously mapped to … which is actually …` 註解取代。Bridge 現在對這 7 個 NHI 醫令碼會 fall
+back 到「只發 NHI 碼編碼」（不再帶 `http://loinc.org` system entry）——這條 fallback 路徑跟
+13007C 和 16008C 在 production 已經跑了幾個月一樣。對應的 regression test 也加進
+[`backend-ts/tests/unit/observation-mapper.test.ts`](../backend-ts/tests/unit/observation-mapper.test.ts)，
+確保這些錯誤 LOINC 不會悄悄回來。
 
-### B. NHI_TO_LOINC — wrong domain / wrong specimen (HIGH) — NOT changed; needs owner
+### B. NHI_TO_LOINC — wrong domain / wrong specimen (HIGH) — 本次**未改**，留給 owner 決定
 
-| NHI code | NHI comment in file | LOINC | loinc.org Long Common Name | Evidence |
+| NHI 醫令碼 | 檔案內 NHI comment | LOINC | loinc.org Long Common Name | 證據 |
 |---|---|---|---|---|
-| 22001C | 純音聽力檢查 | 45498-3 | **Hearing [Minimum Data Set]** — an MDS-3 LTC functional assessment, NOT a pure-tone audiometry result | https://loinc.org/45498-3/ |
-| 22015B | 詐聾聽力檢查 | 45498-3 | (same as 22001C) | https://loinc.org/45498-3/ |
-| 22025B | 自記聽力檢查 | 46530-2 | **Sensory status - hearing and ability to understand spoken language [OASIS]** — home-care assessment, not audiometry | https://loinc.org/46530-2/ |
-| 12052B | β2-微球蛋白 | 10873-8 | **Beta-2-Microglobulin [Mass/time] in 24 hour Urine** — timed urine collection, not serum | https://loinc.org/10873-8/ |
+| 22001C | 純音聽力檢查 | 45498-3 | **Hearing [Minimum Data Set]**——MDS-3 LTC 功能評估，不是純音聽力檢查結果 | https://loinc.org/45498-3/ |
+| 22015B | 詐聾聽力檢查 | 45498-3 | （同 22001C） | https://loinc.org/45498-3/ |
+| 22025B | 自記聽力檢查 | 46530-2 | **Sensory status - hearing and ability to understand spoken language [OASIS]**——居家照護評估，不是 audiometry | https://loinc.org/46530-2/ |
+| 12052B | β2-微球蛋白 | 10873-8 | **Beta-2-Microglobulin [Mass/time] in 24 hour Urine**——24 小時尿液收集，不是血清 | https://loinc.org/10873-8/ |
 
-**Why not auto-fixed**: domain judgment is required. For the audiometry codes, the right
-substitution depends on what the 健保署 audiometry billing actually produces in the consumer
-SMART app's view (a pure-tone threshold table? a single overall status? a procedure tag?). The
-LOINC families to consider are 8696-* and 71039-*, but pick one only after talking to
-whoever owns the audiology workflow. For 12052B, the right call depends on whether the NHI
-billing 12052B in Taiwan typically maps to serum B2M (most common clinical order in TW labs)
-or to a timed-urine workup; an owner with access to 院所 billing data can answer this.
+**為什麼沒自動修**：需要 domain judgment。對聽力檢查這幾條，正確的替代要看健保署 audiometry
+billing 在下游 SMART app 端到底是怎麼呈現（pure-tone threshold table？單一整體狀態？procedure
+tag？）。可考慮的 LOINC family 有 8696-* 和 71039-*，但要先跟管 audiology workflow 的人對過
+再採用。12052B 則要看健保 12052B 在台灣對應的是 serum B2M（台灣 lab 最常見）還是 timed urine
+workup——擁有院所 billing 資料的 owner 才能回答。
 
-### C. LOINC_DISPLAY — `#` character corruption (LOW) — FIXED in this pass
+### C. LOINC_DISPLAY — `#` 字元損壞 (LOW)— 本次已修
 
-Four entries had the canonical `#/volume` mangled into `,  // /volume` — almost certainly a
-botched sed at some past point (`#` is a perfectly valid TypeScript string character; no
-escaping was needed):
+有 4 個 entry 把標準的 `#/volume` 寫成 `,  // /volume`——幾乎可確定是過去某次跑 sed 沒處理好
+（`#` 在 TypeScript 字串裡是有效字元，根本不需要 escape）：
 
-| LOINC | Was | Restored to |
+| LOINC | 原本（錯） | 修正成 |
 |---|---|---|
 | 6690-2 | `Leukocytes [,  // /volume] in Blood by Automated count` | `Leukocytes [#/volume] in Blood by Automated count` |
 | 777-3 | `Platelets [,  // /volume] in Blood by Automated count` | `Platelets [#/volume] in Blood by Automated count` |
 | 789-8 | `Erythrocytes [,  // /volume] in Blood by Automated count` | `Erythrocytes [#/volume] in Blood by Automated count` |
 | 711-2 | `Eosinophils [,  // /volume] in Blood by Automated count` | `Eosinophils [#/volume] in Blood by Automated count` |
 
-**Action taken (commit `fix(mapper): repair # corruption in 4 LOINC_DISPLAY entries`)**: replaced
-`[,  // /volume]` with `[#/volume]` in each entry. Pure cosmetic — these strings are emitted as
-`Observation.code.coding[].display` for SMART app consumers; no routing impact.
+**已採取的動作**（commit `fix(mapper): repair # corruption in 4 LOINC_DISPLAY entries`）：
+每筆 `[,  // /volume]` 都換成 `[#/volume]`。純顯示字串——這幾條會放在 SMART app 端收到的
+`Observation.code.coding[].display` 上；對路由（routing）沒影響。
 
-### D. LOINC_DISPLAY — content mismatches tied to finding F — FIXED in this pass
+### D. LOINC_DISPLAY — 與 F 點相關的內容錯誤——本次已修
 
-| LOINC | Was (wrong) | Restored to (loinc.org canonical) |
+| LOINC | 原本（錯） | 修正成（loinc.org 標準名） |
 |---|---|---|
-| 3024-7 | `Thyroxine (T4) [Mass/volume] in Serum or Plasma` (missing "free") | `Thyroxine (T4) free [Mass/volume] in Serum or Plasma` |
-| 14920-3 | `Thyroxine (T4) free [Mass/volume] in Serum or Plasma` (Mass was a lie) | `Thyroxine (T4) free [Moles/volume] in Serum or Plasma` |
+| 3024-7 | `Thyroxine (T4) [Mass/volume] in Serum or Plasma`（漏寫 "free"） | `Thyroxine (T4) free [Mass/volume] in Serum or Plasma` |
+| 14920-3 | `Thyroxine (T4) free [Mass/volume] in Serum or Plasma`（Mass 是寫錯的） | `Thyroxine (T4) free [Moles/volume] in Serum or Plasma` |
 
-Fixed alongside finding F below.
+與下方 F 點一起修。
 
-### F. The Free T4 (09106C) situation — RESOLVED in this pass
+### F. Free T4 (09106C) 情況——本次已解決（RESOLVED）
 
 Commit
 [`9da5e5b`](https://github.com/voho0000/NHI-FHIR-BRIDGE/commit/9da5e5b)
-("fix(mapper): Free T4 LOINC was wrong (3024-7 is Total T4, not Free T4)") changed `09106C`
-from 3024-7 → 14920-3.
+（"fix(mapper): Free T4 LOINC was wrong (3024-7 is Total T4, not Free T4)"）把 `09106C`
+從 3024-7 改成了 14920-3。
 
-**The premise of that commit was inverted**. Per loinc.org, both codes are Free T4 — the
-Component on each page is literally `Thyroxine.free`:
+**該 commit 的前提是反的**。loinc.org 上兩個 code 都是 Free T4——兩個頁面的 Component 欄
+位都字面寫著 `Thyroxine.free`：
 
-- **[3024-7](https://loinc.org/3024-7/)** — Component `Thyroxine.free`, Property **MCnc**
-  (mass concentration). Long Common Name: *"Thyroxine (T4) free [Mass/volume] in Serum or
-  Plasma"*. Units: ng/dL.
-- **[14920-3](https://loinc.org/14920-3/)** — Component `Thyroxine.free`, Property **SCnc**
-  (substance concentration, i.e., molar). Long Common Name: *"Thyroxine (T4) free
-  [Moles/volume] in Serum or Plasma"*. Units: pmol/L.
+- **[3024-7](https://loinc.org/3024-7/)**——Component `Thyroxine.free`、Property **MCnc**
+  （Mass concentration，質量濃度）。Long Common Name：*"Thyroxine (T4) free [Mass/volume] in
+  Serum or Plasma"*。單位：ng/dL。
+- **[14920-3](https://loinc.org/14920-3/)**——Component `Thyroxine.free`、Property **SCnc**
+  （Substance concentration，亦即莫耳濃度）。Long Common Name：*"Thyroxine (T4) free
+  [Moles/volume] in Serum or Plasma"*。單位：pmol/L。
 
-Both 3024-7 and 14920-3 are Free T4. The original mapping was clinically correct; the "fix"
-replaced a mass-concentration Free T4 LOINC with a molar Free T4 LOINC. Taiwan lab reports
-overwhelmingly use ng/dL (mass) for Free T4, so the original mapping was the LOINC-↔-unit
-aligned choice.
+所以 3024-7 跟 14920-3 都是 Free T4。原本的對映本來就是對的；那次「fix」把
+mass-concentration 的 Free T4 LOINC 換成 molar 的 Free T4 LOINC。台灣 lab 報告 Free T4
+壓倒性是用 ng/dL（質量濃度），所以**原本的對映**反而是與 bridge 實際送出的資料單位
+較一致的選擇。
 
-**Action taken in this pass** (commit
-`fix(mapper): revert 09106C Free T4 to 3024-7 (Mass conc — matches Taiwan ng/dL)`):
+**本次採取的動作**（commit
+`fix(mapper): revert 09106C Free T4 to 3024-7 (Mass conc — matches Taiwan ng/dL)`）：
 
-- `NHI_TO_LOINC["09106C"]` restored to `3024-7` (mass conc, matches Taiwan ng/dL reports).
-- Inline comment in `loinc-tables.ts` near 09106C rewritten to accurately describe both
-  LOINCs and the unit-system reasoning.
-- LOINC_DISPLAY entries for 3024-7 and 14920-3 fixed (see section D).
-- Regression test
+- `NHI_TO_LOINC["09106C"]` 改回 `3024-7`（mass conc，匹配台灣 ng/dL 報告）。
+- `loinc-tables.ts` 中 09106C 附近的 inline comment 重寫，準確描述兩個 LOINC 各自的意義和
+  unit-system 邏輯。
+- LOINC_DISPLAY 中 3024-7 和 14920-3 兩條都修正（見 D 段）。
+- 對應 regression test
   [`Free T4 (NHI 09106C) maps to LOINC 3024-7`](../backend-ts/tests/unit/observation-mapper.test.ts)
-  updated to assert 09106C → 3024-7 and explain the MCnc/SCnc reasoning inline.
+  改寫成 assert 09106C → 3024-7，並把 MCnc/SCnc 邏輯寫在 test comment 裡。
 
-## Out-of-scope / open items for follow-up
+### 已 spot-check 為「正確」的 entry 範例
 
-Items not addressed by this audit pass:
+`1920-8` AST、`6690-2` Leukocytes、`4548-4` HbA1c、`3016-3` TSH、`83112-3` PSA、`83113-1`
+Free PSA——都對照過 loinc.org，臨床意義與 NHI comment 相符。
 
-1. **Pick correct replacement LOINCs for the 7 removed entries** (from section A). Candidate
-   starting points to verify against loinc.org before adopting:
-   - CMV IgG (was 14004B → 7849-3 Taenia): 22592-9, 5126-8 — verify before use
-   - CMV IgM (was 14048B → 7850-1 Taenia): 7853-5, 47368-6 — verify before use
-   - Ammonia (was 09037C → 1827-5 antitrypsin): 32683-5 — verify before use; **note 2686-4
-     is Orotate-Urine, verified wrong**
-   - IgM serum (was 12028B/12029B → 14002-0 cord blood): 2464-4, 2467-9 — verify; **note
-     2459-6 is IgA monoclonal, verified wrong**
-   - TB culture (was 13013C → 31952-5 Rinderpest): 530-6, 14127-5 — verify before use
-   - Cryptococcus Ag (was 12069B → 5132-6 anti-ssDNA): 31703-2 — verify before use
-2. **Section B**: pick a course for the audiometry codes (22001C / 22015B / 22025B) and for
-   the β2-microglobulin specimen mismatch (12052B).
-3. ~~Section D + F: resolve the Free T4 mapping question and fix both LOINC_DISPLAY entries
-   accordingly.~~ **Resolved in this pass** — see section F.
-4. **Full sweep**: an exhaustive code-by-code loinc.org verification of every NHI_TO_LOINC
-   entry that *wasn't* flagged. The audit was reactive (verified what was flagged) — it
-   doesn't guarantee 100% coverage of the table.
+如上所述，這次 audit 不是 100% 全表掃描；它驗證每一條 flagged hit，並 spot-check 一部分
+agent 標為「verified correct」的 entry。沒在 flag 清單上的 entry 雖然推測為正確，但並沒有
+個別 fetch 確認。
 
-## Pattern observation
+## Out-of-scope / 後續待處理項目
 
-All three known LOINC-bug pairs in this repo's history follow the same shape:
+本次 audit 沒有處理的：
 
-- FSH/Estradiol confusion (TSH / LH LOINCs pasted in for hormones the developer was actively
-  thinking about as TSH/LH).
-- Free T4 (3024-7) → wrong-premise "correction" to 14920-3.
-- All seven entries in section A (CMV / TB / Ammonia / IgM / Cryptococcus) — the LOINC code
-  in the table is a few digits off from the right one, suggesting a fat-finger or
-  copy-from-adjacent-row-in-some-list mistake.
+1. **替被刪 entry 找正確的替代 LOINC**（A 段 7 筆）。可作為起點、但**使用前都需要 loinc.org
+   再確認**的候選：
+   - CMV IgG（原 14004B → 7849-3 Taenia）：22592-9、5126-8——使用前驗證
+   - CMV IgM（原 14048B → 7850-1 Taenia）：7853-5、47368-6——使用前驗證
+   - Ammonia（原 09037C → 1827-5 antitrypsin）：32683-5——使用前驗證；**2686-4 是
+     Orotate-Urine，已驗證為錯**
+   - IgM 血清（原 12028B/12029B → 14002-0 cord blood）：2464-4、2467-9——使用前驗證；
+     **2459-6 是 IgA monoclonal，已驗證為錯**
+   - TB Culture（原 13013C → 31952-5 Rinderpest）：530-6、14127-5——使用前驗證
+   - Cryptococcus Ag（原 12069B → 5132-6 anti-ssDNA）：31703-2——使用前驗證
+2. **B 段**：對聽力檢查 (22001C / 22015B / 22025B) 和 β2-microglobulin 檢體錯誤 (12052B)
+   選一個處理方向。
+3. ~~D + F 段：解決 Free T4 對映問題並修正兩個 LOINC_DISPLAY entry。~~ **本次已解決**——見
+   F 段。
+4. **全面掃描**：對沒被 flag 的所有 NHI_TO_LOINC entry 做逐條 loinc.org 驗證。本次 audit
+   是被動式（驗證被 flag 的）——不保證整表 100% 覆蓋。
 
-**Recommendation for future LOINC additions**: any new NHI_TO_LOINC entry should be added
-with a verifying `WebFetch` (or curl) of `https://loinc.org/<code>/` cited in the commit
-message — same evidence pattern used in this audit and the prior FSH/Estradiol audit.
+## Pattern 觀察
+
+這個 repo 歷史上三組 LOINC bug 都是同一個形狀：
+
+- FSH/Estradiol 混淆（誤把 TSH / LH 的 LOINC 貼在開發者當下腦中想的那組荷爾蒙上）。
+- Free T4 (3024-7) → 用錯前提去「修正」成 14920-3。
+- A 段 7 筆（CMV / TB / Ammonia / IgM / Cryptococcus）——表裡的 LOINC code 跟對的差幾位
+  數，看起來像 fat-finger 或從某張排序表的鄰列複製錯位。
+
+**未來新增 NHI_TO_LOINC entry 的建議**：任何新加的 entry，commit message 都應該附上一次
+`WebFetch`（或 curl）`https://loinc.org/<code>/` 的驗證連結——跟這次 audit 和上一次
+FSH/Estradiol audit 採取的 evidence pattern 一致。
