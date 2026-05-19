@@ -237,13 +237,16 @@ describe("findLoinc", () => {
     expect(findLoinc("14051C", "Anti-HCV")).toBe("13955-0");
   });
 
-  test("Free T4 (NHI 09106C) maps to LOINC 14920-3, NOT 3024-7 (Total T4)", () => {
-    // Historical bug: 09106C was mapped to 3024-7 with a comment claiming
-    // "Thyroxine free", but LOINC 3024-7 is Total T4. Downstream SMART
-    // apps that pin clinical columns by LOINC silently routed Free T4
-    // results to the Total T4 bin. Free T4 column stayed empty.
-    expect(findLoinc("09106C", "T4 Free")).toBe("14920-3");
-    expect(findLoinc("09106C", "T4 Free")).not.toBe("3024-7");
+  test("Free T4 (NHI 09106C) maps to LOINC 3024-7 (Mass conc — matches Taiwan ng/dL)", () => {
+    // Both 3024-7 and 14920-3 are Free T4 (Component=Thyroxine.free on
+    // each loinc.org page); they differ only in unit-system:
+    //   3024-7  Property MCnc — Mass concentration (ng/dL)
+    //   14920-3 Property SCnc — Substance/molar concentration (pmol/L)
+    // Taiwan labs report Free T4 in ng/dL (mass), so 3024-7 is the
+    // unit-aligned mapping. Commit 9da5e5b had previously switched to
+    // 14920-3 on the wrong premise that 3024-7 was Total T4 — see
+    // docs/LOINC_AUDIT_2026_05_19.md section F for full evidence.
+    expect(findLoinc("09106C", "T4 Free")).toBe("3024-7");
   });
 
   test("TSH (NHI 09112C) maps to LOINC 3016-3 (Thyrotropin)", () => {

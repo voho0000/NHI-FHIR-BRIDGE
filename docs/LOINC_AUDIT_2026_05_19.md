@@ -98,16 +98,16 @@ escaping was needed):
 `[,  // /volume]` with `[#/volume]` in each entry. Pure cosmetic — these strings are emitted as
 `Observation.code.coding[].display` for SMART app consumers; no routing impact.
 
-### D. LOINC_DISPLAY — content mismatches tied to finding F — NOT changed; needs owner
+### D. LOINC_DISPLAY — content mismatches tied to finding F — FIXED in this pass
 
-| LOINC | File LOINC_DISPLAY (current) | loinc.org canonical | Discrepancy |
-|---|---|---|---|
-| 3024-7 | `Thyroxine (T4) [Mass/volume] in Serum or Plasma` | `Thyroxine (T4) free [Mass/volume] in Serum or Plasma` | File omits `free` |
-| 14920-3 | `Thyroxine (T4) free [Mass/volume] in Serum or Plasma` | `Thyroxine (T4) free [Moles/volume] in Serum or Plasma` | File says Mass; loinc.org says Moles |
+| LOINC | Was (wrong) | Restored to (loinc.org canonical) |
+|---|---|---|
+| 3024-7 | `Thyroxine (T4) [Mass/volume] in Serum or Plasma` (missing "free") | `Thyroxine (T4) free [Mass/volume] in Serum or Plasma` |
+| 14920-3 | `Thyroxine (T4) free [Mass/volume] in Serum or Plasma` (Mass was a lie) | `Thyroxine (T4) free [Moles/volume] in Serum or Plasma` |
 
-Tied to finding F below — defer until F is resolved.
+Fixed alongside finding F below.
 
-### F. The Free T4 (09106C) situation — NEW, needs owner attention
+### F. The Free T4 (09106C) situation — RESOLVED in this pass
 
 Commit
 [`9da5e5b`](https://github.com/voho0000/NHI-FHIR-BRIDGE/commit/9da5e5b)
@@ -124,26 +124,21 @@ Component on each page is literally `Thyroxine.free`:
   (substance concentration, i.e., molar). Long Common Name: *"Thyroxine (T4) free
   [Moles/volume] in Serum or Plasma"*. Units: pmol/L.
 
-So both 3024-7 and 14920-3 are Free T4. The original mapping was clinically correct; the
-"fix" replaced a mass-concentration Free T4 LOINC with a molar Free T4 LOINC. Since Taiwan
-lab reports overwhelmingly use ng/dL (mass) for Free T4, the *original* mapping was actually
-the better match for the data the bridge ships.
+Both 3024-7 and 14920-3 are Free T4. The original mapping was clinically correct; the "fix"
+replaced a mass-concentration Free T4 LOINC with a molar Free T4 LOINC. Taiwan lab reports
+overwhelmingly use ng/dL (mass) for Free T4, so the original mapping was the LOINC-↔-unit
+aligned choice.
 
-This is **not a clinical correctness disaster** (both LOINCs flag the same analyte). But:
+**Action taken in this pass** (commit
+`fix(mapper): revert 09106C Free T4 to 3024-7 (Mass conc — matches Taiwan ng/dL)`):
 
-- The inline comment in `loinc-tables.ts` near `09106C` (introduced by 9da5e5b) is factually
-  wrong about what 3024-7 means — anyone reading the file will be misinformed.
-- Downstream SMART consumers that assume MCnc/SCnc LOINC consistency with the reported
-  unit may receive a mismatched value/LOINC pair.
-
-**Defer to project owner**:
-
-- **Option A**: revert `09106C` to 3024-7 (matches Taiwan ng/dL reports). Fix the comment.
-- **Option B**: keep 14920-3 (molar Free T4). Fix the comment + LOINC_DISPLAY for 14920-3
-  (currently says Mass, should say Moles). Note that downstream consumers will need to
-  reconcile a molar LOINC against mass-unit values.
-
-This audit pass does **not** touch the mapping or the comment.
+- `NHI_TO_LOINC["09106C"]` restored to `3024-7` (mass conc, matches Taiwan ng/dL reports).
+- Inline comment in `loinc-tables.ts` near 09106C rewritten to accurately describe both
+  LOINCs and the unit-system reasoning.
+- LOINC_DISPLAY entries for 3024-7 and 14920-3 fixed (see section D).
+- Regression test
+  [`Free T4 (NHI 09106C) maps to LOINC 3024-7`](../backend-ts/tests/unit/observation-mapper.test.ts)
+  updated to assert 09106C → 3024-7 and explain the MCnc/SCnc reasoning inline.
 
 ## Out-of-scope / open items for follow-up
 
@@ -161,8 +156,8 @@ Items not addressed by this audit pass:
    - Cryptococcus Ag (was 12069B → 5132-6 anti-ssDNA): 31703-2 — verify before use
 2. **Section B**: pick a course for the audiometry codes (22001C / 22015B / 22025B) and for
    the β2-microglobulin specimen mismatch (12052B).
-3. **Section D + F**: resolve the Free T4 mapping question and fix both LOINC_DISPLAY entries
-   accordingly.
+3. ~~Section D + F: resolve the Free T4 mapping question and fix both LOINC_DISPLAY entries
+   accordingly.~~ **Resolved in this pass** — see section F.
 4. **Full sweep**: an exhaustive code-by-code loinc.org verification of every NHI_TO_LOINC
    entry that *wasn't* flagged. The audit was reactive (verified what was flagged) — it
    doesn't guarantee 100% coverage of the table.
