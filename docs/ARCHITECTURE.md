@@ -107,7 +107,7 @@ sequenceDiagram
 
 - **完全沒有 AI / LLM**：extension 直接打 NHI 的 JSON 端點取得結構化資料，mapper 是純確定性 TypeScript。PHI 永不送雲端、無 prompt engineering、無 AI 推論不確定性。NHI 真的改 API 時專案會直接壞掉（靠 PR 修），不會偷偷把 PHI 送出去 fallback
 - **共用 mapper**：`packages/mapper` 同時被 backend (Hono) 和 extension (service worker) import。模式 A 在 SW 內完成 FHIR 轉換，模式 B 則由後端執行——同一份 mapper 程式碼，輸出相同
-- **stableId + 雜湊 Patient.id**：身分證從不出現在 FHIR `Patient.id` 或 `subject.reference`；只存在 `Patient.identifier[].value`。安裝時各自產生隨機 salt（後端存 `app_settings`，extension 存 `chrome.storage.local`），讓 Bundle 即使外流也無法以暴力枚舉反推身分證
+- **stableId + 雜湊 Patient.id**：身分證從不出現在 FHIR `Patient.id` 或 `subject.reference`；只存在 `Patient.identifier[].value`。`derivePatientId()` 走純 SHA-1（無 salt），讓 backend 與 extension 對同一個身分證算出相同 `Patient.id`——這是模式 A 下載 Bundle → backend `/fhir/import` 流程要 round-trip 的前提。殘留風險與緩解詳見 [安全模型 §Patient.id 反推風險](#patientid-反推風險與緩解)
 
 ---
 
@@ -139,11 +139,22 @@ sequenceDiagram
 
 PHI 端點仍由 API key + Bearer + OAuth2 redirect-URI 白名單保護；CORS 對 PHI 不是 load-bearing 機制。
 
-### 安裝時 salt
+### Patient.id 反推風險與緩解
 
-啟動時 `app_settings` 表沒有 `stable_id_salt` row 就生一個 32 byte 隨機 hex 寫進去。`setStableIdSalt()` 在 mapper module 設定全局，所有後續 `stableId()` 和 `derivePatientId()` 計算都會 mix 進這個 salt。Extension 在 SW 啟動時做同樣事情，存在 `chrome.storage.local.stableIdSalt`。
+`derivePatientId(rawId)` 是純 `sha1("patient|" + rawId).slice(0, 32)`，**沒有 mix salt**。設計取捨見 [`packages/mapper/src/helpers.ts`](../packages/mapper/src/helpers.ts) 的 source 註解。簡述：
 
-**權衡**：backend 和 extension 各有自己的 salt — 模式 A 下載的 Bundle 不能直接 import 進 backend（會被視為新病人）。可接受的限制——這個版本目標是阻斷 leak 後的反推攻擊，不是跨環境一致性。
+- **跨環境 ID 一致性是 hard requirement**：模式 A 下載的 Bundle 要能 import 進 backend、extension 與 backend 對同一個身分證要算出同一個 `Patient.id`；混入 install-scoped salt 會破壞這個前提（曾考慮過 salt 設計，未實作）。
+- **`Patient.identifier[].value` 本就帶 raw 身分證**（FHIR R4 要求）：整份 Bundle leak 時，raw ID 與 hashed ID 一起外流，salt 對「Bundle leak」這個主要場景無實質防禦力。
+
+**殘留風險**：若只有 hashed `Patient.id` 外流（例如 HTTP access log 把 `/fhir/Patient/<hashedId>` 寫出去，但 Bundle 沒外流），攻擊者可枚舉約 3000 萬個台灣身分證空間反推 raw ID。
+
+**緩解（部署時要做的事）**：
+
+1. **不對外暴露 FHIR endpoint**：預設 docker compose 綁 `127.0.0.1`，PHI 只走 loopback。LAN/內網部署時用 reverse proxy 並驗 client cert / IP allow list。
+2. **HTTP access log scrubbing**：reverse proxy 或 logging middleware 把 `/fhir/Patient/[^/]+`、`/fhir/<Resource>?patient=...` 的 path 與 query string 抹掉（log 成 `/fhir/Patient/<redacted>`），避免單獨外流 hashed ID。
+3. **Audit log 已預期**：[`audit_log.patient_id`](../backend-ts/src/models/schema.ts) 存的是 hashed 形式，與 FHIR resource 同 DB；DB 整份外流時等同 Bundle 外流，已涵蓋在「Bundle leak」場景內。
+
+未來若 IRB / hospital IT 要求加強，可考慮：(a) 在 backend 與 extension 間做 salt 同步機制（首次同步從 backend fetch 並存 `chrome.storage.local`），(b) 改用 HMAC 而非 SHA-1。但目前以 §1、§2 為主防線。
 
 ---
 

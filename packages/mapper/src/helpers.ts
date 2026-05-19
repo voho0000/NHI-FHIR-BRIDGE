@@ -11,12 +11,16 @@ import { sha1 } from "js-sha1";
  * this is what makes "extension local bundle → backend /fhir/import"
  * work without producing duplicate Patient rows.
  *
- * Note: deterministic + no salt means an attacker who obtains a hashed
- * Patient.id (e.g. via HTTP log) can brute-force the ~30M Taiwanese
- * national ID space and recover the raw ID. We accept this because
- * Patient.identifier[].value already carries the raw national ID in
- * any leaked bundle — the realistic leak scenarios disclose both
- * fields together, so a salt would not move the needle.
+ * Note: deterministic + no salt means an attacker who obtains ONLY a
+ * hashed Patient.id (e.g. via an HTTP access log) can brute-force the
+ * ~30M Taiwanese national ID space and recover the raw ID. We accept
+ * this because Patient.identifier[].value already carries the raw
+ * national ID in any leaked Bundle — the realistic Bundle-leak
+ * scenarios disclose both fields together, so a salt would not move
+ * the needle there. The remaining single-field leak vector is HTTP
+ * access logs; deployments should scrub `/fhir/Patient/[^/]+` paths
+ * and `?patient=` query strings at the reverse-proxy layer (see
+ * ARCHITECTURE.md §"Patient.id 反推風險與緩解").
  *
  * Uses `js-sha1` (pure JS) instead of `node:crypto` so the same mapper
  * code runs unmodified in the Chrome extension's local-only mode.

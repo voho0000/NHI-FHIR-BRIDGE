@@ -149,9 +149,12 @@ export const auditLog = sqliteTable(
 
 /**
  * Single-row key/value bag for install-scoped runtime config the backend
- * needs to persist but doesn't fit a dedicated table. First use case:
- * the salt mixed into stableId() / derivePatientId() so leaked Bundles
- * can't be brute-forced back to a national ID.
+ * needs to persist but doesn't fit a dedicated table. Currently unused
+ * but kept as the canonical place for future install-scoped settings
+ * (e.g. cached well-known issuer URLs, per-install flags). An earlier
+ * design slotted a `stable_id_salt` here; that was intentionally not
+ * shipped — see `packages/mapper/src/helpers.ts` and ARCHITECTURE.md
+ * §"Patient.id 反推風險與緩解" for the rationale.
  */
 export const appSettings = sqliteTable("app_settings", {
   key: text("key", { length: 64 }).primaryKey(),
