@@ -118,8 +118,16 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "08075C": "2692-7", // Osmolality — Serum or Plasma
   "08079B": "30240-6", // D-dimer — Plt poor plasma
   // ── Thyroid ───────────────────────────────────────
-  "09106C": "3024-7", // Free T4 — Thyroxine free Mass/vol S/P
-  "09112C": "3016-3", // TSH — Thyrotropin S/P
+  // Historical bug (caught externally): NHI 09106C was mapped to LOINC
+  // 3024-7 with a comment claiming "Thyroxine free", but 3024-7 is
+  // actually TOTAL T4 ("Thyroxine (T4) [Mass/volume] in Serum or
+  // Plasma"). Downstream SMART apps using LOINC to route the value
+  // sent Free T4 results to their Total T4 column — Free T4 column
+  // stayed empty. Correct LOINC for Free T4 is 14920-3. Same family
+  // of "copy-paste wrong LOINC" bug as the FSH/Estradiol pair fixed
+  // in the dual-reviewer audit above; this one slipped through.
+  "09106C": "14920-3", // Free T4 — Thyroxine (T4) free Mass/vol S/P
+  "09112C": "3016-3",  // TSH — Thyrotropin S/P
   // ── Cardiac markers ───────────────────────────────
   "09099C": "10839-9", // Troponin I — Troponin I cardiac S/P
   "12192C": "33959-8", // Procalcitonin — S/P
@@ -508,7 +516,8 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "13457-7": "Cholesterol in LDL [Mass/volume] in Serum or Plasma by calculation",
   // ── Thyroid / hormones ───────────────────────────
   "3016-3": "Thyrotropin [Units/volume] in Serum or Plasma",
-  "3024-7": "Thyroxine (T4) free [Mass/volume] in Serum or Plasma",
+  "3024-7": "Thyroxine (T4) [Mass/volume] in Serum or Plasma",
+  "14920-3": "Thyroxine (T4) free [Mass/volume] in Serum or Plasma",
   "2986-8": "Testosterone [Mass/volume] in Serum or Plasma",
   "83098-4": "Follitropin [Units/volume] in Serum or Plasma by Immunoassay",
   "83096-8": "Estradiol (E2) [Mass/volume] in Serum or Plasma by Immunoassay",

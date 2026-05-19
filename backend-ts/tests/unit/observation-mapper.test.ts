@@ -237,6 +237,19 @@ describe("findLoinc", () => {
     expect(findLoinc("14051C", "Anti-HCV")).toBe("13955-0");
   });
 
+  test("Free T4 (NHI 09106C) maps to LOINC 14920-3, NOT 3024-7 (Total T4)", () => {
+    // Historical bug: 09106C was mapped to 3024-7 with a comment claiming
+    // "Thyroxine free", but LOINC 3024-7 is Total T4. Downstream SMART
+    // apps that pin clinical columns by LOINC silently routed Free T4
+    // results to the Total T4 bin. Free T4 column stayed empty.
+    expect(findLoinc("09106C", "T4 Free")).toBe("14920-3");
+    expect(findLoinc("09106C", "T4 Free")).not.toBe("3024-7");
+  });
+
+  test("TSH (NHI 09112C) maps to LOINC 3016-3 (Thyrotropin)", () => {
+    expect(findLoinc("09112C", "TSH")).toBe("3016-3");
+  });
+
   test("longest-key match: 'ldl-cholesterol' display picks the LDL-C key over the bare 'ldl' key", () => {
     // Both "ldl" (3) and "ldl-cholesterol" (15) match (hyphen creates
     // a word boundary). Longest-match picks the more specific.
