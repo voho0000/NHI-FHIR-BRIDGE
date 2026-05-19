@@ -89,10 +89,53 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Check whether a single LOINC_MAP key matches the lab's combined
+// (code + display) string. Two rules:
+//
+// 1. ASCII keys: `\b<key>\b` — word boundaries on BOTH sides. The
+//    no-trailing-boundary semantic of the older `\b<key>` matcher
+//    caused short keys like "hb" (Hemoglobin) to incorrectly match
+//    longer terms like "hbsag" (HBsAg) and "phosphate" (matched by
+//    "ph"). Requiring an end boundary means "hb" only matches when
+//    it stands as its own word.
+//
+// 2. CJK / non-ASCII keys: plain substring includes(). \b doesn't
+//    semantically work for CJK (no word-character class concept).
+function _keywordMatches(key: string, combined: string): boolean {
+  const k = key.toLowerCase();
+  if (isAsciiOnly(key)) {
+    return new RegExp(`\\b${escapeRegex(k)}\\b`).test(combined);
+  }
+  return combined.includes(k);
+}
+
+// Pick the LONGEST matching key from the table, not the first. Avoids
+// the same bug family from a second angle: hyphenated keys like
+// "ldl-cholesterol" share a `\b...\b` boundary at the hyphen, so "ldl"
+// (3 chars) also matches a "ldl-cholesterol" string. Longest-match
+// makes the more specific key win regardless of insertion order, so
+// the brittle "long must appear before short" comments scattered
+// through LOINC_MAP become unnecessary.
+function _findLongestMatch(
+  combined: string,
+  table: Record<string, string>,
+): string | null {
+  let bestLoinc: string | null = null;
+  let bestKeyLen = 0;
+  for (const [key, loinc] of Object.entries(table)) {
+    if (key.length > bestKeyLen && _keywordMatches(key, combined)) {
+      bestLoinc = loinc;
+      bestKeyLen = key.length;
+    }
+  }
+  return bestLoinc;
+}
+
 /**
  * Return primary LOINC for this lab. Panel-aware lookup:
  *   A. Single-test NHI code → use NHI_TO_LOINC directly.
- *   B. Panel code OR unknown code → walk LOINC_MAP by display keyword.
+ *   B. Panel code OR unknown code → walk LOINC_MAP by display keyword
+ *      (longest-key match wins, both-side word boundaries enforced).
  *   C. Fallback: panel-level LOINC from NHI_TO_LOINC if available.
  */
 export function findLoinc(code: string, display: string): string | null {
@@ -105,27 +148,13 @@ export function findLoinc(code: string, display: string): string | null {
 
   // B1. Panel-specific keyword map runs BEFORE the global one.
   if (code in PANEL_LOINC_MAP) {
-    for (const [key, loinc] of Object.entries(PANEL_LOINC_MAP[code]!)) {
-      if (isAsciiOnly(key)) {
-        if (new RegExp(`\\b${escapeRegex(key.toLowerCase())}`).test(combined)) {
-          return loinc;
-        }
-      } else if (combined.includes(key.toLowerCase())) {
-        return loinc;
-      }
-    }
+    const hit = _findLongestMatch(combined, PANEL_LOINC_MAP[code]!);
+    if (hit) return hit;
   }
 
   // B. Display-keyword search.
-  for (const [key, loinc] of Object.entries(LOINC_MAP)) {
-    if (isAsciiOnly(key)) {
-      if (new RegExp(`\\b${escapeRegex(key.toLowerCase())}`).test(combined)) {
-        return loinc;
-      }
-    } else if (combined.includes(key.toLowerCase())) {
-      return loinc;
-    }
-  }
+  const hit = _findLongestMatch(combined, LOINC_MAP);
+  if (hit) return hit;
 
   // C. Panel code with no recognised item display → fall back.
   if (code && code in NHI_TO_LOINC) {

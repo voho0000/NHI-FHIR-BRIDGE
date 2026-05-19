@@ -194,28 +194,52 @@ describe("findLoinc", () => {
     expect(loinc).not.toBeNull();
   });
 
-  // ── Regression tests for the LOINC_MAP keyword-collision bug ─────
-  // Bug: keyword search loop is first-match (not longest-match), so a
-  // generic short key like "hb" (Hemoglobin) can win against a more
-  // specific "hbsag" (HBV surface antigen) if "hb" appears earlier in
-  // the table. Discovered v0.6.5 / fixed v0.6.6 by pinning specific
-  // NHI 醫令碼 in the adapter so findLoinc takes the direct-code
-  // path and skips the keyword search entirely.
+  // ── Regression tests for short-key prefix collisions ─────────────
+  // Bug family fixed in v0.6.7: findLoinc's keyword loop used `\b<key>`
+  // (no trailing boundary) AND first-match semantics. Short keys like
+  // "hb" (Hemoglobin), "ph" (pH), "mch" (MCH) silently shadowed more
+  // specific longer keys like "hbsag", "phosphate", "mchc". Fix: both-
+  // side word boundary `\b<key>\b` + longest-key-wins.
 
-  test("findLoinc(\"HBsAg\", \"HBsAg\") returns 'hb' generic by keyword search (documents the latent bug)", () => {
-    // This expects the BUGGY behaviour to demonstrate why the adapter
-    // hard-codes 14032C. If a future fix makes findLoinc longest-match,
-    // this test should be updated — its purpose is to lock the present
-    // behaviour so silent regressions don't slip through.
-    expect(findLoinc("HBsAg", "HBsAg")).toBe("718-7"); // hemoglobin LOINC — known wrong but current behaviour
+  test("HBsAg keyword does NOT collide with 'hb' generic Hemoglobin key", () => {
+    // Pre-v0.6.7 this returned "718-7" (Hemoglobin) because \bhb
+    // matched the "hb" prefix of "hbsag". Now \bhb\b requires a
+    // trailing boundary which "hbsag" doesn't satisfy.
+    expect(findLoinc("HBsAg", "HBsAg")).toBe("5196-1");
+  });
+
+  test("Anti-HBc keyword does NOT collide with 'hb' generic Hemoglobin key", () => {
+    // We don't have a LOINC mapping for Anti-HBc yet; the test only
+    // proves the collision is gone (null instead of 718-7 Hemoglobin).
+    // If a mapping is added later this expectation should update.
+    expect(findLoinc("Anti-HBc", "Anti-HBc")).not.toBe("718-7");
+  });
+
+  test("Phosphate display does NOT collide with 'ph' (urine / arterial pH) key", () => {
+    // Pre-fix: "phosphate" combined string matched \bph at start →
+    // returned pH LOINC. Now end boundary required, "ph" doesn't
+    // match "phosphate".
+    expect(findLoinc("", "Phosphate")).not.toBe("11558-4");
+    expect(findLoinc("", "Phosphate")).not.toBe("5803-2");
+  });
+
+  test("MCHC display does NOT collide with 'mch' (MCH-only) key", () => {
+    // \bmch\b requires boundary after "mch". "mchc" has trailing "c"
+    // (word char) → no boundary → no false match.
+    expect(findLoinc("", "MCHC")).not.toBe("785-6");
   });
 
   test("findLoinc(\"14032C\", \"HBsAg\") routes through NHI_TO_LOINC and returns correct HBsAg LOINC", () => {
-    // This is the path the adapter actually takes after v0.6.6.
     expect(findLoinc("14032C", "HBsAg")).toBe("5196-1");
   });
 
   test("findLoinc(\"14051C\", \"Anti-HCV\") routes through NHI_TO_LOINC and returns correct HCV Ab LOINC", () => {
     expect(findLoinc("14051C", "Anti-HCV")).toBe("13955-0");
+  });
+
+  test("longest-key match: 'ldl-cholesterol' display picks the LDL-C key over the bare 'ldl' key", () => {
+    // Both "ldl" (3) and "ldl-cholesterol" (15) match (hyphen creates
+    // a word boundary). Longest-match picks the more specific.
+    expect(findLoinc("", "LDL Cholesterol")).toBe("13457-7");
   });
 });
