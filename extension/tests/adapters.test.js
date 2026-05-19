@@ -560,4 +560,72 @@ describe("adaptAdultPreventive", () => {
     expect(adaptAdultPreventive(null)).toBeNull();
     expect(adaptAdultPreventive("not an object")).toBeNull();
   });
+
+  // ── HBV/HCV qualitative-result regression tests ──────────────────────
+  // These pin the "use _TEXT, not the status code" decision in stone.
+  // The bug regressed once in v0.6.3 (adapter-extraction refactor copied
+  // a stale background.js); these tests would have failed loudly.
+
+  test("HBsAg observation value uses hbsaG_TEXT, not the numeric status code", () => {
+    // Payload says hbsag=1 (status code: "tested negative") and
+    // hbsaG_TEXT="陰性". User-reported v0.6.x bug was observation
+    // value = "1" (gets parsed as quantity 1) instead of "陰性".
+    const row = {
+      firsT_DIAG_DATE: "111/11/07",
+      hbsag: "1",
+      hbsaG_TEXT: "陰性",
+      hbV_RESULT_TEXT: "陰性",
+    };
+    const out = adaptAdultPreventive(row);
+    const hbsag = out.find((o) => o.display === "HBsAg");
+    expect(hbsag).toBeDefined();
+    expect(hbsag.value).toBe("陰性");
+    expect(hbsag.value).not.toBe("1");
+    expect(hbsag.reference_range).toBe("陰性"); // hbV_RESULT_TEXT
+  });
+
+  test("HBsAg observation skipped when test wasn't performed (empty _TEXT)", () => {
+    // If NHI didn't run the test, hbsag might be "3" with hbsaG_TEXT=""
+    // — pushing "" as value triggers the early-return inside the push()
+    // helper, so no Observation gets emitted. (Compare: pushing the "3"
+    // status code would have emitted a false-positive observation
+    // claiming "HBsAg = 3", which is the bug we're avoiding.)
+    const row = {
+      firsT_DIAG_DATE: "111/11/07",
+      hbsag: "3",
+      hbsaG_TEXT: "",
+    };
+    const out = adaptAdultPreventive(row);
+    expect(out.find((o) => o.display === "HBsAg")).toBeUndefined();
+  });
+
+  test("Anti-HCV observation value uses antI_HCV_TEXT, not the numeric status code", () => {
+    const row = {
+      firsT_DIAG_DATE: "111/11/07",
+      antI_HCV: "1",
+      antI_HCV_TEXT: "陰性",
+      hcV_RESULT_TEXT: "陰性",
+    };
+    const out = adaptAdultPreventive(row);
+    const antiHcv = out.find((o) => o.display === "Anti-HCV");
+    expect(antiHcv).toBeDefined();
+    expect(antiHcv.value).toBe("陰性");
+    expect(antiHcv.reference_range).toBe("陰性");
+  });
+
+  test("Urine Protein observation value uses urinE_PROTEIN_TEXT (dipstick is qualitative, not numeric)", () => {
+    // urinE_PROTEIN = "0" is a status code for "no protein detected",
+    // not a 0 mg/dL measurement. The _TEXT field carries the clinical
+    // convention ("-" / "±" / "1+" / "2+" / "3+"). Same family of bug.
+    const row = {
+      firsT_DIAG_DATE: "111/11/07",
+      urinE_PROTEIN: "0",
+      urinE_PROTEIN_TEXT: "-",
+    };
+    const out = adaptAdultPreventive(row);
+    const up = out.find((o) => o.display === "Urine Protein");
+    expect(up).toBeDefined();
+    expect(up.value).toBe("-");
+    expect(up.value).not.toBe("0");
+  });
 });

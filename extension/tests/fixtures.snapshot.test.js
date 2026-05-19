@@ -160,11 +160,14 @@ describe("adapter fixture snapshots", () => {
     `);
   });
 
-  test("IHKE3402 adult preventive (one row → ~12 Observations)", () => {
+  test("IHKE3402 adult preventive (one row → ~14 Observations from live payload)", () => {
+    // Live capture: HBsAg / Anti-HCV / Urine Protein come back as status
+    // codes ("1" / "1" / "0") with paired _TEXT fields. The adapter must
+    // emit the _TEXT side as the observation value so downstream apps
+    // surface "陰性" / "-", not raw status codes. This snapshot pins
+    // the whole projection so the bug regressed in v0.6.3 (and tracked
+    // down here in v0.6.5) can never reappear silently.
     const out = adaptAdultPreventive(load("ihke3402-adult-preventive.json"));
-    // Snapshot the shape but compress to just (display, value, category)
-    // tuples — the full structure is repetitive and the per-Observation
-    // shape is already pinned by adapters.test.js.
     const summary = out.map((o) => ({ display: o.display, value: o.value, category: o.category }));
     expect(summary).toMatchInlineSnapshot(`
       [
@@ -176,47 +179,47 @@ describe("adapter fixture snapshots", () => {
         {
           "category": "vital-signs",
           "display": "Body Weight",
-          "value": "68",
+          "value": "70",
         },
         {
           "category": "vital-signs",
           "display": "BMI",
-          "value": "23.5",
+          "value": "24",
         },
         {
           "category": "vital-signs",
           "display": "Waist Circumference",
-          "value": "82",
+          "value": "86",
         },
         {
           "category": "vital-signs",
           "display": "Systolic Blood Pressure",
-          "value": "128",
+          "value": "150",
         },
         {
           "category": "vital-signs",
           "display": "Diastolic Blood Pressure",
-          "value": "78",
+          "value": "100",
         },
         {
           "category": "laboratory",
           "display": "Cholesterol",
-          "value": "192",
+          "value": "199",
         },
         {
           "category": "laboratory",
           "display": "Triglyceride",
-          "value": "120",
+          "value": "93",
         },
         {
           "category": "laboratory",
           "display": "HDL",
-          "value": "52",
+          "value": "42",
         },
         {
           "category": "laboratory",
           "display": "LDL",
-          "value": "110",
+          "value": "138",
         },
         {
           "category": "laboratory",
@@ -226,32 +229,42 @@ describe("adapter fixture snapshots", () => {
         {
           "category": "laboratory",
           "display": "SGPT (ALT)",
-          "value": "28",
+          "value": "23",
         },
         {
           "category": "laboratory",
           "display": "Glu-AC",
-          "value": "96",
-        },
-        {
-          "category": "laboratory",
-          "display": "BUN",
-          "value": "14",
+          "value": "92",
         },
         {
           "category": "laboratory",
           "display": "Creatinine",
-          "value": "0.9",
+          "value": "1",
         },
         {
           "category": "laboratory",
           "display": "eGFR",
-          "value": "95",
+          "value": "91",
         },
         {
           "category": "laboratory",
-          "display": "Uric Acid",
-          "value": "5.2",
+          "display": "Urine Protein",
+          "value": "-",
+        },
+        {
+          "category": "laboratory",
+          "display": "HBsAg",
+          "value": "陰性",
+        },
+        {
+          "category": "laboratory",
+          "display": "Anti-HCV",
+          "value": "陰性",
+        },
+        {
+          "category": "laboratory",
+          "display": "Urine UA",
+          "value": "-",
         },
         {
           "category": "laboratory",

@@ -192,7 +192,15 @@ export function adaptAdultPreventive(row) {
   function push(display, value, unit, refRange, category, code) {
     if (value === undefined || value === null) return;
     const v = String(value).trim();
-    if (v === "" || v === "-" || v === "—") return;
+    // Em-dash "—" (U+2014) is NHI's sentinel "no data" marker — drop.
+    // Plain hyphen "-" is NOT a no-data marker per-field — it's the
+    // clinical dipstick convention for "negative" (Urine Protein,
+    // Urine UA dipstick). NHI's no-data flag for an entire row is
+    // signalled by firsT_DIAG_DATE = "-" which the row-level date
+    // guard at the top of adaptAdultPreventive already rejects, so
+    // "-" reaching push() always means "the clinician wrote it down
+    // as a negative result". Keep.
+    if (v === "" || v === "—") return;
     out.push({
       date,
       hospital,
@@ -231,11 +239,34 @@ export function adaptAdultPreventive(row) {
   push("Creatinine",    row.bloD_CREAT,  "mg/dL");
   push("eGFR",          row.egfr,        "mL/min/1.73m2",
        row.rF_DIAG_RESULT_TEXT || "");
-  push("Urine Protein", row.urinE_PROTEIN, "",
-       row.urinE_PROTEIN_TEXT || "");
-  // Hepatitis B/C screening
-  push("HBsAg",         row.hbsag,       "", row.hbsaG_TEXT || "");
-  push("Anti-HCV",      row.antI_HCV,    "", row.antI_HCV_TEXT || "");
+  // Urine Protein dipstick is qualitative ("-" / "±" / "1+" / "2+" / "3+"
+  // / "4+"). NHI returns the status code in `urinE_PROTEIN` ("0" / "1" /
+  // "2" ...) and the text in `urinE_PROTEIN_TEXT` ("-" / "±" / "1+" ...).
+  // Same code-vs-text trap as the HBV/HCV pair above — passing the code
+  // as the observation value lands as valueQuantity = 0, looks like
+  // "0 mg/dL protein" (wrong category of answer). Use the text.
+  push("Urine Protein", row.urinE_PROTEIN_TEXT || "", "", "");
+  // Hepatitis B/C screening.
+  //
+  // CRITICAL — read before "simplifying" the field choice:
+  // NHI's IHKE3402 returns qualitative results as a status-code/text pair:
+  //   - `hbsag` / `antI_HCV` are STATUS CODES ("1"=陰, "2"=陽, "3"=未檢驗)
+  //   - `hbsaG_TEXT` / `antI_HCV_TEXT` are the human-readable result
+  // Passing the status code as the observation value gets parsed as a
+  // numeric quantity downstream → Observation.valueQuantity = 1, which a
+  // SMART app surfaces as "HBsAg = 1" (looks like a real lab number).
+  // Always use the _TEXT side as the value. When the test wasn't performed
+  // _TEXT is empty and push() returns early, no observation emitted.
+  //
+  // For the referenceRange we pass the OVERALL panel interpretation
+  // (hbV_RESULT_TEXT / hcV_RESULT_TEXT) — that's NHI's clinician-side
+  // summary for the whole HBV/HCV panel.
+  //
+  // History: regressed in v0.6.3 (the adapter-extraction refactor copied
+  // an older version of the function — the fix from 8f92f8d was lost
+  // until v0.6.5 added the snapshot test + restored this code path).
+  push("HBsAg",    row.hbsaG_TEXT   || "", "", row.hbV_RESULT_TEXT || "");
+  push("Anti-HCV", row.antI_HCV_TEXT || "", "", row.hcV_RESULT_TEXT || "");
   // Uric acid — note: NHI's IHKE3402 schema also has a field called
   // `urinE_UA_DIAG_ACID` that LOOKS like urine UA but the values are
   // identical to `uriC_ACID` (serum, mg/dL). It's a misnamed duplicate
@@ -245,8 +276,8 @@ export function adaptAdultPreventive(row) {
   // Urine UA (qualitative urine dipstick test — distinct from the
   // mislabeled urinE_UA_DIAG_ACID above; this `urinE_UA` is the real
   // urine UA result, usually a +/- string or empty when not run).
-  push("Urine UA",      row.urinE_UA,    "",
-       row.urinE_UA_DIAG_RESULT_TEXT || "");
+  // Same code-vs-text pattern as urinE_PROTEIN — use the _TEXT field.
+  push("Urine UA",      row.urinE_UA_DIAG_RESULT_TEXT || "", "", "");
   // Metabolic syndrome screening — value is an interpretation string
   // ('正常' / '異常，建議：請洽詢醫師'), not a number. The mapper's
   // _try_parse_quantity will return None and it falls through to
