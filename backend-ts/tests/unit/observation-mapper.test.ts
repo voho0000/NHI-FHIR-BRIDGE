@@ -193,4 +193,29 @@ describe("findLoinc", () => {
     const loinc = findLoinc("", "HbA1c");
     expect(loinc).not.toBeNull();
   });
+
+  // ── Regression tests for the LOINC_MAP keyword-collision bug ─────
+  // Bug: keyword search loop is first-match (not longest-match), so a
+  // generic short key like "hb" (Hemoglobin) can win against a more
+  // specific "hbsag" (HBV surface antigen) if "hb" appears earlier in
+  // the table. Discovered v0.6.5 / fixed v0.6.6 by pinning specific
+  // NHI 醫令碼 in the adapter so findLoinc takes the direct-code
+  // path and skips the keyword search entirely.
+
+  test("findLoinc(\"HBsAg\", \"HBsAg\") returns 'hb' generic by keyword search (documents the latent bug)", () => {
+    // This expects the BUGGY behaviour to demonstrate why the adapter
+    // hard-codes 14032C. If a future fix makes findLoinc longest-match,
+    // this test should be updated — its purpose is to lock the present
+    // behaviour so silent regressions don't slip through.
+    expect(findLoinc("HBsAg", "HBsAg")).toBe("718-7"); // hemoglobin LOINC — known wrong but current behaviour
+  });
+
+  test("findLoinc(\"14032C\", \"HBsAg\") routes through NHI_TO_LOINC and returns correct HBsAg LOINC", () => {
+    // This is the path the adapter actually takes after v0.6.6.
+    expect(findLoinc("14032C", "HBsAg")).toBe("5196-1");
+  });
+
+  test("findLoinc(\"14051C\", \"Anti-HCV\") routes through NHI_TO_LOINC and returns correct HCV Ab LOINC", () => {
+    expect(findLoinc("14051C", "Anti-HCV")).toBe("13955-0");
+  });
 });

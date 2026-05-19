@@ -287,8 +287,19 @@ export function adaptAdultPreventive(row) {
   // History: regressed in v0.6.3 (the adapter-extraction refactor copied
   // an older version of the function — the fix from 8f92f8d was lost
   // until v0.6.5 added the snapshot test + restored this code path).
-  push("HBsAg",    row.hbsaG_TEXT   || "", "", row.hbV_RESULT_TEXT || "");
-  push("Anti-HCV", row.antI_HCV_TEXT || "", "", row.hcV_RESULT_TEXT || "");
+  //
+  // CODE assignment (6th arg) — IHKE3402's flat payload doesn't carry
+  // NHI 醫令碼 per field; we pin the canonical codes here so findLoinc
+  // can NHI_TO_LOINC lookup them directly. Without this, findLoinc's
+  // keyword search hits the generic "hb" keyword (Hemoglobin LOINC
+  // 718-7) BEFORE the more specific "hbsag" key (5196-1) because the
+  // keyword loop is first-match, not longest-match. Result before
+  // this fix: HBsAg observations were tagged as Hemoglobin LOINC —
+  // SMART apps relying on LOINC for grouping would miss them entirely.
+  //   14032C → LOINC 5196-1  (HBsAg, Mass/vol)
+  //   14051C → LOINC 13955-0 (HCV antibody, Serum or Plasma)
+  push("HBsAg",    row.hbsaG_TEXT   || "", "", row.hbV_RESULT_TEXT || "", "laboratory", "14032C");
+  push("Anti-HCV", row.antI_HCV_TEXT || "", "", row.hcV_RESULT_TEXT || "", "laboratory", "14051C");
   // Uric acid — note: NHI's IHKE3402 schema also has a field called
   // `urinE_UA_DIAG_ACID` that LOOKS like urine UA but the values are
   // identical to `uriC_ACID` (serum, mg/dL). It's a misnamed duplicate
