@@ -271,7 +271,12 @@ describe("findLoinc", () => {
     expect(findLoinc("14004B", "CMV IgG")).not.toBe("7849-3");
   });
 
-  test("CMV IgM (NHI 14048B) does NOT map to 7850-1 (Taenia solium larva Ab)", () => {
+  test("CMV IgM (NHI 14048B) maps to 7853-5 (Cytomegalovirus IgM Ab in S/P)", () => {
+    // Was previously 7850-1 (Taenia solium larva Ab — wrong organism). After
+    // the 2026-05-19 audit, 14048B was first removed and then restored to the
+    // verified-canonical CMV IgM LOINC 7853-5 (Component=Cytomegalovirus
+    // Ab.IgM per loinc.org/7853-5/).
+    expect(findLoinc("14048B", "CMV IgM")).toBe("7853-5");
     expect(findLoinc("14048B", "CMV IgM")).not.toBe("7850-1");
   });
 
@@ -293,6 +298,16 @@ describe("findLoinc", () => {
 
   test("Cryptococcus Ag (NHI 12069B) does NOT map to 5132-6 (DNA single strand Ab)", () => {
     expect(findLoinc("12069B", "Cryptococcus Ag")).not.toBe("5132-6");
+  });
+
+  test("β2-microglobulin (NHI 12052B) maps to 1952-1 (Beta-2-Microglobulin in S/P)", () => {
+    // Was previously 10873-8 which is 'Beta-2-Microglobulin [Mass/time] in
+    // 24 hour Urine' (timed urine collection — wrong specimen for a typical
+    // Taiwan serum B2M order). After the 2026-05-19 audit, remapped to
+    // verified 1952-1 (Component=Beta-2-Microglobulin, Property=MCnc, Serum
+    // or Plasma) per loinc.org/1952-1/.
+    expect(findLoinc("12052B", "β2-microglobulin")).toBe("1952-1");
+    expect(findLoinc("12052B", "β2-microglobulin")).not.toBe("10873-8");
   });
 });
 

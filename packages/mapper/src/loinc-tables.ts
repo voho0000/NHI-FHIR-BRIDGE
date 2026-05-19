@@ -50,7 +50,12 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "12198C": "83113-1", // Free PSA — Mass/vol S/P Immunoassay
   "27052C": "2857-1", // 攝護腺特異抗原 (PSA) — Mass/vol S/P
   "27083B": "10886-0", // 游離PSA (RIA)
-  "12052B": "10873-8", // β2-微球蛋白
+  // 12052B β2-微球蛋白 — previously mapped to 10873-8 which is actually
+  // 'Beta-2-Microglobulin [Mass/time] in 24 hour Urine' (timed urine
+  // collection, verified loinc.org/10873-8/). Taiwan 12052B billing is
+  // typically a serum order; 1952-1 is the verified serum-or-plasma LOINC
+  // (Component=Beta-2-Microglobulin, Property=MCnc) — loinc.org/1952-1/.
+  "12052B": "1952-1", // β2-microglobulin — Mass/vol S/P
   // ── Immunology / proteins ─────────────────────────
   "09065B": "90991-1", // 蛋白電泳分析
   // 12028B / 12029B IgM (serum, immunodiffusion / nephelometry) — previously
@@ -191,12 +196,15 @@ export const NHI_TO_LOINC: Record<string, string> = {
   // ── Virology ──────────────────────────────────────
   // 14004B CMV IgG — previously mapped to LOINC 7849-3 which is actually
   // 'Taenia solium larva IgM Ab [Presence] in Serum' (pork tapeworm,
-  // verified loinc.org/7849-3/). Wrong organism entirely. Leaving
-  // unmapped; falls through to NHI-code-only coding.
-  // 14048B CMV IgM — previously mapped to LOINC 7850-1 which is actually
-  // 'Taenia solium larva Ab [Units/volume] in Serum' (verified
-  // loinc.org/7850-1/). Same copy-paste-wrong-LOINC pattern as 14004B.
-  // Leaving unmapped. See docs/LOINC_AUDIT_2026_05_19.md.
+  // verified loinc.org/7849-3/). No verified canonical replacement found
+  // in this pass (candidates 5126-8 / 5125-0 are IgM or method-specific,
+  // 22592-9 / 22591-1 / 16125-5 returned HTTP 500 on every retry).
+  // Leaving unmapped; falls through to NHI-code-only coding.
+  "14048B": "7853-5", // CMV IgM — Cytomegalovirus IgM Ab [Units/volume] S/P
+  //   restored after audit: 14048B previously mapped to 7850-1 which is
+  //   'Taenia solium larva Ab' (verified loinc.org/7850-1/). 7853-5
+  //   verified as the canonical CMV IgM LOINC (Component=Cytomegalovirus
+  //   Ab.IgM, Property=ACnc) — loinc.org/7853-5/.
   "14066C": "80383-3", // Influenza A — Ag Respiratory
   "14084C": "94558-4", // SARS-CoV-2 Ag — Respiratory
   "12184C": "88157-3", // CMV DNA quant PCR — Plasma
@@ -555,6 +563,10 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "5196-1": "Hepatitis B virus surface Ag [Units/volume] in Serum",
   "16128-1": "Hepatitis C virus Ab [Presence] in Serum",
   "13955-0": "Hepatitis C virus Ab [Presence] in Serum or Plasma by Immunoassay",
+  // ── Virology (audit 2026-05-19) ──────────────────
+  "7853-5": "Cytomegalovirus IgM Ab [Units/volume] in Serum or Plasma",
+  // ── Tumor markers / proteins (audit 2026-05-19) ──
+  "1952-1": "Beta-2-Microglobulin [Mass/volume] in Serum or Plasma",
   // ── Coagulation ──────────────────────────────────
   "6301-6": "INR in Platelet poor plasma by Coagulation assay",
   "14979-9": "aPTT in Platelet poor plasma by Coagulation assay",
