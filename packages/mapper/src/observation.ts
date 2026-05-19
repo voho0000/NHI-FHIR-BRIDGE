@@ -715,6 +715,20 @@ export function mapObservation(
     subject: { reference: `Patient/${patientId}` },
   };
 
+  // Source-programme tag — set when the adapter pulled this observation
+  // out of a specific NHI screening programme (e.g. adaptAdultPreventive
+  // sets source_program="adult-preventive"). Surfaced via Observation.
+  // meta.tag so downstream SMART apps can filter by _tag without needing
+  // to know about our internal field names.
+  if (raw.source_program) {
+    resource.meta.tag = [
+      {
+        system: "http://nhi-fhir-bridge/source-program",
+        code: String(raw.source_program),
+      },
+    ];
+  }
+
   if (raw.date) {
     resource.effectiveDateTime = `${raw.date}T00:00:00+08:00`;
   }

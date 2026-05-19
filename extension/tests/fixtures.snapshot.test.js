@@ -263,11 +263,6 @@ describe("adapter fixture snapshots", () => {
         },
         {
           "category": "laboratory",
-          "display": "Urine UA",
-          "value": "-",
-        },
-        {
-          "category": "laboratory",
           "display": "代謝症候群篩檢 (Metabolic Syndrome Screening)",
           "value": "正常",
         },

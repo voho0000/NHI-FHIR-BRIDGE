@@ -243,3 +243,44 @@ describe("findLoinc", () => {
     expect(findLoinc("", "LDL Cholesterol")).toBe("13457-7");
   });
 });
+
+describe("mapObservation — source_program → meta.tag", () => {
+  // Adapters (e.g. adaptAdultPreventive) set source_program on their
+  // intermediate output to mark "this observation came from an NHI
+  // screening programme". The mapper surfaces it via Observation.meta.
+  // tag so SMART apps can filter / categorize by programme without
+  // knowing our internal field names.
+  test("emits meta.tag with source-program system when raw.source_program is set", () => {
+    const obs = mapObservation(
+      {
+        code: "09001C",
+        display: "Cholesterol",
+        value: "199",
+        unit: "mg/dL",
+        date: "2025-05-18",
+        source_program: "adult-preventive",
+      },
+      "patient-123",
+    );
+    expect(obs?.meta.tag).toEqual([
+      {
+        system: "http://nhi-fhir-bridge/source-program",
+        code: "adult-preventive",
+      },
+    ]);
+  });
+
+  test("no meta.tag entry when raw.source_program is absent (regular IHKE3409 labs)", () => {
+    const obs = mapObservation(
+      {
+        code: "09027C",
+        display: "Crea",
+        value: "1.1",
+        unit: "mg/dL",
+        date: "2025-05-18",
+      },
+      "patient-123",
+    );
+    expect(obs?.meta.tag).toBeUndefined();
+  });
+});

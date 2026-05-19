@@ -640,6 +640,69 @@ describe("adaptAdultPreventive", () => {
     expect(adaptAdultPreventive("not an object")).toBeNull();
   });
 
+  // ── NHI 醫令碼 pinning (v0.6.8) ───────────────────────────────────
+  // IHKE3402's flat payload doesn't carry per-field NHI 醫令碼, so we
+  // pin them in the adapter. This makes findLoinc take the NHI_TO_
+  // LOINC direct-lookup path and bypass the keyword search — defends
+  // against the same prefix-collision class of bug that bit HBsAg.
+
+  test("all chemistry / liver / renal / hepatitis fields carry their NHI 醫令碼", () => {
+    const row = {
+      firsT_DIAG_DATE: "111/11/07",
+      cho: "199",     // 09001C
+      bloD_TG: "93",  // 09004C
+      hdl: "42",      // 09043C
+      ldl: "138",     // 09044C
+      sgot: "23",     // 09025C
+      sgpt: "23",     // 09026C
+      s_09005C: "92", // 09005C (already pinned pre-v0.6.8)
+      urinE_BUN: "12",      // 09002C
+      bloD_CREAT: "1",      // 09015C
+      uriC_ACID: "5.5",     // 09013C
+      hbsaG_TEXT: "陰性",   // 14032C (pinned v0.6.6)
+      antI_HCV_TEXT: "陰性", // 14051C (pinned v0.6.6)
+    };
+    const out = adaptAdultPreventive(row);
+    const byDisplay = Object.fromEntries(out.map((o) => [o.display, o.order_code]));
+    expect(byDisplay).toMatchObject({
+      Cholesterol: "09001C",
+      Triglyceride: "09004C",
+      HDL: "09043C",
+      LDL: "09044C",
+      "SGOT (AST)": "09025C",
+      "SGPT (ALT)": "09026C",
+      "Glu-AC": "09005C",
+      BUN: "09002C",
+      Creatinine: "09015C",
+      "Uric Acid": "09013C",
+      HBsAg: "14032C",
+      "Anti-HCV": "14051C",
+    });
+  });
+
+  test("every emitted observation carries source_program=adult-preventive", () => {
+    const out = adaptAdultPreventive(readFixture("ihke3402-adult-preventive.json"));
+    expect(out.length).toBeGreaterThan(0);
+    for (const o of out) {
+      expect(o.source_program).toBe("adult-preventive");
+    }
+  });
+
+  test("Urine UA (phantom NHI field) is NOT emitted", () => {
+    // urinE_UA / urinE_UA_DIAG_RESULT_TEXT have no corresponding entry
+    // in NHI's actual 健康存摺 adult preventive screening UI — they're
+    // a defunct schema field that always returns empty or "-". Emitting
+    // a "Urine UA" Observation from it was fabricating data.
+    const out = adaptAdultPreventive({
+      firsT_DIAG_DATE: "111/11/07",
+      urinE_UA: "-",
+      urinE_UA_DIAG_RESULT_TEXT: "-",
+      urinE_UA_DIAG_ACID: "5.5",
+    });
+    expect(out.find((o) => o.display === "Urine UA")).toBeUndefined();
+    expect(out.find((o) => o.display?.toLowerCase().includes("urine ua"))).toBeUndefined();
+  });
+
   // ── HBV/HCV qualitative-result regression tests ──────────────────────
   // These pin the "use _TEXT, not the status code" decision in stone.
   // The bug regressed once in v0.6.3 (adapter-extraction refactor copied

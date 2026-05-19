@@ -211,17 +211,21 @@ export function adaptAdultPreventive(row) {
   const hospital = row.hosP_ABBR || row.hosp_ABBR || "";
   const out = [];
   // (display, value, unit, refRange, category, NHI code)
+  // (display, value, unit, refRange, category, code)
+  // Every observation emitted from this adapter carries source_program=
+  // "adult-preventive" so downstream FHIR consumers can identify the
+  // origin programme via Observation.meta.tag (separate from the
+  // sync-page-type / sync-run-id sync-tracking tags).
   function push(display, value, unit, refRange, category, code) {
     if (value === undefined || value === null) return;
     const v = String(value).trim();
     // Em-dash "—" (U+2014) is NHI's sentinel "no data" marker — drop.
     // Plain hyphen "-" is NOT a no-data marker per-field — it's the
-    // clinical dipstick convention for "negative" (Urine Protein,
-    // Urine UA dipstick). NHI's no-data flag for an entire row is
-    // signalled by firsT_DIAG_DATE = "-" which the row-level date
-    // guard at the top of adaptAdultPreventive already rejects, so
-    // "-" reaching push() always means "the clinician wrote it down
-    // as a negative result". Keep.
+    // clinical dipstick convention for "negative" (Urine Protein).
+    // NHI's no-data flag for an entire row is signalled by
+    // firsT_DIAG_DATE = "-" which the row-level date guard at the top
+    // of adaptAdultPreventive already rejects, so "-" reaching push()
+    // always means "the clinician wrote it down as a negative result".
     if (v === "" || v === "—") return;
     out.push({
       date,
@@ -234,9 +238,16 @@ export function adaptAdultPreventive(row) {
       value: v,
       unit: unit || "",
       reference_range: refRange || "",
+      // Source-programme tag — added to Observation.meta.tag by the
+      // mapper; lets SMART apps filter / categorize "this came from
+      // 成人預防保健 screening".
+      source_program: "adult-preventive",
     });
   }
-  // Vital signs
+  // Vital signs (no NHI 醫令碼 — these are screening measurements, not
+  // lab orders; they have canonical LOINCs which findLoinc's keyword
+  // search resolves cleanly via unique terms like "body height" / "bmi"
+  // — no prefix-collision risk with other LOINC_MAP keys).
   push("Body Height", row.height, "cm", "", "vital-signs");
   push("Body Weight", row.weight, "kg", "", "vital-signs");
   push("BMI", row.bmi, "kg/m2", "", "vital-signs");
@@ -245,72 +256,61 @@ export function adaptAdultPreventive(row) {
        row.bloD_PRESS_RESULT_TEXT || "", "vital-signs");
   push("Diastolic Blood Pressure", row.basE_EBP, "mmHg",
        row.bloD_PRESS_RESULT_TEXT || "", "vital-signs");
+  // All chemistry / hep panel rows pin the NHI 醫令碼 so findLoinc takes
+  // the NHI_TO_LOINC direct-lookup path — bypasses the keyword search
+  // entirely. Mapping cross-verified against three sources: the NHI UI
+  // section labels (健康存摺 成人預防保健), the IHKE3402 JSON field
+  // names, and the existing NHI_TO_LOINC table comments.
+  //
   // Lipid panel
-  push("Cholesterol",   row.cho,     "mg/dL");
-  push("Triglyceride",  row.bloD_TG, "mg/dL");
-  push("HDL",           row.hdl,     "mg/dL");
-  push("LDL",           row.ldl,     "mg/dL");
+  push("Cholesterol",   row.cho,     "mg/dL", "", "laboratory", "09001C");  // → LOINC 2093-3
+  push("Triglyceride",  row.bloD_TG, "mg/dL", "", "laboratory", "09004C");  // → LOINC 2571-8
+  push("HDL",           row.hdl,     "mg/dL", "", "laboratory", "09043C");  // → LOINC 2085-9
+  push("LDL",           row.ldl,     "mg/dL", "", "laboratory", "09044C");  // → LOINC 13457-7 (calc)
   // Liver function
-  push("SGOT (AST)",    row.sgot,    "U/L", row.lF_DIAG_RESULT_TEXT || "");
-  push("SGPT (ALT)",    row.sgpt,    "U/L", row.lF_DIAG_RESULT_TEXT || "");
-  // Fasting glucose — NHI 醫令碼 09005C
+  push("SGOT (AST)",    row.sgot,    "U/L", row.lF_DIAG_RESULT_TEXT || "", "laboratory", "09025C");  // → LOINC 1920-8
+  push("SGPT (ALT)",    row.sgpt,    "U/L", row.lF_DIAG_RESULT_TEXT || "", "laboratory", "09026C");  // → LOINC 1742-6
+  // Fasting glucose
   push("Glu-AC",        row.s_09005C, "mg/dL",
-       row.s_09005C_DIAG_RESULT_TEXT || "", "laboratory", "09005C");
-  // Renal function
-  push("BUN",           row.urinE_BUN,   "mg/dL");
-  push("Creatinine",    row.bloD_CREAT,  "mg/dL");
+       row.s_09005C_DIAG_RESULT_TEXT || "", "laboratory", "09005C");        // → LOINC 1558-6
+  // Renal function — `urinE_BUN` is NHI's misleading field name; the
+  // value IS serum BUN (Blood Urea Nitrogen), not a urine test.
+  push("BUN",           row.urinE_BUN,   "mg/dL", "", "laboratory", "09002C");  // → LOINC 3094-0
+  push("Creatinine",    row.bloD_CREAT,  "mg/dL", "", "laboratory", "09015C");  // → LOINC 2160-0
+  // eGFR — derived from Creatinine, no own NHI 醫令碼. Display keyword
+  // "egfr" resolves to LOINC 33914-3 via findLoinc.
   push("eGFR",          row.egfr,        "mL/min/1.73m2",
        row.rF_DIAG_RESULT_TEXT || "");
-  // Urine Protein dipstick is qualitative ("-" / "±" / "1+" / "2+" / "3+"
-  // / "4+"). NHI returns the status code in `urinE_PROTEIN` ("0" / "1" /
-  // "2" ...) and the text in `urinE_PROTEIN_TEXT` ("-" / "±" / "1+" ...).
-  // Same code-vs-text trap as the HBV/HCV pair above — passing the code
-  // as the observation value lands as valueQuantity = 0, looks like
-  // "0 mg/dL protein" (wrong category of answer). Use the text.
+  // Urine Protein dipstick — qualitative ("-" / "±" / "1+" ...).
+  // urinE_PROTEIN is the status code, urinE_PROTEIN_TEXT is the
+  // displayable result (passed as value). The specific NHI 醫令碼 for
+  // preventive-screening urine protein isn't in our NHI_TO_LOINC table
+  // yet; the keyword "urine protein" resolves to LOINC 20454-5 via
+  // findLoinc (after the v0.6.7 longest-match fix).
   push("Urine Protein", row.urinE_PROTEIN_TEXT || "", "", "");
-  // Hepatitis B/C screening.
-  //
-  // CRITICAL — read before "simplifying" the field choice:
-  // NHI's IHKE3402 returns qualitative results as a status-code/text pair:
-  //   - `hbsag` / `antI_HCV` are STATUS CODES ("1"=陰, "2"=陽, "3"=未檢驗)
-  //   - `hbsaG_TEXT` / `antI_HCV_TEXT` are the human-readable result
-  // Passing the status code as the observation value gets parsed as a
-  // numeric quantity downstream → Observation.valueQuantity = 1, which a
-  // SMART app surfaces as "HBsAg = 1" (looks like a real lab number).
-  // Always use the _TEXT side as the value. When the test wasn't performed
-  // _TEXT is empty and push() returns early, no observation emitted.
-  //
-  // For the referenceRange we pass the OVERALL panel interpretation
-  // (hbV_RESULT_TEXT / hcV_RESULT_TEXT) — that's NHI's clinician-side
-  // summary for the whole HBV/HCV panel.
-  //
-  // History: regressed in v0.6.3 (the adapter-extraction refactor copied
-  // an older version of the function — the fix from 8f92f8d was lost
-  // until v0.6.5 added the snapshot test + restored this code path).
-  //
-  // CODE assignment (6th arg) — IHKE3402's flat payload doesn't carry
-  // NHI 醫令碼 per field; we pin the canonical codes here so findLoinc
-  // can NHI_TO_LOINC lookup them directly. Without this, findLoinc's
-  // keyword search hits the generic "hb" keyword (Hemoglobin LOINC
-  // 718-7) BEFORE the more specific "hbsag" key (5196-1) because the
-  // keyword loop is first-match, not longest-match. Result before
-  // this fix: HBsAg observations were tagged as Hemoglobin LOINC —
-  // SMART apps relying on LOINC for grouping would miss them entirely.
+  // Hepatitis B/C screening — status code vs _TEXT trap documented at
+  // length below. NHI 醫令碼 pinned so findLoinc takes the NHI_TO_LOINC
+  // path (otherwise the keyword "hb" prefix-collides with the more
+  // specific "hbsag" — the bug originally reported in v0.6.5).
   //   14032C → LOINC 5196-1  (HBsAg, Mass/vol)
   //   14051C → LOINC 13955-0 (HCV antibody, Serum or Plasma)
+  // History: regressed in v0.6.3, fix lost until v0.6.5; NHI 醫令碼
+  // pinning added v0.6.6 + v0.6.8.
   push("HBsAg",    row.hbsaG_TEXT   || "", "", row.hbV_RESULT_TEXT || "", "laboratory", "14032C");
   push("Anti-HCV", row.antI_HCV_TEXT || "", "", row.hcV_RESULT_TEXT || "", "laboratory", "14051C");
-  // Uric acid — note: NHI's IHKE3402 schema also has a field called
-  // `urinE_UA_DIAG_ACID` that LOOKS like urine UA but the values are
-  // identical to `uriC_ACID` (serum, mg/dL). It's a misnamed duplicate
-  // we deliberately skip — using both would create two FHIR
-  // Observations with the same value but contradictory specimens.
-  push("Uric Acid",     row.uriC_ACID,   "mg/dL");
-  // Urine UA (qualitative urine dipstick test — distinct from the
-  // mislabeled urinE_UA_DIAG_ACID above; this `urinE_UA` is the real
-  // urine UA result, usually a +/- string or empty when not run).
-  // Same code-vs-text pattern as urinE_PROTEIN — use the _TEXT field.
-  push("Urine UA",      row.urinE_UA_DIAG_RESULT_TEXT || "", "", "");
+  // Uric acid (blood) — `uriC_ACID` field. NHI 醫令碼 09013C → LOINC
+  // 3084-1 (Urate Mass/vol S/P).
+  //
+  // NHI's IHKE3402 schema ALSO carries two related-looking-but-distinct
+  // fields we deliberately skip:
+  //   - urinE_UA_DIAG_ACID — empirically duplicates serum uric acid;
+  //     emitting it would create a duplicate Observation.
+  //   - urinE_UA / urinE_UA_DIAG_RESULT_TEXT — claim to be a urine UA
+  //     dipstick but DON'T appear anywhere in NHI's 健康存摺 UI for
+  //     adult preventive screening (the 尿液檢查 section only shows
+  //     尿液蛋白質). Always empty / "-" in observed payloads. Legacy
+  //     schema field with no clinical reality — do NOT emit.
+  push("Uric Acid",     row.uriC_ACID,   "mg/dL", "", "laboratory", "09013C");
   // Metabolic syndrome screening — value is an interpretation string
   // ('正常' / '異常，建議：請洽詢醫師'), not a number. The mapper's
   // _try_parse_quantity will return None and it falls through to
