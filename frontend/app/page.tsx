@@ -22,7 +22,7 @@ interface Patient {
 
 interface SyncLog {
   id: string;
-  status: "running" | "success" | "failed";
+  status: "running" | "success" | "partial" | "failed";
   patient_id: string | null;
   message: string | null;
   created_at: string;
