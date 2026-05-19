@@ -1319,8 +1319,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (ctx?.patientId && ctx.backend) {
       (async () => {
         try {
+          // Backend stores Patient under derivePatientId(rawId), so the
+          // DELETE path must use the hashed form — sending the raw ID
+          // matches nothing and leaves the partial upload in the store.
+          const fhirPid = derivePatientId(ctx.patientId);
           await fetch(
-            `${ctx.backend}/sync/patient/${encodeURIComponent(ctx.patientId)}`,
+            `${ctx.backend}/sync/patient/${encodeURIComponent(fhirPid)}`,
             {
               method: "DELETE",
               headers: ctx.syncApiKey ? { "X-Sync-API-Key": ctx.syncApiKey } : {},

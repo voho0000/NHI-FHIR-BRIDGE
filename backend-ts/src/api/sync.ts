@@ -171,18 +171,25 @@ syncApi.delete("/logs/:logId", (c) => {
 
 syncApi.delete("/patient/:patientId", requireSyncApiKey, (c) => {
   const patientId = c.req.param("patientId");
-  // Escape SQL LIKE metacharacters in the patient_id so an ID containing
-  // % or _ can't widen the deletion.
-  const safeRef = `Patient/${patientId}`
-    .replace(/\\/g, "\\\\")
-    .replace(/%/g, "\\%")
-    .replace(/_/g, "\\_");
+  // Resources are stored under derivePatientId(rawId), but callers
+  // historically passed either the raw national ID or the hashed
+  // Patient.id. Match both so cleanup is idempotent regardless of
+  // which form the caller sends.
+  const hashedId = derivePatientId(patientId);
+  // Escape SQL LIKE metacharacters in case the raw id contains
+  // % or _ — would otherwise widen the deletion.
+  const escapeLike = (s: string) =>
+    s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+  const safeRefRaw = `Patient/${escapeLike(patientId)}`;
+  const safeRefHashed = `Patient/${escapeLike(hashedId)}`;
   const result = defaultDb
     .delete(fhirResources)
     .where(
       or(
         and(eq(fhirResources.resourceType, "Patient"), eq(fhirResources.fhirId, patientId)),
-        sql`CAST(${fhirResources.resource} AS TEXT) LIKE ${`%${safeRef}%`} ESCAPE '\\'`,
+        and(eq(fhirResources.resourceType, "Patient"), eq(fhirResources.fhirId, hashedId)),
+        sql`CAST(${fhirResources.resource} AS TEXT) LIKE ${`%${safeRefRaw}%`} ESCAPE '\\'`,
+        sql`CAST(${fhirResources.resource} AS TEXT) LIKE ${`%${safeRefHashed}%`} ESCAPE '\\'`,
       ),
     )
     .run();
