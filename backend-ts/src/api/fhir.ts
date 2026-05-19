@@ -9,10 +9,10 @@
 import { Hono } from "hono";
 
 import { settings } from "@/core/config";
-import { requireFhirAuth, requireSyncApiKey } from "@/core/security";
+import { requireFhirAuth, requireFhirScope, requireSyncApiKey } from "@/core/security";
 import { buildCapabilityStatement } from "@/fhir/capability";
 import { fhirServer } from "@/fhir/server";
-import { smartAuth } from "@/smart/oauth2";
+import { buildSmartConfiguration, smartAuth } from "@/smart/oauth2";
 
 export const fhirApi = new Hono();
 
@@ -81,37 +81,16 @@ fhirApi.get("/metadata", (c) => c.json(buildCapabilityStatement()));
 
 fhirApi.get("/.well-known/smart-configuration", (c) => {
   const base = settings.FHIR_BASE_URL.replace("/fhir", "");
-  return c.json({
-    issuer: base,
-    authorization_endpoint: `${base}/smart/authorize`,
-    token_endpoint: `${base}/smart/token`,
-    capabilities: [
-      "launch-standalone",
-      "launch-ehr",
-      "client-public",
-      "context-standalone-patient",
-      "permission-patient",
-      "sso-openid-connect",
-    ],
-    scopes_supported: [
-      "openid",
-      "fhirUser",
-      "launch",
-      "launch/patient",
-      "patient/*.read",
-      "online_access",
-      "offline_access",
-    ],
-    response_types_supported: ["code"],
-    code_challenge_methods_supported: ["S256"],
-  });
+  return c.json(buildSmartConfiguration(base));
 });
 
 // ── PHI auth gate for everything below ───────────────────────────────
 // All /Patient and per-patient resource routes require either a SMART
 // bearer or the X-Sync-API-Key. Discovery routes above stay open.
-fhirApi.use("/Patient", requireFhirAuth);
-fhirApi.use("/Patient/*", requireFhirAuth);
+// `requireFhirScope` runs second so a bearer token without
+// patient/Patient.read (or patient/*.read) is rejected with 403.
+fhirApi.use("/Patient", requireFhirAuth, requireFhirScope("Patient"));
+fhirApi.use("/Patient/*", requireFhirAuth, requireFhirScope("Patient"));
 
 // ── Patient ──────────────────────────────────────────────────────────
 
@@ -159,8 +138,8 @@ const PER_PATIENT_RESOURCES = [
 ];
 
 for (const rtype of PER_PATIENT_RESOURCES) {
-  fhirApi.use(`/${rtype}`, requireFhirAuth);
-  fhirApi.use(`/${rtype}/*`, requireFhirAuth);
+  fhirApi.use(`/${rtype}`, requireFhirAuth, requireFhirScope(rtype));
+  fhirApi.use(`/${rtype}/*`, requireFhirAuth, requireFhirScope(rtype));
 
   fhirApi.get(`/${rtype}`, (c) => {
     const authPid = getAuthenticatedPatientId(c.req.header("Authorization"));

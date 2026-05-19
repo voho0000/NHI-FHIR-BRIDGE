@@ -9,35 +9,13 @@ import { Hono } from "hono";
 import { settings } from "@/core/config";
 import { requireSyncApiKey } from "@/core/security";
 import { fhirServer } from "@/fhir/server";
-import { smartAuth } from "@/smart/oauth2";
+import { buildSmartConfiguration, smartAuth } from "@/smart/oauth2";
 
 export const smartApi = new Hono();
 
 smartApi.get("/.well-known/smart-configuration", (c) => {
   const base = settings.FHIR_BASE_URL.replace("/fhir", "");
-  return c.json({
-    issuer: base,
-    authorization_endpoint: `${base}/smart/authorize`,
-    token_endpoint: `${base}/smart/token`,
-    capabilities: [
-      "launch-standalone",
-      "launch-ehr",
-      "client-public",
-      "context-standalone-patient",
-      "permission-patient",
-      "sso-openid-connect",
-    ],
-    scopes_supported: [
-      "openid",
-      "fhirUser",
-      "launch",
-      "launch/patient",
-      "patient/*.read",
-      "offline_access",
-    ],
-    response_types_supported: ["code"],
-    code_challenge_methods_supported: ["S256"],
-  });
+  return c.json(buildSmartConfiguration(base));
 });
 
 smartApi.get("/authorize", async (c) => {

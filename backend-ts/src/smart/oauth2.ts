@@ -27,6 +27,42 @@ function tokenUrlsafe(bytes: number): string {
   return randomBytes(bytes).toString("base64url");
 }
 
+/**
+ * Single source of truth for the SMART discovery document. Served
+ * verbatim from both `/fhir/.well-known/smart-configuration` and
+ * `/smart/.well-known/smart-configuration` — these two paths are
+ * historical (SMART App Launch IG §3.1 puts it at the FHIR base;
+ * some clients also probe the authorization base) and must return
+ * identical JSON so SMART apps see the same capability set
+ * regardless of which path they hit.
+ */
+export function buildSmartConfiguration(baseUrl: string): Record<string, unknown> {
+  return {
+    issuer: baseUrl,
+    authorization_endpoint: `${baseUrl}/smart/authorize`,
+    token_endpoint: `${baseUrl}/smart/token`,
+    capabilities: [
+      "launch-standalone",
+      "launch-ehr",
+      "client-public",
+      "context-standalone-patient",
+      "permission-patient",
+      "sso-openid-connect",
+    ],
+    scopes_supported: [
+      "openid",
+      "fhirUser",
+      "launch",
+      "launch/patient",
+      "patient/*.read",
+      "online_access",
+      "offline_access",
+    ],
+    response_types_supported: ["code"],
+    code_challenge_methods_supported: ["S256"],
+  };
+}
+
 function nowPlusMinutes(min: number): Date {
   return new Date(Date.now() + min * 60_000);
 }
