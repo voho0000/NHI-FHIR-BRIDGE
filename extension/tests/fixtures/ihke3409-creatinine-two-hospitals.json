@@ -1,0 +1,28 @@
+{
+  "_source": "IHKE3409S01 (其他檢驗結果) — synthetic, two hospitals reporting the same NHI 醫令碼 09027C (Creatinine) with different free-text labels",
+  "_note": "Demonstrates the 'Crea' vs 'Crea,' SMART-app grouping problem. Both rows share ordeR_CODE='09027C' so the adapter outputs the same `code` field, and downstream SMART apps will see them as the same lab test even though the hospital free-text differs. The trailing comma is also normalized out of the display.",
+  "rows": [
+    {
+      "ordeR_CODE": "09027C",
+      "ordeR_NAME": "肌酸酐、血",
+      "order_shortname": "Crea",
+      "assaY_ITEM_NAME": "Crea",
+      "assaY_VALUE": "1.1",
+      "uniT_DATA": "mg/dL",
+      "consulT_VALUE": "[0.6][1.3]",
+      "hosP_ABBR": "醫院 A",
+      "funC_DATE": "114/05/18"
+    },
+    {
+      "ordeR_CODE": "09027C",
+      "ordeR_NAME": "肌酸酐、血",
+      "order_shortname": "Crea,",
+      "assaY_ITEM_NAME": "Crea,",
+      "assaY_VALUE": "1.2",
+      "uniT_DATA": "mg/dL",
+      "consulT_VALUE": "[0.6][1.3]",
+      "hosP_ABBR": "醫院 B",
+      "funC_DATE": "114/06/10"
+    }
+  ]
+}

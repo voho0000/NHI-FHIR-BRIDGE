@@ -191,13 +191,92 @@ describe("adaptLabItem", () => {
       date: "2025-05-22",
       order_code: "09140C",
       order_name: "血液及體液葡萄糖-餐後",
-      code: "FINGER SUGAR",
+      // code is the NHI 醫令碼 (stable across hospitals), display is
+      // the cleaned hospital free-text label.
+      code: "09140C",
       display: "FINGER SUGAR",
       value: "191",
       unit: "mg/dL",
       reference_range: "[70][140]",
       hospital: "長庚嘉義",
     });
+  });
+
+  // Round 1 of the "Crea vs Crea," fix — feed the NHI 醫令碼 as the
+  // observation code so SMART apps group the same physical test across
+  // hospitals, regardless of free-text label differences.
+  test("prefers NHI ordeR_CODE for code, free-text for display", () => {
+    const r = adaptLabItem({
+      funC_DATE: "114/05/18",
+      ordeR_CODE: "09027C",
+      ordeR_NAME: "肌酸酐、血",
+      assaY_ITEM_NAME: "Crea",
+      assaY_VALUE: "1.1",
+    });
+    expect(r.code).toBe("09027C");      // stable across hospitals
+    expect(r.display).toBe("Crea");     // cleaned hospital label
+  });
+
+  test("strips trailing comma / whitespace from free-text display", () => {
+    expect(adaptLabItem({
+      funC_DATE: "114/05/18",
+      ordeR_CODE: "09027C",
+      assaY_ITEM_NAME: "Crea,",
+      assaY_VALUE: "1.2",
+    }).display).toBe("Crea");
+
+    expect(adaptLabItem({
+      funC_DATE: "114/05/18",
+      ordeR_CODE: "09027C",
+      assaY_ITEM_NAME: "Crea， ",   // 中文逗號 + trailing space
+      assaY_VALUE: "1.2",
+    }).display).toBe("Crea");
+
+    expect(adaptLabItem({
+      funC_DATE: "114/05/18",
+      ordeR_CODE: "09027C",
+      assaY_ITEM_NAME: "  ALT/GPT ;  ",   // semicolons + whitespace
+      assaY_VALUE: "30",
+    }).display).toBe("ALT/GPT");
+  });
+
+  test("two hospitals reporting same ordeR_CODE → same code (the SMART-app grouping fix)", () => {
+    const fixture = readFixture("ihke3409-creatinine-two-hospitals.json");
+    const [a, b] = fixture.rows.map(adaptLabItem);
+
+    // The whole point: same NHI 醫令碼 → same FHIR code → SMART app
+    // sees them as the same physical test even though hospital labels
+    // differ ("Crea" vs "Crea,").
+    expect(a.code).toBe("09027C");
+    expect(b.code).toBe("09027C");
+    expect(a.code).toBe(b.code);
+
+    // Display is per-hospital but normalized — trailing comma removed.
+    expect(a.display).toBe("Crea");
+    expect(b.display).toBe("Crea");
+
+    // Original NHI 醫令碼 name preserved separately.
+    expect(a.order_name).toBe("肌酸酐、血");
+    expect(b.order_name).toBe("肌酸酐、血");
+
+    // But dates and values are independent — they're distinct
+    // measurements taken at different times.
+    expect(a.date).not.toBe(b.date);
+    expect(a.value).not.toBe(b.value);
+  });
+
+  test("falls back to free-text when ordeR_CODE is missing", () => {
+    // Some older rows / edge endpoints may not carry ordeR_CODE. The
+    // adapter should degrade gracefully — code falls back to the
+    // cleaned display, downstream mapper routes it under
+    // HIS_LOCAL_LAB_CODE instead of NHI_MEDICAL_ORDER_CODE.
+    const r = adaptLabItem({
+      funC_DATE: "114/05/18",
+      assaY_ITEM_NAME: "Some Unmapped Test",
+      assaY_VALUE: "42",
+    });
+    expect(r.code).toBe("Some Unmapped Test");
+    expect(r.display).toBe("Some Unmapped Test");
   });
 });
 

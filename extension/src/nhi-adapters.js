@@ -44,6 +44,20 @@ export function pickEnglish(s) {
   return en || str.slice(0, idx).trim();
 }
 
+// Strip trailing punctuation / whitespace junk that some hospitals leave
+// on their free-text lab labels (e.g. NHI returns "Crea," from one site
+// and "Crea" from another for the same physical test). Pre-normalizing
+// here means the Observation.code.text downstream reads cleanly even
+// when downstream UIs still happen to render `code.text` instead of
+// pulling display from the LOINC / NHI 醫令碼 coding.
+function _cleanLabName(s) {
+  if (s === null || s === undefined) return "";
+  return String(s)
+    .trim()
+    .replace(/[,，;；]+\s*$/, "")  // trailing 半形 / 全形 punctuation
+    .trim();
+}
+
 // Adapter for NHI lab/observation JSON shape (confirmed for IHKE3409S01;
 // other lab endpoints likely use the same fields).
 //
@@ -65,21 +79,29 @@ export function adaptLabItem(item) {
   );
   const value = item.assaY_VALUE;
   if (!date || value === undefined || value === null || value === "") return null;
-  // IMPORTANT: `order_shortname` is NHI's UI-truncated label (~15 chars
-  // + " ..."), suitable for their long-table display but NOT for FHIR
-  // Observation.code.text — downstream SMART apps end up showing half
-  // names like "PC Sugar 飯後 ..." with no field to recover the full
-  // name from. Always prefer `assaY_ITEM_NAME` (the full item name,
-  // typically bilingual like "PC Sugar 飯後兩小時血糖") and only fall
-  // back to the shortname when the full name is genuinely absent.
-  // Same priority applied to `code` and `display` so both
-  // Observation.code.text and coding[].display carry the full label.
-  const fullName = item.assaY_ITEM_NAME || item.order_shortname || "";
+  // Display name fallback chain (all normalized for trailing punctuation):
+  //   1. assaY_ITEM_NAME — hospital's full free-text label
+  //   2. order_shortname — NHI's UI-truncated label (often ends "...")
+  //   3. ordeR_NAME      — NHI's canonical 醫令碼 dictionary name
+  // assaY_ITEM_NAME wins by default because order_shortname can be cut
+  // off mid-word ("PC Sugar 飯後 ..."), which is worse than a trailing-
+  // comma cosmetic issue. ordeR_NAME is the last-resort Chinese formal
+  // label.
+  const fullName = _cleanLabName(item.assaY_ITEM_NAME)
+                || _cleanLabName(item.order_shortname)
+                || _cleanLabName(item.ordeR_NAME);
+  const orderCode = String(item.ordeR_CODE || "").trim();
   return {
     date,
-    order_code: item.ordeR_CODE || "",
+    order_code: orderCode,
     order_name: item.ordeR_NAME || "",
-    code: fullName,
+    // Prefer the NHI 醫令碼 ("09140C") as the FHIR coding code so the
+    // downstream observation mapper routes it under NHI_MEDICAL_ORDER_
+    // CODE system. SMART apps group lab tests by coding code; using
+    // free-text here is what causes "Crea" and "Crea," to be split
+    // into two distinct tests. Fallback to the cleaned display when
+    // NHI doesn't supply an order code (older / edge-case rows).
+    code: orderCode || fullName,
     display: fullName,
     value: String(value),
     unit: item.uniT_DATA || "",

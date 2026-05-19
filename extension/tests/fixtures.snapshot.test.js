@@ -33,10 +33,10 @@ const FIX = resolve(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const load = (name) => JSON.parse(readFileSync(resolve(FIX, name), "utf8"));
 
 describe("adapter fixture snapshots", () => {
-  test("IHKE3409 lab (inpatient — real_INSPECT_DATE wins)", () => {
+  test("IHKE3409 lab (inpatient — real_INSPECT_DATE wins, ordeR_CODE → code)", () => {
     expect(adaptLabItem(load("ihke3409-lab-inpatient.json"))).toMatchInlineSnapshot(`
       {
-        "code": "FINGER SUGAR",
+        "code": "09140C",
         "date": "2025-05-22",
         "display": "FINGER SUGAR",
         "hospital": "長庚嘉義",
