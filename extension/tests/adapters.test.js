@@ -805,6 +805,65 @@ describe("adaptInpatientEncounter", () => {
   test("returns null without a start date", () => {
     expect(adaptInpatientEncounter({ out_DATE: "114/05/22" })).toBeNull();
   });
+
+  test("v0.8.6 primary_diagnosis from S02 detail wins over Chinese-only list", () => {
+    // IHKE3309S01 list ships icd9cm_CODE_CNAME as Chinese-only (no
+    // bilingual ||); IHKE3309S02 detail (ctype=3) ships full bilingual.
+    // Caller cross-references and passes the bilingual primary so
+    // mapper emits English on coding.display.
+    const r = adaptInpatientEncounter(
+      {
+        in_DATE: "114/05/18",
+        out_DATE: "114/05/22",
+        hosp_ABBR: "長庚嘉義",
+        icd9cm_CODE: "R042",
+        icd9cm_CODE_CNAME: "咳血",
+      },
+      {
+        primary_diagnosis: { code: "R042", name_en: "Hemoptysis", name_zh: "咳血" },
+      },
+    );
+    expect(r.reason).toBe("R042 Hemoptysis");
+    expect(r.reason_zh).toBe("R042 咳血");
+    expect(r.reason_code).toBe("R042");
+  });
+
+  test("v0.8.6 secondary_diagnoses flow through (up to 12+ for 住院 cases)", () => {
+    const r = adaptInpatientEncounter(
+      {
+        in_DATE: "114/05/18",
+        out_DATE: "114/05/22",
+        hosp_ABBR: "長庚嘉義",
+        icd9cm_CODE: "R042",
+      },
+      {
+        secondary_diagnoses: [
+          { code: "K2100", name_en: "GERD with esophagitis", name_zh: "胃食道逆流性疾病伴有食道炎" },
+          { code: "E1122", name_en: "T2DM with chronic kidney disease", name_zh: "第二型糖尿病伴慢性腎臟病" },
+        ],
+      },
+    );
+    expect(r.secondary_diagnoses).toHaveLength(2);
+    expect(r.secondary_diagnoses[0].code).toBe("K2100");
+  });
+
+  test("v0.8.6 no options → secondary_diagnoses defaults to empty array", () => {
+    const r = adaptInpatientEncounter({
+      in_DATE: "114/05/18",
+      hosp_ABBR: "X",
+    });
+    expect(r.secondary_diagnoses).toEqual([]);
+  });
+
+  test("v0.8.6 no options → falls back to list-level icd9cm_CODE_CNAME (preserves old behavior)", () => {
+    const r = adaptInpatientEncounter({
+      in_DATE: "114/05/18",
+      hosp_ABBR: "X",
+      icd9cm_CODE: "I10",
+      icd9cm_CODE_CNAME: "原發性高血壓",
+    });
+    expect(r.reason_zh).toBe("I10 原發性高血壓");
+  });
 });
 
 // ── adaptEncounterFromMedExpense — IHKE3303 ─────────────────────────────

@@ -36,6 +36,7 @@ import {
   // — see TODO_FOLLOWUP for a SW-flow integration test idea.
   adaptEncounterFromMedExpense,
   adaptImagingReportFromDetail,
+  adaptInpatientEncounter,
   adaptMedicationFromDetail,
   adaptProcedureFromDetail,
   isoToROC,
@@ -614,11 +615,103 @@ async function _fetchEncounterDetailsInTab({ tabId, baseUrl, visits }) {
   return byIdx;
 }
 
+// Fan out IHKE3309S02 detail fetches for inpatient encounters. List
+// endpoint IHKE3309S01 ships icd9cm_CODE_CNAME Chinese-only and has
+// no secondary diagnoses field; detail ships full bilingual primary
+// ICD + icdcode_data[] with up to 12+ 次診斷 (住院 visits tend to
+// have richer differential — observed sample had 12 secondaries vs
+// 4 for the eye-clinic OPD case). ctype is fixed to 3 (= 住院) for
+// this endpoint; probing other values returns empty arrays.
+async function _fetchInpatientDetailsInTab({ tabId, baseUrl, visits }) {
+  const reqs = visits
+    .map((v, idx) => ({ idx, row_ID: v.row_ID || v.row_id || v.roW_ID || "" }))
+    .filter((r) => r.row_ID);
+  if (reqs.length === 0) return new Map();
+
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: async (base, items) => {
+      const token = sessionStorage.getItem("token");
+      if (!token) return { error: "SESSION_EXPIRED" };
+      if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
+        return { error: "SESSION_EXPIRED" };
+      }
+      const auth = `Bearer ${token}`;
+      async function fetchOne(rowId) {
+        // IHKE3309S02 takes crid + ctype like the other S02 detail
+        // endpoints. ctype=3 (住院) is the only value that returns
+        // data on this endpoint per live probe; we still fallback to
+        // 1/2 defensively in case NHI's mapping changes.
+        for (const ct of [3, 2, 1]) {
+          const url = `${base}/api/ihke3000/IHKE3309S02/page_load?crid=${encodeURIComponent(rowId)}&ctype=${ct}`;
+          const ac = new AbortController();
+          const tm = setTimeout(() => ac.abort(), 30000);
+          try {
+            const r = await fetch(url, {
+              method: "GET", credentials: "same-origin", signal: ac.signal,
+              headers: { "Accept": "application/json", "Authorization": auth },
+            });
+            clearTimeout(tm);
+            if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
+            if (!r.ok) continue;
+            const body = await r.json();
+            const main = body?.ihke3309S02_main_data || [];
+            if (main.length > 0) return { body };
+          } catch (e) {
+            clearTimeout(tm);
+            if (e?.name !== "AbortError") continue;
+            return { error: "timeout 30s" };
+          }
+        }
+        return { body: null };
+      }
+      const out = new Array(items.length);
+      let next = 0;
+      const CONC = 3;
+      async function worker() {
+        while (next < items.length) {
+          const i = next++;
+          await new Promise((r) => setTimeout(r, Math.random() * 150));
+          out[i] = await fetchOne(items[i].row_ID);
+        }
+      }
+      const ws = [];
+      for (let w = 0; w < CONC && w < items.length; w++) ws.push(worker());
+      await Promise.all(ws);
+      return { results: out };
+    },
+    args: [baseUrl, reqs],
+  });
+
+  if (result?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
+  const byIdx = new Map();
+  const results = result?.results || [];
+  for (let i = 0; i < reqs.length; i++) {
+    byIdx.set(reqs[i].idx, results[i]?.body || null);
+  }
+  return byIdx;
+}
+
+// NHI's S02 detail endpoints (IHKE3303S02 encounter, IHKE3309S02
+// inpatient, ...) wrap the main row under a key named after the
+// endpoint — ihke3303S02_main_data / ihke3309S02_main_data / etc.
+// This helper picks out main_data[0] regardless of which S02 we hit,
+// so the three downstream extractors (_classFromS02Detail,
+// _primaryIcdFromS02Detail, _secondaryIcdsFromS02Detail) work uniformly.
+function _pickS02MainRow(body) {
+  if (!body || typeof body !== "object") return null;
+  for (const k of Object.keys(body)) {
+    if (/^ihke\d+S02_main_data$/i.test(k) && Array.isArray(body[k]) && body[k].length > 0) {
+      return body[k][0];
+    }
+  }
+  return null;
+}
+
 function _classFromS02Detail(body) {
-  if (!body) return null;
-  const main = (body.ihke3303S02_main_data) || [];
-  if (main.length === 0) return null;
-  const tn = String(main[0].hosp_DATA_TYPE_NAME || "");
+  const main = _pickS02MainRow(body);
+  if (!main) return null;
+  const tn = String(main.hosp_DATA_TYPE_NAME || "");
   if (tn.includes("急")) return "EMER";  // 急診
   if (tn.includes("住院")) return "IMP";
   // 西醫 / 中醫 / 牙醫 / 藥局 all default to AMB
@@ -633,12 +726,11 @@ function _classFromS02Detail(body) {
 // it over the (potentially Chinese-only) list-level field. Result:
 // Encounter.reasonCode[0].coding[0].display is reliably English.
 function _primaryIcdFromS02Detail(body) {
-  if (!body) return null;
-  const main = (body.ihke3303S02_main_data) || [];
-  if (main.length === 0) return null;
-  const codeName = main[0].icd9cm_CODE_CNAME || main[0].icd9cm_code_cname || "";
+  const main = _pickS02MainRow(body);
+  if (!main) return null;
+  const codeName = main.icd9cm_CODE_CNAME || main.icd9cm_code_cname || "";
   if (!codeName) return null;
-  const code = main[0].icd9cm_CODE || main[0].icd9cm_code || "";
+  const code = main.icd9cm_CODE || main.icd9cm_code || "";
   const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
   const pickHalf = (s, half) => {
     const str = String(s || "");
@@ -661,10 +753,9 @@ function _primaryIcdFromS02Detail(body) {
 // Returns a normalized array passed via the encounter adapter's
 // options.secondary_diagnoses → mapper emits one reasonCode[] entry per item.
 function _secondaryIcdsFromS02Detail(body) {
-  if (!body) return [];
-  const main = (body.ihke3303S02_main_data) || [];
-  if (main.length === 0) return [];
-  const list = Array.isArray(main[0].icdcode_data) ? main[0].icdcode_data : [];
+  const main = _pickS02MainRow(body);
+  if (!main) return [];
+  const list = Array.isArray(main.icdcode_data) ? main.icdcode_data : [];
   const out = [];
   // strip the "<CODE>/" prefix from each half (same pattern as
   // medication / encounter primary ICD bilingual)
@@ -1266,6 +1357,45 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     }
   }
   _markPhase("encounter-detail");
+
+  // Step 1a': inpatient encounters get the same S02 detail enrichment
+  // as IHKE3303 OPD encounters — IHKE3309S01 list ships Chinese-only
+  // ICD + zero secondaries, IHKE3309S02 detail (ctype=3) ships full
+  // bilingual primary + up to 12+ secondary diagnoses (住院 cases are
+  // diagnostically richer than OPD). Without this fan-out, inpatient
+  // FHIR Encounters have Chinese-only reasonCode display and no
+  // secondary diagnoses at all.
+  const inpIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "inpatient");
+  if (inpIdx >= 0 && settled[inpIdx].status === "fulfilled") {
+    const visits = settled[inpIdx].value.rawList || [];
+    if (visits.length > 0) {
+      try {
+        const detailMap = await _withProgressTimer(
+          (sec) =>
+            sec === 0
+              ? `📥 取得 ${visits.length} 筆住院紀錄詳情…`
+              : `📥 取得 ${visits.length} 筆住院紀錄詳情…（已 ${sec} 秒）`,
+          () => _fetchInpatientDetailsInTab({ tabId, baseUrl: BASE, visits }),
+        );
+        const reAdapted = [];
+        for (let i = 0; i < visits.length; i++) {
+          const detail = detailMap?.get(i) || null;
+          const primaryDiagnosis = _primaryIcdFromS02Detail(detail);
+          const secondaryDiagnoses = _secondaryIcdsFromS02Detail(detail);
+          const it = adaptInpatientEncounter(visits[i], {
+            primary_diagnosis: primaryDiagnosis,
+            secondary_diagnoses: secondaryDiagnoses,
+          });
+          if (it) reAdapted.push(it);
+        }
+        settled[inpIdx].value.items = reAdapted;
+        settled[inpIdx].value.raw_count = reAdapted.length;
+      } catch (e) {
+        errors.push(`inpatient detail: ${e.message}`);
+      }
+    }
+  }
+  _markPhase("inpatient-detail");
 
   // Step 1b: medications need a 2-step fetch — IHKE3306S01 only returns
   // visit metadata (date, ICD, hospital), no drug names. Drugs live at

@@ -405,19 +405,31 @@ export function adaptAdultPreventive(row) {
 //         icd9cm_CODE, icd9cm_CODE_CNAME, ori_TYPE("3"), row_ID, ...}
 // IHKE3308S01 has the same shape for a small set of older 住院 records;
 // `func_DATE` instead of `in_DATE` in some rows — adapter accepts both.
-export function adaptInpatientEncounter(item) {
+export function adaptInpatientEncounter(item, options) {
   if (!item || typeof item !== "object") return null;
   const start = rocToISO(item.in_DATE || item.func_DATE || "");
   const end = rocToISO(item.out_DATE || "");
   if (!start) return null;
-  // icd9cm name on 住院 list is just Chinese (no || English split observed)
-  // historically; treat defensively as bilingual so future NHI changes don't
-  // surprise us. When only Chinese is shipped, pickEnglish falls back to it.
-  const icdCode = item.icd9cm_CODE || item.icd9cm_code || "";
-  const rawIcdName = item.icd9cm_CODE_CNAME || item.icd9cm_name || "";
-  const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
-  const icdName = stripIcdPrefix(pickEnglish(rawIcdName));
-  const icdName_zh = stripIcdPrefix(pickChinese(rawIcdName));
+  // IHKE3309S01 list ships icd9cm_CODE_CNAME Chinese-only ("咳血") with
+  // no bilingual `||` and no secondary diagnoses field — same problem
+  // pattern as IHKE3303 OPD encounters before v0.8.4. Caller may
+  // supply options.primary_diagnosis (bilingual {code, name_en, name_zh})
+  // and options.secondary_diagnoses (array) from the IHKE3309S02
+  // detail fan-out so the mapper produces English coding.display +
+  // multiple reasonCode entries — same contract as adaptEncounterFromMedExpense.
+  const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
+  const s02Primary = options && options.primary_diagnosis;
+  const icdCode =
+    (s02Primary && s02Primary.code) || item.icd9cm_CODE || item.icd9cm_code || "";
+  let icdName, icdName_zh;
+  if (s02Primary && (s02Primary.name_en || s02Primary.name_zh)) {
+    icdName = s02Primary.name_en || s02Primary.name_zh;
+    icdName_zh = s02Primary.name_zh || s02Primary.name_en;
+  } else {
+    const rawIcdName = item.icd9cm_CODE_CNAME || item.icd9cm_name || "";
+    icdName = stripIcdPrefix(pickEnglish(rawIcdName));
+    icdName_zh = stripIcdPrefix(pickChinese(rawIcdName));
+  }
   return {
     date: start,
     end_date: end,
@@ -428,6 +440,10 @@ export function adaptInpatientEncounter(item) {
     reason: icdName ? (icdCode ? `${icdCode} ${icdName}` : icdName) : "",
     reason_zh: icdName_zh ? (icdCode ? `${icdCode} ${icdName_zh}` : icdName_zh) : "",
     reason_code: icdCode,
+    secondary_diagnoses:
+      options && Array.isArray(options.secondary_diagnoses)
+        ? options.secondary_diagnoses
+        : [],
     hospital: item.hosp_ABBR || item.hosp_abbr || "",
     row_id: item.row_ID || item.row_id || "",
   };
