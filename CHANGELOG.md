@@ -2,6 +2,19 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.8.7 重點 — 2026-05-21
+
+純 UX 修字 — popup 同步進度條把兩個工程師用語改成民眾看得懂的話。
+
+**UX 修正**
+- 🪧 **「NHI 後端 detail JOIN 較慢」拿掉**：v0.8.5 加進去解釋 sync 慢的原因，但 `detail JOIN` 是資料庫術語、民眾看不懂。改成跟其他 4 個 fan-out 一致只顯示 elapsed 秒：`📥 取得 163 筆就醫紀錄詳情…（已 27 秒）`。
+- 🪧 **「FHIR 資源」→「健康資料」**：FHIR 是健康資訊產業的縮寫，一般民眾不認得。換成「健康資料」直觀又準確。
+
+**升級注意**
+- 純 UX，bundle 內容跟 v0.8.6 完全一樣。Reload extension 即可。
+
+---
+
 ## 0.8.6 重點 — 2026-05-21
 
 住院 (IHKE3309) Encounter 補上 S02 detail enrichment — 跟 v0.8.4 對 OPD encounter 同 pattern，這次蓋到住院記錄。
