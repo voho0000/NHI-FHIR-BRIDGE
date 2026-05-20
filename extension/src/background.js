@@ -1112,6 +1112,25 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   // List endpoint doesn't expose 急診 distinction; detail does. We re-
   // adapt each encounter item with the discovered class before the
   // backend upload step.
+  // Cross-reference: build a set of row_IDs that the medication / chronic
+  // list endpoints reported as ori_TYPE_NAME="藥局". IHKE3303 itself
+  // lacks the visit-type field, so this is how we classify pharmacy
+  // pickup events without resorting to hospital-name string matching.
+  // (Adapter still uses hospital name as a defensive fallback if either
+  // medication endpoint failed.)
+  const pharmacyRowIds = new Set();
+  for (const name of ["medications", "chronic_prescriptions"]) {
+    const idx = NHI_API_ENDPOINTS.findIndex((e) => e.name === name);
+    if (idx < 0 || settled[idx]?.status !== "fulfilled") continue;
+    for (const v of settled[idx].value.rawList || []) {
+      const id = v.row_ID || v.rowid || v.rowID;
+      const oriTypeName = v.ori_TYPE_NAME || v.ori_type_name || "";
+      if (id && oriTypeName.includes("藥局")) {
+        pharmacyRowIds.add(id);
+      }
+    }
+  }
+
   const encIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "encounters");
   if (encIdx >= 0 && settled[encIdx].status === "fulfilled") {
     const visits = settled[encIdx].value.rawList || [];
@@ -1128,7 +1147,12 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
         for (let i = 0; i < visits.length; i++) {
           const detail = detailMap?.get(i) || null;
           const cls = _classFromS02Detail(detail) || "AMB";
-          const it = adaptEncounterFromMedExpense(visits[i], cls);
+          const visit = visits[i];
+          const rowId = visit.roW_ID || visit.row_id || visit.row_ID;
+          const isPharmacy = rowId ? pharmacyRowIds.has(rowId) : false;
+          const it = adaptEncounterFromMedExpense(visit, cls, {
+            pharmacy: isPharmacy,
+          });
           if (it) reAdapted.push(it);
         }
         settled[encIdx].value.items = reAdapted;

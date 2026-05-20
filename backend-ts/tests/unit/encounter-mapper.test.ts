@@ -47,6 +47,22 @@ describe("mapEncounter", () => {
     expect(r.type).toEqual([{ text: "IC卡資料" }]);
   });
 
+  test("pharmacy type_display=藥局 flows through unchanged (SMART app detection point)", () => {
+    // SMART apps detect pharmacy events via type[].text.includes('藥局');
+    // make sure the mapper does not normalize or strip the value.
+    const r = mapEncounter(
+      {
+        date: "2026-05-13",
+        class: "AMB",
+        type_display: "藥局",
+        hospital: "安心大藥局",
+      },
+      PID,
+    );
+    expect(r.type).toEqual([{ text: "藥局" }]);
+    expect(r.serviceProvider.display).toBe("安心大藥局");
+  });
+
   test("department populates serviceType.text", () => {
     const r = mapEncounter({ department: "內科" }, PID);
     expect(r.serviceType.text).toBe("內科");

@@ -400,7 +400,26 @@ export function adaptInpatientEncounter(item) {
 //   roW_ID                  detail key for IHKE3303S02 fan-out (Phase B)
 // We don't have visit class (門/急/住) at the list level; the S02 detail
 // has hosp_DATA_TYPE_NAME ("西醫"/"中醫"/"牙醫"). For now default AMB.
-export function adaptEncounterFromMedExpense(item, classHint) {
+//
+// Pharmacy pickup detection — NHI mixes pharmacy dispense events into
+// IHKE3303 alongside clinic visits, with NO field in this endpoint that
+// distinguishes them (only the same "IC卡資料"/"申報資料" source label
+// either type uses). Without intervention SMART apps see an Encounter
+// shape identical to clinic visits and must guess from hospital name.
+// Two signals available, both 100% concordant on observed data:
+//   PRIMARY  options.pharmacy=true — caller pre-built a set of row_IDs
+//            that appeared in IHKE3306 / IHKE3307 with ori_TYPE_NAME=
+//            "藥局". Authoritative: uses NHI's own classification.
+//   FALLBACK hosP_ABBR matches /藥局|藥房/ — covers cases where the
+//            cross-ref wasn't built (medication fan-out unavailable /
+//            standalone test) and the edge case of a pharmacy event
+//            with no associated drug record. Reliable in practice
+//            because Taiwan NHI pharmacy designations always include
+//            藥局 or 藥房 in their official name.
+// Marks `type_display = "藥局"` for pharmacy rows so the mapper produces
+// Encounter.type[0].text = "藥局"; downstream SMART apps detect via
+// text.includes('藥局') without falling back to fragile name heuristics.
+export function adaptEncounterFromMedExpense(item, classHint, options) {
   if (!item || typeof item !== "object") return null;
   const date = rocToISO(item.funC_DATE || item.func_DATE || item.func_date || "");
   if (!date) return null;
@@ -408,19 +427,26 @@ export function adaptEncounterFromMedExpense(item, classHint) {
   const icdName = pickEnglish(
     item.icD9CM_CODE_CNAME || item.icd9cm_CODE_CNAME || item.icd9cm_name || ""
   );
+  const hospital = item.hosP_ABBR || item.hosp_ABBR || item.hosp_abbr || "";
+  const isPharmacy =
+    (options && options.pharmacy === true) || /藥局|藥房/.test(hospital);
   // class defaults to AMB; IHKE3303S02 detail fan-out may override to
   // EMER / IMP based on hosp_DATA_TYPE_NAME (急診 / 住院).
   return {
     date,
     end_date: "",
     class: classHint || "AMB",
-    // Origin marker isn't a clinical class, but stash it as type_display
-    // so downstream sees the NHI label without us inventing one.
-    type_display: item.ori_type_name || item.orI_TYPE_NAME || "",
+    // For pharmacy: emit "藥局" so SMART apps get a clear visit-type
+    // marker. For everything else: keep the NHI data-source label
+    // (IC卡資料 / 申報資料) — historical contract, still useful for
+    // consumers that already wired against it.
+    type_display: isPharmacy
+      ? "藥局"
+      : item.ori_type_name || item.orI_TYPE_NAME || "",
     department: "",
     provider: "",
     reason: icdName ? (icdCode ? `${icdCode} ${icdName}` : icdName) : "",
-    hospital: item.hosP_ABBR || item.hosp_ABBR || item.hosp_abbr || "",
+    hospital,
     // Pass through for the eventual IHKE3303S02 detail fetch (Phase B).
     row_id: item.roW_ID || item.row_id || "",
   };

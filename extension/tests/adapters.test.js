@@ -796,6 +796,83 @@ describe("adaptEncounterFromMedExpense", () => {
   test("returns null without a date", () => {
     expect(adaptEncounterFromMedExpense({ hosP_ABBR: "x" })).toBeNull();
   });
+
+  test("clinic visit keeps ori_type_name as type_display (existing contract)", () => {
+    const r = adaptEncounterFromMedExpense({
+      funC_DATE: "115/03/26",
+      hosP_ABBR: "嘉基醫院",
+      ori_type_name: "申報資料",
+    });
+    expect(r.type_display).toBe("申報資料");
+    expect(r.hospital).toBe("嘉基醫院");
+  });
+
+  test("pharmacy override via options.pharmacy=true (xref signal)", () => {
+    // Caller (background.js) cross-referenced row_ID against IHKE3306/3307
+    // and confirmed this is a pharmacy pickup. Should override the
+    // NHI source label (which says "IC卡資料" — misleading) with "藥局".
+    const r = adaptEncounterFromMedExpense(
+      {
+        funC_DATE: "115/05/13",
+        hosP_ABBR: "安心大藥局",
+        ori_type_name: "IC卡資料",
+        roW_ID: "AAZuF8AD6AAHzcqAAU",
+      },
+      "AMB",
+      { pharmacy: true },
+    );
+    expect(r.type_display).toBe("藥局");
+  });
+
+  test("pharmacy override via hospital-name fallback (no options)", () => {
+    // Even without the caller passing pharmacy=true, the adapter
+    // detects pharmacy from the hospital name. Defense for the case
+    // where the medication fan-out failed but encounter list succeeded.
+    const r = adaptEncounterFromMedExpense({
+      funC_DATE: "115/05/13",
+      hosP_ABBR: "東風藥局",
+      ori_type_name: "申報資料",
+    });
+    expect(r.type_display).toBe("藥局");
+  });
+
+  test("pharmacy override via hospital-name catches 藥房 too", () => {
+    const r = adaptEncounterFromMedExpense({
+      funC_DATE: "115/05/13",
+      hosP_ABBR: "丁丁藥房",
+    });
+    expect(r.type_display).toBe("藥局");
+  });
+
+  test("clinic with options.pharmacy=false explicitly stays clinic", () => {
+    const r = adaptEncounterFromMedExpense(
+      {
+        funC_DATE: "115/03/26",
+        hosP_ABBR: "三順診所",
+        ori_type_name: "申報資料",
+      },
+      "AMB",
+      { pharmacy: false },
+    );
+    expect(r.type_display).toBe("申報資料");
+  });
+
+  test("options.pharmacy=true wins even when hospital name doesn't match (新型藥事服務點)", () => {
+    // Future-proof: a pharmacy whose registered name doesn't contain
+    // 藥局/藥房 still gets correct classification because the xref
+    // signal from IHKE3306/3307 (where NHI's own ori_TYPE_NAME='藥局')
+    // is authoritative.
+    const r = adaptEncounterFromMedExpense(
+      {
+        funC_DATE: "115/05/13",
+        hosP_ABBR: "未來型藥事服務站",
+        ori_type_name: "申報資料",
+      },
+      "AMB",
+      { pharmacy: true },
+    );
+    expect(r.type_display).toBe("藥局");
+  });
 });
 
 // ── adaptAllergy ────────────────────────────────────────────────────────
