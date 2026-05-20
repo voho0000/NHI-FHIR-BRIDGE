@@ -127,6 +127,25 @@ export function mapMedicationRequest(
     resource.authoredOn = `${raw.date}T00:00:00+08:00`;
   }
 
+  // Chronic prescriptions (from NHI's IHKE3307S01 慢性處方箋 list) get
+  // the standard FHIR continuous-therapy marker. SMART apps recognise
+  // this code and can surface "long-term medication" badges or filter
+  // problem-list views. Acute prescriptions leave the field unset.
+  const courseOfTherapy = ((raw.course_of_therapy ?? "") as string).trim();
+  if (courseOfTherapy === "continuous") {
+    resource.courseOfTherapyType = {
+      coding: [
+        {
+          system:
+            "http://terminology.hl7.org/CodeSystem/medicationrequest-course-of-therapy",
+          code: "continuous",
+          display: "Continuous long term therapy",
+        },
+      ],
+      text: "Continuous long term therapy",
+    };
+  }
+
   const drugClass = ((raw.drug_class ?? "") as string).trim();
   if (drugClass) {
     resource.category = [{ text: drugClass }];

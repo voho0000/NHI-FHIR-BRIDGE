@@ -137,4 +137,66 @@ describe("mapMedicationsDedup", () => {
     // expectedSupplyDuration still produced from duration_days.
     expect(dr.expectedSupplyDuration.value).toBe(28);
   });
+
+  test("course_of_therapy=continuous emits courseOfTherapyType", () => {
+    // Chronic prescription path: adapter saw is_chronic=true on a row
+    // from the IHKE3307S01 list, mapper should attach the standard
+    // FHIR continuous-therapy CodeableConcept.
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "DETRUSITOL SR PROLONGED-RELEASE CAPSULES 4MG",
+          code: "BC23568100",
+          date: "2026-05-13",
+          quantity: "30",
+          duration_days: 30,
+          course_of_therapy: "continuous",
+        },
+      ],
+      PATIENT_ID,
+    );
+    expect(resources).toHaveLength(1);
+    expect(resources[0]!.courseOfTherapyType).toEqual({
+      coding: [
+        {
+          system: "http://terminology.hl7.org/CodeSystem/medicationrequest-course-of-therapy",
+          code: "continuous",
+          display: "Continuous long term therapy",
+        },
+      ],
+      text: "Continuous long term therapy",
+    });
+  });
+
+  test("acute drug (no course_of_therapy) leaves field unset", () => {
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "TAKEPRON OD 30MG TABLETS",
+          date: "2026-02-13",
+          quantity: "10",
+        },
+      ],
+      PATIENT_ID,
+    );
+    expect(resources).toHaveLength(1);
+    expect(resources[0]!.courseOfTherapyType).toBeUndefined();
+  });
+
+  test("empty course_of_therapy string is treated as acute (no field)", () => {
+    // Defensive: adapter emits course_of_therapy: "" for non-chronic
+    // rows. Mapper should not attach an empty CodeableConcept.
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "X",
+          date: "2026-02-13",
+          quantity: "1",
+          course_of_therapy: "",
+        },
+      ],
+      PATIENT_ID,
+    );
+    expect(resources[0]!.courseOfTherapyType).toBeUndefined();
+  });
 });

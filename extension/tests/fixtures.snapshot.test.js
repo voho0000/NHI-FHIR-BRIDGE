@@ -127,6 +127,7 @@ describe("adapter fixture snapshots", () => {
     expect(adaptMedicationFromDetail(drug, visit)).toMatchInlineSnapshot(`
       {
         "code": "B025823100",
+        "course_of_therapy": "",
         "date": "2025-05-18",
         "dose": "",
         "drug_class": "抗血小板藥",

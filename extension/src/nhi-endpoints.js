@@ -16,6 +16,7 @@ import {
   adaptAdultPreventive,
   adaptAllergy,
   adaptCatastrophicIllness,
+  adaptChronicListStub,
   adaptEncounterFromMedExpense,
   adaptImagingListStub,
   adaptInpatientEncounter,
@@ -35,6 +36,7 @@ export const ENDPOINT_LABEL_ZH = {
   inpatient_legacy: "住院（舊）",
   procedures: "手術 / 處置",
   medications: "處方藥品",
+  chronic_prescriptions: "慢性處方箋",
   allergies: "藥物過敏",
   allergies_b: "藥物過敏（B）",
   adult_preventive: "成人健檢",
@@ -85,6 +87,17 @@ export const NHI_API_ENDPOINTS = [
   // Confirmed via DevTools observation of the 篩選 panel submit.
   { name: "medications",         path: "/api/ihke3000/ihke3306s01/search?s_date=&e_date=&s_sort=A1&s_type=A",
     page_type: "medications",       adapt: adaptMedication, supportsDateRange: true },
+  // 慢性處方箋 (refill="Y") — separate list endpoint from medications.
+  // ~52 of 126 entries overlap with IHKE3306S01; the rest are
+  // chronic-only and would be missed if we relied on regular list alone.
+  // The chronic detail fan-out runs BEFORE the medication fan-out and
+  // its row_IDs are passed to the medication fan-out as skip-set so
+  // each row is fetched once. See _fetchChronicMedicationDetailsInTab
+  // in background.js. Detail endpoint is the same IHKE3306S02 as
+  // regular meds; ctype must equal the list row's ori_TYPE (1=門診,
+  // 2=IC卡, 8=藥局), not hardcoded to 8.
+  { name: "chronic_prescriptions", path: "/api/ihke3000/IHKE3307S01/page_load",
+    page_type: "medications",       adapt: adaptChronicListStub },
   { name: "allergies",           path: "/api/ihke3000/ihke3202s01/SP_IHKE3202S01",
     page_type: "allergies",         adapt: adaptAllergy },
   { name: "allergies_b",         path: "/api/ihke3000/ihke3202s01/SP_IHKE3202S04",

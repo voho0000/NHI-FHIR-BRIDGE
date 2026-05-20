@@ -135,7 +135,7 @@ export function adaptLabItem(item) {
 // inpatients. Number("－") is NaN; the !isFinite branch sends it to 0,
 // which the mapper treats as falsy and so omits expectedSupplyDuration —
 // correct: better silent than fabricating a supply count.
-export function adaptMedicationFromDetail(drug, visit) {
+export function adaptMedicationFromDetail(drug, visit, options) {
   if (!drug || typeof drug !== "object") return null;
   // visit.func_DATE is "115/05/05||2026/05/05" — rocToISO matches the ROC
   // prefix correctly.
@@ -146,6 +146,11 @@ export function adaptMedicationFromDetail(drug, visit) {
   // with empty halves ("||") parses to "" which we want.
   const end_date = rocToISO(visit?.cure_E_DATE || visit?.cure_e_date || "");
   const days = Number(drug.order_drug_day || drug.order_DRUG_DAY || 0);
+  // is_chronic flows from the chronic-prescription fan-out
+  // (IHKE3307S01 list → IHKE3306S02 detail). When true, the mapper
+  // attaches courseOfTherapyType=continuous. Defaults false so OPD /
+  // inpatient / 藥局 acute prescriptions stay unchanged.
+  const is_chronic = !!(options && options.is_chronic);
   return {
     date,
     // Only emit when meaningfully populated AND different from start.
@@ -164,12 +169,22 @@ export function adaptMedicationFromDetail(drug, visit) {
     indication_code: visit?.icd9cm_CODE || visit?.icd9cm_code || "",
     drug_class: pickEnglish(drug.act || ""),
     hospital: visit?.hosp_ABBR || visit?.hosp_abbr || "",
+    // Mapper reads this to set MedicationRequest.courseOfTherapyType.
+    course_of_therapy: is_chronic ? "continuous" : "",
   };
 }
 
 // Stub kept for the endpoint registry — IHKE3306S01 list never has drugs,
 // so we always return null and rely on the 2-step detail fetch above.
 export function adaptMedication() { return null; }
+
+// Stub for the IHKE3307S01 慢性處方箋 list. The list rows have no drug
+// payload; drugs come via the 2-step fan-out into IHKE3306S02 with
+// ctype=row.ori_TYPE (see _fetchChronicMedicationDetailsInTab in
+// background.js). Returning null here ensures the generic loop emits
+// nothing from this endpoint — the fan-out is where the marked
+// MedicationRequest resources are produced.
+export function adaptChronicListStub() { return null; }
 
 // Same shape as adaptMedication: IHKE3408S01 (imaging list) only carries
 // order-level data; the actual report narrative comes from the IHKE3408S02

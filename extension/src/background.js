@@ -133,7 +133,15 @@ function applyDateRangeToPath(path, dateRange) {
 // auth flow naturally. We pass the visit list (just row_IDs + their parent
 // fields needed for adaptation) into the tab; the tab returns parallel
 // fetched bodies; we adapt back in the SW.
-async function _fetchMedicationDetailsInTab({ tabId, baseUrl, visits }) {
+//
+// `skipRowIds`: Set<string> of row_IDs whose drugs have already been
+// fetched by another fan-out (currently: chronic prescriptions). When
+// the chronic list (IHKE3307S01) and the regular meds list
+// (IHKE3306S01) both contain the same row_ID (~52 overlap on observed
+// patient), we skip the regular call to avoid double-emitting the
+// same drugs.
+async function _fetchMedicationDetailsInTab({ tabId, baseUrl, visits, skipRowIds }) {
+  const skip = skipRowIds instanceof Set ? skipRowIds : new Set(skipRowIds || []);
   const reqs = visits
     .map((v) => ({
       row_ID: v.row_ID || v.rowid || v.rowID || "",
@@ -145,7 +153,7 @@ async function _fetchMedicationDetailsInTab({ tabId, baseUrl, visits }) {
         hosp_ABBR: v.hosp_ABBR || v.hosp_abbr || "",
       },
     }))
-    .filter((r) => r.row_ID);
+    .filter((r) => r.row_ID && !skip.has(r.row_ID));
   if (reqs.length === 0) return [];
 
   const [{ result }] = await chrome.scripting.executeScript({
@@ -222,6 +230,105 @@ async function _fetchMedicationDetailsInTab({ tabId, baseUrl, visits }) {
       const drugList = Array.isArray(visit.sp_IHKE3306S03_data_list) ? visit.sp_IHKE3306S03_data_list : [];
       for (const d of drugList) {
         const adapted = adaptMedicationFromDetail(d, visit);
+        if (adapted) drugs.push(adapted);
+      }
+    }
+  }
+  return drugs;
+}
+
+// Fan out IHKE3306S02 detail fetches for chronic prescriptions. Uses
+// per-row `ori_TYPE` for ctype (1=門診, 2=IC卡, 8=藥局) instead of
+// brute-forcing 1..4 like the regular medication fan-out: chronic
+// list rows always carry ori_TYPE and detail-empty responses confirm
+// that mismatching ctype returns an empty array. Every drug produced
+// here gets is_chronic=true → mapper emits courseOfTherapyType=
+// continuous on the resulting MedicationRequest.
+async function _fetchChronicMedicationDetailsInTab({ tabId, baseUrl, visits }) {
+  const reqs = visits
+    .map((v) => ({
+      row_ID: v.row_ID || v.rowid || v.rowID || "",
+      // Chronic list rows always have ori_TYPE; fall back to brute-
+      // force only if NHI ever ships a row without it.
+      ctype: String(v.ori_TYPE || v.ori_type || ""),
+    }))
+    .filter((r) => r.row_ID);
+  if (reqs.length === 0) return [];
+
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: async (base, items) => {
+      const token = sessionStorage.getItem("token");
+      if (!token) return { error: "SESSION_EXPIRED" };
+      if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
+        return { error: "SESSION_EXPIRED" };
+      }
+      const auth = `Bearer ${token}`;
+      async function fetchOne(rowId, ctype) {
+        const url = `${base}/api/ihke3000/IHKE3306S02/page_load?crid=${encodeURIComponent(rowId)}&ctype=${encodeURIComponent(ctype)}`;
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), 30000);
+        try {
+          const r = await fetch(url, {
+            method: "GET", credentials: "same-origin", signal: ac.signal,
+            headers: { "Accept": "application/json", "Authorization": auth },
+          });
+          clearTimeout(t);
+          if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
+          if (!r.ok) return { error: `HTTP ${r.status}` };
+          return { body: await r.json() };
+        } catch (e) {
+          clearTimeout(t);
+          return { error: e.name === "AbortError" ? "timeout 30s" : String(e?.message || e) };
+        }
+      }
+      // Try the row's declared ctype first; if empty, fall back to
+      // brute-force so a misclassified row still surfaces its drugs.
+      async function one(rowId, declaredCtype) {
+        const seq = declaredCtype
+          ? [declaredCtype, ...[1, 2, 8, 3, 4].filter((c) => String(c) !== String(declaredCtype))]
+          : [1, 2, 8, 3, 4];
+        for (const ct of seq) {
+          const r = await fetchOne(rowId, ct);
+          if (r.error === "SESSION_EXPIRED") return r;
+          if (r.error) continue;
+          const main = Array.isArray(r.body?.ihke3306S02_main_data) ? r.body.ihke3306S02_main_data : [];
+          const hasDrugs = main.some((v) =>
+            Array.isArray(v?.sp_IHKE3306S03_data_list) && v.sp_IHKE3306S03_data_list.length > 0,
+          );
+          if (hasDrugs) return r;
+        }
+        return null;
+      }
+      const out = new Array(items.length);
+      let next = 0;
+      const CONC = 3;
+      async function worker() {
+        while (next < items.length) {
+          const i = next++;
+          await new Promise((r) => setTimeout(r, Math.random() * 150));
+          out[i] = await one(items[i].row_ID, items[i].ctype);
+        }
+      }
+      const ws = [];
+      for (let w = 0; w < CONC && w < items.length; w++) ws.push(worker());
+      await Promise.all(ws);
+      return { results: out };
+    },
+    args: [baseUrl, reqs],
+  });
+
+  if (result?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
+  const drugs = [];
+  const results = result?.results || [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (!r || r.error || !r.body) continue;
+    const main = Array.isArray(r.body.ihke3306S02_main_data) ? r.body.ihke3306S02_main_data : [];
+    for (const visit of main) {
+      const drugList = Array.isArray(visit.sp_IHKE3306S03_data_list) ? visit.sp_IHKE3306S03_data_list : [];
+      for (const d of drugList) {
+        const adapted = adaptMedicationFromDetail(d, visit, { is_chronic: true });
         if (adapted) drugs.push(adapted);
       }
     }
@@ -1089,16 +1196,54 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   }
   _markPhase("procedures-detail");
 
+  // Step 1e: chronic prescriptions (IHKE3307S01). Must run BEFORE the
+  // regular medication fan-out because ~52/126 (observed) chronic rows
+  // share row_IDs with regular IHKE3306S01 — we collect chronic IDs
+  // first and pass them as skipRowIds to the regular fan-out so each
+  // row is fetched exactly once. Chronic drugs get is_chronic=true →
+  // MedicationRequest.courseOfTherapyType=continuous.
+  const chronicRowIds = new Set();
+  const chronicIdx = NHI_API_ENDPOINTS.findIndex(
+    (e) => e.name === "chronic_prescriptions",
+  );
+  if (chronicIdx >= 0 && settled[chronicIdx].status === "fulfilled") {
+    const visits = settled[chronicIdx].value.rawList || [];
+    if (visits.length > 0) {
+      await setStatus({
+        progress: `📥 取得 ${visits.length} 筆慢性處方箋…`,
+      });
+      try {
+        const drugItems = await _fetchChronicMedicationDetailsInTab({
+          tabId, baseUrl: BASE, visits,
+        });
+        settled[chronicIdx].value.items = drugItems;
+        settled[chronicIdx].value.visitCount = visits.length;
+        settled[chronicIdx].value.raw_count = drugItems.length;
+        for (const v of visits) {
+          const id = v.row_ID || v.rowid || v.rowID;
+          if (id) chronicRowIds.add(id);
+        }
+      } catch (e) {
+        errors.push(`chronic prescriptions detail: ${e.message}`);
+      }
+    }
+  }
+  _markPhase("chronic-detail");
+
   const medIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "medications");
   if (medIdx >= 0 && settled[medIdx].status === "fulfilled") {
     const visits = settled[medIdx].value.rawList || [];
     if (visits.length > 0) {
+      const remaining = visits.filter((v) => {
+        const id = v.row_ID || v.rowid || v.rowID;
+        return id && !chronicRowIds.has(id);
+      }).length;
       await setStatus({
-        progress: `📥 取得 ${visits.length} 筆用藥明細…`,
+        progress: `📥 取得 ${remaining} 筆用藥明細…`,
       });
       try {
         const drugItems = await _fetchMedicationDetailsInTab({
-          tabId, baseUrl: BASE, visits,
+          tabId, baseUrl: BASE, visits, skipRowIds: chronicRowIds,
         });
         settled[medIdx].value.items = drugItems;
         // raw_count now reflects the *drug-level* count for the breakdown

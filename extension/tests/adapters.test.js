@@ -23,6 +23,7 @@ import {
   adaptAdultPreventive,
   adaptAllergy,
   adaptCatastrophicIllness,
+  adaptChronicListStub,
   adaptEncounterFromMedExpense,
   adaptImagingReportFromDetail,
   adaptInpatientEncounter,
@@ -616,6 +617,49 @@ describe("adaptMedicationFromDetail", () => {
   test("plain stub adaptMedication always returns null (list lacks drug data)", () => {
     expect(adaptMedication()).toBeNull();
     expect(adaptMedication({ anything: "ignored" })).toBeNull();
+  });
+
+  test("is_chronic option sets course_of_therapy=continuous", () => {
+    const drug = { drug_name: "Tamsulosin", order_code: "X", order_drug_day: 30 };
+    const visit = { func_DATE: "115/02/13", hosp_ABBR: "X" };
+    const r = adaptMedicationFromDetail(drug, visit, { is_chronic: true });
+    expect(r.course_of_therapy).toBe("continuous");
+  });
+
+  test("default (no options) leaves course_of_therapy empty", () => {
+    const drug = { drug_name: "X", order_drug_day: 30 };
+    const visit = { func_DATE: "115/02/13", hosp_ABBR: "X" };
+    const r = adaptMedicationFromDetail(drug, visit);
+    expect(r.course_of_therapy).toBe("");
+  });
+
+  test("is_chronic=false explicitly leaves course_of_therapy empty", () => {
+    const drug = { drug_name: "X", order_drug_day: 30 };
+    const visit = { func_DATE: "115/02/13", hosp_ABBR: "X" };
+    const r = adaptMedicationFromDetail(drug, visit, { is_chronic: false });
+    expect(r.course_of_therapy).toBe("");
+  });
+});
+
+describe("adaptChronicListStub", () => {
+  test("always returns null — list rows carry no drug payload", () => {
+    expect(adaptChronicListStub()).toBeNull();
+    expect(adaptChronicListStub({ anything: "ignored" })).toBeNull();
+  });
+
+  test("end-to-end fixture: chronic list shape contains expected fields per row", () => {
+    // Sanity check on the chronic-list fixture itself — confirms the
+    // shape the fan-out will receive matches what NHI ships
+    // (refill='Y', ori_TYPE in {1, 8}, populated row_ID).
+    const fixture = readFixture("ihke3307s01-chronic-list.json");
+    const rows = fixture.sp_IHKE3307S01_data;
+    expect(rows).toHaveLength(5);
+    for (const r of rows) {
+      expect(r.refill).toBe("Y");
+      expect(["1", "8"]).toContain(r.ori_TYPE);
+      // Oracle ROWID-style 18-char base64-ish identifier
+      expect(r.row_ID).toMatch(/^[A-Za-z0-9/+]{18}$/);
+    }
   });
 });
 
