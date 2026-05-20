@@ -467,15 +467,37 @@ export function adaptEncounterFromMedExpense(item, classHint, options) {
   if (!item || typeof item !== "object") return null;
   const date = rocToISO(item.funC_DATE || item.func_DATE || item.func_date || "");
   if (!date) return null;
-  const icdCode = item.icD9CM_CODE || item.icd9cm_CODE || item.icd9cm_code || "";
   // icd9cm_CODE_CNAME wraps each half as "<code>/<text>" — strip the
   // leading "<code>/" so downstream doesn't double-print the code when
   // it composes "<code> <text>" itself (cosmetic; SMART app side reads
   // .reasonCode[0].text and saw "I359 I359/Nonrheumatic..." before).
   const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
-  const rawIcdName = item.icD9CM_CODE_CNAME || item.icd9cm_CODE_CNAME || item.icd9cm_name || "";
-  const icdName = stripIcdPrefix(pickEnglish(rawIcdName));
-  const icdName_zh = stripIcdPrefix(pickChinese(rawIcdName));
+  // PRIMARY ICD source preference:
+  //   1. options.primary_diagnosis (from IHKE3303S02 detail) — always
+  //      bilingual. Caller looks this up via _primaryIcdFromS02Detail.
+  //   2. S01 list row's icD9CM_CODE_CNAME — sometimes bilingual,
+  //      sometimes Chinese-only depending on patient / encounter.
+  // S02-sourced wins because IHKE3303S01 ships Chinese-only for some
+  // patients, which used to leave Encounter.reasonCode[0].coding[0]
+  // .display in 中文 (wrong audience — that field is the clinical
+  // English per the v0.8.0 bilingual contract).
+  const s02Primary = options && options.primary_diagnosis;
+  const icdCode =
+    (s02Primary && s02Primary.code) ||
+    item.icD9CM_CODE ||
+    item.icd9cm_CODE ||
+    item.icd9cm_code ||
+    "";
+  let icdName, icdName_zh;
+  if (s02Primary && (s02Primary.name_en || s02Primary.name_zh)) {
+    icdName = s02Primary.name_en || s02Primary.name_zh;
+    icdName_zh = s02Primary.name_zh || s02Primary.name_en;
+  } else {
+    const rawIcdName =
+      item.icD9CM_CODE_CNAME || item.icd9cm_CODE_CNAME || item.icd9cm_name || "";
+    icdName = stripIcdPrefix(pickEnglish(rawIcdName));
+    icdName_zh = stripIcdPrefix(pickChinese(rawIcdName));
+  }
   const hospital = item.hosP_ABBR || item.hosp_ABBR || item.hosp_abbr || "";
   const isPharmacy =
     (options && options.pharmacy === true) || /藥局|藥房/.test(hospital);

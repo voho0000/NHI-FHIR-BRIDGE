@@ -593,6 +593,34 @@ function _classFromS02Detail(body) {
   return "AMB";
 }
 
+// Pull the primary ICD's bilingual name from IHKE3303S02 detail. The
+// list endpoint IHKE3303S01 sometimes ships icD9CM_CODE_CNAME as
+// Chinese-only "<code>/<中文>"; detail consistently ships full bilingual
+// "<code>/<中文>||<code>/<English>". Caller passes the result via
+// options.primary_diagnosis to the encounter adapter, which prefers
+// it over the (potentially Chinese-only) list-level field. Result:
+// Encounter.reasonCode[0].coding[0].display is reliably English.
+function _primaryIcdFromS02Detail(body) {
+  if (!body) return null;
+  const main = (body.ihke3303S02_main_data) || [];
+  if (main.length === 0) return null;
+  const codeName = main[0].icd9cm_CODE_CNAME || main[0].icd9cm_code_cname || "";
+  if (!codeName) return null;
+  const code = main[0].icd9cm_CODE || main[0].icd9cm_code || "";
+  const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
+  const pickHalf = (s, half) => {
+    const str = String(s || "");
+    const idx = str.indexOf("||");
+    if (idx === -1) return str.trim();
+    if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
+    return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
+  };
+  const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
+  const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
+  if (!code && !name_en && !name_zh) return null;
+  return { code, name_en, name_zh };
+}
+
 // Pull secondary diagnoses (次診斷) from IHKE3303S02 detail. Live data
 // shows 0-4 entries per encounter; the eye-clinic case in the test
 // sample maxes out at 4. Each entry is shaped:
@@ -1179,17 +1207,20 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
         const detailMap = await _fetchEncounterDetailsInTab({
           tabId, baseUrl: BASE, visits,
         });
-        // Re-adapt with classHint + secondary diagnoses from detail.
+        // Re-adapt with classHint + secondary diagnoses + bilingual
+        // primary ICD all sourced from the S02 detail body.
         const reAdapted = [];
         for (let i = 0; i < visits.length; i++) {
           const detail = detailMap?.get(i) || null;
           const cls = _classFromS02Detail(detail) || "AMB";
           const secondaryDiagnoses = _secondaryIcdsFromS02Detail(detail);
+          const primaryDiagnosis = _primaryIcdFromS02Detail(detail);
           const visit = visits[i];
           const rowId = visit.roW_ID || visit.row_id || visit.row_ID;
           const isPharmacy = rowId ? pharmacyRowIds.has(rowId) : false;
           const it = adaptEncounterFromMedExpense(visit, cls, {
             pharmacy: isPharmacy,
+            primary_diagnosis: primaryDiagnosis,
             secondary_diagnoses: secondaryDiagnoses,
           });
           if (it) reAdapted.push(it);

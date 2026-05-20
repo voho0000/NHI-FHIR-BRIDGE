@@ -932,6 +932,70 @@ describe("adaptEncounterFromMedExpense", () => {
     );
     expect(r.secondary_diagnoses).toEqual([]);
   });
+
+  test("v0.8.3 primary_diagnosis from S02 detail wins over Chinese-only S01 list", () => {
+    // S01 ships only the 中文 half on this patient (no bilingual ||);
+    // pre-v0.8.3 the adapter would fall through pickEnglish and end up
+    // with 中文 in `reason` (which becomes coding.display) — wrong
+    // audience. With S02-sourced primary_diagnosis the English flows
+    // into reason and 中文 into reason_zh independently.
+    const r = adaptEncounterFromMedExpense(
+      {
+        funC_DATE: "115/05/13",
+        hosP_ABBR: "嘉基醫院",
+        icD9CM_CODE: "N400",
+        icD9CM_CODE_CNAME: "N400/良性攝護腺增生未伴有下泌尿道症狀",
+      },
+      "AMB",
+      {
+        primary_diagnosis: {
+          code: "N400",
+          name_en: "Benign prostatic hyperplasia without lower urinary tract symptoms",
+          name_zh: "良性攝護腺增生未伴有下泌尿道症狀",
+        },
+      },
+    );
+    expect(r.reason).toBe(
+      "N400 Benign prostatic hyperplasia without lower urinary tract symptoms",
+    );
+    expect(r.reason_zh).toBe("N400 良性攝護腺增生未伴有下泌尿道症狀");
+    expect(r.reason_code).toBe("N400");
+  });
+
+  test("v0.8.3 no primary_diagnosis option → falls back to S01 list bilingual parsing", () => {
+    // Preserve v0.8.0 behaviour when caller doesn't supply S02 detail.
+    const r = adaptEncounterFromMedExpense(
+      {
+        funC_DATE: "115/05/13",
+        hosP_ABBR: "VGH",
+        icD9CM_CODE: "I10",
+        icD9CM_CODE_CNAME:
+          "I10/原發性高血壓||I10/Essential hypertension",
+      },
+      "AMB",
+    );
+    expect(r.reason).toBe("I10 Essential hypertension");
+    expect(r.reason_zh).toBe("I10 原發性高血壓");
+  });
+
+  test("v0.8.3 primary_diagnosis with English-only still populates both halves", () => {
+    // Defensive: if NHI shipped only one language to the detail
+    // endpoint for some encounter, fall back to that language in both
+    // `reason` and `reason_zh` so SMART app rendering always has text.
+    const r = adaptEncounterFromMedExpense(
+      { funC_DATE: "115/05/13", hosP_ABBR: "X", icD9CM_CODE: "Z00.00" },
+      "AMB",
+      {
+        primary_diagnosis: {
+          code: "Z00.00",
+          name_en: "Encounter for general adult medical examination",
+          name_zh: "",
+        },
+      },
+    );
+    expect(r.reason).toContain("Z00.00");
+    expect(r.reason_zh).toContain("Encounter for general adult medical examination");
+  });
 });
 
 // ── adaptImmunization — IHKE3203S01 ────────────────────────────────────
