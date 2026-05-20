@@ -554,6 +554,65 @@ describe("adaptMedicationFromDetail", () => {
     expect(adaptMedicationFromDetail(drug, visit).duration_days).toBe(0);
   });
 
+  test("inpatient: emits end_date when cure_E_DATE differs from func_DATE", () => {
+    // NHI bundles every drug used during a 5-day admission into one
+    // visit row dated to admission day. cure_E_DATE marks discharge.
+    // Adapter must surface the discharge date so the mapper can attach
+    // a dispenseRequest.validityPeriod covering the actual usage window.
+    const drug = { drug_name: "PPI", order_drug_day: "－", order_qty: "10" };
+    const visit = {
+      func_DATE: "114/05/18||2025/05/18",
+      cure_E_DATE: "114/05/22||2025/05/22",
+      hosp_ABBR: "長庚嘉義",
+    };
+    const r = adaptMedicationFromDetail(drug, visit);
+    expect(r.date).toBe("2025-05-18");
+    expect(r.end_date).toBe("2025-05-22");
+  });
+
+  test("OPD: suppresses end_date when cure_E_DATE is empty (||)", () => {
+    const drug = { drug_name: "Fluorometholone", order_drug_day: "28" };
+    const visit = {
+      func_DATE: "115/02/13||2026/02/13",
+      cure_E_DATE: "||",
+      hosp_ABBR: "臺北榮總",
+    };
+    expect(adaptMedicationFromDetail(drug, visit).end_date).toBe("");
+  });
+
+  test("藥局: suppresses end_date when cure_E_DATE is omitted", () => {
+    const drug = { drug_name: "Tamsulosin", order_drug_day: "30" };
+    const visit = { func_DATE: "115/05/13||2026/05/13", hosp_ABBR: "安心大藥局" };
+    expect(adaptMedicationFromDetail(drug, visit).end_date).toBe("");
+  });
+
+  test("suppresses end_date when cure_E_DATE equals func_DATE (degenerate single-day stay)", () => {
+    const drug = { drug_name: "X" };
+    const visit = {
+      func_DATE: "114/05/18",
+      cure_E_DATE: "114/05/18",
+    };
+    expect(adaptMedicationFromDetail(drug, visit).end_date).toBe("");
+  });
+
+  test("end-to-end fixture: inpatient admission produces expected end_date on every drug row", () => {
+    const fixture = readFixture("ihke3306s02-inpatient-admission.json");
+    const adapted = fixture.drugs.map((d) =>
+      adaptMedicationFromDetail(d, fixture.main_data_visit),
+    );
+    expect(adapted).toHaveLength(3);
+    for (const r of adapted) {
+      expect(r.date).toBe("2025-05-18");
+      expect(r.end_date).toBe("2025-05-22");
+      expect(r.hospital).toBe("長庚嘉義");
+      expect(r.indication).toBe("R042/Hemoptysis");
+      // Inpatient "－" sentinel → duration_days: 0 (the mapper treats
+      // 0 as falsy and omits expectedSupplyDuration entirely).
+      expect(r.duration_days).toBe(0);
+    }
+    expect(adapted[0].drug_name).toContain("TAKEPRON");
+  });
+
   test("plain stub adaptMedication always returns null (list lacks drug data)", () => {
     expect(adaptMedication()).toBeNull();
     expect(adaptMedication({ anything: "ignored" })).toBeNull();

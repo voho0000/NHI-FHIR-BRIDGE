@@ -177,6 +177,23 @@ export function mapMedicationRequest(
       };
     }
   }
+  // Inpatient drugs: NHI bundles every drug used during an admission into
+  // one row dated to the admission day. authoredOn carries that anchor;
+  // validityPeriod expresses the actual usage window [admit, discharge]
+  // so SMART apps display "used during stay 5/18-5/22" instead of
+  // "all 14 drugs prescribed on 5/18". OPD / 藥局 rows leave end_date
+  // empty so this block doesn't fire — single-day prescriptions remain
+  // unchanged. The MedicationRequest.dispenseRequest.validityPeriod field
+  // is a semantic stretch (its strict definition is the prescription's
+  // stale-dating window) but is the closest existing field; we don't
+  // emit MedicationAdministration resources.
+  const endDate = ((raw.end_date ?? "") as string).trim();
+  if (raw.date && endDate && endDate !== raw.date) {
+    dr.validityPeriod = {
+      start: `${raw.date}T00:00:00+08:00`,
+      end: `${endDate}T23:59:59+08:00`,
+    };
+  }
   if (Object.keys(dr).length > 0) {
     resource.dispenseRequest = dr;
   }

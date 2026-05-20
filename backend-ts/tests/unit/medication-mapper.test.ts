@@ -87,4 +87,54 @@ describe("mapMedicationsDedup", () => {
     ];
     expect(mapMedicationsDedup(items, PATIENT_ID)).toHaveLength(2);
   });
+
+  test("inpatient end_date emits dispenseRequest.validityPeriod covering the stay", () => {
+    // Adapter emits end_date for inpatient summary rows (cure_E_DATE
+    // differs from func_DATE). Mapper should attach a validityPeriod
+    // so SMART apps render "used during admission 5/18-5/22" rather
+    // than "prescribed on 5/18 day".
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "TAKEPRON OD 30MG TABLETS",
+          code: "BC24273100",
+          date: "2025-05-18",
+          end_date: "2025-05-22",
+          quantity: "10",
+          drug_class: "PROTON-PUMP INHIBITOR",
+          hospital: "長庚嘉義",
+        },
+      ],
+      PATIENT_ID,
+    );
+    expect(resources).toHaveLength(1);
+    const dr = resources[0]!.dispenseRequest;
+    expect(dr).toBeDefined();
+    expect(dr.validityPeriod).toEqual({
+      start: "2025-05-18T00:00:00+08:00",
+      end: "2025-05-22T23:59:59+08:00",
+    });
+    // authoredOn stays as the admission anchor — best-effort start.
+    expect(resources[0]!.authoredOn).toBe("2025-05-18T00:00:00+08:00");
+  });
+
+  test("OPD drug (no end_date) emits no validityPeriod", () => {
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "FLUCASON OPHTHALMIC SUSPENSION",
+          date: "2026-02-13",
+          quantity: "1",
+          duration_days: 28,
+        },
+      ],
+      PATIENT_ID,
+    );
+    expect(resources).toHaveLength(1);
+    const dr = resources[0]!.dispenseRequest;
+    expect(dr).toBeDefined();
+    expect(dr.validityPeriod).toBeUndefined();
+    // expectedSupplyDuration still produced from duration_days.
+    expect(dr.expectedSupplyDuration.value).toBe(28);
+  });
 });

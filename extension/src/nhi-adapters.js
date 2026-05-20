@@ -115,6 +115,26 @@ export function adaptLabItem(item) {
 // `ihke3306S02_main_data[*].sp_IHKE3306S03_data_list`. We do that 2-step
 // fetch separately; this function adapts a single drug entry given its
 // parent visit context.
+//
+// Date semantics (varies by visit type — visible via visit.ori_TYPE_NAME):
+//   - OPD / 藥局: func_DATE is the only meaningful date. cure_E_DATE is
+//     empty. authoredOn = func_DATE is accurate.
+//   - 住院 (inpatient): NHI returns ONE row per admission summarising
+//     every drug used during the stay. func_DATE = admission day,
+//     cure_E_DATE = discharge day. NHI does not preserve the actual
+//     authored date of each drug — a PPI started on stay-day 3 looks
+//     identical to one prescribed on admission day.
+//     We surface func_DATE → authoredOn as a best-effort anchor and
+//     ADDITIONALLY emit end_date so the downstream mapper can attach
+//     dispenseRequest.validityPeriod = {start: func_DATE, end: cure_E_DATE}.
+//     Consumers then see "this drug was used during admission 5/18-5/22"
+//     instead of "14 drugs all prescribed on 5/18".
+//
+// Drug-row order_drug_day note: inpatient rows ship "－" (em-dash sentinel
+// for "no data") because NHI doesn't track per-drug day-supply for
+// inpatients. Number("－") is NaN; the !isFinite branch sends it to 0,
+// which the mapper treats as falsy and so omits expectedSupplyDuration —
+// correct: better silent than fabricating a supply count.
 export function adaptMedicationFromDetail(drug, visit) {
   if (!drug || typeof drug !== "object") return null;
   // visit.func_DATE is "115/05/05||2026/05/05" — rocToISO matches the ROC
@@ -122,9 +142,15 @@ export function adaptMedicationFromDetail(drug, visit) {
   const date = rocToISO(visit?.func_DATE || visit?.func_date || "");
   const drug_name = pickEnglish(drug.drug_name || drug.druG_NAME || "");
   if (!date || !drug_name) return null;
+  // cure_E_DATE only populated for inpatient summary rows; ROC bilingual
+  // with empty halves ("||") parses to "" which we want.
+  const end_date = rocToISO(visit?.cure_E_DATE || visit?.cure_e_date || "");
   const days = Number(drug.order_drug_day || drug.order_DRUG_DAY || 0);
   return {
     date,
+    // Only emit when meaningfully populated AND different from start.
+    // Suppressing the same-day case keeps OPD / 藥局 resources tight.
+    end_date: end_date && end_date !== date ? end_date : "",
     drug_name,
     code: drug.order_code || drug.ordeR_CODE || "",
     // List endpoint doesn't expose dose/frequency/route — only days + qty.

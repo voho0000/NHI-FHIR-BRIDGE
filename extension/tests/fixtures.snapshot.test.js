@@ -132,6 +132,7 @@ describe("adapter fixture snapshots", () => {
         "drug_class": "抗血小板藥",
         "drug_name": "Aspirin 100mg",
         "duration_days": 30,
+        "end_date": "",
         "frequency": "",
         "hospital": "長庚嘉義",
         "indication": "Essential hypertension",
