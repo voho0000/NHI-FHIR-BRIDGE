@@ -33,6 +33,7 @@ import {
   adaptProcedureFromDetail,
   adaptProcedureListStub,
   isoToROC,
+  pickChinese,
   pickEnglish,
   rocToISO,
 } from "../src/nhi-adapters.js";
@@ -101,6 +102,31 @@ describe("pickEnglish", () => {
     expect(pickEnglish(null)).toBe("");
     expect(pickEnglish(undefined)).toBe("");
     expect(pickEnglish(123)).toBe("123"); // stringified, no separator
+  });
+});
+
+describe("pickChinese", () => {
+  test("returns Chinese half when bilingual 中文||English", () => {
+    expect(pickChinese("良性攝護腺肥大||Benign prostatic hyperplasia"))
+      .toBe("良性攝護腺肥大");
+  });
+  test("falls back to English half when Chinese half is empty", () => {
+    expect(pickChinese("||English only")).toBe("English only");
+    expect(pickChinese("   ||English only")).toBe("English only");
+  });
+  test("returns the whole string trimmed when no || separator", () => {
+    expect(pickChinese("  plain  ")).toBe("plain");
+    expect(pickChinese("純中文")).toBe("純中文");
+  });
+  test("handles null / undefined / non-string", () => {
+    expect(pickChinese(null)).toBe("");
+    expect(pickChinese(undefined)).toBe("");
+    expect(pickChinese(123)).toBe("123");
+  });
+  test("is the mirror of pickEnglish: pickChinese(s)+pickEnglish(s) cover both halves", () => {
+    const s = "得安穩膜衣錠160毫克||DIOVAN FILM-COATED TABLETS 160MG";
+    expect(pickChinese(s)).toBe("得安穩膜衣錠160毫克");
+    expect(pickEnglish(s)).toBe("DIOVAN FILM-COATED TABLETS 160MG");
   });
 });
 
@@ -606,12 +632,16 @@ describe("adaptMedicationFromDetail", () => {
       expect(r.date).toBe("2025-05-18");
       expect(r.end_date).toBe("2025-05-22");
       expect(r.hospital).toBe("長庚嘉義");
-      expect(r.indication).toBe("R042/Hemoptysis");
+      // v0.8.0 stripped "<code>/" prefix from indication strings so
+      // downstream FHIR text doesn't double-print "R042 R042/...".
+      expect(r.indication).toBe("Hemoptysis");
+      expect(r.indication_zh).toBe("咳血");
       // Inpatient "－" sentinel → duration_days: 0 (the mapper treats
       // 0 as falsy and omits expectedSupplyDuration entirely).
       expect(r.duration_days).toBe(0);
     }
     expect(adapted[0].drug_name).toContain("TAKEPRON");
+    expect(adapted[0].drug_name_zh).toContain("泰克胃通");
   });
 
   test("plain stub adaptMedication always returns null (list lacks drug data)", () => {

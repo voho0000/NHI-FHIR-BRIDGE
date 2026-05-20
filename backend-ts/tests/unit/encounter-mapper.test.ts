@@ -83,6 +83,28 @@ describe("mapEncounter", () => {
     expect(r.reasonCode[0].text).toBe("fever workup");
   });
 
+  test("v0.8.0 bilingual reasonCode: text=繁中, coding.display=English with ICD-10-CM system", () => {
+    const r = mapEncounter(
+      {
+        reason: "I10 Essential hypertension",
+        reason_zh: "I10 原發性高血壓",
+        reason_code: "I10",
+      },
+      PID,
+    );
+    expect(r.reasonCode[0].text).toBe("I10 原發性高血壓");
+    expect(r.reasonCode[0].coding[0]).toEqual({
+      system: "http://hl7.org/fhir/sid/icd-10-cm",
+      code: "I10",
+      display: "Essential hypertension",
+    });
+  });
+
+  test("v0.8.0 fallback: reason_zh missing → text falls back to English reason", () => {
+    const r = mapEncounter({ reason: "Essential hypertension", reason_code: "I10" }, PID);
+    expect(r.reasonCode[0].text).toBe("Essential hypertension");
+  });
+
   test("discharge_disposition becomes hospitalization.dischargeDisposition.text", () => {
     const r = mapEncounter({ discharge_disposition: "home" }, PID);
     expect(r.hospitalization.dischargeDisposition.text).toBe("home");

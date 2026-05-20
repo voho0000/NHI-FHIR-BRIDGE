@@ -26,6 +26,11 @@ export function mapProcedure(
   if (!note && !bodySite) return null;
 
   const display = raw.display ?? "Unknown Procedure";
+  // v0.8.0 bilingual: prefer 繁中 in code.text (patient-facing) while
+  // coding[0].display stays as the technical English (canonical for the
+  // PCS / NHI 醫令碼 system). Falls back to English when NHI ships
+  // English-only for a particular procedure code.
+  const displayZh = ((raw.display_zh ?? "") as string).trim() || display;
   const code = raw.code;
   const system = mapSystem(raw.system ?? "");
 
@@ -37,7 +42,7 @@ export function mapProcedure(
     subject: { reference: `Patient/${patientId}` },
     code: {
       coding: [{ system, code: code || display, display }],
-      text: display,
+      text: displayZh,
     },
   };
 

@@ -199,4 +199,64 @@ describe("mapMedicationsDedup", () => {
     );
     expect(resources[0]!.courseOfTherapyType).toBeUndefined();
   });
+
+  test("v0.8.0 bilingual: text=繁中, coding[0].display=English on all three fields", () => {
+    // Patient-facing CodeableConcept.text gets Chinese, while the
+    // clinical/technical coding[].display stays English. Covers:
+    //   medicationCodeableConcept, category, reasonCode
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "DIOVAN FILM-COATED TABLETS 160MG",
+          drug_name_zh: "得安穩膜衣錠160毫克",
+          code: "BC23374100",
+          date: "2026-03-31",
+          quantity: "28",
+          duration_days: 28,
+          drug_class: "HYPOTENSIVE AGENTS",
+          drug_class_zh: "降血壓藥",
+          indication: "Nonrheumatic aortic valve disorder, unspecified",
+          indication_zh: "非風濕性未明示主動脈瓣疾患",
+          indication_code: "I359",
+        },
+      ],
+      PATIENT_ID,
+    );
+    expect(resources).toHaveLength(1);
+    const r = resources[0]!;
+    // medicationCodeableConcept
+    expect(r.medicationCodeableConcept.text).toBe("得安穩膜衣錠160毫克");
+    expect(r.medicationCodeableConcept.coding[0].display).toBe("DIOVAN FILM-COATED TABLETS 160MG");
+    // category
+    expect(r.category[0].text).toBe("降血壓藥");
+    expect(r.category[0].coding[0].display).toBe("HYPOTENSIVE AGENTS");
+    // reasonCode — patient text in 繁中 with raw NHI code prefix,
+    // clinical coding with canonical ICD-10-CM format ("I35.9" with
+    // decimal — normalizeIcd10Cm inserts it).
+    expect(r.reasonCode[0].text).toBe("I359 非風濕性未明示主動脈瓣疾患");
+    expect(r.reasonCode[0].coding[0]).toEqual({
+      system: "http://hl7.org/fhir/sid/icd-10-cm",
+      code: "I35.9",
+      display: "Nonrheumatic aortic valve disorder, unspecified",
+    });
+  });
+
+  test("v0.8.0 fallback: no _zh field → English used for both text and display", () => {
+    // Defensive — when NHI ships English-only for a rare drug, we don't
+    // want a blank `text`. Mapper falls back to the English drug_name.
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "RARE DRUG WITH NO CHINESE",
+          code: "X000000",
+          date: "2026-03-31",
+          quantity: "1",
+        },
+      ],
+      PATIENT_ID,
+    );
+    const r = resources[0]!;
+    expect(r.medicationCodeableConcept.text).toBe("RARE DRUG WITH NO CHINESE");
+    expect(r.medicationCodeableConcept.coding[0].display).toBe("RARE DRUG WITH NO CHINESE");
+  });
 });

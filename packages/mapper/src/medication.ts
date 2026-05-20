@@ -110,6 +110,11 @@ export function mapMedicationRequest(
     display: drugName,
   };
 
+  // v0.8.0 bilingual: prefer 繁中 in CodeableConcept.text (patient-facing
+  // display) and keep English in coding[0].display (clinical canonical).
+  // Falls back to English when NHI didn't ship a Chinese name for the drug.
+  const drugNameZh = ((raw.drug_name_zh ?? "") as string).trim() || drugName;
+
   const resource: Record<string, any> = {
     resourceType: "MedicationRequest",
     id: medId,
@@ -118,7 +123,7 @@ export function mapMedicationRequest(
     intent: "order",
     medicationCodeableConcept: {
       coding: [coding],
-      text: drugName,
+      text: drugNameZh,
     },
     subject: { reference: `Patient/${patientId}` },
   };
@@ -147,8 +152,13 @@ export function mapMedicationRequest(
   }
 
   const drugClass = ((raw.drug_class ?? "") as string).trim();
-  if (drugClass) {
-    resource.category = [{ text: drugClass }];
+  const drugClassZh = ((raw.drug_class_zh ?? "") as string).trim();
+  if (drugClass || drugClassZh) {
+    const cat: Record<string, any> = {};
+    if (drugClass) cat.coding = [{ display: drugClass }];
+    // Patient-facing: prefer 繁中 in .text, fall back to English.
+    cat.text = drugClassZh || drugClass;
+    resource.category = [cat];
   }
 
   const hospital = ((raw.hospital ?? "") as string).trim();
@@ -218,20 +228,25 @@ export function mapMedicationRequest(
   }
 
   const indication = ((raw.indication ?? "") as string).trim();
+  const indicationZh = ((raw.indication_zh ?? "") as string).trim();
   const indicationCode = ((raw.indication_code ?? "") as string).trim();
-  if (indication || indicationCode) {
+  if (indication || indicationZh || indicationCode) {
     const rc: Record<string, any> = {};
     if (indicationCode) {
       rc.coding = [
         {
           system: systems.ICD_10_CM,
           code: normalizeIcd10Cm(indicationCode),
-          display: indication || indicationCode,
+          display: indication || indicationZh || indicationCode,
         },
       ];
     }
-    if (indication) {
-      rc.text = indicationCode ? `${indicationCode} ${indication}`.trim() : indication;
+    // Patient-facing reasonCode text: prefer 繁中 ICD description, fall
+    // back to English, then to just the code. Always prefixed with the
+    // code so SMART app rendering keeps "<code> <name>" shape.
+    const nameZh = indicationZh || indication;
+    if (nameZh) {
+      rc.text = indicationCode ? `${indicationCode} ${nameZh}`.trim() : nameZh;
     }
     resource.reasonCode = [rc];
   }

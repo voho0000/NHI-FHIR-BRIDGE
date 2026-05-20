@@ -44,6 +44,21 @@ export function pickEnglish(s) {
   return en || str.slice(0, idx).trim();
 }
 
+// Mirror of pickEnglish — extract the 中文 half of a bilingual
+// "中文||English" NHI field. Returns "" when input is empty. Falls back
+// to the whole string when no separator exists (defensive: some NHI rows
+// ship only one language). Used by the v0.8.0 bilingual mapping so
+// FHIR `CodeableConcept.text` carries the patient-facing 繁中 form
+// while `coding[].display` stays as the clinical/technical English.
+export function pickChinese(s) {
+  if (s === null || s === undefined) return "";
+  const str = String(s);
+  const idx = str.indexOf("||");
+  if (idx === -1) return str.trim();
+  const zh = str.slice(0, idx).trim();
+  return zh || str.slice(idx + 2).trim();
+}
+
 // Strip trailing punctuation / whitespace junk that some hospitals leave
 // on their free-text lab labels (e.g. NHI returns "Crea," from one site
 // and "Crea" from another for the same physical test). Pre-normalizing
@@ -140,7 +155,8 @@ export function adaptMedicationFromDetail(drug, visit, options) {
   // visit.func_DATE is "115/05/05||2026/05/05" — rocToISO matches the ROC
   // prefix correctly.
   const date = rocToISO(visit?.func_DATE || visit?.func_date || "");
-  const drug_name = pickEnglish(drug.drug_name || drug.druG_NAME || "");
+  const rawDrugName = drug.drug_name || drug.druG_NAME || "";
+  const drug_name = pickEnglish(rawDrugName);
   if (!date || !drug_name) return null;
   // cure_E_DATE only populated for inpatient summary rows; ROC bilingual
   // with empty halves ("||") parses to "" which we want.
@@ -151,12 +167,32 @@ export function adaptMedicationFromDetail(drug, visit, options) {
   // attaches courseOfTherapyType=continuous. Defaults false so OPD /
   // inpatient / 藥局 acute prescriptions stay unchanged.
   const is_chronic = !!(options && options.is_chronic);
+  // NHI 藥品基本資料庫 ships bilingual `中文||English` on three fields
+  // we surface — drug_name, act (藥理分類), icd9cm_CODE_CNAME. v0.8.0
+  // keeps both halves so the mapper can put 繁中 into CodeableConcept
+  // .text (patient-facing) and English in coding[0].display (clinical
+  // canonical). drug.drug_name2 / visit.icd9cm_CODE_CNAME2 are NHI's
+  // own Chinese-only convenience fields — prefer them when present,
+  // else fall back to the Chinese half of the bilingual field.
+  const drug_name_zh =
+    drug.drug_name2 || drug.druG_NAME2 || pickChinese(rawDrugName);
+  const rawIndication = visit?.icd9cm_CODE_CNAME || visit?.icd9cm_name || "";
+  // icd9cm_CODE_CNAME wraps each half as "<code>/<text>" — strip the
+  // leading "<code>/" so downstream doesn't double-print the code when
+  // it composes "<code> <text>" itself.
+  const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
+  const indication = stripIcdPrefix(pickEnglish(rawIndication));
+  const indication_zh =
+    visit?.icd9cm_CODE_CNAME2 ||
+    visit?.icd9cm_code_cname2 ||
+    stripIcdPrefix(pickChinese(rawIndication));
   return {
     date,
     // Only emit when meaningfully populated AND different from start.
     // Suppressing the same-day case keeps OPD / 藥局 resources tight.
     end_date: end_date && end_date !== date ? end_date : "",
     drug_name,
+    drug_name_zh,
     code: drug.order_code || drug.ordeR_CODE || "",
     // List endpoint doesn't expose dose/frequency/route — only days + qty.
     dose: "",
@@ -164,10 +200,11 @@ export function adaptMedicationFromDetail(drug, visit, options) {
     route: "",
     quantity: drug.order_qty || drug.order_QTY || "",
     duration_days: Number.isFinite(days) ? days : 0,
-    // pickEnglish on icd_name turns 良性攝護腺...||Benign prostatic... into the EN side.
-    indication: pickEnglish(visit?.icd9cm_CODE_CNAME || visit?.icd9cm_name || ""),
+    indication,
+    indication_zh,
     indication_code: visit?.icd9cm_CODE || visit?.icd9cm_code || "",
     drug_class: pickEnglish(drug.act || ""),
+    drug_class_zh: pickChinese(drug.act || ""),
     hospital: visit?.hosp_ABBR || visit?.hosp_abbr || "",
     // Mapper reads this to set MedicationRequest.courseOfTherapyType.
     course_of_therapy: is_chronic ? "continuous" : "",
@@ -373,9 +410,14 @@ export function adaptInpatientEncounter(item) {
   const start = rocToISO(item.in_DATE || item.func_DATE || "");
   const end = rocToISO(item.out_DATE || "");
   if (!start) return null;
-  // icd9cm name on 住院 list is just Chinese (no || English split observed).
+  // icd9cm name on 住院 list is just Chinese (no || English split observed)
+  // historically; treat defensively as bilingual so future NHI changes don't
+  // surprise us. When only Chinese is shipped, pickEnglish falls back to it.
   const icdCode = item.icd9cm_CODE || item.icd9cm_code || "";
-  const icdName = pickEnglish(item.icd9cm_CODE_CNAME || item.icd9cm_name || "");
+  const rawIcdName = item.icd9cm_CODE_CNAME || item.icd9cm_name || "";
+  const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
+  const icdName = stripIcdPrefix(pickEnglish(rawIcdName));
+  const icdName_zh = stripIcdPrefix(pickChinese(rawIcdName));
   return {
     date: start,
     end_date: end,
@@ -384,6 +426,8 @@ export function adaptInpatientEncounter(item) {
     department: "",
     provider: "",
     reason: icdName ? (icdCode ? `${icdCode} ${icdName}` : icdName) : "",
+    reason_zh: icdName_zh ? (icdCode ? `${icdCode} ${icdName_zh}` : icdName_zh) : "",
+    reason_code: icdCode,
     hospital: item.hosp_ABBR || item.hosp_abbr || "",
     row_id: item.row_ID || item.row_id || "",
   };
@@ -424,9 +468,14 @@ export function adaptEncounterFromMedExpense(item, classHint, options) {
   const date = rocToISO(item.funC_DATE || item.func_DATE || item.func_date || "");
   if (!date) return null;
   const icdCode = item.icD9CM_CODE || item.icd9cm_CODE || item.icd9cm_code || "";
-  const icdName = pickEnglish(
-    item.icD9CM_CODE_CNAME || item.icd9cm_CODE_CNAME || item.icd9cm_name || ""
-  );
+  // icd9cm_CODE_CNAME wraps each half as "<code>/<text>" — strip the
+  // leading "<code>/" so downstream doesn't double-print the code when
+  // it composes "<code> <text>" itself (cosmetic; SMART app side reads
+  // .reasonCode[0].text and saw "I359 I359/Nonrheumatic..." before).
+  const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
+  const rawIcdName = item.icD9CM_CODE_CNAME || item.icd9cm_CODE_CNAME || item.icd9cm_name || "";
+  const icdName = stripIcdPrefix(pickEnglish(rawIcdName));
+  const icdName_zh = stripIcdPrefix(pickChinese(rawIcdName));
   const hospital = item.hosP_ABBR || item.hosp_ABBR || item.hosp_abbr || "";
   const isPharmacy =
     (options && options.pharmacy === true) || /藥局|藥房/.test(hospital);
@@ -445,7 +494,12 @@ export function adaptEncounterFromMedExpense(item, classHint, options) {
       : item.ori_type_name || item.orI_TYPE_NAME || "",
     department: "",
     provider: "",
+    // English reason (clinical) and Chinese reason (patient-facing) are
+    // sourced from the same bilingual NHI field; mapper places English
+    // into reasonCode[0].coding[0].display and Chinese into .text.
     reason: icdName ? (icdCode ? `${icdCode} ${icdName}` : icdName) : "",
+    reason_zh: icdName_zh ? (icdCode ? `${icdCode} ${icdName_zh}` : icdName_zh) : "",
+    reason_code: icdCode,
     hospital,
     // Pass through for the eventual IHKE3303S02 detail fetch (Phase B).
     row_id: item.roW_ID || item.row_id || "",
@@ -526,8 +580,12 @@ export function adaptProcedureFromDetail(item) {
   // like "Excision of Left Vitreous, Percutaneous Approach" rather
   // than "08B53ZZ/Excision of Left Vitreous…".
   const opCode = item.op_CODE || item.op_code || "";
-  const opName = pickEnglish(item.op_CODE_CNAME || item.op_code_cname || "");
-  const display = (opName.replace(/^[A-Z0-9]+\//, "") || "").trim() || opName.trim();
+  const rawOpName = item.op_CODE_CNAME || item.op_code_cname || "";
+  const opName = pickEnglish(rawOpName);
+  const opName_zh = pickChinese(rawOpName);
+  const stripCode = (s) => (s || "").replace(/^[A-Z0-9]+\//, "").trim();
+  const display = stripCode(opName) || opName.trim();
+  const display_zh = stripCode(opName_zh);
   if (!date || !display) return null;
 
   const reasonCode = item.icd9cm_CODE || item.icd9cm_code || "";
@@ -554,6 +612,7 @@ export function adaptProcedureFromDetail(item) {
     // "icd", so the mapper assigns systems.ICD_10_PCS.
     system: opCode ? "icd-10-pcs" : "",
     display,
+    display_zh,
     note: noteParts.join(" / "),
     body_site: "",
     hospital: item.hosp_ABBR || item.hosp_abbr || "",

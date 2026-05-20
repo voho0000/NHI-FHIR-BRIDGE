@@ -64,9 +64,30 @@ export function mapEncounter(raw: Record<string, any>, patientId: string): Recor
     resource.serviceProvider = { display: hospital };
   }
 
-  const reason = raw.reason ?? "";
-  if (reason) {
-    resource.reasonCode = [{ text: reason }];
+  // Bilingual reasonCode (v0.8.0). Adapter splits NHI's bilingual ICD
+  // name into raw.reason (English) and raw.reason_zh (繁中), plus the
+  // raw ICD-10 code in raw.reason_code. Patient-facing .text uses 繁中
+  // (falls back to English when NHI ships English-only); coding[].display
+  // stays English with the proper ICD-10-CM system.
+  const reason = ((raw.reason ?? "") as string).trim();
+  const reasonZh = ((raw.reason_zh ?? "") as string).trim();
+  const reasonCode = ((raw.reason_code ?? "") as string).trim();
+  if (reason || reasonZh || reasonCode) {
+    const rc: Record<string, any> = {};
+    if (reasonCode) {
+      // Strip the "<code> " prefix the adapter prepends to the display,
+      // since the structured `code` already conveys that information.
+      const displayPlain = reason.replace(new RegExp(`^${reasonCode}\\s+`), "").trim();
+      rc.coding = [
+        {
+          system: "http://hl7.org/fhir/sid/icd-10-cm",
+          code: reasonCode,
+          display: displayPlain || reason || reasonZh,
+        },
+      ];
+    }
+    rc.text = reasonZh || reason;
+    resource.reasonCode = [rc];
   }
 
   const discharge = raw.discharge_disposition ?? "";

@@ -1,17 +1,19 @@
 {
   "_source": "IHKE3306S02 (處方藥品 detail) — synthetic, fields per adapter shape",
-  "_note": "Drug + parent visit context as passed to adaptMedicationFromDetail(drug, visit).",
+  "_note": "Drug + parent visit context as passed to adaptMedicationFromDetail(drug, visit). v0.8.0: shape mirrors NHI's real bilingual convention `中文||English` for drug_name, act, and icd9cm_CODE_CNAME. drug_name2 / icd9cm_CODE_CNAME2 are NHI's own Chinese-only convenience fields.",
   "drug": {
-    "drug_name": "Aspirin 100mg||Aspirin 100mg",
+    "drug_name": "阿斯匹靈100毫克||ASPIRIN 100MG",
+    "drug_name2": "阿斯匹靈100毫克",
     "order_code": "B025823100",
     "order_drug_day": 30,
     "order_qty": 30,
-    "act": "Antiplatelet||抗血小板藥"
+    "act": "抗血小板藥||ANTIPLATELET AGENTS"
   },
   "visit": {
     "func_DATE": "114/05/18||2025/05/18",
     "icd9cm_CODE": "I10",
-    "icd9cm_CODE_CNAME": "原發性高血壓||Essential hypertension",
+    "icd9cm_CODE_CNAME": "I10/原發性高血壓||I10/Essential hypertension",
+    "icd9cm_CODE_CNAME2": "原發性高血壓",
     "hosp_ABBR": "長庚嘉義"
   }
 }

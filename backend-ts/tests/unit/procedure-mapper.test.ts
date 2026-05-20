@@ -47,6 +47,29 @@ describe("mapProcedure", () => {
     expect(r!.code.coding[0].system).toBe("http://snomed.info/sct");
   });
 
+  test("v0.8.0 bilingual: code.text=繁中, coding[0].display=English", () => {
+    const r = mapProcedure(
+      {
+        display: "Excision of Left Vitreous, Percutaneous Approach",
+        display_zh: "經皮左側玻璃體部分切除術",
+        code: "08B53ZZ",
+        system: "icd-10-pcs",
+        note: "x",
+      },
+      PID,
+    );
+    expect(r!.code.text).toBe("經皮左側玻璃體部分切除術");
+    expect(r!.code.coding[0].display).toBe("Excision of Left Vitreous, Percutaneous Approach");
+  });
+
+  test("v0.8.0 fallback: no display_zh → text falls back to English display", () => {
+    const r = mapProcedure(
+      { display: "Some English Only Procedure", code: "X000", note: "x" },
+      PID,
+    );
+    expect(r!.code.text).toBe("Some English Only Procedure");
+  });
+
   test("system hint maps to ICD-10-PCS", () => {
     const r = mapProcedure({ display: "?", code: "0DTJ4ZZ", system: "ICD-10-PCS", note: "x" }, PID);
     expect(r!.code.coding[0].system).toContain("icd-10");
