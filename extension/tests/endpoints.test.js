@@ -9,6 +9,9 @@
 //   - Names are unique.
 
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { NHI_API_ENDPOINTS, ENDPOINT_LABEL_ZH } from "../src/nhi-endpoints.js";
 
 // Page types currently understood by the mapper / sync pipeline. If
@@ -25,9 +28,42 @@ const KNOWN_PAGE_TYPES = new Set([
   "immunizations",
 ]);
 
+// Local-bundle assembler iterates this whitelist. Forgetting to add a
+// new page_type here = sync completes, popup shows "N 筆", but the
+// downloaded Bundle silently drops those resources (root cause of the
+// "popup says 2 vaccines but bundle has 0" bug in v0.8.1).
+const LOCAL_BUNDLE_PAGE_TYPES = (() => {
+  const src = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), "../src/background.js"),
+    "utf8",
+  );
+  const m = src.match(/const\s+_LOCAL_PAGE_TYPE_ORDER\s*=\s*\[([\s\S]*?)\]/);
+  if (!m) return new Set();
+  return new Set(
+    [...m[1].matchAll(/"([^"]+)"/g)].map((mm) => mm[1]),
+  );
+})();
+
 describe("NHI endpoint registry", () => {
   test("is non-empty", () => {
     expect(NHI_API_ENDPOINTS.length).toBeGreaterThan(0);
+  });
+
+  test("every page_type used by an endpoint is in background.js _LOCAL_PAGE_TYPE_ORDER", () => {
+    // Regression: v0.8.0 added the immunizations endpoint + LIST_HANDLER
+    // + KNOWN_PAGE_TYPES entry, but missed wiring it into the local-mode
+    // bundle assembler's iteration order. Sync ran, items were adapted,
+    // popup counted them — but the downloaded .json had zero. Reading
+    // the constant out of background.js source keeps this test honest
+    // even when someone updates one side and forgets the other.
+    const pageTypes = new Set(NHI_API_ENDPOINTS.map((e) => e.page_type));
+    const missing = [...pageTypes].filter(
+      (pt) => !LOCAL_BUNDLE_PAGE_TYPES.has(pt),
+    );
+    expect(
+      missing,
+      `page_types missing from _LOCAL_PAGE_TYPE_ORDER (local bundle will silently drop these): ${missing.join(", ") || "(none)"}`,
+    ).toEqual([]);
   });
 
   test("every endpoint has a unique name", () => {

@@ -663,6 +663,7 @@ const _LOCAL_PAGE_TYPE_ORDER = [
   "allergies",
   "diagnostic_reports",
   "procedures",
+  "immunizations",
 ];
 
 // Cheap pre-flight: does this NHI tab have an authenticated session?
