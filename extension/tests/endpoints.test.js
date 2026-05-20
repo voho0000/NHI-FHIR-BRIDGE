@@ -49,6 +49,42 @@ describe("NHI endpoint registry", () => {
     expect(NHI_API_ENDPOINTS.length).toBeGreaterThan(0);
   });
 
+  test("every detail-endpoint URL uses crid=&ctype= (NHI API param convention)", () => {
+    // Regression for the v0.8.4 bug: IHKE3303S02 detail used ?rid=&t=
+    // (NHI's UI route querystring) instead of ?crid=&ctype= (the real
+    // API endpoint). The API returned HTTP 200 with an empty
+    // {ihke3303S02_main_data:[]} array for every call, silently breaking
+    // 3 features (classHint since v0.6.x, secondary diagnoses v0.8.1,
+    // primary ICD bilingual v0.8.3) without tripping any error handler.
+    //
+    // All `/api/ihke3000/IHKE<N>S02/page_load?...` URLs must use crid +
+    // ctype params. Same for any `/page_load?` URL that needs a row
+    // identifier — never `rid` (UI-route param, not API).
+    const src = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../src/background.js"),
+      "utf8",
+    );
+    const detailUrls = [
+      ...src.matchAll(/\/api\/ihke3000\/[A-Za-z0-9]+\/page_load\?[^`'"\s]+/g),
+    ].map((m) => m[0]);
+    expect(detailUrls.length).toBeGreaterThan(0);
+    const offenders = detailUrls.filter(
+      (u) => /[?&]rid=/.test(u) || /[?&]t=\$/.test(u) || /[?&]t=[1-9]/.test(u),
+    );
+    expect(
+      offenders,
+      `detail URLs using NHI UI param style (?rid=&t=) instead of API style (?crid=&ctype=) — this is exactly the v0.8.4 silent-failure bug: ${offenders.join(", ")}`,
+    ).toEqual([]);
+    // Positive assertion: every page_load detail URL DOES use crid+ctype.
+    const missing = detailUrls.filter(
+      (u) => !/[?&]crid=/.test(u) || !/[?&]ctype=/.test(u),
+    );
+    expect(
+      missing,
+      `detail URLs missing crid or ctype params: ${missing.join(", ")}`,
+    ).toEqual([]);
+  });
+
   test("every page_type used by an endpoint is in background.js _LOCAL_PAGE_TYPE_ORDER", () => {
     // Regression: v0.8.0 added the immunizations endpoint + LIST_HANDLER
     // + KNOWN_PAGE_TYPES entry, but missed wiring it into the local-mode
