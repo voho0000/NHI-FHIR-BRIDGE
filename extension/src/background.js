@@ -1328,7 +1328,7 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
           (sec) =>
             sec === 0
               ? `📥 取得 ${visits.length} 筆就醫紀錄詳情…`
-              : `📥 取得 ${visits.length} 筆就醫紀錄詳情…（已 ${sec} 秒，NHI 後端 detail JOIN 較慢）`,
+              : `📥 取得 ${visits.length} 筆就醫紀錄詳情…（已 ${sec} 秒）`,
           () => _fetchEncounterDetailsInTab({ tabId, baseUrl: BASE, visits }),
         );
         // Re-adapt with classHint + secondary diagnoses + bilingual
@@ -1595,7 +1595,7 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     }
     if (bundle) {
       total = bundle.entry.length;
-      await setStatus({ progress: `💾 準備 ${total} 筆 FHIR 資源…`, totalResources: total });
+      await setStatus({ progress: `💾 準備 ${total} 筆健康資料…`, totalResources: total });
       try {
         const dl = await _stashFhirBundle(bundle, patientOverride.id_no, dateRange);
         _localFilename = dl.filename;
