@@ -134,6 +134,23 @@ describe("linkEncountersInResources", () => {
     linkEncountersInResources([], [o]);
     expect(o.encounter).toBeUndefined();
   });
+
+  test("Procedure with performer[].actor.display links via BackboneElement shape", () => {
+    // Procedure.performer is a BackboneElement {function?, actor: Reference}
+    // — the hospital display nests under .actor.display, not on the
+    // performer entry directly the way Observation / DiagnosticReport do.
+    // Regression guard for the v0.6.10 / v0.7.0 oversight that left
+    // procedures un-linked from their encounters.
+    const enc = amb("enc-1", "VGH", "2024-05-01");
+    const proc: Record<string, any> = {
+      resourceType: "Procedure",
+      id: "proc-1",
+      performer: [{ actor: { display: "VGH" } }],
+      performedDateTime: "2024-05-01T00:00:00+08:00",
+    };
+    linkEncountersInResources([enc], [proc]);
+    expect(proc.encounter).toEqual({ reference: "Encounter/enc-1" });
+  });
 });
 
 describe("resolveSexStratifiedRanges", () => {

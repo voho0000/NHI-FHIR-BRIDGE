@@ -67,4 +67,21 @@ describe("mapProcedure", () => {
     const b = mapProcedure({ display: "Appendectomy", date: "2024-03-01", note: "x" }, PID);
     expect(a!.id).toBe(b!.id);
   });
+
+  test("hospital maps to performer[].actor.display for link.ts encounter matching", () => {
+    const r = mapProcedure(
+      { display: "Appendectomy", date: "2024-03-01", note: "x", hospital: "臺北榮總" },
+      PID,
+    );
+    expect(r!.performer).toEqual([{ actor: { display: "臺北榮總" } }]);
+  });
+
+  test("performer omitted when hospital is empty / whitespace", () => {
+    const a = mapProcedure({ display: "?", note: "x", hospital: "" }, PID);
+    const b = mapProcedure({ display: "?", note: "x", hospital: "   " }, PID);
+    const c = mapProcedure({ display: "?", note: "x" }, PID);
+    expect(a!.performer).toBeUndefined();
+    expect(b!.performer).toBeUndefined();
+    expect(c!.performer).toBeUndefined();
+  });
 });

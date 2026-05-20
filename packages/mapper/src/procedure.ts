@@ -51,5 +51,18 @@ export function mapProcedure(
     resource.note = [{ text: note }];
   }
 
+  // performer.actor — display-only Reference (no Practitioner / Organization
+  // resource minted). Mirrors the same shape as DiagnosticReport.performer
+  // and MedicationRequest.requester. Important for link.ts: the encounter
+  // linker matches resources to Encounters by performer[].display (hospital)
+  // + date — without this field a procedure done at the same hospital +
+  // day as an Encounter doesn't get its `encounter` reference back-filled,
+  // so SMART apps showing "procedures grouped by visit" would leave it
+  // un-grouped.
+  const hospital = ((raw.hospital ?? "") as string).trim();
+  if (hospital) {
+    resource.performer = [{ actor: { display: hospital } }];
+  }
+
   return resource;
 }

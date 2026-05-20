@@ -41,9 +41,17 @@ function resourceDate(r: Record<string, any>): string {
 }
 
 function resourceHospital(r: Record<string, any>): string {
+  // performer shape differs by resource type:
+  //   Observation / DiagnosticReport: Reference[]              → p.display
+  //   Procedure:                      BackboneElement[]        → p.actor.display
+  // FHIR R4 §Procedure.performer is the only place we hit a BackboneElement.
   for (const p of r.performer ?? []) {
-    const d = (p ?? {}).display ?? "";
-    if (d) return d;
+    if (!p || typeof p !== "object") continue;
+    if (typeof p.display === "string" && p.display) return p.display;
+    const actor = p.actor;
+    if (actor && typeof actor === "object" && typeof actor.display === "string" && actor.display) {
+      return actor.display;
+    }
   }
   const req = r.requester ?? {};
   if (req && typeof req === "object" && req.display) return req.display;
