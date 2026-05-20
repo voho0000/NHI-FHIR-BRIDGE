@@ -2,6 +2,21 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.8.6 重點 — 2026-05-21
+
+住院 (IHKE3309) Encounter 補上 S02 detail enrichment — 跟 v0.8.4 對 OPD encounter 同 pattern，這次蓋到住院記錄。
+
+**Bug 修正**
+- 🏥 **住院 Encounter primary ICD 英文 + 次診斷補齊**：IHKE3309S01 list 只 ship icd9cm_CODE_CNAME 中文 ("咳血") 沒雙語、且沒次診斷欄位；IHKE3309S02 detail (ctype=3) 有完整雙語 + 12+ 次診斷（住院 case 鑑別診斷比 OPD 豐富）。新增 detail fan-out + helper 泛化、現在住院 Encounter 跟 OPD 同水準的 bilingual + 多 reasonCode。
+- 🧹 **`_pickS02MainRow` helper 抽出**：S02 body 處理泛化到任何 `ihke<N>S02_main_data` key，未來新 detail endpoint 直接 reuse。
+
+**升級注意**
+- Reload extension + 重 sync 拿新資料。
+- 預期效果：住院 Encounter `.reasonCode[0].coding[0].display` 變英文；多診斷住院會出現 `.reasonCode[1..N]`。
+- Sync 時間再增 ~10-20s（住院 visit 數 × S02 fetch 成本）。
+
+---
+
 ## 0.8.5 重點 — 2026-05-21
 
 純 UX patch — popup sync 進度條更友善，user 不會以為當機。
