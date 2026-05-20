@@ -69,6 +69,12 @@ export function mapEncounter(raw: Record<string, any>, patientId: string): Recor
   // raw ICD-10 code in raw.reason_code. Patient-facing .text uses 繁中
   // (falls back to English when NHI ships English-only); coding[].display
   // stays English with the proper ICD-10-CM system.
+  //
+  // v0.9.0 adds secondary diagnoses (次診斷) — IHKE3303S02 detail
+  // exposes up to 4 additional ICDs per encounter. They are pushed
+  // after the primary so SMART apps can render reasonCode[0] as the
+  // main diagnosis and the rest as secondary chips.
+  const reasonCodes: Record<string, any>[] = [];
   const reason = ((raw.reason ?? "") as string).trim();
   const reasonZh = ((raw.reason_zh ?? "") as string).trim();
   const reasonCode = ((raw.reason_code ?? "") as string).trim();
@@ -87,7 +93,29 @@ export function mapEncounter(raw: Record<string, any>, patientId: string): Recor
       ];
     }
     rc.text = reasonZh || reason;
-    resource.reasonCode = [rc];
+    reasonCodes.push(rc);
+  }
+  const secondaries = Array.isArray(raw.secondary_diagnoses) ? raw.secondary_diagnoses : [];
+  for (const sec of secondaries) {
+    const code = ((sec?.code ?? "") as string).trim();
+    const nameEn = ((sec?.name_en ?? "") as string).trim();
+    const nameZh = ((sec?.name_zh ?? "") as string).trim();
+    if (!code && !nameEn && !nameZh) continue;
+    const entry: Record<string, any> = {};
+    if (code) {
+      entry.coding = [
+        {
+          system: "http://hl7.org/fhir/sid/icd-10-cm",
+          code,
+          display: nameEn || nameZh,
+        },
+      ];
+    }
+    entry.text = code ? `${code} ${nameZh || nameEn}`.trim() : nameZh || nameEn;
+    reasonCodes.push(entry);
+  }
+  if (reasonCodes.length > 0) {
+    resource.reasonCode = reasonCodes;
   }
 
   const discharge = raw.discharge_disposition ?? "";

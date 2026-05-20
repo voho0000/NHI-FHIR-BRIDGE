@@ -593,6 +593,42 @@ function _classFromS02Detail(body) {
   return "AMB";
 }
 
+// Pull secondary diagnoses (次診斷) from IHKE3303S02 detail. Live data
+// shows 0-4 entries per encounter; the eye-clinic case in the test
+// sample maxes out at 4. Each entry is shaped:
+//   { icd_tit: "次診斷N||Secondary Diagnosis N",
+//     icd_code_name: "<code>/<中文>||<code>/<English>" }
+// Returns a normalized array passed via the encounter adapter's
+// options.secondary_diagnoses → mapper emits one reasonCode[] entry per item.
+function _secondaryIcdsFromS02Detail(body) {
+  if (!body) return [];
+  const main = (body.ihke3303S02_main_data) || [];
+  if (main.length === 0) return [];
+  const list = Array.isArray(main[0].icdcode_data) ? main[0].icdcode_data : [];
+  const out = [];
+  // strip the "<CODE>/" prefix from each half (same pattern as
+  // medication / encounter primary ICD bilingual)
+  const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
+  const pickHalf = (s, half) => {
+    const str = String(s || "");
+    const idx = str.indexOf("||");
+    if (idx === -1) return str.trim();
+    if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
+    return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
+  };
+  for (const item of list) {
+    const codeName = item?.icd_code_name || item?.icd_CODE_NAME || "";
+    // Extract code from either half (both sides prefix with same code).
+    const codeMatch = String(codeName).match(/^([A-Z0-9.]+)\//);
+    const code = codeMatch ? codeMatch[1] : "";
+    const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
+    const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
+    if (!code && !name_en && !name_zh) continue;
+    out.push({ code, name_en, name_zh });
+  }
+  return out;
+}
+
 async function _postStructured(backend, page_type, items, syncApiKey, patientOverride) {
   const r = await fetch(`${backend}/sync/upload-structured`, {
     method: "POST",
@@ -1142,16 +1178,18 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
         const detailMap = await _fetchEncounterDetailsInTab({
           tabId, baseUrl: BASE, visits,
         });
-        // Re-adapt with classHint from detail; fall back to AMB.
+        // Re-adapt with classHint + secondary diagnoses from detail.
         const reAdapted = [];
         for (let i = 0; i < visits.length; i++) {
           const detail = detailMap?.get(i) || null;
           const cls = _classFromS02Detail(detail) || "AMB";
+          const secondaryDiagnoses = _secondaryIcdsFromS02Detail(detail);
           const visit = visits[i];
           const rowId = visit.roW_ID || visit.row_id || visit.row_ID;
           const isPharmacy = rowId ? pharmacyRowIds.has(rowId) : false;
           const it = adaptEncounterFromMedExpense(visit, cls, {
             pharmacy: isPharmacy,
+            secondary_diagnoses: secondaryDiagnoses,
           });
           if (it) reAdapted.push(it);
         }

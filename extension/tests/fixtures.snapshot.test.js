@@ -121,6 +121,7 @@ describe("adapter fixture snapshots", () => {
         "reason_code": "I10",
         "reason_zh": "I10 原發性高血壓",
         "row_id": "AAFxzWAAIAAIATTAAY",
+        "secondary_diagnoses": [],
         "type_display": "IC卡資料",
       }
     `);

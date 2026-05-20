@@ -105,6 +105,74 @@ describe("mapEncounter", () => {
     expect(r.reasonCode[0].text).toBe("Essential hypertension");
   });
 
+  test("v0.9.0 secondary diagnoses (次診斷) append after primary in reasonCode[]", () => {
+    // Real shape from IHKE3303S02 (eye clinic, 1 primary + 4 secondaries).
+    // Order is contract: primary first, then 次診斷 1..N in the
+    // order NHI returns them — SMART apps can render reasonCode[0]
+    // as 主診斷 and the rest as 次診斷 chips.
+    const r = mapEncounter(
+      {
+        reason: "Primary open-angle glaucoma, right eye, stage unspecified",
+        reason_zh: "H401110 右側原發性隅角開放性青光眼，未明示期別",
+        reason_code: "H401110",
+        secondary_diagnoses: [
+          {
+            code: "H35379",
+            name_en: "Puckering of macula, unspecified eye",
+            name_zh: "未明示側性黃斑部皺褶",
+          },
+          { code: "H3581", name_en: "Retinal edema", name_zh: "視網膜水腫" },
+        ],
+      },
+      PID,
+    );
+    expect(r.reasonCode).toHaveLength(3);
+    // Primary stays as the first entry, unchanged from v0.8.0.
+    expect(r.reasonCode[0].coding[0].code).toBe("H401110");
+    // Secondaries follow, each with their own ICD-10-CM coding + 繁中 text.
+    expect(r.reasonCode[1].coding[0]).toEqual({
+      system: "http://hl7.org/fhir/sid/icd-10-cm",
+      code: "H35379",
+      display: "Puckering of macula, unspecified eye",
+    });
+    expect(r.reasonCode[1].text).toBe("H35379 未明示側性黃斑部皺褶");
+    expect(r.reasonCode[2].coding[0].code).toBe("H3581");
+    expect(r.reasonCode[2].text).toBe("H3581 視網膜水腫");
+  });
+
+  test("v0.9.0 no secondary_diagnoses → only primary reasonCode emitted", () => {
+    const r = mapEncounter({ reason: "Essential hypertension", reason_code: "I10" }, PID);
+    expect(r.reasonCode).toHaveLength(1);
+  });
+
+  test("v0.9.0 secondary_diagnoses without primary → only secondaries emitted", () => {
+    // Defensive: if NHI ever returns an encounter with no primary ICD
+    // but secondaries (unlikely but possible), we still surface them.
+    const r = mapEncounter(
+      {
+        secondary_diagnoses: [
+          { code: "I10", name_en: "Essential hypertension", name_zh: "原發性高血壓" },
+        ],
+      },
+      PID,
+    );
+    expect(r.reasonCode).toHaveLength(1);
+    expect(r.reasonCode[0].text).toBe("I10 原發性高血壓");
+  });
+
+  test("v0.9.0 secondary entries with only Chinese (no English) still emit", () => {
+    const r = mapEncounter(
+      {
+        reason_code: "I10",
+        reason_zh: "I10 原發性高血壓",
+        secondary_diagnoses: [{ code: "E1121", name_zh: "第二型糖尿病" }],
+      },
+      PID,
+    );
+    expect(r.reasonCode[1].text).toBe("E1121 第二型糖尿病");
+    expect(r.reasonCode[1].coding[0].display).toBe("第二型糖尿病");
+  });
+
   test("discharge_disposition becomes hospitalization.dischargeDisposition.text", () => {
     const r = mapEncounter({ discharge_disposition: "home" }, PID);
     expect(r.hospitalization.dischargeDisposition.text).toBe("home");

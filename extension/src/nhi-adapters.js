@@ -500,6 +500,16 @@ export function adaptEncounterFromMedExpense(item, classHint, options) {
     reason: icdName ? (icdCode ? `${icdCode} ${icdName}` : icdName) : "",
     reason_zh: icdName_zh ? (icdCode ? `${icdCode} ${icdName_zh}` : icdName_zh) : "",
     reason_code: icdCode,
+    // Secondary diagnoses (次診斷) come from IHKE3303S02 detail fan-out
+    // — list endpoint only exposes the primary ICD. The mapper appends
+    // one Encounter.reasonCode[] entry per secondary, preserving order
+    // (primary first, then 次診斷1, 2, 3, ... up to 4 observed in live
+    // NHI data). Empty array when caller didn't fetch detail or NHI
+    // returned no secondaries.
+    secondary_diagnoses:
+      options && Array.isArray(options.secondary_diagnoses)
+        ? options.secondary_diagnoses
+        : [],
     hospital,
     // Pass through for the eventual IHKE3303S02 detail fetch (Phase B).
     row_id: item.roW_ID || item.row_id || "",

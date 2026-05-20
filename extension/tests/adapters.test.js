@@ -904,6 +904,34 @@ describe("adaptEncounterFromMedExpense", () => {
     );
     expect(r.type_display).toBe("藥局");
   });
+
+  test("v0.9.0 secondary_diagnoses option flows through to adapter output", () => {
+    // Secondary diagnoses are extracted from IHKE3303S02 detail by
+    // background.js (see _secondaryIcdsFromS02Detail) and passed via
+    // options. Adapter just stores them for the mapper to emit as
+    // additional reasonCode[] entries.
+    const secondaries = [
+      { code: "H35379", name_en: "Puckering of macula", name_zh: "黃斑部皺褶" },
+      { code: "H3581", name_en: "Retinal edema", name_zh: "視網膜水腫" },
+    ];
+    const r = adaptEncounterFromMedExpense(
+      { funC_DATE: "115/04/29", hosP_ABBR: "嘉基醫院", icD9CM_CODE: "H401110" },
+      "AMB",
+      { secondary_diagnoses: secondaries },
+    );
+    expect(r.secondary_diagnoses).toEqual(secondaries);
+  });
+
+  test("v0.9.0 missing secondary_diagnoses → empty array (not undefined)", () => {
+    // Mapper's array iteration expects a real array. Adapter normalises
+    // missing / non-array option values to [] so the mapper doesn't
+    // need an Array.isArray guard at every callsite.
+    const r = adaptEncounterFromMedExpense(
+      { funC_DATE: "115/04/29", hosP_ABBR: "X" },
+      "AMB",
+    );
+    expect(r.secondary_diagnoses).toEqual([]);
+  });
 });
 
 // ── adaptImmunization — IHKE3203S01 ────────────────────────────────────
