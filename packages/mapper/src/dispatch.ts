@@ -9,6 +9,7 @@ import { mapAllergyIntolerance } from "./allergy";
 import { mapCondition } from "./condition";
 import { mapDiagnosticReport } from "./diagnostic-report";
 import { mapEncounter } from "./encounter";
+import { mapImmunization } from "./immunization";
 import { mapMedicationRequest, mapMedicationsDedup } from "./medication";
 import { mapObservation, mapObservationsGrouped } from "./observation";
 import { mapProcedure } from "./procedure";
@@ -33,6 +34,7 @@ export const LIST_HANDLERS: Record<string, [PerRowMapper, string]> = {
   diagnostic_reports: [mapDiagnosticReport, "diagnostic_reports"],
   procedures: [mapProcedure, "procedures"],
   encounters: [mapEncounter, "encounters"],
+  immunizations: [mapImmunization, "immunizations"],
 };
 
 /**

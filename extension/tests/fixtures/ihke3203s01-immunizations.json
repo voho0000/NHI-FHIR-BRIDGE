@@ -1,0 +1,48 @@
+{
+  "_source": "IHKE3203S01 (預防接種紀錄 / 疫苗) — live shape captured from NHI",
+  "_note": "Real anonymized capture: 6 vaccinations across flu (no batch number) + COVID-19 (BNT, Moderna, AstraZeneca with batch numbers). No PII in this NHI response. Trimmed nothing — every row pattern preserved for adapter coverage (batch-present vs batch-absent; nested parens for bivalent vaccine).",
+  "sP_IHKE3203S01": [
+    {
+      "rownum": 1,
+      "inoculatE_D": "112/12/27",
+      "codE_CNAME": "流感疫苗",
+      "hosP_ABBR": "臺北榮民總醫院",
+      "source": "疾病管制署"
+    },
+    {
+      "rownum": 2,
+      "inoculatE_D": "111/10/24",
+      "codE_CNAME": "流感疫苗",
+      "hosP_ABBR": "臺北榮民總醫院",
+      "source": "疾病管制署"
+    },
+    {
+      "rownum": 3,
+      "inoculatE_D": "111/10/13",
+      "codE_CNAME": "莫德納Spikevax雙價疫苗(O/O_BA.1)(批號035E22A)",
+      "hosP_ABBR": "臺北榮民總醫院",
+      "source": "疾病管制署"
+    },
+    {
+      "rownum": 4,
+      "inoculatE_D": "111/01/07",
+      "codE_CNAME": "輝瑞/BNT COVID-19疫苗(批號1I070A)",
+      "hosP_ABBR": "臺北榮民總醫院",
+      "source": "疾病管制署"
+    },
+    {
+      "rownum": 5,
+      "inoculatE_D": "110/07/23",
+      "codE_CNAME": "COVID-19疫苗(AstraZeneca)(批號D006A)",
+      "hosP_ABBR": "臺北榮民總醫院",
+      "source": "疾病管制署"
+    },
+    {
+      "rownum": 6,
+      "inoculatE_D": "110/05/14",
+      "codE_CNAME": "COVID-19疫苗(AstraZeneca)(批號CTMAV513)",
+      "hosP_ABBR": "臺北榮民總醫院",
+      "source": "疾病管制署"
+    }
+  ]
+}

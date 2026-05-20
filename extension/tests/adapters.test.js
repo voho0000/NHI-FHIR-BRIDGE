@@ -26,6 +26,7 @@ import {
   adaptChronicListStub,
   adaptEncounterFromMedExpense,
   adaptImagingReportFromDetail,
+  adaptImmunization,
   adaptInpatientEncounter,
   adaptLabItem,
   adaptMedication,
@@ -902,6 +903,96 @@ describe("adaptEncounterFromMedExpense", () => {
       { pharmacy: true },
     );
     expect(r.type_display).toBe("藥局");
+  });
+});
+
+// ── adaptImmunization — IHKE3203S01 ────────────────────────────────────
+
+describe("adaptImmunization", () => {
+  test("simple vaccine with no batch (flu)", () => {
+    const r = adaptImmunization({
+      inoculatE_D: "112/12/27",
+      codE_CNAME: "流感疫苗",
+      hosP_ABBR: "臺北榮民總醫院",
+      source: "疾病管制署",
+    });
+    expect(r).toEqual({
+      date: "2023-12-27",
+      vaccine_name: "流感疫苗",
+      lot_number: "",
+      hospital: "臺北榮民總醫院",
+      source: "疾病管制署",
+    });
+  });
+
+  test("COVID-19 vaccine with batch — extracts lot, strips suffix", () => {
+    const r = adaptImmunization({
+      inoculatE_D: "111/01/07",
+      codE_CNAME: "輝瑞/BNT COVID-19疫苗(批號1I070A)",
+      hosP_ABBR: "臺北榮民總醫院",
+      source: "疾病管制署",
+    });
+    expect(r.vaccine_name).toBe("輝瑞/BNT COVID-19疫苗");
+    expect(r.lot_number).toBe("1I070A");
+  });
+
+  test("nested parens — keeps non-batch group, strips batch one only", () => {
+    // 莫德納雙價疫苗 has two parens: (O/O_BA.1) for valent + (批號XXX)
+    // for lot. Only the 批號 paren should be removed.
+    const r = adaptImmunization({
+      inoculatE_D: "111/10/13",
+      codE_CNAME: "莫德納Spikevax雙價疫苗(O/O_BA.1)(批號035E22A)",
+      hosP_ABBR: "X",
+    });
+    expect(r.vaccine_name).toBe("莫德納Spikevax雙價疫苗(O/O_BA.1)");
+    expect(r.lot_number).toBe("035E22A");
+  });
+
+  test("AstraZeneca format — manufacturer in name parens stays", () => {
+    const r = adaptImmunization({
+      inoculatE_D: "110/07/23",
+      codE_CNAME: "COVID-19疫苗(AstraZeneca)(批號D006A)",
+      hosP_ABBR: "X",
+    });
+    expect(r.vaccine_name).toBe("COVID-19疫苗(AstraZeneca)");
+    expect(r.lot_number).toBe("D006A");
+  });
+
+  test("returns null when date missing", () => {
+    expect(adaptImmunization({ codE_CNAME: "X" })).toBeNull();
+  });
+
+  test("returns null when codE_CNAME missing", () => {
+    expect(adaptImmunization({ inoculatE_D: "112/12/27" })).toBeNull();
+  });
+
+  test("returns null on null / non-object input", () => {
+    expect(adaptImmunization(null)).toBeNull();
+    expect(adaptImmunization(undefined)).toBeNull();
+    expect(adaptImmunization("string")).toBeNull();
+  });
+
+  test("end-to-end fixture: 6 live vaccinations map cleanly", () => {
+    const fixture = readFixture("ihke3203s01-immunizations.json");
+    const rows = fixture.sP_IHKE3203S01.map(adaptImmunization);
+    expect(rows).toHaveLength(6);
+    // Flu rows: no batch
+    expect(rows[0].vaccine_name).toBe("流感疫苗");
+    expect(rows[0].lot_number).toBe("");
+    expect(rows[1].lot_number).toBe("");
+    // COVID rows: batch extracted, dates correct
+    expect(rows[2].lot_number).toBe("035E22A");
+    expect(rows[3].lot_number).toBe("1I070A");
+    expect(rows[4].lot_number).toBe("D006A");
+    expect(rows[5].lot_number).toBe("CTMAV513");
+    // Dates are ROC → ISO
+    expect(rows[0].date).toBe("2023-12-27");
+    expect(rows[5].date).toBe("2021-05-14");
+    // Hospital + source preserved on every row
+    for (const r of rows) {
+      expect(r.hospital).toBe("臺北榮民總醫院");
+      expect(r.source).toBe("疾病管制署");
+    }
   });
 });
 

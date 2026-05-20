@@ -506,6 +506,49 @@ export function adaptEncounterFromMedExpense(item, classHint, options) {
   };
 }
 
+// IHKE3203S01 (疫苗 / 預防接種紀錄) — flat list endpoint, response shape:
+//   sP_IHKE3203S01: [
+//     { rownum, inoculatE_D: "112/12/27" (民國), codE_CNAME: 中文疫苗名,
+//       hosP_ABBR: 接種院所, source: "疾病管制署" }
+//   ]
+//
+// NHI ships Chinese-only on `codE_CNAME` (no bilingual `||` here). For
+// COVID-19 vaccines NHI bundles the lot number into the name:
+//   "輝瑞/BNT COVID-19疫苗(批號1I070A)"
+//   "莫德納Spikevax雙價疫苗(O/O_BA.1)(批號035E22A)"
+//   "COVID-19疫苗(AstraZeneca)(批號D006A)"
+//
+// Adapter splits "(批號XXXX)" into a separate lot_number field so the
+// FHIR mapper can populate Immunization.lotNumber and the displayed
+// vaccine name stays clean. Influenza ("流感疫苗") has no batch
+// suffix — lot_number ends up empty, mapper omits the field.
+//
+// status: Immunization records on 健保存摺 are post-administration only
+// (NHI doesn't show planned / not-given vaccines), so the mapper
+// hardcodes Immunization.status = "completed".
+export function adaptImmunization(item) {
+  if (!item || typeof item !== "object") return null;
+  const date = rocToISO(item.inoculatE_D || item.inoculate_d || "");
+  const rawName = String(item.codE_CNAME || item.code_cname || "").trim();
+  if (!date || !rawName) return null;
+  // Extract the LAST (批號XXX) occurrence; some vaccines have multiple
+  // parens like "(O/O_BA.1)(批號035E22A)" — only the 批號 one is the lot.
+  const lotMatch = rawName.match(/[（(]\s*批號\s*([^)）]+?)\s*[)）]/);
+  const lotNumber = lotMatch ? lotMatch[1].trim() : "";
+  const cleanName = rawName
+    .replace(/[（(]\s*批號\s*[^)）]+\s*[)）]/, "")
+    .trim();
+  return {
+    date,
+    vaccine_name: cleanName || rawName,
+    lot_number: lotNumber,
+    hospital: item.hosP_ABBR || item.hosp_abbr || "",
+    // NHI's source-of-record marker; preserved on the resource as
+    // performer-org context (疾病管制署 = Taiwan CDC).
+    source: item.source || "",
+  };
+}
+
 export function adaptAllergy(item) {
   if (!item || typeof item !== "object") return null;
   const allergen =

@@ -14,6 +14,7 @@ export * from "./diagnostic-report";
 export * from "./dispatch";
 export * from "./encounter";
 export * from "./helpers";
+export * from "./immunization";
 export * from "./link";
 export * from "./medication";
 export * from "./observation";

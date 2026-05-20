@@ -19,6 +19,7 @@ import {
   adaptChronicListStub,
   adaptEncounterFromMedExpense,
   adaptImagingListStub,
+  adaptImmunization,
   adaptInpatientEncounter,
   adaptLabItem,
   adaptMedication,
@@ -44,6 +45,7 @@ export const ENDPOINT_LABEL_ZH = {
   imaging: "影像檢查",
   other_labs: "檢驗",
   catastrophic_illness: "重大傷病",
+  immunizations: "疫苗",
 };
 
 // page_type → backend page_type string used by mappers.
@@ -130,4 +132,10 @@ export const NHI_API_ENDPOINTS = [
   // doesn't accept date params (NHI returns currently-valid certs only).
   { name: "catastrophic_illness", path: "/api/ihke3000/ihke3209s01/SP_IHKE3209S01",
     page_type: "conditions",        adapt: adaptCatastrophicIllness },
+  // IHKE3203S01 (預防接種紀錄 / 疫苗) — Taiwan CDC sourced. Each row
+  // → FHIR Immunization. NHI ships Chinese-only vaccine names with
+  // batch number inlined as "(批號XXX)"; adapter splits the lot.
+  // No date range parameter (NHI returns all historical vaccinations).
+  { name: "immunizations",       path: "/api/ihke3000/ihke3203s01/SP_IHKE3203S01",
+    page_type: "immunizations",     adapt: adaptImmunization },
 ];
