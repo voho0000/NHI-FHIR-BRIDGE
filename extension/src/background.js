@@ -523,8 +523,14 @@ async function _fetchEncounterDetailsInTab({ tabId, baseUrl, visits }) {
         return { error: "SESSION_EXPIRED" };
       }
       const auth = `Bearer ${token}`;
-      async function fetchOne(rowId, t) {
-        const url = `${base}/api/ihke3000/ihke3303s02/page_load?rid=${encodeURIComponent(rowId)}&t=${t}`;
+      async function fetchOne(rowId, ctype) {
+        // IHKE3303S02 takes crid + ctype (mirrors IHKE3306S02 /
+        // IHKE3308S02 detail endpoints). Earlier code used rid + t
+        // — that matched NHI's UI route querystring but NOT the API
+        // endpoint, which silently returned {ihke3303S02_main_data:[]}
+        // for every visit. That made classHint, secondary diagnoses,
+        // and primary-ICD-bilingual all fall through to defaults.
+        const url = `${base}/api/ihke3000/IHKE3303S02/page_load?crid=${encodeURIComponent(rowId)}&ctype=${ctype}`;
         const ac = new AbortController();
         const tm = setTimeout(() => ac.abort(), 30000);
         try {
@@ -541,16 +547,16 @@ async function _fetchEncounterDetailsInTab({ tabId, baseUrl, visits }) {
           return { error: e.name === "AbortError" ? "timeout 30s" : String(e?.message || e) };
         }
       }
-      // For each visit, find the `t` that returns non-empty data. NHI
-      // uses t=1 for outpatient 西醫, t=2 maybe 急診/中醫, t=3 住院,
-      // t=4 牙醫… don't have an authoritative mapping so we probe.
+      // For each visit, find the ctype that returns non-empty data. NHI
+      // observed: ctype=2 covers 西醫 / IC卡 / 申報 OPD, others may
+      // correspond to 中醫 / 牙醫 / 住院. We probe a small set.
       async function one(rowId) {
-        for (const t of [1, 2, 3, 4, 5]) {
-          const r = await fetchOne(rowId, t);
+        for (const ct of [2, 1, 3, 4, 5]) {
+          const r = await fetchOne(rowId, ct);
           if (r.error === "SESSION_EXPIRED") return r;
           if (r.error) continue;
           const main = (r.body?.ihke3303S02_main_data) || [];
-          if (main.length > 0) return { body: r.body, t };
+          if (main.length > 0) return { body: r.body, ctype: ct };
         }
         return { body: null };
       }
