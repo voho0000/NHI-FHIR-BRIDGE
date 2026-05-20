@@ -3,6 +3,20 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.8.3 重點 — 2026-05-21
+
+修 v0.8.0 雙語契約對 `Encounter.reasonCode` 的覆蓋率漏洞。
+
+**Bug 修正**
+- 🐞 **Encounter ICD 英文 description 補齊**：v0.8.0 起 `MedicationRequest.reasonCode[0].coding[0].display` 都是英文 ✓；但同一份 bundle 裡的 `Encounter.reasonCode[0].coding[0].display` 卻常是中文。原因：IHKE3303**S01** list 對某些病人只 ship 中文 ICD 描述（沒雙語 `||`），舊版 adapter fallback 成中文 fill 進 display。本版改從 IHKE3303**S02** detail（一定 ship 完整雙語）抓 primary ICD bilingual — 我們已經 fetch detail 拿 class hint + 次診斷，順手把 primary 也補上、零額外請求。修完後 `Encounter` 跟 `MedicationRequest` 兩邊行為一致，民眾/醫療雙視角切換都能 work。
+
+**升級注意**
+- Reload extension + 重 sync 才會拿到完整雙語的 Encounter。
+- 順便確認次診斷 (v0.8.1) 也都在新 bundle 裡 — 之前 (5).json 若 0 個次診斷，可能是更早版本的 sync 結果。
+
+---
+
+
 ## 0.8.2 重點 — 2026-05-20
 
 修一個 v0.8.0 沒接乾淨的尾巴。Extension local-mode 下載的 FHIR Bundle 缺 Immunization。
