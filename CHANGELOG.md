@@ -2,6 +2,18 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.8.5 重點 — 2026-05-21
+
+純 UX patch — popup sync 進度條更友善，user 不會以為當機。
+
+**新功能**
+- ⏱️ **長時間 fan-out 加 elapsed-time ticker**：v0.8.4 修好 detail URL 後 sync 時間從 ~32s 變 ~1m30s（NHI 後端 detail JOIN 真的有 cost）。之前 popup 訊息靜止顯示「📥 取得 163 筆就醫紀錄詳情…」一分鐘看起來像當掉。本版每 3 秒更新 elapsed 秒數，message 像「📥 取得 163 筆就醫紀錄詳情…（已 27 秒，NHI 後端 detail JOIN 較慢）」。套到 5 個長 fan-out：就醫紀錄、影像、處置、慢箋、用藥。
+
+**升級注意**
+- Reload extension。純 UX 改動，bundle 內容跟 v0.8.4 完全一樣。
+
+---
+
 ## 0.8.4 重點 — 2026-05-21
 
 **Critical 修法** — IHKE3303S02 detail endpoint URL 用錯參數從 v0.6.x 起靜默失敗了好幾個月，三個 feature 都默默沒 work。
