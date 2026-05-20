@@ -21,7 +21,7 @@ import {
   adaptInpatientEncounter,
   adaptLabItem,
   adaptMedication,
-  adaptProcedure,
+  adaptProcedureListStub,
 } from "./nhi-adapters.js";
 
 // User-facing label for each endpoint name. The breakdown collapsible
@@ -72,8 +72,13 @@ export const NHI_API_ENDPOINTS = [
     page_type: "encounters",        adapt: adaptInpatientEncounter },
   { name: "inpatient_legacy",    path: "/api/ihke3000/ihke3308s01/page_load",
     page_type: "encounters",        adapt: adaptInpatientEncounter },
+  // Procedures (IHKE3301S05) list only has order-level metadata —
+  // no ICD-10-PCS code and no actual performed-date. The full
+  // record lives at IHKE3308S02 (sub-list carries exe_S_DATE +
+  // NHI 醫令碼 per execution). Same 2-step fan-out pattern as
+  // imaging; see _fetchProcedureDetailsInTab.
   { name: "procedures",          path: "/api/ihke3000/ihke3301s05/page_load",
-    page_type: "procedures",        adapt: adaptProcedure },
+    page_type: "procedures",        adapt: adaptProcedureListStub },
   // medications: page_load only accepts empty dates (HTTP 400 otherwise).
   // The /search endpoint is what the SPA hits when user picks a custom
   // date range and accepts ISO 西元 dates with dashes (2023-01-01).

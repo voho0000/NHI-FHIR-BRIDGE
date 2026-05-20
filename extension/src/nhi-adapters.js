@@ -400,38 +400,96 @@ export function adaptAllergy(item) {
   };
 }
 
-// IHKE3301S05 (處置/手術 list) shape:
+// IHKE3301S05 (處置/手術 list) is metadata-only:
 //   {hosp_id, hosp_abbr, hosp_url, ori_type_name, ori_type, func_date,
 //    out_date, icd9cm_code, icd9cm_code_cname, op_code_cname, row_id}
-// Note: no procedure CODE in list — op_code_cname is the only label.
-// Date note: NHI doesn't expose a separate "actual procedure date" here,
-// so for inpatient procedures (where func_date = admission, out_date =
-// discharge) we deliberately use func_date as the anchor. The procedure
-// "happened somewhere in this admission" — anchoring to the start day
-// is a small loss of accuracy vs. inventing a performedPeriod that would
-// suggest the procedure spanned the whole stay.
-export function adaptProcedure(item) {
+// No procedure CODE (ICD-10-PCS) and no actual exam-date. The procedure
+// CODE + exe_S_DATE only show up on the IHKE3308S02 detail endpoint
+// (analogous to IHKE3408S01 imaging list → S02 detail). We do a 2-step
+// fan-out from the list's row_ID; the list adapter therefore returns
+// null and the real work happens in adaptProcedureFromDetail below.
+export function adaptProcedureListStub() { return null; }
+
+// IHKE3308S02 (處置/手術 detail) shape (per row in ihke3308S02_main_data):
+//   {rowid, main_tit ("105/09/23 ~ 105/09/26｜住院" or "105/01/14｜門診"),
+//    hosp_ID, hosp_ABBR, hosp_url, ori_TYPE_NAME, ori_TYPE,
+//    icd9cm_CODE, icd9cm_CODE_CNAME,         ← reason for procedure
+//    op_CODE,    op_CODE_CNAME,              ← ICD-10-PCS + bilingual label
+//    func_DATE, func_SEQ_NO, part_AMT, appl_DOT,
+//    sp_IHKE3308S04_data_list: [{
+//       exe_S_DATE ("YYY/MM/DD||YYYY/MM/DD"),  ← actual execution date
+//       order_CODE_NAME (bilingual),           ← NHI billing-item name
+//       order_CODE,                            ← NHI 醫令碼
+//    }, ...]}
+//
+// Date field choice — IHKE3308S02 detail exposes:
+//   - sp_IHKE3308S04_data_list[].exe_S_DATE — 執行起始日; this is the
+//                      actual day the patient had the procedure. For
+//                      inpatient procedures (admit M/01, surgery M/05,
+//                      discharge M/10) exe_S_DATE = M/05 — correct.
+//   - func_DATE       — order/visit anchor day (門診開單日 / 入院日);
+//                      same wrong-anchor pattern as imaging — using it
+//                      for inpatient procedures shifts the exam back
+//                      to the admission day.
+// Fallback chain: first sub-list entry's exe_S_DATE → func_DATE.
+//
+// FHIR coding strategy:
+//   - Procedure.code coding uses op_CODE (ICD-10-PCS) as the primary
+//     coded value with system=icd-10-pcs — was previously the empty
+//     string because the list endpoint never carries it.
+//   - icd9cm_CODE + CNAME map to a Reason: prefix in the note (same
+//     pattern the old adapter used) so the mapper's "no note → drop"
+//     filter keeps benign rows out while letting genuine procedures
+//     pass.
+//   - Sub-list entries' order_CODE_NAME + order_CODE go into the note
+//     as 施作: lines so SMART apps can show the NHI billing breakdown.
+export function adaptProcedureFromDetail(item) {
   if (!item || typeof item !== "object") return null;
-  const date = rocToISO(item.func_date || item.funC_DATE);
-  const display = pickEnglish(
-    item.op_code_cname || item.proC_NAME || item.ordeR_NAME || ""
-  );
-  if (!date || !display) return null;
-  // Diagnosis (icd9cm_code_cname) is the *reason* for the procedure, not
-  // the procedure code itself. Stash it in `note` so it shows up in the
-  // FHIR resource without polluting the code field.
-  const reasonCode = item.icd9cm_code || item.icd9cm_CODE || "";
-  const reasonName = pickEnglish(item.icd9cm_code_cname || item.icd9cm_CODE_CNAME || "");
-  const note = reasonName
-    ? (reasonCode ? `Reason: ${reasonCode} ${reasonName}` : `Reason: ${reasonName}`)
+  const subList = Array.isArray(item.sp_IHKE3308S04_data_list)
+    ? item.sp_IHKE3308S04_data_list
+    : [];
+  // exe_S_DATE format is "115/09/23||2026/09/23"; rocToISO already
+  // matches the first ROC segment, so feeding the whole string works.
+  const exeDate = subList.length > 0
+    ? (subList[0].exe_S_DATE || subList[0].exe_s_date || "")
     : "";
+  const date = rocToISO(exeDate || item.func_DATE || item.func_date || "");
+  // op_CODE_CNAME is "<CODE>/<中文>||<CODE>/<English>". Take the
+  // English half, strip the leading "<CODE>/" so the display reads
+  // like "Excision of Left Vitreous, Percutaneous Approach" rather
+  // than "08B53ZZ/Excision of Left Vitreous…".
+  const opCode = item.op_CODE || item.op_code || "";
+  const opName = pickEnglish(item.op_CODE_CNAME || item.op_code_cname || "");
+  const display = (opName.replace(/^[A-Z0-9]+\//, "") || "").trim() || opName.trim();
+  if (!date || !display) return null;
+
+  const reasonCode = item.icd9cm_CODE || item.icd9cm_code || "";
+  const reasonName =
+    (pickEnglish(item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || "") || "")
+      .replace(/^[A-Z0-9]+\//, "")
+      .trim();
+  const noteParts = [];
+  if (reasonName) {
+    noteParts.push(reasonCode ? `Reason: ${reasonCode} ${reasonName}` : `Reason: ${reasonName}`);
+  }
+  for (const sub of subList) {
+    const subName = pickEnglish(sub.order_CODE_NAME || sub.order_code_name || "").trim();
+    const subCode = sub.order_CODE || sub.order_code || "";
+    if (subName) {
+      noteParts.push(subCode ? `施作: ${subName} (NHI ${subCode})` : `施作: ${subName}`);
+    }
+  }
+
   return {
     date,
-    code: "",
+    code: opCode,
+    // Hint for mapProcedure.mapSystem — "icd-10-pcs" string contains
+    // "icd", so the mapper assigns systems.ICD_10_PCS.
+    system: opCode ? "icd-10-pcs" : "",
     display,
-    note,
+    note: noteParts.join(" / "),
     body_site: "",
-    hospital: item.hosp_abbr || item.hosP_ABBR || "",
+    hospital: item.hosp_ABBR || item.hosp_abbr || "",
   };
 }
 

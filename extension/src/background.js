@@ -37,6 +37,7 @@ import {
   adaptEncounterFromMedExpense,
   adaptImagingReportFromDetail,
   adaptMedicationFromDetail,
+  adaptProcedureFromDetail,
   isoToROC,
   pickEnglish,
   rocToISO,
@@ -297,6 +298,103 @@ async function _fetchImagingDetailsInTab({ tabId, baseUrl, visits }) {
     }
   }
   return reports;
+}
+
+// Fan out IHKE3308S02 detail fetches for procedures — same 2-step
+// pattern as imaging IHKE3408S01 → S02. The list (IHKE3301S05) only
+// carries metadata; the actual ICD-10-PCS code (op_CODE) and the real
+// performance date (exe_S_DATE on sub-list entries) live in the detail.
+// ctype mirrors the list row's ori_type (3=住院 / 5=門診 observed
+// against live payloads). NHI doesn't publish the mapping so we
+// brute-force on miss like the medication fan-out, just in case.
+async function _fetchProcedureDetailsInTab({ tabId, baseUrl, visits }) {
+  const reqs = visits
+    .map((v) => ({
+      row_ID: v.row_ID || v.row_id || v.rowid || v.rowID || "",
+      ctype: v.ori_type || v.ori_TYPE || "",
+    }))
+    .filter((r) => r.row_ID);
+  if (reqs.length === 0) return [];
+
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: async (base, items) => {
+      const token = sessionStorage.getItem("token");
+      if (!token) return { error: "SESSION_EXPIRED" };
+      if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
+        return { error: "SESSION_EXPIRED" };
+      }
+      const auth = `Bearer ${token}`;
+      async function fetchOne(rowId, ctype) {
+        const url = `${base}/api/ihke3000/IHKE3308S02/page_load?crid=${encodeURIComponent(rowId)}&ctype=${encodeURIComponent(ctype)}`;
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), 30000);
+        try {
+          const r = await fetch(url, {
+            method: "GET", credentials: "same-origin", signal: ac.signal,
+            headers: { "Accept": "application/json", "Authorization": auth },
+          });
+          clearTimeout(t);
+          if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
+          if (!r.ok) return { error: `HTTP ${r.status}` };
+          return { body: await r.json() };
+        } catch (e) {
+          clearTimeout(t);
+          return { error: e.name === "AbortError" ? "timeout 30s" : String(e?.message || e) };
+        }
+      }
+      // Prefer the row's own ori_type. If that returns empty (NHI
+      // sometimes ships rows where ctype expects a different value),
+      // brute-force 1..5 until something comes back.
+      async function one(rowId, preferred) {
+        const candidates = [];
+        if (preferred) candidates.push(preferred);
+        for (const ct of ["3", "5", "1", "2", "4"]) {
+          if (!candidates.includes(ct)) candidates.push(ct);
+        }
+        let lastOk = null;
+        for (const ct of candidates) {
+          const r = await fetchOne(rowId, ct);
+          if (r.error === "SESSION_EXPIRED") return r;
+          if (r.error) continue;
+          const main = Array.isArray(r.body?.ihke3308S02_main_data)
+            ? r.body.ihke3308S02_main_data : [];
+          if (main.length > 0) return r;
+          lastOk = r;
+        }
+        return lastOk || { error: "no detail body" };
+      }
+      const out = new Array(items.length);
+      let next = 0;
+      const CONC = 3;
+      async function worker() {
+        while (next < items.length) {
+          const i = next++;
+          await new Promise((r) => setTimeout(r, Math.random() * 150));
+          out[i] = await one(items[i].row_ID, items[i].ctype);
+        }
+      }
+      const ws = [];
+      for (let w = 0; w < CONC && w < items.length; w++) ws.push(worker());
+      await Promise.all(ws);
+      return { results: out };
+    },
+    args: [baseUrl, reqs],
+  });
+
+  if (result?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
+  const procedures = [];
+  const results = result?.results || [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (!r || r.error || !r.body) continue;
+    const main = Array.isArray(r.body.ihke3308S02_main_data) ? r.body.ihke3308S02_main_data : [];
+    for (const row of main) {
+      const adapted = adaptProcedureFromDetail(row);
+      if (adapted) procedures.push(adapted);
+    }
+  }
+  return procedures;
 }
 
 // Fan out IHKE3303S02 detail to classify each IHKE3303S01 visit as
@@ -964,6 +1062,32 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     }
   }
   _markPhase("imaging-detail");
+
+  // Step 1d: procedures need IHKE3308S02 for the actual ICD-10-PCS
+  // op_CODE and the real execution date (exe_S_DATE on sub-list
+  // entries). The list endpoint IHKE3301S05 only exposes metadata;
+  // without this fan-out, inpatient procedures get anchored to the
+  // admission day (func_date) and emitted with code:"" (no PCS code).
+  const procIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "procedures");
+  if (procIdx >= 0 && settled[procIdx].status === "fulfilled") {
+    const visits = settled[procIdx].value.rawList || [];
+    if (visits.length > 0) {
+      await setStatus({
+        progress: `📥 取得 ${visits.length} 筆處置/手術詳情…`,
+      });
+      try {
+        const procs = await _fetchProcedureDetailsInTab({
+          tabId, baseUrl: BASE, visits,
+        });
+        settled[procIdx].value.items = procs;
+        settled[procIdx].value.raw_count = procs.length;
+        settled[procIdx].value.visitCount = visits.length;
+      } catch (e) {
+        errors.push(`procedures detail: ${e.message}`);
+      }
+    }
+  }
+  _markPhase("procedures-detail");
 
   const medIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "medications");
   if (medIdx >= 0 && settled[medIdx].status === "fulfilled") {

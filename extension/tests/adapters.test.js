@@ -29,7 +29,8 @@ import {
   adaptLabItem,
   adaptMedication,
   adaptMedicationFromDetail,
-  adaptProcedure,
+  adaptProcedureFromDetail,
+  adaptProcedureListStub,
   isoToROC,
   pickEnglish,
   rocToISO,
@@ -399,48 +400,127 @@ describe("adaptImagingReportFromDetail", () => {
   });
 });
 
-// ── adaptProcedure — IHKE3301S05 ───────────────────────────────────────
+// ── adaptProcedureListStub — IHKE3301S05 ─────────────────────────────
 
-describe("adaptProcedure", () => {
-  test("uses func_date as procedure date (no separate procedure-performed field in NHI)", () => {
-    // Documented limitation: NHI's IHKE3301S05 doesn't expose an actual
-    // procedure-performed date. For inpatient rows (func_date = admission,
-    // out_date = discharge), we anchor on func_date — small loss of
-    // accuracy vs. inventing a performedPeriod that would imply the
-    // procedure spanned the whole stay.
+describe("adaptProcedureListStub", () => {
+  test("always returns null; the list endpoint only provides row_ids that drive the IHKE3308S02 fan-out", () => {
+    expect(adaptProcedureListStub()).toBeNull();
+    expect(adaptProcedureListStub({ func_date: "105/09/23", op_code_cname: "X" })).toBeNull();
+  });
+});
+
+// ── adaptProcedureFromDetail — IHKE3308S02 ───────────────────────────
+
+describe("adaptProcedureFromDetail", () => {
+  test("date prefers sub-list exe_S_DATE over func_DATE (inpatient mid-stay procedure case)", () => {
+    // Simulated inpatient case where the procedure was performed
+    // mid-stay (admit 9/23, surgery 9/25). Anchoring on func_DATE
+    // would land the procedure on the admission day; exe_S_DATE
+    // gives the truth.
     const item = {
-      func_date: "105/09/23",
-      out_date: "105/09/26",
-      op_code_cname: "經皮左側玻璃體部分切除術",
+      func_DATE: "115/09/23",
+      op_CODE: "08B53ZZ",
+      op_CODE_CNAME: "08B53ZZ/X||08B53ZZ/X",
+      sp_IHKE3308S04_data_list: [
+        { exe_S_DATE: "115/09/25||2026/09/25", order_CODE: "86412B", order_CODE_NAME: "Y||Y" },
+      ],
     };
-    expect(adaptProcedure(item).date).toBe("2016-09-23");
+    expect(adaptProcedureFromDetail(item).date).toBe("2026-09-25");
   });
 
-  test("includes reason (icd9cm) in note when present", () => {
+  test("date falls back to func_DATE when sub-list is empty", () => {
     const item = {
-      func_date: "105/09/23",
-      op_code_cname: "Procedure",
-      icd9cm_code: "H35372",
-      icd9cm_code_cname: "左側眼黃斑部皺褶",
+      func_DATE: "105/09/23",
+      op_CODE: "08B53ZZ",
+      op_CODE_CNAME: "08B53ZZ/X||08B53ZZ/X",
+      sp_IHKE3308S04_data_list: [],
     };
-    expect(adaptProcedure(item).note).toBe("Reason: H35372 左側眼黃斑部皺褶");
+    expect(adaptProcedureFromDetail(item).date).toBe("2016-09-23");
   });
 
-  test("returns null without display name", () => {
-    expect(adaptProcedure({ func_date: "105/09/23" })).toBeNull();
+  test("display strips leading <CODE>/ prefix from English op_CODE_CNAME", () => {
+    const item = {
+      func_DATE: "105/09/23",
+      op_CODE: "08B53ZZ",
+      op_CODE_CNAME: "08B53ZZ/經皮左側玻璃體部分切除術||08B53ZZ/Excision of Left Vitreous, Percutaneous Approach",
+      sp_IHKE3308S04_data_list: [
+        { exe_S_DATE: "105/09/23", order_CODE_NAME: "Y||Y" },
+      ],
+    };
+    expect(adaptProcedureFromDetail(item).display).toBe(
+      "Excision of Left Vitreous, Percutaneous Approach",
+    );
   });
 
-  test("end-to-end fixture: live IHKE3301S05 inpatient + outpatient rows", () => {
-    const fixture = readFixture("ihke3301s05-procedures.json");
-    const [inpatient, outpatient] = fixture.main_data.map(adaptProcedure);
+  test("emits op_CODE as code + icd-10-pcs system hint", () => {
+    const item = {
+      func_DATE: "105/09/23",
+      op_CODE: "08B53ZZ",
+      op_CODE_CNAME: "08B53ZZ/X||08B53ZZ/X",
+      sp_IHKE3308S04_data_list: [
+        { exe_S_DATE: "105/09/23", order_CODE_NAME: "Y||Y" },
+      ],
+    };
+    const r = adaptProcedureFromDetail(item);
+    expect(r.code).toBe("08B53ZZ");
+    expect(r.system).toBe("icd-10-pcs");
+  });
 
-    expect(inpatient.date).toBe("2016-09-23");
-    expect(inpatient.display).toBe("經皮左側玻璃體部分切除術");
-    expect(inpatient.hospital).toBe("臺北榮總");
+  test("note carries reason + each sub-list NHI 醫令碼 (so mapper's note-or-body_site filter keeps it)", () => {
+    const item = {
+      func_DATE: "105/09/23",
+      op_CODE: "08B53ZZ",
+      op_CODE_CNAME: "08B53ZZ/X||08B53ZZ/X",
+      icd9cm_CODE: "H35372",
+      icd9cm_CODE_CNAME: "H35372/左側眼黃斑部皺褶||H35372/Puckering of macula, left eye",
+      sp_IHKE3308S04_data_list: [
+        {
+          exe_S_DATE: "105/09/23",
+          order_CODE: "86412B",
+          order_CODE_NAME: "微創玻璃體黃斑部手術||Microincision vitreomacular surgery",
+        },
+      ],
+    };
+    const r = adaptProcedureFromDetail(item);
+    expect(r.note).toContain("Reason: H35372 Puckering of macula, left eye");
+    expect(r.note).toContain("施作: Microincision vitreomacular surgery (NHI 86412B)");
+  });
 
-    expect(outpatient.date).toBe("2016-01-14");
-    expect(outpatient.display).toBe("經皮眼睛其他治療物質輸入");
-    expect(outpatient.hospital).toBe("嘉基醫院");
+  test("returns null when display can't be derived", () => {
+    expect(adaptProcedureFromDetail({
+      func_DATE: "105/09/23",
+      sp_IHKE3308S04_data_list: [{ exe_S_DATE: "105/09/23" }],
+    })).toBeNull();
+  });
+
+  test("returns null when no date can be derived", () => {
+    expect(adaptProcedureFromDetail({
+      op_CODE: "X",
+      op_CODE_CNAME: "X/Y||X/Y",
+    })).toBeNull();
+  });
+
+  test("end-to-end fixture: inpatient IHKE3308S02 row", () => {
+    const r = adaptProcedureFromDetail(readFixture("ihke3308-procedure-inpatient.json"));
+    expect(r.date).toBe("2016-09-23");
+    expect(r.code).toBe("08B53ZZ");
+    expect(r.display).toBe("Excision of Left Vitreous, Percutaneous Approach");
+    expect(r.system).toBe("icd-10-pcs");
+    expect(r.hospital).toBe("臺北榮總");
+    expect(r.note).toContain("Reason: H35372 Puckering of macula, left eye");
+    expect(r.note).toContain("施作: Microincision vitreomacular surgery (NHI 86412B)");
+  });
+
+  test("end-to-end fixture: outpatient IHKE3308S02 row (null icd9cm_CODE_CNAME tolerated)", () => {
+    const r = adaptProcedureFromDetail(readFixture("ihke3308-procedure-outpatient.json"));
+    expect(r.date).toBe("2016-01-14");
+    expect(r.code).toBe("3E0C3GC");
+    expect(r.display).toBe("Introduction of Other Therapeutic Substance into Eye, Percutaneous Approach");
+    expect(r.hospital).toBe("嘉基醫院");
+    // icd9cm_CODE_CNAME is null in this fixture — note should still have
+    // the sub-list item but no Reason: line.
+    expect(r.note).not.toContain("Reason:");
+    expect(r.note).toContain("施作: Intravitreous injection (NHI 86201C)");
   });
 });
 

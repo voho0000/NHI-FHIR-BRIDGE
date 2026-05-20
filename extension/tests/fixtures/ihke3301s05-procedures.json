@@ -1,6 +1,6 @@
 {
   "_source": "IHKE3301S05 (處置/手術) main_data — two rows captured live from NHI",
-  "_note": "One inpatient row (func_date != out_date) and one outpatient row (out_date == '--'). NHI doesn't expose a separate procedure-performed date here; both use func_date as the only anchor.",
+  "_note": "List endpoint only — no op_CODE (ICD-10-PCS) and no actual procedure-performed date. The real fields live on IHKE3308S02 detail (see ihke3308-procedure-{inpatient,outpatient}.json). adaptProcedureListStub returns null for these rows; the row_ids drive the IHKE3308S02 fan-out.",
   "main_data": [
     {
       "hosp_url": "https://info.nhi.gov.tw/inae1000/inae1000s03?id=0601160016",

@@ -26,7 +26,8 @@ import {
   adaptImagingReportFromDetail,
   adaptLabItem,
   adaptMedicationFromDetail,
-  adaptProcedure,
+  adaptProcedureFromDetail,
+  adaptProcedureListStub,
 } from "../src/nhi-adapters.js";
 
 const FIX = resolve(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -72,27 +73,36 @@ describe("adapter fixture snapshots", () => {
     `);
   });
 
-  test("IHKE3301S05 procedures (inpatient + outpatient rows)", () => {
-    const both = load("ihke3301s05-procedures.json").main_data.map(adaptProcedure);
-    expect(both).toMatchInlineSnapshot(`
-      [
-        {
-          "body_site": "",
-          "code": "",
-          "date": "2016-09-23",
-          "display": "經皮左側玻璃體部分切除術",
-          "hospital": "臺北榮總",
-          "note": "Reason: H35372 左側眼黃斑部皺褶",
-        },
-        {
-          "body_site": "",
-          "code": "",
-          "date": "2016-01-14",
-          "display": "經皮眼睛其他治療物質輸入",
-          "hospital": "嘉基醫院",
-          "note": "Reason: H4011X0 原發性隅角開放性青光眼，未明示期別",
-        },
-      ]
+  test("IHKE3301S05 procedures list — stub returns null (real data comes from IHKE3308S02 fan-out)", () => {
+    const both = load("ihke3301s05-procedures.json").main_data.map(adaptProcedureListStub);
+    expect(both).toEqual([null, null]);
+  });
+
+  test("IHKE3308S02 procedure detail (inpatient — exe_S_DATE > func_DATE; op_CODE → code)", () => {
+    expect(adaptProcedureFromDetail(load("ihke3308-procedure-inpatient.json"))).toMatchInlineSnapshot(`
+      {
+        "body_site": "",
+        "code": "08B53ZZ",
+        "date": "2016-09-23",
+        "display": "Excision of Left Vitreous, Percutaneous Approach",
+        "hospital": "臺北榮總",
+        "note": "Reason: H35372 Puckering of macula, left eye / 施作: Microincision vitreomacular surgery (NHI 86412B)",
+        "system": "icd-10-pcs",
+      }
+    `);
+  });
+
+  test("IHKE3308S02 procedure detail (outpatient — null icd9cm_CODE_CNAME tolerated)", () => {
+    expect(adaptProcedureFromDetail(load("ihke3308-procedure-outpatient.json"))).toMatchInlineSnapshot(`
+      {
+        "body_site": "",
+        "code": "3E0C3GC",
+        "date": "2016-01-14",
+        "display": "Introduction of Other Therapeutic Substance into Eye, Percutaneous Approach",
+        "hospital": "嘉基醫院",
+        "note": "施作: Intravitreous injection (NHI 86201C)",
+        "system": "icd-10-pcs",
+      }
     `);
   });
 
