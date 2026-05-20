@@ -2,6 +2,24 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.8.4 重點 — 2026-05-21
+
+**Critical 修法** — IHKE3303S02 detail endpoint URL 用錯參數從 v0.6.x 起靜默失敗了好幾個月，三個 feature 都默默沒 work。
+
+**Bug 修正**
+- 🚨 **IHKE3303S02 detail URL 修正** (`rid=&t=` → `crid=&ctype=`)：之前 URL 套了 NHI UI 路由的參數格式、不是真實 API 的參數，每次 detail fetch 都回 `{"ihke3303S02_main_data":[]}` 空 array 但 HTTP 200（error handler 抓不到）。三個 features 都因此靜默退化：
+  - **v0.6.x classHint** 從 detail 拿 `hosp_DATA_TYPE_NAME` — 全部 fallback "AMB"。原本 ER (急診) 應該是 EMER、住院應該是 IMP，**全部被誤標 outpatient**（IHKE3309 / IHKE3308 來源的住院 Encounter 不受影響）。
+  - **v0.8.1 次診斷** — bundle 永遠 0 個次診斷。
+  - **v0.8.3 primary ICD bilingual** — 永遠 fallback S01，IHKE3303 list 對某些病人只 ship 中文 → Encounter.reasonCode 英文 display 缺失。
+- 🧪 **新增 URL contract regression test**：未來新 detail endpoint 寫錯 param style → CI 紅燈。Sanity-verified 把 URL 改回壞的 test 會 fail 並指出 offender。
+
+**升級注意**
+- Reload extension + 重 sync 一次就會拿到全部修好的資料。
+- 預期效果：(a) 部分 Encounter 從 `class.code="AMB"` 變 `"EMER"` 或 `"IMP"` (b) 多診斷的 visit 會出現 reasonCode[1..N] (c) `reasonCode[0].coding[0].display` 對更多病人是英文。
+- Sync 時間從 ~32s 變 ~1m30s 是預期 — 之前是「快速回空」假象、現在 NHI 真的做 DB join 抓 detail。
+
+---
+
 
 ## 0.8.3 重點 — 2026-05-21
 
