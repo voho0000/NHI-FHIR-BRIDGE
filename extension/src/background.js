@@ -81,6 +81,32 @@ async function setStatus(partial) {
   chrome.runtime.sendMessage({ type: "syncProgress", status: next }).catch(() => {});
 }
 
+// Wrap a long-running fan-out with a periodic elapsed-time ticker so
+// the popup doesn't look frozen during 60-90 second NHI detail fetches
+// (each S02 detail triggers a real DB JOIN server-side; the fan-out
+// time is bound by NHI's per-request processing cost, not anything
+// we can speed up client-side).
+//
+// label is a function (elapsedSec) → string that formats the progress
+// message; called every 3 seconds while the awaited promise is in
+// flight. Final setStatus call fires only on completion (so the
+// "complete" message replaces the "in-progress" one cleanly).
+async function _withProgressTimer(makeLabel, fn) {
+  const start = Date.now();
+  // Initial status set immediately so the user sees the message before
+  // the first 3-second tick. Subsequent ticks update the elapsed seconds.
+  await setStatus({ progress: makeLabel(0) });
+  const interval = setInterval(() => {
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    setStatus({ progress: makeLabel(elapsed) }).catch(() => {});
+  }, 3000);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(interval);
+  }
+}
+
 // ── NHI API-direct sync (parallel, no LLM) ─────────────────────────────────
 //
 // Instead of navigating the user's tab to each NHI page, waiting for Vue to
@@ -1206,13 +1232,14 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   if (encIdx >= 0 && settled[encIdx].status === "fulfilled") {
     const visits = settled[encIdx].value.rawList || [];
     if (visits.length > 0) {
-      await setStatus({
-        progress: `📥 取得 ${visits.length} 筆就醫紀錄詳情…`,
-      });
       try {
-        const detailMap = await _fetchEncounterDetailsInTab({
-          tabId, baseUrl: BASE, visits,
-        });
+        const detailMap = await _withProgressTimer(
+          (sec) =>
+            sec === 0
+              ? `📥 取得 ${visits.length} 筆就醫紀錄詳情…`
+              : `📥 取得 ${visits.length} 筆就醫紀錄詳情…（已 ${sec} 秒，NHI 後端 detail JOIN 較慢）`,
+          () => _fetchEncounterDetailsInTab({ tabId, baseUrl: BASE, visits }),
+        );
         // Re-adapt with classHint + secondary diagnoses + bilingual
         // primary ICD all sourced from the S02 detail body.
         const reAdapted = [];
@@ -1253,13 +1280,14 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   if (imgIdx >= 0 && settled[imgIdx].status === "fulfilled") {
     const visits = settled[imgIdx].value.rawList || [];
     if (visits.length > 0) {
-      await setStatus({
-        progress: `📥 取得 ${visits.length} 筆影像檢查報告…`,
-      });
       try {
-        const reports = await _fetchImagingDetailsInTab({
-          tabId, baseUrl: BASE, visits,
-        });
+        const reports = await _withProgressTimer(
+          (sec) =>
+            sec === 0
+              ? `📥 取得 ${visits.length} 筆影像檢查報告…`
+              : `📥 取得 ${visits.length} 筆影像檢查報告…（已 ${sec} 秒）`,
+          () => _fetchImagingDetailsInTab({ tabId, baseUrl: BASE, visits }),
+        );
         settled[imgIdx].value.items = reports;
         settled[imgIdx].value.raw_count = reports.length;
         settled[imgIdx].value.visitCount = visits.length;
@@ -1279,13 +1307,14 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   if (procIdx >= 0 && settled[procIdx].status === "fulfilled") {
     const visits = settled[procIdx].value.rawList || [];
     if (visits.length > 0) {
-      await setStatus({
-        progress: `📥 取得 ${visits.length} 筆處置/手術詳情…`,
-      });
       try {
-        const procs = await _fetchProcedureDetailsInTab({
-          tabId, baseUrl: BASE, visits,
-        });
+        const procs = await _withProgressTimer(
+          (sec) =>
+            sec === 0
+              ? `📥 取得 ${visits.length} 筆處置/手術詳情…`
+              : `📥 取得 ${visits.length} 筆處置/手術詳情…（已 ${sec} 秒）`,
+          () => _fetchProcedureDetailsInTab({ tabId, baseUrl: BASE, visits }),
+        );
         settled[procIdx].value.items = procs;
         settled[procIdx].value.raw_count = procs.length;
         settled[procIdx].value.visitCount = visits.length;
@@ -1309,13 +1338,14 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
   if (chronicIdx >= 0 && settled[chronicIdx].status === "fulfilled") {
     const visits = settled[chronicIdx].value.rawList || [];
     if (visits.length > 0) {
-      await setStatus({
-        progress: `📥 取得 ${visits.length} 筆慢性處方箋…`,
-      });
       try {
-        const drugItems = await _fetchChronicMedicationDetailsInTab({
-          tabId, baseUrl: BASE, visits,
-        });
+        const drugItems = await _withProgressTimer(
+          (sec) =>
+            sec === 0
+              ? `📥 取得 ${visits.length} 筆慢性處方箋…`
+              : `📥 取得 ${visits.length} 筆慢性處方箋…（已 ${sec} 秒）`,
+          () => _fetchChronicMedicationDetailsInTab({ tabId, baseUrl: BASE, visits }),
+        );
         settled[chronicIdx].value.items = drugItems;
         settled[chronicIdx].value.visitCount = visits.length;
         settled[chronicIdx].value.raw_count = drugItems.length;
@@ -1338,13 +1368,17 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
         const id = v.row_ID || v.rowid || v.rowID;
         return id && !chronicRowIds.has(id);
       }).length;
-      await setStatus({
-        progress: `📥 取得 ${remaining} 筆用藥明細…`,
-      });
       try {
-        const drugItems = await _fetchMedicationDetailsInTab({
-          tabId, baseUrl: BASE, visits, skipRowIds: chronicRowIds,
-        });
+        const drugItems = await _withProgressTimer(
+          (sec) =>
+            sec === 0
+              ? `📥 取得 ${remaining} 筆用藥明細…`
+              : `📥 取得 ${remaining} 筆用藥明細…（已 ${sec} 秒）`,
+          () =>
+            _fetchMedicationDetailsInTab({
+              tabId, baseUrl: BASE, visits, skipRowIds: chronicRowIds,
+            }),
+        );
         settled[medIdx].value.items = drugItems;
         // raw_count now reflects the *drug-level* count for the breakdown
         // (visits → drugs). Keep the visit count in a side field for debug.
