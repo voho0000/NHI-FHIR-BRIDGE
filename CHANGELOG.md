@@ -2,6 +2,33 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.8.8 重點 — 2026-05-25
+
+獨立 security audit 後的硬化版，主要縮小 PHI 在 chrome.storage 的暴露面，為上 Chrome Web Store 做準備。沒有新功能，bundle 內容跟 v0.8.7 完全一樣。
+
+**安全強化**
+- 🔒 **下載完成後立刻清除暫存 bundle**：之前下載完，整份 FHIR Bundle 還會留在 chrome.storage.local 直到 user 手動清。現在 user 按下下載完成的瞬間就清掉。
+- 🔒 **暫存從 local 改用 session storage**：關閉瀏覽器自動清空。即使 user 忘了下載，重開 Chrome 就乾淨。
+- 🔒 **1 小時 TTL 自動清掃**：sync 完忘了下載又沒關瀏覽器的情境，1 小時後 chrome.alarms 自動清掉。
+- 🔒 **升級時清掉舊版殘留**：v0.8.7 以前留在 chrome.storage.local 的 `pendingFhirBundle` 跟 `__sampleBody_*` 在 onInstalled 時自動掃乾淨。
+- 🔒 **debug 用 raw payload stash 預設關閉**：`__sampleBody_*`（包含 NHI 原始 payload）改成 source-only flag，published 版完全不寫。
+- 🔒 **拒絕其他 extension 的訊息**：在 chrome.runtime.onMessage 加 `sender.id` 檢查，防止別人裝的惡意 extension 透過 chrome.runtime.sendMessage 觸發 sync 到攻擊者 backend。
+
+**UX 改進**
+- 💾 **下載改為「另存新檔」對話框**：之前直接落到 Downloads 夾，現在 Chrome 會跳原生 save-as 視窗，user 自己選位置 + 確認檔名。對 PHI 來說是更好的 UX。
+- 🪧 **改姓名/性別/生日視為換人**：之前只有切換 NHI 帳號才會清舊 bundle，現在改任一身分欄位都會清。診間多人共用同一 NHI session 時，避免下載到「檔名是新病人但內容是舊病人」的混合 bundle。
+
+**升級注意**
+- Reload extension 即可，bundle 資料跟 v0.8.7 完全一樣。
+- 升上來時舊的 chrome.storage.local pendingFhirBundle 會被自動清掉，**升級前沒下載的 bundle 會失去**，需要重 sync。
+- 之後下載時會跳「另存新檔」對話框，要習慣一下。
+
+**準備上 Chrome Web Store**
+- 新增 `docs/PRIVACY.md`（雙語隱私權政策，準備搭配 GitHub Pages 公開作為 Chrome Web Store privacy policy URL）。
+- 新增 `docs/CHROME_STORE_LISTING.md`（dev console 表單填料 cheat sheet：描述、permission justifications、隱私揭露）。
+
+---
+
 ## 0.8.7 重點 — 2026-05-21
 
 純 UX 修字 — popup 同步進度條把兩個工程師用語改成民眾看得懂的話。
