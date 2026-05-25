@@ -910,7 +910,7 @@ async function _maybeFetchPatientIdFromNhi(tabId, patientOverride) {
     const switchedRealPatients =
       current && !current.startsWith("auto-") && current !== cid;
     if (switchedRealPatients) {
-      await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
+      await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {});
     }
   }
   return patientOverride;
@@ -1019,16 +1019,35 @@ function _assembleLocalBundle(byType, patientOverride, maskEnabled) {
   };
 }
 
-// Local mode stashes the assembled Bundle in chrome.storage.local under
-// a single "pendingFhirBundle" slot. The popup shows a download button
-// when this slot is non-empty; the actual chrome.downloads.download call
-// happens from the popup (in response to a user click) so the file
+// Local mode stashes the assembled Bundle in chrome.storage.session
+// under a single "pendingFhirBundle" slot. The popup shows a download
+// button when this slot is non-empty; the actual chrome.downloads.download
+// call happens from the popup (in response to a user click) so the file
 // doesn't appear in the Downloads bar uninvited.
 //
-// Single slot means a new sync overwrites the previous pending bundle.
-// chrome.storage.local default quota is 10 MB; a typical NHI sync is
+// Why session (not local) — security audit #5: PHI persisted in
+// chrome.storage.local survives browser restarts indefinitely. The
+// MV3-native chrome.storage.session is wiped automatically when the
+// browser closes, drastically shrinking the disk-resident PHI window.
+//
+// Additionally:
+//   - Single slot means a new sync overwrites the previous pending bundle.
+//   - The popup's downloadPendingBundle wipes the slot the moment the
+//     user-initiated download completes.
+//   - A periodic chrome.alarms sweep (PENDING_BUNDLE_TTL_MS) wipes the
+//     slot if the user leaves a sync sitting unconsumed for an hour.
+// chrome.storage.session default quota is 10 MB; a typical NHI sync is
 // well under 2 MB.
 const PENDING_BUNDLE_KEY = "pendingFhirBundle";
+const PENDING_BUNDLE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const PENDING_BUNDLE_SWEEP_ALARM = "pending-bundle-sweep";
+
+// Debug toggle for the per-endpoint "first body sample" stash used to
+// diagnose adapter mismatches (raw_count > 0 but adapted_count == 0).
+// HARD-OFF in the published extension: the sample contains raw NHI
+// payload (lab values, drug names, encounter records — PHI). Flip to
+// true *locally* during adapter development; never commit `true`.
+const DEBUG_STASH_BODY_SAMPLES = false;
 
 async function _stashFhirBundle(bundle, patientId, dateRange) {
   // Filename: nhi-{pid}-{startYYYYMMDD}-{endYYYYMMDD}.json
@@ -1056,7 +1075,7 @@ async function _stashFhirBundle(bundle, patientId, dateRange) {
   }
   const filename = `nhi-${safePid}-${s}-${e}.json`;
   const json = JSON.stringify(bundle, null, 2);
-  await chrome.storage.local.set({
+  await chrome.storage.session.set({
     [PENDING_BUNDLE_KEY]: {
       filename,
       json,
@@ -1558,7 +1577,13 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     // Save body sample for first endpoint with raw>0 but adapted=0 (adapter
     // mismatch) so we can iterate. Stored under chrome.storage.local for
     // inspection via service worker DevTools.
-    if (raw_count > 0 && items.length === 0) {
+    //
+    // GATED on DEBUG_STASH_BODY_SAMPLES: the sample contains raw NHI
+    // PHI (lab values, drug names) and we don't want it sitting in
+    // chrome.storage.local indefinitely in the published extension.
+    // Flip the flag at the top of this file to true *locally* when
+    // diagnosing adapter mismatches.
+    if (DEBUG_STASH_BODY_SAMPLES && raw_count > 0 && items.length === 0) {
       try {
         await chrome.storage.local.set({
           [`__sampleBody_${ep.name}`]: s.value.bodySample || "n/a",
@@ -1802,6 +1827,20 @@ async function migrateSyncToLocal() {
 
 chrome.runtime.onInstalled.addListener(async () => {
   await migrateSyncToLocal();
+  // Security audit #5 cleanup: users upgrading from <= v0.8.7 may have
+  // a `pendingFhirBundle` (entire FHIR Bundle JSON) and/or
+  // `__sampleBody_*` entries (raw NHI payload) sitting in
+  // chrome.storage.local from previous installs. The new version uses
+  // chrome.storage.session for the pending bundle and gates the body
+  // samples behind a debug flag — so those local entries are now pure
+  // PHI dead weight. Sweep them on every install/update.
+  try {
+    const all = await chrome.storage.local.get(null);
+    const stale = Object.keys(all).filter(
+      (k) => k === "pendingFhirBundle" || k.startsWith("__sampleBody_"),
+    );
+    if (stale.length) await chrome.storage.local.remove(stale);
+  } catch {}
 });
 
 // Also run migration on service-worker wake-up (covers reload/restart
@@ -1812,6 +1851,16 @@ chrome.runtime.onStartup?.addListener?.(() => {
 migrateSyncToLocal();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // Security audit #6: only accept messages originating from THIS
+  // extension. sender.id is populated for chrome.runtime.sendMessage
+  // calls; an unrelated extension calling chrome.runtime.sendMessage(
+  // myExtId, …) would have its own id and be dropped silently. Without
+  // this check, any other extension the user installs could trigger a
+  // sync at an attacker-chosen backend URL with attacker-supplied API
+  // key, fanning out the NHI tab's PHI through our pipeline.
+  // (msg.sender.id is undefined for native-app messages — we don't use
+  // those, so we treat undefined as foreign and reject.)
+  if (sender?.id !== chrome.runtime.id) return;
   if (msg?.type === "startNhiApiSync") {
     runNhiApiSync(msg.payload).then(
       () => { try { sendResponse({ ok: true }); } catch {} },
@@ -1905,4 +1954,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // idle. Combined with the return-true pattern above, this prevents the
 // 30 s idle shutdown from ending an in-progress sync.
 chrome.alarms.create("sw-keepalive", { periodInMinutes: 0.34 });
-chrome.alarms.onAlarm.addListener(() => { /* no-op; presence is the point */ });
+
+// PHI TTL sweep (security audit #5): even though pendingFhirBundle now
+// lives in chrome.storage.session (auto-cleared on browser close) and
+// downloadPendingBundle wipes it on user-initiated save, a user who
+// completes a sync and then leaves the browser open for hours without
+// downloading would still have an in-memory copy lingering. The 10-min
+// alarm checks the stash's age and drops it once it exceeds
+// PENDING_BUNDLE_TTL_MS (1 hour).
+chrome.alarms.create(PENDING_BUNDLE_SWEEP_ALARM, { periodInMinutes: 10 });
+
+async function _sweepPendingBundleIfStale() {
+  try {
+    const { [PENDING_BUNDLE_KEY]: pending } =
+      await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+    if (!pending) return;
+    const age = Date.now() - (pending.generatedAt || 0);
+    if (age > PENDING_BUNDLE_TTL_MS) {
+      await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
+    }
+  } catch {}
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === PENDING_BUNDLE_SWEEP_ALARM) {
+    _sweepPendingBundleIfStale();
+  }
+  // sw-keepalive is a no-op; the alarm firing is what keeps the SW alive.
+});

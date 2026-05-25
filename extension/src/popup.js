@@ -346,7 +346,7 @@ async function savePatientOverride() {
     // 2. drop the SW's last sync status so the result zone doesn't
     //    keep showing "✅ 取得完成 · A 的 81 筆…"
     // 3. drop the in-popup latest-status snapshot
-    await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
+    await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {});
     await chrome.runtime
       .sendMessage({ type: "clearSyncStatus" })
       .catch(() => {});
@@ -922,7 +922,7 @@ function _renderDataState() {
 
 async function _refreshLocalBundleState() {
   const { [PENDING_BUNDLE_KEY]: pending } =
-    await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+    await chrome.storage.session.get(PENDING_BUNDLE_KEY);
   _localBundle = pending
     ? {
         exists: true,
@@ -1004,7 +1004,7 @@ async function pushLocalBundleToBackend() {
   els.pushLocalBtn.textContent = "上傳中…";
   try {
     const { [PENDING_BUNDLE_KEY]: pending } =
-      await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+      await chrome.storage.session.get(PENDING_BUNDLE_KEY);
     if (!pending?.json) throw new Error("no local bundle");
     const r = await fetch(`${url}/fhir/import`, {
       method: "POST", headers, body: pending.json,
@@ -1071,9 +1071,11 @@ els.nhiReloadBtn?.addEventListener("click", async () => {
   window.close();
 });
 
-// Local bundle state changes whenever the SW stashes a new sync.
+// Pending bundle now lives in chrome.storage.session (auto-clears when
+// the browser closes — see security audit #5 fix). Listener filters on
+// "session" area accordingly.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
+  if (area === "session" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
 });
 
 // ── Backend mode feature gate ────────────────────────────────────────
@@ -1293,7 +1295,7 @@ function _fmtBytes(n) {
 
 async function refreshPendingBundle() {
   const { [PENDING_BUNDLE_KEY]: pending } =
-    await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+    await chrome.storage.session.get(PENDING_BUNDLE_KEY);
   if (!pending || !pending.json) {
     els.pendingBundle.hidden = true;
     if (_wizardInitialized) _refreshResultZone();
@@ -1325,20 +1327,58 @@ async function refreshPendingBundle() {
 
 async function downloadPendingBundle() {
   const { [PENDING_BUNDLE_KEY]: pending } =
-    await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+    await chrome.storage.session.get(PENDING_BUNDLE_KEY);
   if (!pending) return;
   const blob = new Blob([pending.json], { type: "application/fhir+json" });
   const url = URL.createObjectURL(blob);
+  let downloadId = null;
   try {
-    await chrome.downloads.download({ url, filename: pending.filename, saveAs: false });
-  } finally {
-    // Release after a tick so the download has time to start.
+    // saveAs: true → Chrome opens a native "save as" dialog so the user
+    // explicitly chooses the destination and can review the filename
+    // before PHI lands on disk. Better than silently dropping into the
+    // default Downloads folder.
+    downloadId = await chrome.downloads.download({
+      url,
+      filename: pending.filename,
+      saveAs: true,
+    });
+  } catch (e) {
+    // User cancelled the save dialog or the download otherwise failed —
+    // leave the pending bundle in place so the user can try again.
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return;
   }
+  if (downloadId == null) {
+    // User dismissed the saveAs dialog (Chrome resolves the promise
+    // with undefined in that case). Don't wipe the stash.
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return;
+  }
+  // Wipe the session-stashed copy once the download actually starts.
+  // The file is now on the user's disk under their chosen path —
+  // keeping a duplicate in chrome.storage.session is pure PHI surface.
+  // We listen for the download's terminal state (complete or interrupted)
+  // before wiping, so a half-written file followed by a retry still has
+  // something to fall back on. Belt-and-suspenders only — TTL sweep in
+  // the SW will catch any case where the listener never fires.
+  const _onChange = (delta) => {
+    if (delta.id !== downloadId) return;
+    const final = delta.state?.current;
+    if (final === "complete") {
+      chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {});
+      chrome.downloads.onChanged.removeListener(_onChange);
+    } else if (final === "interrupted") {
+      // Keep the stash; user might retry.
+      chrome.downloads.onChanged.removeListener(_onChange);
+    }
+  };
+  chrome.downloads.onChanged.addListener(_onChange);
+  // Release object URL after the download has time to start.
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 async function clearPendingBundle() {
-  await chrome.storage.local.remove(PENDING_BUNDLE_KEY);
+  await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
   await refreshPendingBundle();
   // Clearing the download is the user's "I'm done with this result"
   // gesture — wipe the completion status banner too so the result zone
@@ -1358,8 +1398,10 @@ els.clearBundleBtn.addEventListener("click", clearPendingBundle);
 // (Note: another onChanged listener earlier in the file refreshes the
 // data-state card; we leave that one separate so failure of either path
 // doesn't take the other down.)
+// Pending bundle is in chrome.storage.session (security audit #5 fix);
+// listener filters on "session" area accordingly.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
+  if (area === "session" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
 });
 
 // Background-side flow can mutate the patientOverride mid-sync — most
@@ -1619,7 +1661,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 // (Legacy in-memory broadcast still listened to as a backup.)
-chrome.runtime.onMessage.addListener((msg) => {
+// Reject messages from any *other* extension installed in the user's
+// browser. Internal sends (background SW → popup, popup → background)
+// have sender.id === chrome.runtime.id; an unrelated extension's
+// chrome.runtime.sendMessage(myExtId, …) would have its own id and be
+// dropped silently. Defends against rogue extensions spoofing sync
+// progress and tricking the popup UI. (Security audit #6.)
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (sender?.id && sender.id !== chrome.runtime.id) return;
   if (msg?.type === "syncProgress") {
     applySyncStatus(msg.status);
   }
