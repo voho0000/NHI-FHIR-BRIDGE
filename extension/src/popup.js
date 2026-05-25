@@ -316,8 +316,28 @@ async function savePatientOverride() {
   ov.id_no = prevStored?.id_no || _generateAutoPatientId();
   _storedIdNo = ov.id_no;
 
-  const patientChanged =
-    prevStored?.id_no && ov.id_no && prevStored.id_no !== ov.id_no;
+  // Identity-change detection. Any of these field changes treats the
+  // save as "switched to a different person":
+  //   - id_no:       NHI account swap (auto-fetched from session)
+  //   - name:        manually editing name (most common in clinic
+  //                  setting: doctor swaps patients on the same NHI
+  //                  session, or fixes a wrong identity)
+  //   - gender:      identity-defining; also affects sex-stratified
+  //                  reference ranges for labs
+  //   - birth_date:  same person can't have two DOBs
+  //
+  // Any of these changing → drop the previously-captured bundle so
+  // the user can't accidentally download a JSON file labelled with
+  // the NEW patient's identity but populated with the OLD patient's
+  // medical records. PHI safety > convenience of "I just fixed a
+  // typo" (which loses at most one click to re-sync).
+  const _norm = (v) => (v == null ? "" : String(v));
+  const patientChanged = !!prevStored && (
+    _norm(prevStored.id_no) !== _norm(ov.id_no) ||
+    _norm(prevStored.name) !== _norm(ov.name) ||
+    _norm(prevStored.gender) !== _norm(ov.gender) ||
+    _norm(prevStored.birth_date) !== _norm(ov.birth_date)
+  );
 
   await chrome.storage.local.set({ patientOverride: ov });
 
