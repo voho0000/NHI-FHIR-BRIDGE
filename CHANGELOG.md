@@ -2,6 +2,30 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.9.1 重點 — 2026-05-27
+
+純 UI polish — Step 3 狀態區的視覺不協調逐一收拾。沒有功能變動。
+
+**新增「下載完成後狀態自動更新」**
+- 之前下載完，狀態訊息一直停留在「✅ 取得完成 · 已產生 N 筆」直到下次 sync 才換。現在按下載並成功儲存後，訊息會立刻更新成：
+  > ✅ 已下載健康紀錄檔（共 N 筆 · X.X MB）— 接著至 ④ 查看 開啟「醫析 MediPrisma」瀏覽資料。
+- 「SMART App」這種行業術語拿掉了，改用 user 在 Step 4 看到的同一個品牌名「醫析 MediPrisma」。
+
+**新增 ✕ dismiss 按鈕**
+- 狀態訊息右上角加小 ✕，讀完就可以清掉，popup 變乾淨。
+- 只在**非進行中**狀態顯示（同步中不會出現、避免不小心關掉進度訊息）。
+
+**UI 修整**
+- 🎨 **「查看明細」改成 label/value 對齊清單**：拿掉每行之間的虛線分隔（之前像 1990 年代 debug table）、label 靠左 / 數字靠右、用 `tabular-nums` 把不同行的數字位數對齊。
+- 🎨 **「技術細節」同樣 label/value 清單**：之前是一長行 monospace `nhi-parallel=2.6s · encounter-detail=19.7s · ...` 自動換行，現在每階段一行、時間整齊。跟「查看明細」用同樣的 disclosure 樣式。
+- 🎨 **拿掉「✅ 取得完成」跟「▸ 查看明細」之間的橫線**：之前 hairline + 後續結構讓 user 覺得「太多橫線」。改用純空白分隔。
+- 🎨 **CTA 阻擋提示改成藍色 info**：「請切到健保存摺分頁 · 回 ① 登入 →」之前是黃色 alarm 卡片，跟下方黃色免責聲明卡兩塊同色系疊在一起像一塊大警報。改成藍色 info palette，用 `→` 取代 `⚠️` 強化「告訴你下一步」的語意。
+
+**升級注意**
+- Reload extension 即可，bundle 內容跟 v0.9.0 完全一樣。
+
+---
+
 ## 0.9.0 重點 — 2026-05-27
 
 Chrome Web Store 上架前的最終打磨版。把流程跑完成 4 步、進階設定挪到齒輪、整體 UI 重做。沒有 bundle 內容變動。
