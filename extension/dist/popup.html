@@ -295,7 +295,8 @@
        data-active-step so individual sections opt in via data-step. */
     body[data-active-step="1"] .wizard-step:not([data-step="1"]),
     body[data-active-step="2"] .wizard-step:not([data-step="2"]),
-    body[data-active-step="3"] .wizard-step:not([data-step="3"]) {
+    body[data-active-step="3"] .wizard-step:not([data-step="3"]),
+    body[data-active-step="4"] .wizard-step:not([data-step="4"]) {
       display: none;
     }
 
@@ -666,37 +667,96 @@
       margin-bottom: 10px;
     }
 
-    /* ── Settings panel ────────────────────────────────────────────── */
-    details.settings {
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      background: white;
-      overflow: hidden;
-    }
-    details.settings > summary {
-      list-style: none;
+    /* ── Settings page (full-popup replacement view) ─────────────────────
+       Old inline <details class="settings"> took ~80px in step 3 even
+       when collapsed and was used by <1% of users (advanced backend +
+       SMART URL settings). Moved to a dedicated view reachable from a
+       gear icon in the header. Wizard hides entirely when settings view
+       is active; meta card (disclaimer + version) stays for context. */
+
+    /* Gear button in header. Tiny icon button matching the header's
+       visual weight — present in both wizard and settings views (in
+       settings view it acts as a no-op anchor; back button handles
+       return). Use a transparent neutral hover. */
+    .header-gear {
+      /* Override global `button` reset (width:100%, padding:10px) so
+         the icon button sizes naturally and stays right-aligned. */
+      flex: 0 0 auto;
+      width: 28px !important;
+      height: 28px;
+      border: none;
+      background: transparent;
       cursor: pointer;
-      padding: 9px 12px;
-      font-size: 12px;
+      border-radius: 6px;
       color: #6b7280;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 !important;
+      transition: background 0.12s, color 0.12s;
+    }
+    .header-gear:hover { background: #f3f4f6; color: #2563eb; }
+    .header-gear svg { width: 18px; height: 18px; }
+
+    /* The two top-level views. Either wizard is shown (default) or
+       settings is shown — never both. Driven by body[data-view]. */
+    body[data-view="settings"] .wizard-stepper,
+    body[data-view="settings"] .wizard-step {
+      display: none !important;
+    }
+    body:not([data-view="settings"]) .settings-view {
+      display: none;
+    }
+
+    /* Settings view layout. Top row has back button + title; below is
+       a card holding the field controls. Spacing matches step panels
+       so the transition feels native. */
+    .settings-view {
+      padding-top: 4px;
+    }
+    .settings-view-topbar {
       display: flex;
       align-items: center;
-      gap: 6px;
-      user-select: none;
+      gap: 8px;
+      margin-bottom: 12px;
     }
-    details.settings > summary::-webkit-details-marker { display: none; }
-    details.settings > summary::before {
-      content: "▸";
-      font-size: 10px;
-      transition: transform 0.12s;
+    .settings-back-btn {
+      /* Override the global `button { width:100% }` reset — this is an
+         inline back affordance, not a full-width action button. */
+      width: auto;
+      flex: 0 0 auto;
+      border: 1px solid #e5e7eb;
+      background: white;
+      color: #374151;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
     }
-    details.settings[open] > summary::before { transform: rotate(90deg); }
-    details.settings .settings-body {
+    .settings-back-btn:hover {
+      background: #f3f4f6;
+      border-color: #d1d5db;
+      color: #1e3a8a;
+    }
+    /* Quiet label, not a heading. The back button is the action;
+       this just confirms which page you're on. Same visual weight as
+       a form label so it doesn't compete with the button. */
+    .settings-view-title {
+      font-size: 12px;
+      font-weight: 500;
+      color: #6b7280;
+      letter-spacing: 0.02em;
+    }
+    .settings-view-card {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
       padding: 12px;
-      border-top: 1px solid #f3f4f6;
     }
-    details.settings .settings-body .field { margin-bottom: 12px; }
-    details.settings .settings-body .field:last-child { margin-bottom: 0; }
+    .settings-view-card .field { margin-bottom: 12px; }
+    .settings-view-card .field:last-child { margin-bottom: 0; }
 
     /* ── Status banner ─────────────────────────────────────────────── */
     .status {
@@ -992,16 +1052,59 @@
       font-weight: 600;
     }
 
-    /* ── Footer ────────────────────────────────────────────────────── */
-    .footer {
-      border-top: 1px solid #e5e7eb;
-      padding: 10px 16px;
+    /* ── Meta region (disclaimer + meta, persistent across all steps) ──
+       Single low-key callout card. Header row carries "免責聲明" on the
+       left and utility meta (Dashboard link + version) on the right at
+       baseline. Body is the disclaimer text. No internal dividers, no
+       split background — looks like one piece of paper, not a stitched
+       header+body. Cream tone instead of saturated amber so the card
+       sits quietly in the popup rather than competing with action
+       buttons for attention. */
+    .popup-meta {
+      margin: 14px 12px 10px;
+      padding: 12px 14px;
+      background: #fefce8;             /* very light cream, calmer than #fffbeb */
+      border: 1px solid #f3e8c5;       /* desaturated amber */
+      border-radius: 8px;
       font-size: 11px;
-      color: #9ca3af;
+      line-height: 1.6;
+      color: #78350f;
+    }
+    .popup-meta-header {
       display: flex;
       justify-content: space-between;
-      background: white;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 4px;
     }
+    .popup-meta-title {
+      font-weight: 600;
+      color: #92400e;
+    }
+    /* Utility meta on the right (Dashboard link + version). Flex with
+       gap so hidden Dashboard link in Mode A doesn't leave any
+       phantom spacing — version stays flush right naturally. */
+    .popup-meta-utility {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 10px;
+      font-size: 10.5px;
+      color: #a8a29e;                  /* warm gray */
+      font-weight: 400;
+    }
+    .popup-meta-utility a {
+      color: #a8a29e;
+      text-decoration: none;
+    }
+    .popup-meta-utility a:hover {
+      color: #92400e;
+      text-decoration: underline;
+    }
+    .popup-meta-body a {
+      color: inherit;
+      text-decoration: underline;
+    }
+    .popup-meta-body a:hover { text-decoration-thickness: 2px; }
     .footer a { color: #6b7280; text-decoration: none; }
     .footer a:hover { color: #2563eb; }
     /* Compact data-accuracy disclaimer sitting above the footer.
@@ -1010,15 +1113,8 @@
        edge cases. We surface this in every popup open so users have
        a default-cautious mental model when handing the JSON to a
        clinician or third party. */
-    .disclaimer {
-      padding: 8px 16px;
-      background: #fffbeb;
-      border-top: 1px solid #fde68a;
-      font-size: 11px;
-      color: #78350f;
-      line-height: 1.45;
-    }
-    .disclaimer b { color: #92400e; }
+    /* (Legacy .disclaimer / .footer styles removed — the meta card
+       now uses .popup-meta-* classes defined just above.) */
 
   </style>
 </head>
@@ -1039,12 +1135,25 @@
       <span class="conn-mini-dot"></span>
       已連線
     </span>
+    <!-- Gear: opens the dedicated settings view (advanced backend +
+         SMART URL config). Hidden from view in plain HTML; toggled by
+         click. Lucide settings icon, inline SVG so it ships in the
+         bundle without a separate asset. -->
+    <button class="header-gear" id="open-settings-btn" type="button"
+            aria-label="進階設定" title="進階設定">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+    </button>
   </header>
 
   <div class="content">
 
-    <!-- 3-step progress indicator. Click to jump back/forward. -->
-    <ol class="wizard-stepper" id="wizard-stepper" role="tablist" aria-label="三步驟引導">
+    <!-- 4-step progress indicator. Click to jump back/forward. -->
+    <ol class="wizard-stepper" id="wizard-stepper" role="tablist" aria-label="四步驟引導">
       <li data-step="1" role="tab" tabindex="0">
         <span class="step-num"><span class="step-num-text">1</span></span>
         <span class="step-label">登入</span>
@@ -1056,6 +1165,10 @@
       <li data-step="3" role="tab" tabindex="0">
         <span class="step-num"><span class="step-num-text">3</span></span>
         <span class="step-label">取得</span>
+      </li>
+      <li data-step="4" role="tab" tabindex="0">
+        <span class="step-num"><span class="step-num-text">4</span></span>
+        <span class="step-label">查看</span>
       </li>
     </ol>
 
@@ -1290,65 +1403,116 @@
       </div>
     </div><!-- /STEP 3 -->
 
-    <!-- ── Advanced settings ────────────────────────────────────────
-         Pinned to step 3 (取得). The wrapper is NOT .backend-only any
-         more, because the "啟用本機伺服器模式" toggle inside it has
-         to be reachable in local mode — that's the only way for a
-         power user to flip into backend mode. Sub-fields below the
-         toggle keep their .backend-only class so they only appear
-         once the user has both enabled backend mode AND switched the
-         step-3 mode tab to 本機伺服器. -->
-    <section class="section wizard-step" data-step="3" style="margin-top:16px">
-      <details class="settings">
-        <summary>進階設定</summary>
-        <div class="settings-body">
-          <!-- mask-name-enabled lives in step 2's name field now —
-               adjacent to the input it actually affects. -->
-          <div class="field">
-            <label class="toggle-row">
-              <input type="checkbox" id="backend-mode-enabled" />
-              <span>啟用本機伺服器模式</span>
-              <span class="help-icon" data-tip="開啟後 ③ 取得步驟會多出「儲存位置：下載到電腦／本機伺服器」切換。&#10;本機伺服器模式需要自己跑 Docker 後端，搭配 Dashboard / SMART App 使用。&#10;一般民眾下載自己的健保紀錄不需要開啟。">ⓘ</span>
-            </label>
-          </div>
-          <div class="field backend-only">
-            <div class="label">
-              Backend URL
-              <span class="help-icon" data-tip="本機 Docker 保留預設即可。&#10;指向其他 server（例如 http://192.168.1.100:8010）第一次取得資料時 Chrome 會跳出權限對話框。&#10;連線狀態顯示在 ③ 取得步驟的模式選擇下方。">ⓘ</span>
-            </div>
-            <input type="text" id="backend-url" placeholder="http://localhost:8010" />
-          </div>
-          <div class="field backend-only">
-            <div class="label">
-              Sync API Key（選填）
-              <span class="help-icon" data-tip="Backend 沒設 SYNC_API_KEY（預設）時不用填。&#10;對外開放 backend 時設定來擋未授權的寫入。">ⓘ</span>
-            </div>
-            <input type="password" id="sync-api-key" placeholder="留空 = 無認證" />
-          </div>
-          <div class="field backend-only">
-            <div class="label">
-              SMART App Launch URL
-              <span class="help-icon" data-tip="點擊「開啟 SMART App」要 launch 的 SMART on FHIR 應用入口。&#10;預設為 medical-note 示範 app；串接自己的 SMART app 時改這裡。">ⓘ</span>
-            </div>
-            <input type="text" id="smart-app-url" placeholder="https://your-smart-app.example/smart/launch" />
+    <!-- ── STEP 4: 查看 ───────────────────────────────────────────────
+         Mode-agnostic shortcut for opening the bundled SMART App. Mode B
+         users also have step 3's backend-only OAuth launch button; this
+         step 4 button is the plain redirect that works for Mode A
+         (download + manually drop into SMART App). URL is hardcoded —
+         users who want a different SMART App can either change the
+         constant in popup.js or rely on Mode B's configurable launch.
+
+         Copy is written for laypeople — concrete benefits (看自己吃過
+         哪些藥、檢驗值變化) rather than jargon (visualization, FHIR,
+         SMART App). AI features deliberately not mentioned here:
+         MediPrisma's AI uses server-side proxies (OpenAI/Gemini),
+         which conflicts with this extension's "no AI, no cloud"
+         privacy stance. -->
+    <div class="wizard-step" data-step="4">
+      <section class="section">
+        <div style="font-weight:600;margin-bottom:8px;">瀏覽你的健康資料</div>
+        <div class="hint" style="margin-bottom:10px;">
+          健保存摺資料散在各頁面難瀏覽？「<b>醫析 MediPrisma</b>」把你的
+          就醫、用藥、檢驗紀錄整理成：
+        </div>
+        <ul class="hint" style="margin:0 0 12px 0;padding-left:18px;line-height:1.7;">
+          <li>📈 <b>檢驗趨勢</b> — 膽固醇 / 血糖 / 肝指數變化一目了然</li>
+          <li>💊 <b>用藥時間軸</b> — 自己吃過哪些藥、多久</li>
+          <li>🏥 <b>就醫紀錄</b> — 哪天去了哪家醫院、看了哪科</li>
+          <li>🌐 <b>中英對照</b> — 不熟的英文藥名病名都有中文</li>
+          <li>🤖 <b>AI 問答</b> — 看不懂的數值或藥物可隨時詢問</li>
+        </ul>
+        <div class="hint" style="margin-bottom:12px;">
+          點下方按鈕在新分頁開啟，把剛下載的檔案<b>拖到頁面上</b>，
+          或點「<b>匯入資料</b>」按鈕選取，即可載入。
+        </div>
+        <button class="btn-primary" id="open-smart-app-btn">
+          🚀 開啟「醫析 MediPrisma」
+        </button>
+      </section>
+    </div><!-- /STEP 4 -->
+
+    <!-- ── Settings view ────────────────────────────────────────────
+         Dedicated full-popup view shown when the gear icon in the
+         header is clicked (body[data-view="settings"]). Holds the
+         advanced backend + SMART App URL config that was previously
+         pinned inline to step 3. Hidden by default; wizard is the
+         default view. 99%+ of users never need to open this. -->
+    <section class="settings-view" id="settings-view">
+      <div class="settings-view-topbar">
+        <button class="settings-back-btn" id="settings-back-btn" type="button">
+          ← 返回
+        </button>
+        <span class="settings-view-title">進階設定</span>
+      </div>
+      <div class="settings-view-card">
+        <!-- mask-name-enabled lives in step 2's name field now —
+             adjacent to the input it actually affects. -->
+        <div class="field">
+          <label class="toggle-row">
+            <input type="checkbox" id="backend-mode-enabled" />
+            <span>啟用本機伺服器模式</span>
+            <span class="help-icon" data-tip="開啟後 ③ 取得步驟會多出「儲存位置：下載到電腦／本機伺服器」切換。&#10;本機伺服器模式需要自己跑 Docker 後端，搭配 Dashboard / SMART App 使用。&#10;一般民眾下載自己的健保紀錄不需要開啟。">ⓘ</span>
+          </label>
+          <div class="hint" style="margin-top:6px;">
+            預設關閉。啟用後會顯示 Backend URL / Sync API Key /
+            SMART App URL 等進階欄位，搭配自架 Docker 後端使用。
+            一般民眾不需要開啟。
           </div>
         </div>
-      </details>
+        <div class="field backend-only">
+          <div class="label">
+            Backend URL
+            <span class="help-icon" data-tip="本機 Docker 保留預設即可。&#10;指向其他 server（例如 http://192.168.1.100:8010）第一次取得資料時 Chrome 會跳出權限對話框。&#10;連線狀態顯示在 ③ 取得步驟的模式選擇下方。">ⓘ</span>
+          </div>
+          <input type="text" id="backend-url" placeholder="http://localhost:8010" />
+        </div>
+        <div class="field backend-only">
+          <div class="label">
+            Sync API Key（選填）
+            <span class="help-icon" data-tip="Backend 沒設 SYNC_API_KEY（預設）時不用填。&#10;對外開放 backend 時設定來擋未授權的寫入。">ⓘ</span>
+          </div>
+          <input type="password" id="sync-api-key" placeholder="留空 = 無認證" />
+        </div>
+        <div class="field backend-only">
+          <div class="label">
+            SMART App Launch URL
+            <span class="help-icon" data-tip="點擊「開啟 SMART App」要 launch 的 SMART on FHIR 應用入口。&#10;預設為 medical-note 示範 app；串接自己的 SMART app 時改這裡。">ⓘ</span>
+          </div>
+          <input type="text" id="smart-app-url" placeholder="https://your-smart-app.example/smart/launch" />
+        </div>
+      </div>
     </section>
 
   </div>
 
-  <div class="disclaimer">
-    <b>免責聲明</b>：本工具僅供參考。產生的資料無法保證完全準確，請以
-    <a href="https://myhealthbank.nhi.gov.tw/" target="_blank" rel="noopener"
-       style="color:inherit;text-decoration:underline">健保署健康存摺</a>
-    顯示的內容為主。
+  <!-- Persistent meta card: header row carries "免責聲明" + utility
+       meta (Dashboard ↗ + version) at baseline; body holds the
+       disclaimer text. One unified cream-toned card, no internal
+       split. Visible on every step. -->
+  <div class="popup-meta">
+    <div class="popup-meta-header">
+      <span class="popup-meta-title">免責聲明</span>
+      <span class="popup-meta-utility">
+        <a href="#" id="dashboard-link" class="backend-only" target="_blank">Dashboard ↗</a>
+        <span id="version"></span>
+      </span>
+    </div>
+    <div class="popup-meta-body">
+      本工具僅供參考。產生的資料無法保證完全準確，請以
+      <a href="https://myhealthbank.nhi.gov.tw/" target="_blank" rel="noopener">健保署健康存摺</a>
+      顯示的內容為主。
+    </div>
   </div>
-
-  <footer class="footer">
-    <a href="#" id="dashboard-link" class="backend-only" target="_blank">Dashboard ↗</a>
-    <span id="version"></span>
-  </footer>
 
   <script src="popup.js"></script>
 </body>

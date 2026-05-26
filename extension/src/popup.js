@@ -13,7 +13,15 @@ const DEFAULT_BACKEND = "http://localhost:8010";
 // Default SMART app for a fresh install. Users can override via
 // the '⚙️ 進階設定 → SMART App Launch URL' field; the value is
 // persisted in chrome.storage.local under `smartAppLaunchUrl`.
+// This URL is used for Mode B's OAuth launch flow (it expects to
+// receive iss + launch query params from a SMART on FHIR launch).
 const DEFAULT_SMART_APP_LAUNCH = "https://voho0000.github.io/medical-note-smart-on-fhir/smart/launch";
+// Step 4 standalone-open URL. Hardcoded — the step 4 button always
+// opens this URL in a new tab with no query params (Mode A users
+// manually drag the downloaded JSON into the page). Distinct from
+// DEFAULT_SMART_APP_LAUNCH because that one is the OAuth /smart/launch
+// endpoint; this one is the SMART app's plain entry page.
+const STANDALONE_SMART_APP_URL = "https://voho0000.github.io/medical-note-smart-on-fhir/";
 
 // True if the active tab is an NHI 健康存摺 page (real site).
 function isNhiTab(url) {
@@ -45,6 +53,9 @@ const els = {
   ovSummary: document.getElementById("override-summary"),
   patientOverrideDetails: document.getElementById("patient-override"),
   launchBtn: document.getElementById("launch-btn"),
+  openSmartAppBtn: document.getElementById("open-smart-app-btn"),
+  openSettingsBtn: document.getElementById("open-settings-btn"),
+  settingsBackBtn: document.getElementById("settings-back-btn"),
   status: document.getElementById("status"),
   dashboardLink: document.getElementById("dashboard-link"),
   pendingBundle: document.getElementById("pending-bundle"),
@@ -488,7 +499,7 @@ let _step2Confirmed = false;
 // Step number rendered as a circled digit glyph — matches the
 // "回 ① 登入" copy elsewhere in the popup and the wizard stepper labels.
 function _stepNumGlyph(n) {
-  return n === 1 ? "①" : n === 2 ? "②" : "③";
+  return n === 1 ? "①" : n === 2 ? "②" : n === 3 ? "③" : "④";
 }
 
 function _markStep2Confirmed(yes) {
@@ -507,8 +518,18 @@ function _isStepDone(step) {
       // false green check).
       return _step2Confirmed;
     case 3:
-      // Step 3 is the terminal action step; never "done" for progress
-      // purposes (the success banner inside the step is the indicator).
+      // Done = a pending FHIR bundle exists (sync succeeded). The
+      // download UI inside step 3 stays visible — this flag exists
+      // purely so the stepper shows ✓ on step 3 once data is ready,
+      // letting the user jump forward to step 4 (open SMART App).
+      // els.pendingBundle.hidden is the source of truth — refreshed
+      // by refreshPendingBundle() whenever the session-stash changes.
+      return !!els.pendingBundle && !els.pendingBundle.hidden;
+    case 4:
+      // Terminal step. The "doneness" is the user opening the SMART
+      // App, which we can't observe; leaving as false keeps the
+      // stepper from showing a misleading ✓ before they've actually
+      // viewed anything.
       return false;
     default:
       return false;
@@ -516,7 +537,7 @@ function _isStepDone(step) {
 }
 
 function _setActiveStep(n, opts = {}) {
-  const clamped = Math.max(1, Math.min(3, n));
+  const clamped = Math.max(1, Math.min(4, n));
   _activeStep = clamped;
   document.body.dataset.activeStep = String(clamped);
   _refreshWizardUi();
@@ -605,6 +626,12 @@ function _refreshResultZone() {
 function _maybeAutoAdvance() {
   // Only advance forward, never back. Save user's place if they've
   // clicked into a later step manually.
+  //
+  // Deliberately do NOT auto-advance 3 → 4. Step 3 contains the
+  // "✅ 已產生 N 筆 · 📥 下載" success state — jumping the user past
+  // that the moment sync completes would steal the moment they're
+  // waiting 30 seconds for. They click step 4 (or the stepper item)
+  // themselves when they're ready to open the SMART App.
   if (_activeStep === 1 && _isStepDone(1)) _setActiveStep(2);
   else if (_activeStep === 2 && _isStepDone(2)) _setActiveStep(3);
 }
@@ -614,8 +641,14 @@ function _initWizard() {
   _wizardInitialized = true;
   // Initial step: whichever is the FIRST not-yet-done step at popup open.
   // First-time user → step 1. Returning user with valid session + saved
-  // patient → step 3.
-  const start = _isStepDone(1) ? (_isStepDone(2) ? 3 : 2) : 1;
+  // patient → step 3. If a fresh bundle is sitting in session-storage
+  // (sync done in a prior popup open of the same browser session) →
+  // step 4, so the natural next action — "open SMART App" — is visible.
+  let start;
+  if (!_isStepDone(1)) start = 1;
+  else if (!_isStepDone(2)) start = 2;
+  else if (!_isStepDone(3)) start = 3;
+  else start = 4;
   _setActiveStep(start, { silent: true });
 
   // Stepper clicks → jump
@@ -1864,6 +1897,42 @@ els.ovClearBtn.addEventListener("click", clearPatientOverride);
   el.addEventListener("input", refreshOverrideSummary)
 );
 els.launchBtn.addEventListener("click", launch);
+
+// Step 4: plain new-tab open of the SMART App. URL is hardcoded
+// (STANDALONE_SMART_APP_URL); no FHIR data is passed via URL — the
+// user manually drops the downloaded JSON onto the SMART App page.
+// Decoupling extension <-> SMART App keeps both sides simple, leaks
+// zero PHI through query strings or hash fragments, and lets the
+// extension survive any SMART App protocol change.
+els.openSmartAppBtn?.addEventListener("click", () => {
+  chrome.tabs.create({ url: STANDALONE_SMART_APP_URL });
+  // Don't auto-close the popup — user may want to re-download or
+  // re-launch (e.g. drag failed first time).
+});
+
+// ── Settings view toggle ─────────────────────────────────────────────
+//
+// Gear icon in the header opens a dedicated settings view that
+// replaces the wizard. Returning is via the "← 返回" button at the
+// top of that view. The CSS is driven by body[data-view="settings"]
+// — toggling that attribute is all the JS does.
+//
+// We deliberately do NOT auto-jump back to the wizard after a field
+// change: users editing the backend URL may need to verify changes
+// across multiple fields before closing.
+function _openSettingsView() {
+  document.body.dataset.view = "settings";
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+function _closeSettingsView() {
+  delete document.body.dataset.view;
+  // Pop back to whichever wizard step is current — refresh visual
+  // state so the user lands on the same step they came from.
+  _refreshWizardUi();
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+els.openSettingsBtn?.addEventListener("click", _openSettingsView);
+els.settingsBackBtn?.addEventListener("click", _closeSettingsView);
 
 // "取得對象" banner: click / Enter / Space jumps back to step 2 and
 // expands the patient card so the user can adjust the identity.

@@ -22,6 +22,7 @@ NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrom
 - ❌ **沒有分析工具、Telemetry、錯誤回報、使用統計**
 - ❌ **沒有第三方 SDK、追蹤像素、廣告 cookie**
 - ❌ **沒有 AI、LLM、或任何外部 API 呼叫**：FHIR 轉換完全是本機端的確定性程式邏輯
+  - **附註**：本擴充功能 popup 中介紹的「醫析 MediPrisma」SMART App 是獨立的第三方產品，使用者**主動點選按鈕**才會在新分頁開啟。該 App 提供的 AI 問答功能會將資料傳送至雲端 AI 供應商；該功能與本擴充功能無關，相關資料處理請參考該 App 自身的隱私權政策。本擴充功能本身完全不接觸 AI／LLM。
 - ❌ **不讀取、儲存、或傳送任何登入憑證**：本擴充功能不接觸健保署網站的登入頁面或密碼欄位；使用者需自行登入健保署，擴充功能僅利用瀏覽器既有的 session cookie 呼叫健保署 API
 
 ### 三、擴充功能在本機處理的資料
@@ -102,6 +103,7 @@ The Extension follows a **zero data collection** principle:
 - ❌ No analytics, no telemetry, no error reporting, no usage statistics
 - ❌ No third-party SDKs, tracking pixels, or advertising cookies
 - ❌ No AI, no LLM, no external API calls — FHIR conversion is purely deterministic local code
+  - **Note**: The "醫析 MediPrisma" SMART App mentioned in the Extension's popup is an independent third-party product opened by the user clicking a button. That app offers an AI Q&A feature that sends data to cloud AI providers; this feature is separate from the Extension. Please refer to that app's own privacy policy for its data handling. The Extension itself does not touch any AI/LLM.
 - ❌ Login credentials are never read, stored, or transmitted. The user logs in to the NHI portal themselves; the Extension only uses the browser's existing session cookies to call NHI APIs.
 
 ### 3. Data the Extension processes locally
