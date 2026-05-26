@@ -2,6 +2,46 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.9.2 重點 — 2026-05-27
+
+### 🔧 Encounter.type FHIR-conformant 升級（破壞性變更）
+
+修正 SMART app dev 回報的 bug：`Encounter.type` 把 **kind**（門診/急診/住院/藥局）跟 **channel**（IC卡資料/申報資料）擠在同一個 text 欄位，藥局或住院 case 時 channel 資訊遺失。
+
+v0.9.2 拆成兩個 CodeableConcept，每個自帶 `coding.system` URI 區分 dimension：
+- `https://nhi-fhir-bridge.github.io/CodeSystem/encounter-kind`（門診/急診/住院/藥局）
+- `https://nhi-fhir-bridge.github.io/CodeSystem/encounter-channel`（申報資料/IC卡資料）
+
+FHIR-idiomatic：不依賴 array 順序、generic SMART app 也能 parse。詳見 `docs/SMART_APP_INTEGRATION_v0.9.2.md`。
+
+**SMART app dev 注意**：用 `encounter.type.find(t => t.coding[0].system === ...)` 找對應 dimension，不要 hard-code `type[0]`。
+
+### 📝 民眾友善文案大掃除（26 處）
+
+獨立 UX audit 後挑出所有 layperson 不懂的字眼。全部修完：
+
+**Critical**
+- 「🔒 NHI session 已登出 — 請在 NHI tab 重新登入後再點 Sync」→「🔒 健保存摺登入逾時 — 請回到健保存摺分頁重新登入，然後再按『取得健保存摺資料』」
+- 「popup」「banner」「Launch」「本機後端」等英文 / 工程術語全部換成中文 / 民眾語
+- 「還沒有病人身分證」→「還沒有身分資料」（避免被誤解為「要再交身分證」隱私恐慌）
+- 「未檢測」「檢查中」→「尚未檢查」「確認中」（檢測會被誤解為篩檢 / 驗血）
+- 進階設定 tooltip 拿掉 Docker / Dashboard / SMART App 三個英文名詞連發
+
+**Confusing**
+- Step 2 按鈕「確定」→「儲存資料」
+- mode toggle「儲存位置」→「輸出方式」（之前被誤解為選 D 槽 E 槽）
+- 「停止」→「取消」
+- 「Dashboard ↗」→「管理介面 ↗」
+- 上傳進度條原本顯示 raw 英文 key（`上傳 encounters…`），現在自動翻譯成中文（`上傳 就醫…`）
+
+### 升級注意
+
+- Reload extension 即可。
+- **SMART app 整合 contract 變更**：自己寫過 SMART app 對接的 dev，請對照 `docs/SMART_APP_INTEGRATION_v0.9.2.md` 更新 Encounter.type 讀法。
+- 純使用 extension（下載 JSON）的 user 不受影響。
+
+---
+
 ## 0.9.1 重點 — 2026-05-27
 
 純 UI polish — Step 3 狀態區的視覺不協調逐一收拾。沒有功能變動。
