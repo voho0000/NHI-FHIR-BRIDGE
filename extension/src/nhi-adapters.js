@@ -430,10 +430,17 @@ export function adaptInpatientEncounter(item, options) {
     icdName = stripIcdPrefix(pickEnglish(rawIcdName));
     icdName_zh = stripIcdPrefix(pickChinese(rawIcdName));
   }
+  // IHKE3309 is the formal inpatient (申報資料) endpoint by definition.
+  // Channel could in theory come from item.ori_type_name if present,
+  // else fall back to "申報資料" since that's what this endpoint
+  // represents. See type_display contract in adaptEncounterFromMedExpense.
+  const _channel = item.ori_type_name || item.orI_TYPE_NAME || "申報資料";
   return {
     date: start,
     end_date: end,
     class: "IMP",
+    kind: "住院",
+    channel: _channel,
     type_display: "住院",
     department: "",
     provider: "",
@@ -476,9 +483,17 @@ export function adaptInpatientEncounter(item, options) {
 //            with no associated drug record. Reliable in practice
 //            because Taiwan NHI pharmacy designations always include
 //            藥局 or 藥房 in their official name.
-// Marks `type_display = "藥局"` for pharmacy rows so the mapper produces
-// Encounter.type[0].text = "藥局"; downstream SMART apps detect via
-// text.includes('藥局') without falling back to fragile name heuristics.
+// Encounter.type emits TWO independent dimensions (v0.9.2 — bug report
+// from SMART app dev):
+//   • kind    — 門診 / 急診 / 住院 / 藥局 (clinical visit classification)
+//   • channel — IC卡資料 / 申報資料           (NHI data origin)
+// Previously both got squashed into a single type_display string, so
+// when a row arrived as 「藥局」the channel info was lost, and when it
+// arrived as 「IC卡資料」the kind was lost. The mapper now emits
+// type[0]={text:kind} + type[1]={text:channel} per FHIR's type 0..*.
+// type_display is kept on the adapter output for backward compatibility
+// with anything that still reads it directly (mapper now prefers the
+// new fields when present and only falls back to type_display).
 export function adaptEncounterFromMedExpense(item, classHint, options) {
   if (!item || typeof item !== "object") return null;
   const date = rocToISO(item.funC_DATE || item.func_DATE || item.func_date || "");
@@ -519,17 +534,27 @@ export function adaptEncounterFromMedExpense(item, classHint, options) {
     (options && options.pharmacy === true) || /藥局|藥房/.test(hospital);
   // class defaults to AMB; IHKE3303S02 detail fan-out may override to
   // EMER / IMP based on hosp_DATA_TYPE_NAME (急診 / 住院).
+  // Derive (kind, channel) independently — see header comment.
+  // kind is the visit classification (門診/急診/住院/藥局);
+  // channel is the NHI data origin (IC卡資料/申報資料).
+  const _channel = item.ori_type_name || item.orI_TYPE_NAME || "";
+  const _kind = isPharmacy
+    ? "藥局"
+    : classHint === "EMER"
+      ? "急診"
+      : classHint === "IMP"
+        ? "住院"
+        : "門診";
   return {
     date,
     end_date: "",
     class: classHint || "AMB",
-    // For pharmacy: emit "藥局" so SMART apps get a clear visit-type
-    // marker. For everything else: keep the NHI data-source label
-    // (IC卡資料 / 申報資料) — historical contract, still useful for
-    // consumers that already wired against it.
-    type_display: isPharmacy
-      ? "藥局"
-      : item.ori_type_name || item.orI_TYPE_NAME || "",
+    kind: _kind,
+    channel: _channel,
+    // Legacy single-string field. The mapper now reads kind + channel
+    // and ignores this when either is set; kept here so external
+    // consumers that grep the adapter output don't suddenly break.
+    type_display: isPharmacy ? "藥局" : _channel,
     department: "",
     provider: "",
     // English reason (clinical) and Chinese reason (patient-facing) are

@@ -38,6 +38,28 @@ export const HIS_LOCAL_ALLERGEN_CODE =
   "https://nhi-fhir-bridge.local/CodeSystem/his-local-allergen";
 export const HIS_LOCAL_PATIENT_MRN = "https://nhi-fhir-bridge.local/IdentifierSystem/his-mrn";
 
+// ── Bridge-defined Encounter dimensions (v0.9.2+) ────────────────────
+//
+// NHI encounters carry two independent classification dimensions:
+//   • kind     — 門診 / 急診 / 住院 / 藥局         (clinical visit type)
+//   • channel  — IC卡資料 / 申報資料               (NHI data origin)
+//
+// FHIR's `Encounter.type` is 0..* CodeableConcept with no positional
+// semantics, so we tag each entry with its own `coding.system` to make
+// the dimension self-describing. Consumers should look up entries via
+//   encounter.type.find(t => t.coding[0].system === ENCOUNTER_KIND_SYSTEM)
+// rather than relying on array index. This keeps the contract
+// FHIR-conformant (any standards-compliant SMART app can parse it
+// without needing to know our private array-order convention).
+
+/** Bridge-defined kind dimension on Encounter.type. */
+export const ENCOUNTER_KIND_SYSTEM =
+  "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-kind";
+
+/** Bridge-defined channel (data origin) dimension on Encounter.type. */
+export const ENCOUNTER_CHANNEL_SYSTEM =
+  "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-channel";
+
 // ── International code systems ───────────────────────────────────────
 
 export const LOINC = "http://loinc.org";

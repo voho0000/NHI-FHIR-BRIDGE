@@ -417,8 +417,8 @@ let _connFailReason = null; // { kind: "no-permission" | "no-url" | "network" | 
 // already the "fail" signal, and the row was reading "● ✗ 連不上後端"
 // = three indicators stacked.
 const _CONN_LABELS = {
-  unknown: "未檢測",
-  checking: "檢測中…",
+  unknown: "尚未檢查",
+  checking: "確認中…",
   ok: () => `已連線 — ${els.backendUrl.value.trim()}`,
   fail: () => {
     const r = _connFailReason || {};
@@ -771,10 +771,10 @@ function _refreshButtonStates() {
     haveBackendPatient
   );
   els.launchBtn.title =
-    currentMode() !== "backend"  ? "請切到「🏥 本機後端 (進階)」模式" :
+    currentMode() !== "backend"  ? "請切到「🏥 本機伺服器 (進階)」模式" :
     _connState !== "ok"           ? "後端尚未連線" :
-    !ov?.id_no                    ? "回 ② 您的資料：請填病人資料" :
-    !haveBackendPatient           ? "後端尚無此病人資料 — 先按「取得健保存摺資料」或下方「把本地檔案上傳到後端」" :
+    !ov?.id_no                    ? "請回到「② 您的資料」填寫資料" :
+    !haveBackendPatient           ? "本機伺服器還沒有這位的資料 — 先按「取得健保存摺資料」或下方「把這次資料傳到本機伺服器」" :
                                     "";
 
   // Refresh the stepper UI on every state change, but DON'T auto-
@@ -918,7 +918,7 @@ function _renderDataState() {
       // Card sits inside the result zone next to the 🔄 取得 CTA and
       // the 📤 上傳 button — pointing at them with text would be
       // double-talk. Just state the fact.
-      bs.textContent = "⚠ 尚無此病人資料";
+      bs.textContent = "⚠ 本機伺服器還沒有這位的資料";
       break;
     case "present": {
       const count = _backendPatient.count;
@@ -929,7 +929,7 @@ function _renderDataState() {
     }
     case "fail":
       bs.className = "state-value fail";
-      bs.textContent = "✗ 檢查失敗（看連線 banner）";
+      bs.textContent = "✗ 確認失敗（請看上方提示）";
       break;
     default:
       bs.className = "state-value";
@@ -954,7 +954,7 @@ function _renderDataState() {
   els.pushLocalBtn.hidden = !localMatches;
   els.pushLocalBtn.disabled = false;
   els.pushLocalBtn.title = "";
-  els.pushLocalBtn.textContent = "把本地檔案上傳到後端";
+  els.pushLocalBtn.textContent = "把這次資料傳到本機伺服器";
 }
 
 async function _refreshLocalBundleState() {
@@ -1038,7 +1038,7 @@ async function pushLocalBundleToBackend() {
     ...(key ? { "X-Sync-API-Key": key } : {}),
   };
   els.pushLocalBtn.disabled = true;
-  els.pushLocalBtn.textContent = "上傳中…";
+  els.pushLocalBtn.textContent = "傳送中…";
   try {
     const { [PENDING_BUNDLE_KEY]: pending } =
       await chrome.storage.session.get(PENDING_BUNDLE_KEY);
@@ -1872,7 +1872,7 @@ async function ensureBackendPermission(backendUrl) {
 async function apiSyncNhi() {
   const ov = getPatientOverride();
   if (!ov) {
-    setStatus("⛔ 回 ② 您的資料：請選擇性別、填生日後按確定", "error");
+    setStatus("⛔ 請回到「② 您的資料」，填好性別、生日後按「儲存」", "error");
     return;
   }
 
@@ -1882,7 +1882,7 @@ async function apiSyncNhi() {
   try { url = new URL(tab.url); } catch { setStatus("active tab has no URL", "error"); return; }
   const onLogin = await isOnNhiLoginPage(tab.id, url);
   if (onLogin) {
-    setStatus("🔒 回 ① 登入：尚未登入健保存摺", "error");
+    setStatus("🔒 還沒登入健保存摺 — 請回到「① 登入」", "error");
     return;
   }
 
@@ -1894,7 +1894,7 @@ async function apiSyncNhi() {
   if (currentMode() === "backend") {
     const ok = await testBackendConnection();
     if (!ok) {
-      setStatus("⛔ 後端連線失敗 — 請看頂部 banner 的說明", "error");
+      setStatus("⛔ 連不上本機伺服器 — 請看上方提示說明", "error");
       return;
     }
   }
@@ -1959,7 +1959,7 @@ async function launch() {
   const rawId = ov?.id_no;
   const smartAppLaunch = els.smartAppUrl.value.trim() || DEFAULT_SMART_APP_LAUNCH;
   if (!rawId) {
-    setStatus("還沒有病人身分證 — 請先按「取得健保存摺資料」抓一次", "error");
+    setStatus("還沒有身分資料 — 請先按「取得健保存摺資料」一次", "error");
     return;
   }
   // Backend tracks Patient under its hashed FHIR id, not the raw national ID.
@@ -1968,10 +1968,10 @@ async function launch() {
   // down since the last probe.
   const ok = await testBackendConnection();
   if (!ok) {
-    setStatus("⛔ 後端連線失敗 — 請看頂部 banner 的說明", "error");
+    setStatus("⛔ 連不上本機伺服器 — 請看上方提示說明", "error");
     return;
   }
-  setStatus("建立 launch context…", "info");
+  setStatus("準備開啟醫析…", "info");
   try {
     const res = await fetch(`${backend}/smart/launch-context`, {
       method: "POST",
@@ -1986,7 +1986,7 @@ async function launch() {
     chrome.tabs.create({ url: `${smartAppLaunch}${sep}${params}` });
     window.close();
   } catch (e) {
-    setStatus(`❌ Launch 失敗：${e.message}`, "error");
+    setStatus(`❌ 開啟醫析失敗：${e.message}`, "error");
   }
 }
 

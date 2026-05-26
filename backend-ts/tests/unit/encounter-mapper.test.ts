@@ -42,9 +42,112 @@ describe("mapEncounter", () => {
     expect(r.period.end).toBe("2024-05-05T00:00:00+08:00");
   });
 
-  test("type_display becomes type[].text (NOT SNOMED)", () => {
+  test("type_display becomes type[].text (NOT SNOMED) — legacy fallback", () => {
     const r = mapEncounter({ type_display: "IC卡資料" }, PID);
     expect(r.type).toEqual([{ text: "IC卡資料" }]);
+  });
+
+  test("v0.9.2 — kind + channel each get their own coding.system", () => {
+    // Bug fix: Encounter.type used to conflate kind (門診/住院/急診/藥局)
+    // and data channel (IC卡資料/申報資料) into a single text field. Now
+    // each dimension gets its own CodeableConcept tagged with a stable
+    // bridge-defined system URI, so consumers can locate either by
+    //   type.find(t => t.coding[0].system === ENCOUNTER_KIND_SYSTEM)
+    // without depending on array order (FHIR doesn't define position on
+    // Encounter.type).
+    const r = mapEncounter(
+      { date: "2026-05-13", class: "AMB", kind: "藥局", channel: "IC卡資料" },
+      PID,
+    );
+    expect(r.type).toEqual([
+      {
+        text: "藥局",
+        coding: [
+          {
+            system: "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-kind",
+            code: "pharmacy",
+            display: "藥局",
+          },
+        ],
+      },
+      {
+        text: "IC卡資料",
+        coding: [
+          {
+            system: "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-channel",
+            code: "ic-card",
+            display: "IC卡資料",
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("v0.9.2 — kind alone produces single-entry type[] with kind system", () => {
+    const r = mapEncounter({ kind: "住院" }, PID);
+    expect(r.type).toEqual([
+      {
+        text: "住院",
+        coding: [
+          {
+            system: "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-kind",
+            code: "inpatient",
+            display: "住院",
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("v0.9.2 — channel alone produces single-entry type[] with channel system", () => {
+    const r = mapEncounter({ channel: "申報資料" }, PID);
+    expect(r.type).toEqual([
+      {
+        text: "申報資料",
+        coding: [
+          {
+            system: "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-channel",
+            code: "claims",
+            display: "申報資料",
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("v0.9.2 — unknown kind value ships coding without code (system+display only)", () => {
+    // Future-proofing: if NHI adds a new kind like "夜診" that's not in
+    // the bridge's KIND_CODE_MAP, the mapper still emits a coding entry
+    // tagged with ENCOUNTER_KIND_SYSTEM so SMART apps can find it.
+    // `coding.code` is omitted; `display` carries the raw string.
+    const r = mapEncounter({ kind: "夜診" }, PID);
+    expect(r.type).toEqual([
+      {
+        text: "夜診",
+        coding: [
+          {
+            system: "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-kind",
+            display: "夜診",
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("v0.9.2 — kind + channel takes precedence over legacy type_display", () => {
+    // If a caller somehow sends all three, the new fields win and
+    // type_display is ignored (otherwise we'd emit three entries).
+    const r = mapEncounter(
+      { kind: "門診", channel: "IC卡資料", type_display: "申報資料" },
+      PID,
+    );
+    expect(r.type).toHaveLength(2);
+    expect(r.type[0].coding[0].system).toBe(
+      "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-kind",
+    );
+    expect(r.type[1].coding[0].system).toBe(
+      "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-channel",
+    );
   });
 
   test("pharmacy type_display=藥局 flows through unchanged (SMART app detection point)", () => {

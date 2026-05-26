@@ -7,6 +7,35 @@
  */
 
 import { stableId } from "./helpers";
+import { ENCOUNTER_CHANNEL_SYSTEM, ENCOUNTER_KIND_SYSTEM } from "./systems";
+
+// Stable machine codes for the two Encounter.type dimensions. Each kind
+// or channel string seen on the wire maps to a lowercase ASCII code
+// (so SMART apps can switch on a stable identifier even if the Chinese
+// display label changes). Unknown values still get a coding entry — we
+// just omit `coding.code` and ship system + display, so consumers can
+// still find the right type[] entry by system without crashing.
+const KIND_CODE_MAP: Record<string, string> = {
+  門診: "outpatient",
+  急診: "emergency",
+  住院: "inpatient",
+  藥局: "pharmacy",
+};
+const CHANNEL_CODE_MAP: Record<string, string> = {
+  申報資料: "claims",
+  IC卡資料: "ic-card",
+};
+
+function buildTypeEntry(
+  text: string,
+  system: string,
+  codeMap: Record<string, string>,
+): Record<string, any> {
+  const coding: Record<string, any> = { system, display: text };
+  const code = codeMap[text];
+  if (code) coding.code = code;
+  return { text, coding: [coding] };
+}
 
 const ACTCODE_SYSTEM = "http://terminology.hl7.org/CodeSystem/v3-ActCode";
 
@@ -33,12 +62,33 @@ export function mapEncounter(raw: Record<string, any>, patientId: string): Recor
     subject: { reference: `Patient/${patientId}` },
   };
 
-  // NHI's encounter "type" markers — 'IC卡資料' / '申報資料' / '住院'
-  // — are data-origin labels, not SNOMED clinical types. Keep them as
-  // CodeableConcept.text without claiming SNOMED.
-  const typeDisplay = ((raw.type_display ?? "") as string).trim();
-  if (typeDisplay) {
-    resource.type = [{ text: typeDisplay }];
+  // Encounter.type carries TWO independent dimensions (v0.9.2):
+  //   • kind     — 門診 / 急診 / 住院 / 藥局      (clinical visit type)
+  //   • channel  — IC卡資料 / 申報資料            (NHI data origin)
+  // FHIR R4 Encounter.type is 0..*, but the spec defines no positional
+  // semantics on type[] entries. We tag each entry with its own
+  // `coding.system` (ENCOUNTER_KIND_SYSTEM / ENCOUNTER_CHANNEL_SYSTEM)
+  // so consumers can locate the right dimension via
+  //   type.find(t => t.coding[0].system === ENCOUNTER_KIND_SYSTEM)
+  // rather than by array index. Self-describing and FHIR-conformant.
+  //
+  // Backward compat: legacy callers that still emit raw.type_display
+  // get a single text-only type[] entry (the dimension is unknowable
+  // from a bare string, so we ship it as-is without coding — same as
+  // pre-0.9.2 output, preserves the old contract).
+  const kind = ((raw.kind ?? "") as string).trim();
+  const channel = ((raw.channel ?? "") as string).trim();
+  const types: Record<string, any>[] = [];
+  if (kind) types.push(buildTypeEntry(kind, ENCOUNTER_KIND_SYSTEM, KIND_CODE_MAP));
+  if (channel) {
+    types.push(buildTypeEntry(channel, ENCOUNTER_CHANNEL_SYSTEM, CHANNEL_CODE_MAP));
+  }
+  if (types.length === 0) {
+    const typeDisplay = ((raw.type_display ?? "") as string).trim();
+    if (typeDisplay) types.push({ text: typeDisplay });
+  }
+  if (types.length > 0) {
+    resource.type = types;
   }
 
   const period: Record<string, string> = {};

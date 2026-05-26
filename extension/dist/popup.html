@@ -1263,7 +1263,7 @@
       <!-- 1a. User isn't on the NHI tab — shortcut to open it. -->
       <section class="section" id="open-nhi-section" hidden>
         <button class="btn-primary" id="open-nhi-btn">
-          開啟健保存摺登入
+          開啟健保存摺登入頁
         </button>
         <div class="hint">
           需要先登入健保存摺才能取得資料。已經登入過了？把那個分頁切回前景就會自動偵測。
@@ -1342,7 +1342,7 @@
           </div>
 
           <div class="row" style="margin-top:10px">
-            <button class="btn-primary" id="ov-save-btn">確定</button>
+            <button class="btn-primary" id="ov-save-btn">儲存資料</button>
             <button class="btn-secondary" id="ov-clear-btn">清除</button>
           </div>
         </div>
@@ -1377,13 +1377,13 @@
              hasn't enabled backend mode in 進階設定 (default for the
              lay-user citizen flow). -->
         <div class="setting-row mode-toggle-row">
-          <span class="setting-label">儲存位置</span>
+          <span class="setting-label">輸出方式</span>
           <div class="mode-toggle" role="radiogroup" aria-label="輸出方式">
-            <label class="mode-opt" title="只在你自己電腦上：產生 FHIR 紀錄檔下載到下載夾，完全不經過任何後端">
+            <label class="mode-opt" title="資料只存在你自己電腦的下載夾，不會經過任何網路伺服器。">
               <input type="radio" name="sync-mode" value="local" checked />
               下載到電腦
             </label>
-            <label class="mode-opt" title="進階：寫入你自己機器跑的本機 Docker 後端，搭配 Dashboard / SMART App 使用。仍然不上 NHI 或雲端。">
+            <label class="mode-opt" title="進階：把資料存進自架的本機伺服器（需另外安裝）。仍然不上雲端。">
               <input type="radio" name="sync-mode" value="backend" />
               本機伺服器
             </label>
@@ -1408,7 +1408,7 @@
         <div class="backend-only conn-block" id="conn-section" data-state="unknown">
           <div class="conn-banner" id="conn-banner" data-state="unknown">
             <span class="conn-dot" id="conn-dot"></span>
-            <span class="conn-msg" id="conn-msg">未檢測</span>
+            <span class="conn-msg" id="conn-msg">尚未檢查</span>
             <button class="conn-retry" id="conn-retry-btn" hidden>重試</button>
           </div>
           <div class="conn-help" id="conn-help" hidden></div>
@@ -1420,7 +1420,7 @@
         </button>
         <button type="button" id="sync-blocked-reason" class="cta-reason" hidden></button>
         <button class="btn-danger" id="stop-btn" hidden>
-          停止
+          取消
         </button>
 
         <!-- ── Result section ─────────────────────────────────────────
@@ -1436,14 +1436,14 @@
           <div class="state-rows backend-only" id="data-state-section" hidden>
             <div class="state-row">
               <span class="state-label">後端</span>
-              <span class="state-value" id="backend-state">檢查中…</span>
+              <span class="state-value" id="backend-state">確認中…</span>
             </div>
             <div class="state-row" id="local-state-row" hidden>
               <span class="state-label">本地</span>
               <span class="state-value" id="local-state">—</span>
             </div>
             <button class="btn-secondary push-local-btn" id="push-local-btn" hidden>
-              把本地檔案上傳到後端
+              把這次資料傳到本機伺服器
             </button>
           </div>
 
@@ -1454,8 +1454,8 @@
               下載健康紀錄檔
             </button>
             <button class="btn-icon-only" id="clear-bundle-btn"
-                    title="清除待下載檔案（不會刪除已下載到電腦的檔案）"
-                    aria-label="清除待下載檔案（不會刪除已下載到電腦的檔案）">
+                    title="清掉這次取得的資料（已下載到電腦的檔案不會被刪除）"
+                    aria-label="清掉這次取得的資料（已下載到電腦的檔案不會被刪除）">
               <!-- lucide Trash2 — explicit SVG so the icon looks the
                    same on every OS (no emoji-font drift). -->
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
@@ -1481,7 +1481,7 @@
             <div class="bundle-filename" id="bundle-filename"></div>
             <div class="bundle-sizeage" id="bundle-sizeage"></div>
             <div class="bundle-sync-hint backend-only" id="sync-status-hint" hidden>
-              ✓ 本地檔案已與後端同步
+              ✓ 這次資料已傳到本機伺服器
             </div>
           </div>
         </div>
@@ -1546,7 +1546,7 @@
           <label class="toggle-row">
             <input type="checkbox" id="backend-mode-enabled" />
             <span>啟用本機伺服器模式</span>
-            <span class="help-icon" data-tip="開啟後 ③ 取得步驟會多出「儲存位置：下載到電腦／本機伺服器」切換。&#10;本機伺服器模式需要自己跑 Docker 後端，搭配 Dashboard / SMART App 使用。&#10;一般民眾下載自己的健保紀錄不需要開啟。">ⓘ</span>
+            <span class="help-icon" data-tip="開啟後 ③ 取得步驟會多出「輸出方式」切換，可選擇下載到電腦、或傳到自架的本機伺服器。&#10;此功能僅供需要架設自有伺服器搭配管理介面的進階用戶使用，需另外安裝。&#10;一般民眾下載自己的健保紀錄不需要開啟。">ⓘ</span>
           </label>
           <div class="hint" style="margin-top:6px;">
             預設關閉。啟用後會顯示 Backend URL / Sync API Key /
@@ -1588,7 +1588,7 @@
     <div class="popup-meta-header">
       <span class="popup-meta-title">免責聲明</span>
       <span class="popup-meta-utility">
-        <a href="#" id="dashboard-link" class="backend-only" target="_blank">Dashboard ↗</a>
+        <a href="#" id="dashboard-link" class="backend-only" target="_blank">管理介面 ↗</a>
         <span id="version"></span>
       </span>
     </div>

@@ -895,6 +895,9 @@ describe("adaptEncounterFromMedExpense", () => {
     });
     expect(r.type_display).toBe("申報資料");
     expect(r.hospital).toBe("嘉基醫院");
+    // v0.9.2 contract: kind + channel split.
+    expect(r.kind).toBe("門診");
+    expect(r.channel).toBe("申報資料");
   });
 
   test("pharmacy override via options.pharmacy=true (xref signal)", () => {
@@ -912,6 +915,9 @@ describe("adaptEncounterFromMedExpense", () => {
       { pharmacy: true },
     );
     expect(r.type_display).toBe("藥局");
+    // v0.9.2: channel preserved even when kind is overridden to 藥局.
+    expect(r.kind).toBe("藥局");
+    expect(r.channel).toBe("IC卡資料");
   });
 
   test("pharmacy override via hospital-name fallback (no options)", () => {
@@ -924,6 +930,8 @@ describe("adaptEncounterFromMedExpense", () => {
       ori_type_name: "申報資料",
     });
     expect(r.type_display).toBe("藥局");
+    expect(r.kind).toBe("藥局");
+    expect(r.channel).toBe("申報資料");
   });
 
   test("pharmacy override via hospital-name catches 藥房 too", () => {
@@ -932,6 +940,8 @@ describe("adaptEncounterFromMedExpense", () => {
       hosP_ABBR: "丁丁藥房",
     });
     expect(r.type_display).toBe("藥局");
+    expect(r.kind).toBe("藥局");
+    expect(r.channel).toBe(""); // no ori_type_name in this fixture
   });
 
   test("clinic with options.pharmacy=false explicitly stays clinic", () => {
@@ -945,6 +955,8 @@ describe("adaptEncounterFromMedExpense", () => {
       { pharmacy: false },
     );
     expect(r.type_display).toBe("申報資料");
+    expect(r.kind).toBe("門診");
+    expect(r.channel).toBe("申報資料");
   });
 
   test("options.pharmacy=true wins even when hospital name doesn't match (新型藥事服務點)", () => {
@@ -962,6 +974,34 @@ describe("adaptEncounterFromMedExpense", () => {
       { pharmacy: true },
     );
     expect(r.type_display).toBe("藥局");
+    expect(r.kind).toBe("藥局");
+    expect(r.channel).toBe("申報資料");
+  });
+
+  test("v0.9.2 — classHint=EMER produces kind='急診'", () => {
+    const r = adaptEncounterFromMedExpense(
+      {
+        funC_DATE: "115/03/26",
+        hosP_ABBR: "嘉基醫院",
+        ori_type_name: "IC卡資料",
+      },
+      "EMER",
+    );
+    expect(r.kind).toBe("急診");
+    expect(r.channel).toBe("IC卡資料");
+  });
+
+  test("v0.9.2 — classHint=IMP produces kind='住院'", () => {
+    const r = adaptEncounterFromMedExpense(
+      {
+        funC_DATE: "115/03/26",
+        hosP_ABBR: "嘉基醫院",
+        ori_type_name: "申報資料",
+      },
+      "IMP",
+    );
+    expect(r.kind).toBe("住院");
+    expect(r.channel).toBe("申報資料");
   });
 
   test("v0.9.0 secondary_diagnoses option flows through to adapter output", () => {

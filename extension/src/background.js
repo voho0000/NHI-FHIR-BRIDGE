@@ -1095,7 +1095,7 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     await chrome.storage.local.set({
       syncStatus: {
         running: false,
-        progress: "⛔ 請先在 popup 填寫病人資料後再試",
+        progress: "⛔ 請先到「② 您的資料」填寫資料後再試",
         phase: "error", ts: Date.now(), completed: Date.now(),
       },
     });
@@ -1640,7 +1640,7 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     for (const [page_type, items] of Object.entries(byType)) {
       if (_cancelled) throw new Error(CANCEL_ERROR);
       await setStatus({
-        progress: `⬆️ 上傳 ${page_type}（${items.length} 筆）…`,
+        progress: `⬆️ 上傳 ${ENDPOINT_LABEL_ZH[page_type] ?? page_type}（${items.length} 筆）…`,
         totalResources: total,
       });
       try {
@@ -1662,7 +1662,7 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     // "本地 ✓ 0 筆" indicator and a useless 📤 上傳 button.
     if (patientOverride.id_no && total > 0) {
       try {
-        await setStatus({ progress: "📦 取得後端完整資料…", totalResources: total });
+        await setStatus({ progress: "📦 整理伺服器上的完整資料…", totalResources: total });
         // Backend stores Patient under derivePatientId(rawId), so the
         // export filter must use the hashed form — querying with the
         // raw national ID matches zero rows even when data is there.
@@ -1873,7 +1873,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await chrome.storage.local.set({
             syncStatus: {
               running: false,
-              progress: "🔒 NHI session 已登出 — 請在 NHI tab 重新登入後再點 Sync",
+              progress: "🔒 健保存摺登入逾時 — 請回到健保存摺分頁重新登入，然後再按「取得健保存摺資料」",
               phase: "session_expired",
               ts: Date.now(), completed: Date.now(),
             },

@@ -111,11 +111,13 @@ describe("adapter fixture snapshots", () => {
   test("IHKE3303 encounter (outpatient defaulting to AMB)", () => {
     expect(adaptEncounterFromMedExpense(load("ihke3303-encounter.json"))).toMatchInlineSnapshot(`
       {
+        "channel": "IC卡資料",
         "class": "AMB",
         "date": "2025-05-18",
         "department": "",
         "end_date": "",
         "hospital": "長庚嘉義",
+        "kind": "門診",
         "provider": "",
         "reason": "I10 Essential hypertension",
         "reason_code": "I10",
