@@ -2,6 +2,33 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.9.0 重點 — 2026-05-27
+
+Chrome Web Store 上架前的最終打磨版。把流程跑完成 4 步、進階設定挪到齒輪、整體 UI 重做。沒有 bundle 內容變動。
+
+**新功能**
+- 🚀 **新增 Step 4「查看」**：一鍵在新分頁開啟「醫析 MediPrisma」SMART App 查看資料，user 不用再自己找書籤或搜尋。檔案手動 import（拖曳或按按鈕），無 PHI 透過 URL 傳遞，extension 跟 SMART app 完全解耦。
+- ⚙️ **進階設定改成齒輪入口**：之前 inline 卡在 Step 3 占空間（即使 99% user 用不到），現在點 header 右上齒輪進獨立設定頁。「← 返回」按鈕回到原本 step，不丟失 wizard state。
+
+**UI 重設計**
+- 🎨 **Step 4 民眾友善文案**：5 個 bullet（檢驗趨勢 / 用藥時間軸 / 就醫紀錄 / 中英對照 / AI 問答）用具體例子（膽固醇、血糖、肝指數）取代 jargon，痛點 hook 直接戳「健保存摺資料散在各頁面難瀏覽」。
+- 🎨 **免責聲明 + 版本號合併成 meta card**：之前 Mode A 下白色 footer 大片空白看起來未完成；現在統合一張淺奶油色卡片，header 列同時放警語標題 + Dashboard 連結 + 版本號，兩種 mode 視覺平衡。
+- 🎨 **設定頁標題降權**：「進階設定」從 H1-粗體-深藍改成 12px-中字-灰色 label，跟旁邊低調的「← 返回」按鈕視覺對等。
+
+**Bug 修正**
+- 🐛 **移除誤導警告**：Step 4 之前在「user 下載完 → session storage 被清掉」的合法狀態下會跳「⚠️ 還沒有健康紀錄檔可載入」，但 user 本機已經有檔案。直接砍掉這個警告。
+- 🐛 **匯入按鈕文字校正**：popup hint 從「Import 按鈕」改成「匯入資料」（對齊 MediPrisma 實際按鈕名），並同時提到拖曳跟按鈕兩種方式。
+
+**Docs**
+- `docs/PRIVACY.md` 補一段澄清：popup 介紹的「醫析 MediPrisma」是獨立第三方產品，其 AI 功能會將資料送到雲端 AI 供應商；本擴充功能本身完全不接觸 AI／LLM。
+
+**升級注意**
+- Reload extension 即可，bundle 資料跟 v0.8.8 完全一樣。
+- 進階設定的位置從 Step 3 inline 摺疊區改到 header 右上齒輪 ⚙️。
+- 第一次使用 Step 4 時注意把剛下載的 JSON 拖進去（或按匯入按鈕）。
+
+---
+
 ## 0.8.8 重點 — 2026-05-25
 
 獨立 security audit 後的硬化版，主要縮小 PHI 在 chrome.storage 的暴露面，為上 Chrome Web Store 做準備。沒有新功能，bundle 內容跟 v0.8.7 完全一樣。
