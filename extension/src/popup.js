@@ -733,12 +733,16 @@ function _refreshButtonStates() {
     const show = !syncRunning && inlineMsg !== "";
     els.syncBlockedReason.hidden = !show;
     if (show) {
-      // Build the strip's content: "⚠ {msg}    回 ① 登入 →" so the
+      // Build the strip's content: "→ {msg}    回 ① 登入 →" so the
       // user sees both the reason and where the click will take them.
+      // "→" arrow signals "do this next" (information/guidance);
+      // the original ⚠️ was alarm-grade and clashed with the genuine
+      // disclaimer card below. Blue palette in CSS reinforces the
+      // info-not-warning framing.
       els.syncBlockedReason.textContent = "";
       const msgEl = document.createElement("span");
       msgEl.className = "cta-reason-msg";
-      msgEl.textContent = `⚠️ ${inlineMsg}`;
+      msgEl.textContent = `→ ${inlineMsg}`;
       els.syncBlockedReason.appendChild(msgEl);
       if (jumpTo) {
         const jumpEl = document.createElement("span");
@@ -1241,7 +1245,39 @@ function setStatus(text, kind, breakdown, errors) {
   els.status.textContent = "";
   const hasErrors = Array.isArray(errors) && errors.length > 0;
   if (!text && !(breakdown && breakdown.length) && !hasErrors) return;
-  els.status.appendChild(document.createTextNode(text || ""));
+
+  // Header row: status text + dismiss button (only when sync not
+  // running, so the user can declutter the popup once they're done
+  // reading the result). Mid-sync the button is suppressed so the
+  // user can't accidentally hide the live progress.
+  const header = document.createElement("div");
+  header.className = "status-header";
+  const textSpan = document.createElement("span");
+  textSpan.className = "status-text";
+  textSpan.textContent = text || "";
+  header.appendChild(textSpan);
+  const running = _latestStatus?.running === true;
+  if (!running) {
+    const dismissBtn = document.createElement("button");
+    dismissBtn.type = "button";
+    dismissBtn.className = "status-dismiss";
+    dismissBtn.textContent = "✕";
+    dismissBtn.title = "清除這則訊息";
+    dismissBtn.setAttribute("aria-label", "清除訊息");
+    dismissBtn.addEventListener("click", () => {
+      // Mirror what the existing clearPendingBundle flow does for
+      // its sibling stale-result wipe — drop SW-side persisted
+      // syncStatus, drop popup-side cached _latestStatus, then
+      // re-render empty.
+      chrome.runtime
+        .sendMessage({ type: "clearSyncStatus" })
+        .catch(() => {});
+      _latestStatus = null;
+      setStatus("", null);
+    });
+    header.appendChild(dismissBtn);
+  }
+  els.status.appendChild(header);
   if ((breakdown && breakdown.length) || hasErrors) {
     const bd = breakdown || [];
     const phaseRows = bd.filter((b) => b.startsWith("⏱"));
@@ -1256,13 +1292,29 @@ function setStatus(text, kind, breakdown, errors) {
     if (otherRows.length) {
       const body = document.createElement("div");
       body.className = "status-breakdown";
-      // One item per line so "就醫 12 筆 / 處方 88 筆 / 檢驗 412 筆"
-      // is readable; the 360px popup would have wrapped a flat
-      // separator-joined string into a tangled mess.
+      // Each breakdown string looks like "就醫：164 筆". Split on the
+      // full-width colon and render label left / value right so the
+      // count column lines up cleanly. Rows that don't have a clean
+      // colon split (or have multiple, e.g. composite "成人健檢：
+      // 2 筆 → 34 項") fall back to one-line plain rendering.
       for (const row of otherRows) {
-        const line = document.createElement("div");
-        line.textContent = row;
-        body.appendChild(line);
+        const lineEl = document.createElement("div");
+        lineEl.className = "br-row";
+        const colonIdx = row.indexOf("：");
+        if (colonIdx > 0 && colonIdx < row.length - 1) {
+          const labelSpan = document.createElement("span");
+          labelSpan.className = "br-label";
+          labelSpan.textContent = row.slice(0, colonIdx);
+          const valueSpan = document.createElement("span");
+          valueSpan.className = "br-value";
+          valueSpan.textContent = row.slice(colonIdx + 1).trim();
+          lineEl.appendChild(labelSpan);
+          lineEl.appendChild(valueSpan);
+        } else {
+          lineEl.classList.add("br-row-plain");
+          lineEl.textContent = row;
+        }
+        body.appendChild(lineEl);
       }
       details.appendChild(body);
     }
@@ -1298,7 +1350,28 @@ function setStatus(text, kind, breakdown, errors) {
       techDetails.appendChild(techSummary);
       const phases = document.createElement("div");
       phases.className = "status-phases";
-      phases.textContent = phaseRows.map((p) => p.replace(/^⏱\s*/, "")).join(" · ");
+      // Each phaseRow looks like "⏱ nhi-parallel=2.6s". Strip the
+      // stopwatch prefix, split on "=", render as label / value pair
+      // so durations align vertically (tabular-nums in CSS).
+      for (const raw of phaseRows) {
+        const clean = raw.replace(/^⏱\s*/, "");
+        const eqIdx = clean.indexOf("=");
+        const rowEl = document.createElement("div");
+        rowEl.className = "ph-row";
+        if (eqIdx > 0 && eqIdx < clean.length - 1) {
+          const labelSpan = document.createElement("span");
+          labelSpan.className = "ph-label";
+          labelSpan.textContent = clean.slice(0, eqIdx);
+          const valueSpan = document.createElement("span");
+          valueSpan.className = "ph-value";
+          valueSpan.textContent = clean.slice(eqIdx + 1);
+          rowEl.appendChild(labelSpan);
+          rowEl.appendChild(valueSpan);
+        } else {
+          rowEl.textContent = clean;
+        }
+        phases.appendChild(rowEl);
+      }
       techDetails.appendChild(phases);
       details.appendChild(techDetails);
     }
@@ -1358,6 +1431,27 @@ async function refreshPendingBundle() {
   if (_wizardInitialized) _refreshResultZone();
 }
 
+// Rewrite the sync-status banner from "✅ 取得完成" → "✅ 已下載" once
+// the user has actually saved the bundle to disk. Keeps totalResources
+// + elapsed info that was in the original message so the user still
+// sees "what got downloaded" at a glance. Idempotent — re-runs noop
+// if phase is already "downloaded".
+async function _transitionStatusToDownloaded(bytes) {
+  try {
+    const { syncStatus } = await chrome.storage.local.get("syncStatus");
+    if (!syncStatus || syncStatus.phase === "downloaded") return;
+    const total = syncStatus.totalResources ?? 0;
+    const sizeStr = bytes ? ` · ${_fmtBytes(bytes)}` : "";
+    const next = {
+      ...syncStatus,
+      progress: `✅ 已下載健康紀錄檔（共 ${total} 筆${sizeStr}）— 接著至 ④ 查看 開啟「醫析 MediPrisma」瀏覽資料。`,
+      phase: "downloaded",
+      ts: Date.now(),
+    };
+    await chrome.storage.local.set({ syncStatus: next });
+  } catch {}
+}
+
 async function downloadPendingBundle() {
   const { [PENDING_BUNDLE_KEY]: pending } =
     await chrome.storage.session.get(PENDING_BUNDLE_KEY);
@@ -1400,6 +1494,13 @@ async function downloadPendingBundle() {
     if (final === "complete") {
       chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {});
       chrome.downloads.onChanged.removeListener(_onChange);
+      // Transition the sync status banner from "✅ 取得完成" to
+      // "✅ 已下載" so users who close + reopen the popup (or just
+      // glance at the banner) see an accurate up-to-date state
+      // rather than a stale "completed sync" message. The breakdown
+      // (查看明細) stays so the count of what was downloaded is
+      // still inspectable.
+      _transitionStatusToDownloaded(pending.bytes);
     } else if (final === "interrupted") {
       // Keep the stash; user might retry.
       chrome.downloads.onChanged.removeListener(_onChange);

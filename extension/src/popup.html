@@ -527,14 +527,21 @@
        anywhere on it to jump back to the relevant step. The right-
        hand "→ ① 登入" hint signals where it'll take you. Inherits
        the warning color so it doesn't read as a primary CTA. */
+    /* Inline guidance below the disabled CTA. NOT a warning — it's
+       an explanation of why the button is currently inactive +
+       shortcut to fix it. Blue "info" palette (deliberately NOT the
+       amber palette used for the persistent disclaimer card below)
+       so the two never blur into "one big warning region" in the
+       user's eye. Card-like presence so users notice it; click
+       jumps back to the blocking step. */
     .cta-reason {
-      margin-top: 6px;
-      padding: 6px 10px;
-      background: #fef3c7;
-      border: 1px solid #fde68a;
-      border-left: 3px solid #f59e0b;
-      border-radius: 4px;
-      color: #92400e;
+      margin-top: 8px;
+      padding: 7px 10px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-left: 3px solid #3b82f6;
+      border-radius: 6px;
+      color: #1e40af;
       font-size: 12px;
       line-height: 1.4;
       font-family: inherit;
@@ -545,9 +552,12 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      transition: background 0.12s;
+      transition: background 0.12s, border-color 0.12s;
     }
-    .cta-reason:hover { background: #fde68a; }
+    .cta-reason:hover {
+      background: #dbeafe;
+      border-color: #93c5fd;
+    }
     .cta-reason:focus-visible {
       outline: 2px solid #f59e0b;
       outline-offset: 1px;
@@ -557,8 +567,13 @@
       flex: 0 0 auto;
       font-size: 11px;
       font-weight: 600;
-      color: #78350f;
+      color: #1d4ed8;
       white-space: nowrap;
+      transition: color 0.12s;
+    }
+    .cta-reason:hover .cta-reason-jump {
+      color: #1e3a8a;
+      text-decoration: underline;
     }
 
     .btn-secondary {
@@ -768,6 +783,38 @@
       line-height: 1.55;
       word-break: break-word;
     }
+    /* Top row of the status: text on the left, optional dismiss
+       button on the right. Dismiss only appears for non-running
+       statuses (success / error / downloaded) — never mid-sync. */
+    .status-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .status-text {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .status-dismiss {
+      flex: 0 0 auto;
+      width: 22px !important;
+      height: 22px;
+      padding: 0 !important;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      color: currentColor;
+      opacity: 0.45;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 400;
+      line-height: 1;
+      transition: opacity 0.12s, background 0.12s;
+    }
+    .status-dismiss:hover {
+      opacity: 0.95;
+      background: rgba(0, 0, 0, 0.06);
+    }
     /* Status reads as a subtle summary line, not an alert box. Only
        errors keep the loud border — success / info use a left color
        bar so the result section feels like part of the same panel. */
@@ -787,28 +834,43 @@
       color: #b91c1c;
       border: 1px solid #fecaca;
     }
-    /* Phase timings — always-visible monospace line under the status
-       text. Lets the user see "nhi-parallel=8s · backend-upload=0.8s"
-       without having to expand anything. */
+    /* Phase timings — structured label/value list (same shape as
+       .status-breakdown) so the popup feels consistent regardless
+       of which sub-toggle the user opens. Monospace tabular numbers
+       keep durations aligned vertically. */
     .status-phases {
       margin-top: 6px;
-      padding: 6px 8px;
+      padding: 6px 10px;
       font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
       font-size: 11px;
       background: rgba(0, 0, 0, 0.04);
-      border-radius: 4px;
-      line-height: 1.55;
+      border-radius: 6px;
+      line-height: 1.75;
       opacity: 0.85;
       word-break: break-word;
     }
+    .status-phases > .ph-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .status-phases > .ph-row .ph-label {
+      flex: 1 1 auto;
+      min-width: 0;
+      color: #4b5563;
+    }
+    .status-phases > .ph-row .ph-value {
+      flex: 0 0 auto;
+      font-variant-numeric: tabular-nums;
+      color: #1f2937;
+    }
     /* Per-endpoint breakdown collapsible inside the status banner.
        Inherits the banner's text color so it visually nests under
-       the main success/warning line. */
+       the main success/warning line. The border-top hairline was
+       removed — when closed it created a "many horizontal lines"
+       feel against the status text above; spacing alone is enough. */
     .status-detail {
-      margin-top: 6px;
-      padding-top: 6px;
-      border-top: 1px solid currentColor;
-      border-top-color: rgba(0, 0, 0, 0.08);
+      margin-top: 8px;
     }
     .status-detail > summary {
       list-style: none;
@@ -827,29 +889,52 @@
       transition: transform 0.12s;
     }
     .status-detail[open] > summary::before { transform: rotate(90deg); }
+    /* "查看明細" / "技術細節" body: label/value list with the count
+       (or duration) right-aligned, monospace tabular numbers so the
+       column lines up cleanly. No dashed/dotted dividers — spacing
+       alone separates rows. Visually one calm list rather than a
+       1990s debug table. */
     .status-breakdown {
-      margin-top: 4px;
+      margin-top: 6px;
       padding: 6px 10px;
       font-size: 12px;
       background: rgba(0, 0, 0, 0.04);
-      border-radius: 4px;
+      border-radius: 6px;
       line-height: 1.7;
-      opacity: 0.9;
+      opacity: 0.95;
       word-break: break-word;
     }
-    .status-breakdown > div + div {
-      border-top: 1px dashed rgba(0, 0, 0, 0.08);
-      padding-top: 2px;
-      margin-top: 2px;
+    .status-breakdown > .br-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
     }
-    /* Inner "技術細節" sub-toggle for phase timings. Visually subdued so
-       it reads as developer info rather than a problem. */
+    .status-breakdown > .br-row .br-label {
+      flex: 1 1 auto;
+      min-width: 0;
+      color: #4b5563;
+    }
+    .status-breakdown > .br-row .br-value {
+      flex: 0 0 auto;
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+      color: #1f2937;
+    }
+    /* Fallback when a breakdown row isn't a clean "label：value" pair
+       (e.g. composite "成人健檢：2 筆 → 34 項"). Treats the whole row
+       as one flowing line. */
+    .status-breakdown > .br-row.br-row-plain {
+      display: block;
+      color: #374151;
+    }
+    /* "技術細節" sub-toggle (phase timings). Same disclosure shape
+       as 查看明細 — only difference is the summary opacity so the
+       label reads as "supplementary info" rather than primary. No
+       extra border/divider — visual continuity. */
     .status-tech {
       margin-top: 4px;
-      padding-top: 4px;
-      border-top: 1px dashed rgba(0, 0, 0, 0.08);
     }
-    .status-tech > summary { opacity: 0.5; }
+    .status-tech > summary { opacity: 0.55; }
     /* "失敗明細" sub-toggle — same shape as 技術細節 but warning-tinted
        so the user notices it exists. Each error reads "• imaging detail:
        HTTP 504" or similar; not exactly user-friendly copy but beats
