@@ -2,6 +2,21 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.11.2 重點 — 2026-05-27
+
+**🖱️ 下載完狀態列加 CTA 按鈕 — 直接跳 Step 4**
+
+之前下載完顯示「✅ 已下載 ... — 接著至 ④ 查看 開啟「醫析 MediPrisma」瀏覽資料」是純文字，user 還是要自己點 wizard 上方的 tab。改成：
+- 文字精簡成「✅ 已下載健康紀錄檔（共 N 筆 · X bytes）」
+- 下方加一顆 CTA 按鈕「→ 至 ④ 查看 開啟「醫析 MediPrisma」」
+- 點一下直接跳 Step 4
+
+`setStatus()` 新增可選 `action` 參數（`{label, onClick}`），未來其他 phase 也能用同一機制加 CTA。樣式跟 dismiss 按鈕一致風格（subtle outline，不搶眼）。
+
+純 popup UI 改良，logic 沒變。Reload extension 即可。
+
+---
+
 ## 0.11.1 重點 — 2026-05-27
 
 **🐛 Coagulation panel 3 個 bug 修補（長庚嘉義 report）**
