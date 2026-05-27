@@ -2,6 +2,33 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.9.5 重點 — 2026-05-27
+
+Chrome Web Store 上架前最後一輪 UX polish。3 個必修，純文案 + UX 微調，沒有功能變動。
+
+### 1. Manifest description 校正（reviewer 友善）
+
+- 之前：「將健保署健康存摺頁面擷取並轉換為 FHIR R4，**透過 NHI-FHIR-Bridge 後端服務**。」
+- 現在：「將健保署「健康存摺」就醫、用藥、檢驗紀錄轉換為 FHIR R4 標準格式，**資料只在本機處理**。」
+
+99% user 用 Mode A 完全不需要後端，原文易讓 user / reviewer 誤會。新版動詞先 + 利益先。
+
+### 2. Step 4 按鈕 + 提示明確化（避免「點開空頁」困惑）
+
+按鈕加「**新分頁**」字尾，提示明確標步驟：「使用方法：點下方按鈕 → 新分頁會打開「醫析 MediPrisma」**空白頁面** → 把剛下載的 JSON 檔拖到頁面上...」。讓 user 知道 button 只是開頁面、要自己拖檔。
+
+### 3. Mode B 連線失敗加「💡 常見原因」摺疊清單
+
+進階 user 在 Mode B 遇到 connection failure 時，新增摺疊區列出 5 個常見原因（Docker 沒啟動 / URL 拼錯 / Chrome 沒授權 / migration 進行中 / 防火牆擋）。純 HTML+CSS 增量、無 JS 改動；既有 per-kind 提示保留。
+
+### 升級注意
+
+- Reload extension 即可。
+- 純 UI / 文案，bundle 內容跟 v0.9.4 完全一樣。
+- **Chrome Web Store 上架候選版** — 接下來只剩 user 端準備（截圖、Trader 驗證、表單填寫）。
+
+---
+
 ## 0.9.4 重點 — 2026-05-27
 
 純 UX 改進 — popup 永遠顯示的「免責聲明卡」下方新增一段**安全保證**，讓對「資料會不會被偷偷上傳」有疑慮的 user 在每個 step 都看到 reassurance：
