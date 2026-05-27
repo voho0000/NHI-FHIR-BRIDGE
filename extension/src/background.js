@@ -1171,10 +1171,9 @@ async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patien
     const path = ep.supportsDateRange ? applyDateRangeToPath(ep.path, dateRange) : ep.path;
     return { name: ep.name, url: BASE + path, method: "GET" };
   });
-  if (dateRange && (dateRange.start || dateRange.end)) {
-    console.log("[NHI API sync] date range:",
-      `${dateRange.start || "(unbounded)"} → ${dateRange.end || "(unbounded)"}`);
-  }
+  // (v0.11.5: removed sync-start console.log — was operational
+  // diagnostic only, not needed in published extension. Date range
+  // already visible in the popup status banner during sync.)
 
   let settledRaw;
   try {

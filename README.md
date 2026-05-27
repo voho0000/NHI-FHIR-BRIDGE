@@ -10,7 +10,7 @@
 
 > ⚠️ **免責聲明**：本工具**僅供參考**，**無法保證資料完全準確**——NHI 的 JSON 欄位偶有 schema 變動、未涵蓋的 edge case、或 mapper bug 都可能造成輸出與真實情況不一致。臨床判讀或正式用途請**以[健保署健康存摺](https://myhealthbank.nhi.gov.tw/)上顯示的內容為主**；本工具產出的 FHIR 檔僅作為個人備份 / 開發測試 / 跨系統匯入的參考依據。
 
-> 🔒 **對安全性有疑慮？** 請先看 [**給民眾的安全說明 (SECURITY_FOR_USERS.md)**](docs/SECURITY_FOR_USERS.md) — 不講工程術語、解釋資料路徑、12 項「不做的事」、12 項「主動防護」、6 個常見 Q&A。
+> 🔒 **對安全性有疑慮？** 請先看 [**給民眾的安全說明 (SECURITY_FOR_USERS.md)**](docs/SECURITY_FOR_USERS.md) — 不講工程術語、解釋資料路徑、Bridge 不會做的事、內建的保護機制、常見 Q&A。
 
 
 ## 它幫你做什麼？
@@ -257,7 +257,7 @@ docker compose logs --tail=100 backend | grep -E "upload-structured|ERROR"
 
 **Bridge 本身永遠不會把 PHI 送到第三方**。
 
-⚠️ **唯一例外**：popup 步驟 ④ 的「**🚀 開啟「醫析 MediPrisma」**」按鈕會在新分頁開啟一個獨立的第三方 SMART app。**該 app 內的 AI 問答功能會將資料傳到雲端 AI 供應商**（OpenAI / Gemini 等），這個是 user 主動點按鈕 + MediPrisma 自己的設計，跟 bridge 無關。**不點 AI 功能、只用本機的時間軸 / 趨勢圖瀏覽就完全離線**。詳見 [SECURITY_FOR_USERS.md](docs/SECURITY_FOR_USERS.md)。
+⚠️ **唯一例外**：popup 步驟 ④ 的「**🚀 開啟「醫析 MediPrisma」**」按鈕會在新分頁開啟「醫析 MediPrisma」SMART App。醫析的「檢驗趨勢」、「用藥時間軸」等視覺化功能都是**本機運算**；如果使用「**AI 問答**」按鈕，會把資料送給 OpenAI / Gemini 等雲端 LLM 才能產生回答 — 這是 LLM 服務本身的運作方式。只想本機瀏覽就略過 AI 按鈕即可。詳見 [SECURITY_FOR_USERS.md](docs/SECURITY_FOR_USERS.md)。
 
 ### Q6: 如果想清空所有資料重來？
 
@@ -312,7 +312,7 @@ docker compose up -d
 
 刻意設計：每個支援的 NHI 頁面都有穩定的 JSON 端點，extension 在瀏覽器內直接呼叫並進行確定性的 FHIR 轉換。**Bridge 沒有 AI、沒有 prompt engineering、沒有送 PHI 到雲端的疑慮**。也減少了 ~600 LOC 程式 + Anthropic SDK / cheerio / Ollama 依賴。NHI 真的改 API 時，這個專案會直接壞掉，靠社群 PR 修 endpoint 對應；不會偷偷把 PHI 送出去當 fallback。
 
-> ⚠️ 但 popup 步驟 ④「開啟醫析 MediPrisma」是**獨立的第三方 SMART App**，其內建的 AI 功能會將資料傳給雲端 AI 供應商。是否使用該 App 由你決定，跟 bridge 完全解耦。詳見 [SECURITY_FOR_USERS.md](docs/SECURITY_FOR_USERS.md)。
+> ⚠️ 但 popup 步驟 ④「開啟醫析 MediPrisma」是另一個 SMART App，使用 AI 問答功能時會將資料傳給雲端 LLM 才能產生回答（本機視覺化功能不會）。是否使用該 App 由你決定。詳見 [SECURITY_FOR_USERS.md](docs/SECURITY_FOR_USERS.md)。
 
 ---
 

@@ -1493,41 +1493,59 @@
     // DLCO — DLCO + VA + DLCO/VA
   ]);
   var CBC_COMPONENT_KEYS = {
-    // Hemoglobin
+    // Hemoglobin — variant CJK 血色素 / 血紅蛋白 added v0.11.4 audit
+    // (Taiwan medical texts use all three interchangeably).
     hemoglobin: "718-7",
     \u8840\u7D05\u7D20: "718-7",
+    \u8840\u8272\u7D20: "718-7",
+    \u8840\u7D05\u86CB\u767D: "718-7",
     hgb: "718-7",
     hb: "718-7",
     "hb.": "718-7",
-    // Hematocrit (HCT) — Taiwan LIS often shortens to "Ht" / "H.t."
-    // Wider CJK forms added v0.9.10 Part 6 after 長庚嘉義 sent
-    // "血球比容值測定" (7-char form not matching shorter 血球容積比 /
-    // 血比容 substrings due to character order — "球" comes between
-    // "血" and "比" in this variant). _keywordMatches uses CJK
-    // substring includes(), so we need the exact 4-char substring
-    // "血球比容" to match the full string.
+    // Hematocrit (HCT) — Taiwan LIS shortens to "Ht" / "H.t.". The
+    // ".ascii" period-separated forms (e.g. "M.C.V.") added v0.11.4 —
+    // they bypass \bMCV\b matching because intra-word periods break
+    // the word boundary. Key WITHOUT trailing period covers both
+    // "M.C.V" and "M.C.V." inputs (trailing period creates a \b on
+    // the closing letter, key's regex `\bm\.c\.v\b` matches the "M.C.V"
+    // prefix of "M.C.V." just fine).
     hematocrit: "4544-3",
     \u8840\u7403\u5BB9\u7A4D\u6BD4: "4544-3",
     \u8840\u7403\u6BD4\u5BB9: "4544-3",
     \u8840\u6BD4\u5BB9: "4544-3",
+    \u7D05\u8840\u7403\u5BB9\u7A4D: "4544-3",
+    // alt phrasing — RBC volume = hematocrit
     hct: "4544-3",
     ht: "4544-3",
     "h.t.": "4544-3",
     "h.t": "4544-3",
     "%ht": "4544-3",
-    // RBC
+    // RBC — period-separated abbrev added
     \u7D05\u8840\u7403: "789-8",
     rbc: "789-8",
-    // WBC
+    "r.b.c": "789-8",
+    // WBC — period-separated abbrev added
     \u767D\u8840\u7403: "6690-2",
     wbc: "6690-2",
+    "w.b.c": "6690-2",
     // Platelet
     platelet: "777-3",
     \u8840\u5C0F\u677F: "777-3",
-    plt: "777-3"
+    plt: "777-3",
+    // CBC indices — period-separated abbrev forms added v0.11.4.
+    // Order matters: longer "m.c.h.c" must register before "m.c.h"
+    // is even considered (_findLongestMatch picks longest match
+    // regardless of insertion order, so insertion order here is for
+    // readability only).
+    "m.c.v": "787-2",
+    "m.c.h.c": "786-4",
+    "m.c.h": "785-6"
   };
   var CBC_DIFF_KEYS = {
-    // Neutrophil + Taiwan variants (incl. v0.9.10 Part 4 "Segment" fix)
+    // Neutrophil + Taiwan variants (incl. v0.9.10 Part 4 "Segment" fix
+    // + v0.11.4 audit additions: bare "Neut" / "Neut." short forms +
+    // 多核球 / 多形核球 alternate CJK terms — Taiwan haematology textbook
+    // synonyms for neutrophil).
     "neutrophilic segment": "770-8",
     // Neutrophils/100 leukocytes
     neutrophil: "770-8",
@@ -1537,18 +1555,29 @@
     segments: "770-8",
     seg: "770-8",
     "seg.": "770-8",
+    neut: "770-8",
+    "neut.": "770-8",
     "neut. seg": "770-8",
     "neut seg": "770-8",
     \u55DC\u4E2D\u6027\u767D\u8840\u7403: "770-8",
     \u55DC\u4E2D\u6027\u7403: "770-8",
     \u4E2D\u6027\u7403: "770-8",
-    // Lymphocyte
+    \u591A\u6838\u7403: "770-8",
+    \u591A\u5F62\u6838\u7403: "770-8",
+    // Lymphocyte — v0.11.4 audit added "Lym" / "Lym." / "Lymph" / "Lymph."
+    // / "Lymph cell" short forms + bare 淋巴 CJK.
     lymphocyte: "736-9",
     // Lymphocytes/100 leukocytes
     lymphocytes: "736-9",
+    "lymph cell": "736-9",
+    lymph: "736-9",
+    "lymph.": "736-9",
+    lym: "736-9",
+    "lym.": "736-9",
     \u6DCB\u5DF4\u767D\u8840\u7403: "736-9",
     \u6DCB\u5DF4\u7403: "736-9",
     \u6DCB\u5DF4\u7D30\u80DE: "736-9",
+    \u6DCB\u5DF4: "736-9",
     // Monocyte
     monocyte: "5905-5",
     // Monocytes/100 leukocytes
@@ -1661,8 +1690,62 @@
       // the arterial 11558-4 that the
       // global map points to)
       \u9178\u9E7C\u5EA6: "5803-2",
-      glucose: "5792-7"
+      glucose: "5792-7",
       // Last in this block so 'urine
+      // ── v0.11.4 audit — Taiwan dipstick abbrev variants ──
+      // Without these the abbreviated displays ("Bili" / "KET" / "OB" /
+      // "NIT" / "UBG" / "URO" / "SG" / "Colour" / "WBC esterase") fell
+      // to path-C and got LOINC 24356-8 (Urinalysis panel). Some also
+      // shadowed by global LOINC_MAP keys (e.g. "WBC esterase" matched
+      // global "wbc" → 6690-2 BLOOD WBC, wrong specimen).
+      "u-bili": "5770-3",
+      bili: "5770-3",
+      ket: "5797-6",
+      ob: "5794-3",
+      "ob.": "5794-3",
+      "occult blood": "5794-3",
+      nit: "5802-4",
+      ubg: "5818-0",
+      uro: "5818-0",
+      sg: "5811-5",
+      "s.g": "5811-5",
+      colour: "5778-6",
+      // UK spelling
+      "wbc esterase": "5799-2"
+      // blocks global "wbc" → 6690-2 shadow
+    },
+    // ── ABG panel (09041B) ───────────────────────────────
+    // 09041B has DISPLAY_FIRST_CODES but no PANEL_LOINC_MAP entry until
+    // v0.11.4 — relied on global LOINC_MAP for routing, which works for
+    // the canonical abbreviations (pH/pCO2/pO2/HCO3/TCO2/SaO2) but
+    // missed period-separated forms (P.CO2 / T.CO2 / p.H.) + Chinese
+    // descriptive names (酸鹼值 / 二氧化碳分壓 / 氧分壓 / 血氧飽和度).
+    // Panel-scoped table now covers Taiwan LIS variants. Global entries
+    // kept for backward compat (Mode A bundles older than v0.11.4 may
+    // still rely on global path).
+    "09041B": {
+      // pH variants
+      "p.h.": "11558-4",
+      "p.h": "11558-4",
+      \u9178\u9E7C\u503C: "11558-4",
+      // pCO2 variants
+      "p.co2": "2019-8",
+      \u4E8C\u6C27\u5316\u78B3\u5206\u58D3: "2019-8",
+      // pO2 variants
+      \u6C27\u5206\u58D3: "2703-7",
+      // HCO3 variants
+      "hco3-": "1959-6",
+      \u78B3\u9178\u6C2B\u6839: "1959-6",
+      \u91CD\u78B3\u9178: "1959-6",
+      // TCO2 variants
+      "t.co2": "2028-9",
+      "total co2": "2028-9",
+      "total carbon dioxide": "2028-9",
+      // SaO2 / O2 saturation variants
+      "o2 saturation": "2713-6",
+      "o2 sat": "2713-6",
+      saturation: "2713-6",
+      \u8840\u6C27\u98FD\u548C\u5EA6: "2713-6"
     },
     // ── CBC basic panel (08011C) ─────────────────────────
     // NHI 08011C bills the basic CBC items (RBC + indices, HGB, HCT,
@@ -1759,30 +1842,34 @@
     // 20584-9 (Lymphocyte subset panel). Critical for HIV monitoring
     // (CD4 absolute count is the actionable indicator).
     "12204B": {
-      "cd3+/cd8+": "8128-1",
-      "cd3+/cd4+": "8123-2",
-      "cd4/cd8": "54218-3",
-      // CD4/CD8 ratio
+      // v0.11.4 audit fix: trailing "+" in keys breaks \b regex boundary
+      // (+ is non-word, end-of-string after non-word has no \b). Keys
+      // dropped trailing + so "CD3+/CD4+" display still matches via the
+      // "cd3+/cd4" prefix substring. Keys with leading + and bare CD#
+      // also need careful ordering — _findLongestMatch picks longest
+      // match, so combined ratio keys must outrank bare cd3/cd4/cd8 by
+      // length to avoid CD3 winning over the CD3+/CD4+ ratio entry.
+      "cd3+/cd4": "8123-2",
+      // CD3+/CD4+ ratio → CD4 helper LOINC
+      "cd3+/cd8": "8128-1",
+      // CD3+/CD8+ ratio → CD8 helper LOINC
       "cd4/cd8 ratio": "54218-3",
+      "cd4/cd8": "54218-3",
       "cd8/cd4": "54218-3",
+      "cd16+cd56": "8112-5",
+      "cd16/cd56": "8112-5",
       cd3: "8124-0",
       // CD3 #/area in Blood
-      "cd3+": "8124-0",
       cd4: "8123-2",
       // CD4 #/area in Blood
-      "cd4+": "8123-2",
       cd8: "8128-1",
       // CD8 #/area in Blood
-      "cd8+": "8128-1",
       cd19: "8118-2",
       // CD19 #/area in Blood (B cell)
-      "cd19+": "8118-2",
       cd16: "8112-5",
       // CD16 + CD56 (NK cell)
-      cd56: "8125-7",
+      cd56: "8125-7"
       // CD56 #/area in Blood (NK cell)
-      "cd16+cd56": "8112-5",
-      "cd16/cd56": "8112-5"
     },
     // ── DLCO (17009B; v0.10.0) ──────────────────────────────
     // Carbon monoxide diffusing capacity test — reports DLCO + alveolar
@@ -1825,6 +1912,9 @@
       "estimated gfr": "33914-3",
       "estimated glomerular filtration rate": "33914-3",
       "glomerular filtration rate": "33914-3",
+      "gfr-est": "33914-3",
+      // v0.11.4 audit
+      "gfr est": "33914-3",
       \u814E\u7D72\u7403\u904E\u6FFE\u7387: "33914-3",
       \u4F30\u7B97\u814E\u7D72\u7403\u904E\u6FFE\u7387: "33914-3",
       creatinine: "2160-0",
@@ -2116,8 +2206,13 @@
     // — left as a known follow-up rather than guessing a new SBC LOINC.)
     abe: "1925-7",
     // ABE — Base excess in Blood by calculation
+    "a.b.e": "1925-7",
+    // period-separated abbrev (v0.11.4 audit)
+    "actual base excess": "1925-7",
     sbe: "1927-3",
     // SBE — Base excess in Arterial blood adjusted to pH 7.40
+    "s.b.e": "1927-3",
+    "standard base excess": "1927-3",
     sbc: "1925-7",
     // SBC — Standard bicarbonate Arterial (legacy mapping; see comment above)
     saturat: "2713-6",
@@ -5050,12 +5145,6 @@
       const path = ep.supportsDateRange ? applyDateRangeToPath(ep.path, dateRange) : ep.path;
       return { name: ep.name, url: BASE + path, method: "GET" };
     });
-    if (dateRange && (dateRange.start || dateRange.end)) {
-      console.log(
-        "[NHI API sync] date range:",
-        `${dateRange.start || "(unbounded)"} \u2192 ${dateRange.end || "(unbounded)"}`
-      );
-    }
     let settledRaw;
     try {
       [{ result: settledRaw }] = await chrome.scripting.executeScript({
