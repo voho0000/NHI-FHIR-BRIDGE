@@ -152,13 +152,11 @@ Bridge 端做了上面那些防護，但**有些事我們替不了你**：
 | **Patient.id 用 SHA-1 雜湊**（不放原始身分證） | 萬一資料庫被讀，URL 路徑不會直接洩漏身分證 |
 | **PHI 寫入端點（/sync, /fhir/import…）需要 `SYNC_API_KEY`** | 額外的存取保護 |
 
-## 進階模式你需要額外注意的事
+## 想改預設配置時
 
-| 你的責任 | 說明 |
-|---------|------|
-| **設定強的 `SYNC_API_KEY`** | 如果你把 backend 開放給 LAN 用、一定要設一個強隨機 key |
-| **Dashboard 預設無認證** | 多人用要自己加 reverse proxy / SSO，或限制 loopback only |
-| **SQLite 沒加密** | backend 把資料存在 SQLite 檔，那個檔自己要管好（電腦加密、access control） |
-| **多病人用要做 IRB** | 如果你打算用在診間給多病人用，請走醫院 IRB / 個資審查流程 |
+預設配置（backend 只綁本機 loopback、單人試用）就是安全的。如果你想客製化：
+
+- 想開放 backend 給 LAN 其他電腦用 → 建議設個強的 `SYNC_API_KEY`
+- 想多人 / 多病人臨床使用 → 超出這份文件範圍，請看 [ARCHITECTURE.md](https://github.com/voho0000/NHI-FHIR-BRIDGE/blob/main/docs/ARCHITECTURE.md)
 
 詳細技術設計見 [docs/ARCHITECTURE.md](https://github.com/voho0000/NHI-FHIR-BRIDGE/blob/main/docs/ARCHITECTURE.md)。
