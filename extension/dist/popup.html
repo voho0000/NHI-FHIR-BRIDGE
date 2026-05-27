@@ -815,6 +815,29 @@
       opacity: 0.95;
       background: rgba(0, 0, 0, 0.06);
     }
+    /* Phase-CTA button rendered between the status header and any
+       detail toggles. Used by the "downloaded" phase to jump straight
+       to step 4 without the user having to find the wizard tab. Styled
+       as an inline link-button so it reads as actionable but doesn't
+       dominate the status panel visually. */
+    .status-action {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 4px 10px;
+      border: 1px solid currentColor;
+      border-radius: 4px;
+      background: transparent;
+      color: currentColor;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      opacity: 0.85;
+      transition: opacity 0.12s, background 0.12s;
+    }
+    .status-action:hover {
+      opacity: 1;
+      background: rgba(0, 0, 0, 0.04);
+    }
     /* Status reads as a subtle summary line, not an alert box. Only
        errors keep the loud border — success / info use a left color
        bar so the result section feels like part of the same panel. */

@@ -1885,7 +1885,7 @@
     }
     chrome.storage.local.set({ smartAppLaunchUrl: v });
   });
-  function setStatus(text, kind, breakdown, errors) {
+  function setStatus(text, kind, breakdown, errors, action) {
     els.status.className = kind || "";
     els.status.textContent = "";
     const hasErrors = Array.isArray(errors) && errors.length > 0;
@@ -1913,6 +1913,14 @@
       header.appendChild(dismissBtn);
     }
     els.status.appendChild(header);
+    if (action && typeof action.onClick === "function") {
+      const actionBtn = document.createElement("button");
+      actionBtn.type = "button";
+      actionBtn.className = "status-action";
+      actionBtn.textContent = action.label;
+      actionBtn.addEventListener("click", action.onClick);
+      els.status.appendChild(actionBtn);
+    }
     if (breakdown && breakdown.length || hasErrors) {
       const bd = breakdown || [];
       const phaseRows = bd.filter((b) => b.startsWith("\u23F1"));
@@ -2037,7 +2045,7 @@
       const sizeStr = bytes ? ` \xB7 ${_fmtBytes(bytes)}` : "";
       const next = {
         ...syncStatus,
-        progress: `\u2705 \u5DF2\u4E0B\u8F09\u5065\u5EB7\u7D00\u9304\u6A94\uFF08\u5171 ${total} \u7B46${sizeStr}\uFF09\u2014 \u63A5\u8457\u81F3 \u2463 \u67E5\u770B \u958B\u555F\u300C\u91AB\u6790 MediPrisma\u300D\u700F\u89BD\u8CC7\u6599\u3002`,
+        progress: `\u2705 \u5DF2\u4E0B\u8F09\u5065\u5EB7\u7D00\u9304\u6A94\uFF08\u5171 ${total} \u7B46${sizeStr}\uFF09`,
         phase: "downloaded",
         ts: Date.now()
       };
@@ -2198,7 +2206,14 @@
     const kind = status.running ? "info" : status.phase === "error" ? "error" : "success";
     const breakdown = status.running ? null : status.breakdown;
     const errors = status.running ? null : status.errors;
-    setStatus(text, kind, breakdown, errors);
+    let action = null;
+    if (status.phase === "downloaded") {
+      action = {
+        label: "\u2192 \u81F3 \u2463 \u67E5\u770B \u958B\u555F\u300C\u91AB\u6790 MediPrisma\u300D",
+        onClick: () => _setActiveStep(4)
+      };
+    }
+    setStatus(text, kind, breakdown, errors, action);
   }
   function applySyncStatus(status) {
     if (!status) return;

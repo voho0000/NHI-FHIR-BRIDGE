@@ -1279,7 +1279,7 @@ els.smartAppUrl.addEventListener("change", () => {
   chrome.storage.local.set({ smartAppLaunchUrl: v });
 });
 
-function setStatus(text, kind, breakdown, errors) {
+function setStatus(text, kind, breakdown, errors, action) {
   // Build with DOM API — avoids innerHTML / XSS risk.
   // breakdown is an array of mixed entries:
   //   - phase timings prefixed with "⏱"  → 階段耗時
@@ -1326,6 +1326,21 @@ function setStatus(text, kind, breakdown, errors) {
     header.appendChild(dismissBtn);
   }
   els.status.appendChild(header);
+
+  // Optional call-to-action button. Rendered between header and any
+  // breakdown/error details so it stays visually adjacent to the
+  // status text. Used by the "downloaded" phase to take users straight
+  // to step 4 (where the SMART app launcher lives) without making
+  // them mentally parse the wizard tabs.
+  if (action && typeof action.onClick === "function") {
+    const actionBtn = document.createElement("button");
+    actionBtn.type = "button";
+    actionBtn.className = "status-action";
+    actionBtn.textContent = action.label;
+    actionBtn.addEventListener("click", action.onClick);
+    els.status.appendChild(actionBtn);
+  }
+
   if ((breakdown && breakdown.length) || hasErrors) {
     const bd = breakdown || [];
     const phaseRows = bd.filter((b) => b.startsWith("⏱"));
@@ -1492,7 +1507,7 @@ async function _transitionStatusToDownloaded(bytes) {
     const sizeStr = bytes ? ` · ${_fmtBytes(bytes)}` : "";
     const next = {
       ...syncStatus,
-      progress: `✅ 已下載健康紀錄檔（共 ${total} 筆${sizeStr}）— 接著至 ④ 查看 開啟「醫析 MediPrisma」瀏覽資料。`,
+      progress: `✅ 已下載健康紀錄檔（共 ${total} 筆${sizeStr}）`,
       phase: "downloaded",
       ts: Date.now(),
     };
@@ -1775,7 +1790,19 @@ function _renderStatus() {
   const kind = status.running ? "info" : (status.phase === "error" ? "error" : "success");
   const breakdown = status.running ? null : status.breakdown;
   const errors = status.running ? null : status.errors;
-  setStatus(text, kind, breakdown, errors);
+  // Phase-specific CTA: after the bundle hits disk, surface a button
+  // that jumps the wizard to step 4 (SMART app launcher) so the user
+  // doesn't have to mentally locate "step ④" themselves. The status
+  // message body no longer includes the "接著至 ④ 查看..." suffix —
+  // it became this button.
+  let action = null;
+  if (status.phase === "downloaded") {
+    action = {
+      label: "→ 至 ④ 查看 開啟「醫析 MediPrisma」",
+      onClick: () => _setActiveStep(4),
+    };
+  }
+  setStatus(text, kind, breakdown, errors, action);
 }
 
 function applySyncStatus(status) {
