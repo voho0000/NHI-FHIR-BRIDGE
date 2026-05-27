@@ -32,47 +32,33 @@ import {
   tryParseQuantity,
 } from "./parsers";
 
-// ── Imaging detection ────────────────────────────────────────────────
-
-const IMAGING_KEYWORDS: ReadonlyArray<string> = [
-  "ultrasound",
-  "sonogram",
-  "sonography",
-  "echo",
-  "ct ",
-  "ct/",
-  "ct-",
-  "computed tomography",
-  "mri",
-  "magnetic resonance",
-  "x-ray",
-  "xray",
-  "x ray",
-  "mammography",
-  "mammo",
-  "ekg",
-  "ecg",
-  "electrocardiogram",
-  "endoscop",
-  "colonoscop",
-  "gastroscop",
-  "bronchoscop",
-  "pet/ct",
-  "pet ",
-  "spect",
-  "影像",
-  "超音波",
-  "電腦斷層",
-  "核磁共振",
-  "心電圖",
-  "內視鏡",
-  "乳房攝影",
-];
-
-function looksLikeImaging(display: string, code: string): boolean {
-  const haystack = `${display} ${code}`.toLowerCase();
-  return IMAGING_KEYWORDS.some((kw) => haystack.includes(kw));
-}
+// ── Imaging detection — REMOVED in v0.11.6 ──────────────────────────
+//
+// Previously this section defined IMAGING_KEYWORDS + looksLikeImaging()
+// to filter out imaging / ECG rows from the Observation pipeline. The
+// concern was that mixed-content endpoints might feed Observation
+// mapper with imaging rows that belong in DiagnosticReport.
+//
+// Audit 2026-05-28 confirmed this concern is structurally moot: all
+// three endpoints that produce `page_type: "observations"` (see
+// extension/src/nhi-endpoints.js) only ever emit lab / vital-sign
+// rows. Imaging has its own page_type "diagnostic_reports" going
+// through mapDiagnosticReport via adaptImagingReportFromDetail.
+//
+// Worse, the filter introduced an actual patient-safety bug from v0
+// onwards: haystack = `${display} ${code}` plus substring keyword
+// "ct " (trailing space sentinel for "CT scan") collided with bare
+// "HCT" displays — the space separator between display + code turned
+// "hct" into "hct " which contains "ct ". 嘉義長庚 CBC reports with
+// bare display "HCT" silently lost the HCT row for years; SMART app
+// found the gap on 2026-05-28. Same false-positive class for any
+// bare display ending in "ct" (e.g. bare "Direct" for bilirubin).
+//
+// Defensive code that prevents nothing real and breaks real data is
+// worse than no code. Removed. If a future endpoint genuinely starts
+// mixing imaging + lab rows under one page_type, the right fix is to
+// re-route in the adapter (positive validation on the imaging side),
+// not negative substring filter on the lab side.
 
 // QC / lab-internal-control row detection.
 //
@@ -617,7 +603,6 @@ function filterLabRows(rawItems: any[]): Record<string, any>[] {
   for (const raw of rawItems) {
     if (!raw || typeof raw !== "object") continue;
     const display = raw.display || raw.code || "";
-    if (looksLikeImaging(display, raw.code || "")) continue;
     // v0.11.1: drop QC control rows (Nor.plasma mean etc.) — these
     // are lab-internal denominators for ratio calculations, NOT
     // patient measurements. See looksLikeQcControl() for patterns.
@@ -779,7 +764,6 @@ export function mapObservation(
 ): Record<string, any> | null {
   const display = raw.display || raw.code || "";
   const code = raw.code || "";
-  if (looksLikeImaging(display, code)) return null;
   // v0.11.1: skip QC control rows in single-row path too.
   if (looksLikeQcControl(String(display))) return null;
 

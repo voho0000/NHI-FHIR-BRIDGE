@@ -2698,44 +2698,6 @@
   }
 
   // ../packages/mapper/src/observation.ts
-  var IMAGING_KEYWORDS = [
-    "ultrasound",
-    "sonogram",
-    "sonography",
-    "echo",
-    "ct ",
-    "ct/",
-    "ct-",
-    "computed tomography",
-    "mri",
-    "magnetic resonance",
-    "x-ray",
-    "xray",
-    "x ray",
-    "mammography",
-    "mammo",
-    "ekg",
-    "ecg",
-    "electrocardiogram",
-    "endoscop",
-    "colonoscop",
-    "gastroscop",
-    "bronchoscop",
-    "pet/ct",
-    "pet ",
-    "spect",
-    "\u5F71\u50CF",
-    "\u8D85\u97F3\u6CE2",
-    "\u96FB\u8166\u65B7\u5C64",
-    "\u6838\u78C1\u5171\u632F",
-    "\u5FC3\u96FB\u5716",
-    "\u5167\u8996\u93E1",
-    "\u4E73\u623F\u651D\u5F71"
-  ];
-  function looksLikeImaging(display, code) {
-    const haystack = `${display} ${code}`.toLowerCase();
-    return IMAGING_KEYWORDS.some((kw) => haystack.includes(kw));
-  }
   var QC_CONTROL_PATTERNS = [
     /\bnor\.?\s*plasma\b/i,
     // Nor.plasma / Nor plasma / Norplasma
@@ -3130,7 +3092,6 @@
     for (const raw of rawItems) {
       if (!raw || typeof raw !== "object") continue;
       const display = raw.display || raw.code || "";
-      if (looksLikeImaging(display, raw.code || "")) continue;
       if (looksLikeQcControl(String(display))) continue;
       const value = raw.value;
       const interp = (raw.interpretation ?? "").toString().toLowerCase();
@@ -3258,7 +3219,6 @@
   function mapObservation(raw, patientId) {
     const display = raw.display || raw.code || "";
     const code = raw.code || "";
-    if (looksLikeImaging(display, code)) return null;
     if (looksLikeQcControl(String(display))) return null;
     const value = raw.value;
     const interp = (raw.interpretation ?? "").toString().toLowerCase();

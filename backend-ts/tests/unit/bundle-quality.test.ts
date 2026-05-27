@@ -638,6 +638,83 @@ describe("CI v0.11.1 — QC control rows must be filtered out", () => {
   });
 });
 
+// ── v0.11.6 — silent-drop audit (bug pattern caught in v0.11.5) ─
+// Background: long-standing v0 bug where `looksLikeImaging` substring-
+// matched "ct " (CT scan with trailing-space sentinel) against
+// `${display} ${code}` haystack. Bare display "HCT" + space-separator
+// before code → "hct 08011c" contains "ct " → row dropped silently.
+// User caught it via "health bank shows 8 items but bundle has 7"
+// after years of every CBC report missing HCT for hospitals that
+// shipped bare "HCT" display strings (vs "Hct(血球容積比)" / "Ht").
+// Audit gap: prior probes called findLoinc / mapObservationsGrouped
+// with crafted inputs but never tested "given N raw items, does
+// pipeline produce N observations?" — never checked filter stage at
+// all. These two tests close that gap.
+describe("CI v0.11.6 — silent-drop audit (filter must not eat valid labs)", () => {
+  test("bare 'HCT' display under 08011C is NOT silently filtered", () => {
+    // The exact bug seed — 嘉義長庚 2026-05-25 case.
+    const items = [
+      {
+        code: "08011C",
+        display: "HCT",
+        value: 35.8,
+        unit: "%",
+        date: "2026-05-25",
+        hospital: "長庚嘉義",
+      },
+      {
+        code: "08011C",
+        display: "HGB",
+        value: 11.2,
+        unit: "g/dL",
+        date: "2026-05-25",
+        hospital: "長庚嘉義",
+      },
+      { code: "08011C", display: "Direct", value: 0.3, unit: "mg/dL", date: "2026-05-25" }, // any display ending in 'ct'
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    const texts = obs.map((o: any) => o.code?.text);
+    expect(texts).toContain("HCT");
+    expect(texts).toContain("Direct");
+    // HCT must route to 4544-3 (Hematocrit), not the panel LOINC
+    const hct: any = obs.find((o: any) => o.code?.text === "HCT");
+    expect(hct?.code.coding.find((c: any) => c.system === "http://loinc.org")?.code).toBe("4544-3");
+  });
+
+  test("raw-count vs output-count: filter only drops on documented reasons", () => {
+    // Feed a known mixed batch with explicit drop reasons. Anything
+    // dropped beyond the documented reasons is a silent-drop bug.
+    const items = [
+      // — VALID rows (should ALL be emitted) —
+      { code: "08011C", display: "HCT", value: 35.8, unit: "%", date: "2026-05-25" },
+      { code: "08011C", display: "HGB", value: 11.2, unit: "g/dL", date: "2026-05-25" },
+      { code: "08011C", display: "WBC", value: 4.1, unit: "1000/uL", date: "2026-05-25" },
+      { code: "08011C", display: "Direct", value: 0.3, unit: "mg/dL", date: "2026-05-25" },
+      { code: "06013C", display: "Color", value: "Yellow", unit: "", date: "2026-05-25" },
+      { code: "09015C", display: "eGFR", value: 90, unit: "mL/min/1.73m2", date: "2026-05-25" },
+      // — DOCUMENTED-DROP rows (legitimate filter targets) —
+      { code: "08036C", display: "Nor.plasma mean", value: 29, unit: "sec", date: "2026-05-25" }, // QC control
+      { code: "08011C", display: "MCV", value: "", unit: "fL", date: "2026-05-25" }, // empty value
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    // 6 valid + 0 dropped-as-imaging + 0 dropped-as-empty + 0
+    // dropped-as-QC = 6 expected.
+    expect(obs).toHaveLength(6);
+    const texts = obs.map((o: any) => o.code?.text);
+    // Must include all 6 valid rows
+    for (const expected of ["HCT", "HGB", "WBC", "Direct", "Color", "eGFR"]) {
+      expect(texts).toContain(expected);
+    }
+    // Must NOT include the legitimately-dropped rows
+    expect(texts).not.toContain("Nor.plasma mean");
+    expect(texts).not.toContain("MCV"); // empty value
+  });
+});
+
 // ── v0.11.4 — proactive display-variant audit regression seeds ──
 // Bridge-author audit (not bug report driven): probed 282 plausible
 // display variants across 30+ analytes and panels. Found 49 misses
