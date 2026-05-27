@@ -2,6 +2,21 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.11.5 重點 — 2026-05-27
+
+**🧹 上架前最後清理**
+
+Chrome Web Store pre-submission review 抓到 4 處要修，全 clean：
+
+- **`SECURITY_FOR_USERS.md`** 版本標記 `v0.9.5` → `v0.11.4`（過時）
+- **`README.md`** L13 安全文件招呼從「12 項『不做的事』、12 項『主動防護』、6 個常見 Q&A」改成不帶具體數字的描述（之前 SECURITY 簡化後實際是 7/7/4）
+- **`README.md`** MediPrisma 段落（L260 + L315）跟 SECURITY 同步軟化：去掉「跟 bridge 無關」推卸語氣，改成「醫析的本機視覺化是本機運算；AI 問答按鈕走雲端 LLM 是 LLM 服務本身的運作方式」
+- **`background.js`** sync 啟動的 `console.log("[NHI API sync] date range:...")` 拿掉（純 operational diagnostic，date range 在 popup status banner 已顯示）
+
+純文字 / 註解 / 1 行 log 移除，無 logic 變動。
+
+---
+
 ## 0.11.4 重點 — 2026-05-27
 
 **🔍 Proactive LOINC display-variant audit + FHIR R4 conformance audit**
