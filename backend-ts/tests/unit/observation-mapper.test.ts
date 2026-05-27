@@ -304,6 +304,37 @@ describe("findLoinc", () => {
     expect(findLoinc("08013C", "WBC 白血球")).toBe("6690-2");
   });
 
+  // ── eGFR / Creatinine panel disambiguation (bug report Part 2) ───
+  // NHI 09015C bills creatinine; Taiwan labs piggyback eGFR onto the
+  // same code as a sub-row distinguished by display text. Without
+  // panel-scoped handling, eGFR rows inherited 2160-0 (creatinine LOINC)
+  // — patient-safety bug. Each LOINC verified at loinc.org.
+
+  test("v0.9.7 — Creatinine display under 09015C → 2160-0", () => {
+    expect(findLoinc("09015C", "Creatinine")).toBe("2160-0");
+    expect(findLoinc("09015C", "Crea 肌酸酐")).toBe("2160-0");
+    expect(findLoinc("09015C", "Cre")).toBe("2160-0"); // global LOINC_MAP fallback (no panel hit)
+  });
+
+  test("v0.9.7 — eGFR display under 09015C → 33914-3 (NOT 2160-0 creatinine)", () => {
+    // Bug: SMART app saw CREA=33 mg/dL because eGFR rows were tagged
+    // with serum-creatinine LOINC. After panel promotion of 09015C
+    // + eGFR keywords in PANEL_LOINC_MAP, every display variant resolves
+    // to the eGFR LOINC.
+    expect(findLoinc("09015C", "eGFR")).toBe("33914-3");
+    expect(findLoinc("09015C", "Estimated GFR")).toBe("33914-3");
+    expect(findLoinc("09015C", "Estimated Glomerular Filtration Rate")).toBe("33914-3");
+    expect(findLoinc("09015C", "腎絲球過濾率")).toBe("33914-3");
+    expect(findLoinc("09015C", "估算腎絲球過濾率")).toBe("33914-3");
+  });
+
+  test("v0.9.7 — eGFR keyword still works WITHOUT NHI code (global LOINC_MAP path)", () => {
+    // Adult-preventive (IHKE3402) pushes eGFR with code="", falls
+    // through to global LOINC_MAP which has "egfr": "33914-3" since
+    // the original adaptAdultPreventive implementation.
+    expect(findLoinc("", "eGFR")).toBe("33914-3");
+  });
+
   test('findLoinc("14032C", "HBsAg") routes through NHI_TO_LOINC and returns correct HBsAg LOINC', () => {
     expect(findLoinc("14032C", "HBsAg")).toBe("5196-1");
   });

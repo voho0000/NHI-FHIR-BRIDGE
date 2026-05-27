@@ -246,6 +246,12 @@ export const DISPLAY_FIRST_CODES: ReadonlySet<string> = new Set([
   "08011C", // CBC panel
   "08013C", // CBC w/ auto diff panel
   "06013C", // Urinalysis macroscopic panel
+  "09015C", // Serum creatinine — Taiwan labs report eGFR as a piggyback
+  // sub-row on the same Crea billing code. Without panel-mode handling,
+  // every row under 09015C (incl. the eGFR one) got LOINC 2160-0
+  // (Creatinine), causing SMART apps to display eGFR=33 as CREA=33 mg/dL
+  // — an instant fatal-looking false reading (real CREA ~1.94, real eGFR
+  // is CKD stage 3a). Bug report 2026-05-27 (Part 2).
   "09041B", // ABG panel
   "16008C", // Synovial / body-fluid panel
 ]);
@@ -353,6 +359,34 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     platelet: "777-3", // PLT
     血小板: "777-3",
     plt: "777-3",
+  },
+
+  // ── Serum creatinine + eGFR piggyback (09015C) ──────
+  // NHI bills creatinine under 09015C; Taiwan labs auto-calculate eGFR
+  // (CKD-EPI / MDRD) and append it as a separate sub-row using the
+  // SAME 09015C billing code, distinguished only by display text.
+  // Without this panel-scoped table, every 09015C row inherited LOINC
+  // 2160-0 (serum creatinine) and SMART apps routed eGFR values into
+  // the creatinine column — patient-safety issue (eGFR=33 displayed as
+  // CREA=33 mg/dL is instantly mistaken for acute kidney failure).
+  //
+  // MDRD (33914-3) is the default per Taiwan KDIGO guidelines. Newer
+  // CKD-EPI formulas (62238-1, 88293-6, 98979-8) covered as well so a
+  // single panel entry handles whichever formula the lab uses. The
+  // explicit creatinine entries are duplicated from the global LOINC_MAP
+  // so the panel is self-contained.
+  "09015C": {
+    egfr: "33914-3", // eGFR — Glomerular filtration rate (MDRD default)
+    "estimated gfr": "33914-3",
+    "estimated glomerular filtration rate": "33914-3",
+    "glomerular filtration rate": "33914-3",
+    腎絲球過濾率: "33914-3",
+    估算腎絲球過濾率: "33914-3",
+    creatinine: "2160-0",
+    crea: "2160-0",
+    肌酸酐: "2160-0",
+    肌酐酸: "2160-0",
+    血中肌酸酐: "2160-0",
   },
 
   // ── CBC with auto diff (08013C) ──────────────────────

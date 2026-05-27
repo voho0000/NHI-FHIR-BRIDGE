@@ -348,6 +348,19 @@ export function parseRange(rawRange: string, unit: string): RangeEntry | null {
 
 /**
  * Parse "> 40.0" / "<0.010" / "1,234.5" → FHIR Quantity with comparator.
+ *
+ * v0.9.7+ also handles "packed-value" patterns common in Taiwan LIS where
+ * the raw NHI field carries a number + parenthetical qualifier:
+ *   "33 (stage3:30-59)"  → eGFR with CKD-stage annotation
+ *   "2.3(  36.1%)"       → Albumin absolute + fraction
+ *   "1+ (80)"            → dipstick grade + quantitative mg/dL
+ *   "4+ (2000)"          → same
+ * Strategy: try the leading token (before any "(") first, then fall back
+ * to the value inside parens. So "33 (stage3:30-59)" → 33; "4+ (2000)" →
+ * 2000. Original raw text is preserved by the caller via valueString /
+ * note as appropriate. Returns null only when neither leading nor
+ * parenthetical content yields a numeric.
+ *
  * Returns null when the residual after stripping a comparator still
  * isn't numeric — caller falls back to valueString.
  */
@@ -363,7 +376,25 @@ export function tryParseQuantity(
     comparator = cm[1] ?? null;
     s = (cm[2] ?? "").trim();
   }
-  const v = tryParseFloat(s.replace(/,/g, ""));
+  let v = tryParseFloat(s.replace(/,/g, ""));
+  if (v === null) {
+    // Try LEADING token before first "(" — handles "33 (stage3:30-59)"
+    // and "2.3(36.1%)".
+    const parenIdx = s.indexOf("(");
+    if (parenIdx > 0) {
+      const leading = s.slice(0, parenIdx).trim().replace(/,/g, "");
+      v = tryParseFloat(leading);
+    }
+    // If leading didn't parse (e.g. "4+ (2000)"), try content INSIDE
+    // parens — handles dipstick patterns where grade is leading and
+    // numeric is parenthesised.
+    if (v === null) {
+      const m = s.match(/\(\s*([+\-\d.,]+)\s*\)/);
+      if (m && m[1]) {
+        v = tryParseFloat(m[1].replace(/,/g, ""));
+      }
+    }
+  }
   if (v === null) return null;
 
   const ucumCode = toUcum(unit);

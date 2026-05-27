@@ -89,6 +89,61 @@ describe("tryParseQuantity", () => {
     expect(q?.unit).toBe("無");
     expect(q?.code).toBeUndefined();
   });
+
+  // ── Packed-value patterns (bug report 2026-05-27 Part 2) ────────
+  // Taiwan LIS sometimes packs a number + parenthetical annotation
+  // into one field. Without this support these collapsed to valueString
+  // and lost numeric semantics — trend charts / abnormal-flag deriva-
+  // tion / AI tool reasoning all silently broke.
+
+  test("v0.9.7 — leading-numeric + parens: '33 (stage3:30-59)' → 33", () => {
+    // eGFR + CKD-stage annotation pattern.
+    const q = tryParseQuantity("33 (stage3:30-59)", "mL/min/1.73m2");
+    expect(q?.value).toBe(33);
+    expect(q?.unit).toBe("mL/min/1.73m2");
+  });
+
+  test("v0.9.7 — leading-numeric directly adjacent to parens: '2.3(36.1%)' → 2.3", () => {
+    // Albumin absolute g/dL + albumin fraction % pattern. No space
+    // before paren; tests indexOf-based slicing not whitespace-bound.
+    const q = tryParseQuantity("2.3(36.1%)", "g/dL");
+    expect(q?.value).toBe(2.3);
+  });
+
+  test("v0.9.7 — non-numeric leading + parens: '4+ (2000)' → 2000 (fallback to parens)", () => {
+    // Urine glucose dipstick grade + quantitative mg/dL. Leading "4+"
+    // fails numeric parse, fallback extracts "2000" from parens.
+    const q = tryParseQuantity("4+ (2000)", "mg/dL");
+    expect(q?.value).toBe(2000);
+    expect(q?.unit).toBe("mg/dL");
+  });
+
+  test("v0.9.7 — dipstick + UACR: '1+ (80)' → 80 (fallback to parens)", () => {
+    const q = tryParseQuantity("1+ (80)", "mg/g");
+    expect(q?.value).toBe(80);
+  });
+
+  test("v0.9.7 — comparator + parens: '> 33 (stage3)' still parses 33", () => {
+    // Verifies comparator-strip runs BEFORE parens-handling.
+    const q = tryParseQuantity("> 33 (stage3)", "mL/min/1.73m2");
+    expect(q?.value).toBe(33);
+    expect(q?.comparator).toBe(">");
+  });
+
+  test("v0.9.7 — fully non-numeric still returns null: '1:20(-)'", () => {
+    // Titer pattern (1:20 is a ratio not a single number); neither
+    // leading nor parens content parses → caller falls back to
+    // valueString as before. NOT a regression — keeps existing
+    // qualitative-handling intact.
+    expect(tryParseQuantity("1:20(-)", "")).toBeNull();
+  });
+
+  test("v0.9.7 — plain numeric unaffected by new logic", () => {
+    // Belt-and-suspenders: confirm the regular happy path didn't
+    // regress while adding the paren-stripping branch.
+    expect(tryParseQuantity("1.94", "mg/dL")?.value).toBe(1.94);
+    expect(tryParseQuantity("100", "%")?.value).toBe(100);
+  });
 });
 
 describe("parseRange — bracketed [low][high]", () => {
