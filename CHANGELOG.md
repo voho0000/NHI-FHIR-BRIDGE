@@ -2,6 +2,37 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.9.4 重點 — 2026-05-27
+
+純 UX 改進 — popup 永遠顯示的「免責聲明卡」下方新增一段**安全保證**，讓對「資料會不會被偷偷上傳」有疑慮的 user 在每個 step 都看到 reassurance：
+
+```
+┌──────────────────────────────────┐
+│ 免責聲明              v0.9.4     │  ← 黃色（既有）
+│ 本工具僅供參考。產生的資料…       │
+├──────────────────────────────────┤
+│ 🔒 你的健康資料只在你電腦上處理， │  ← 藍色（新增）
+│ 不會傳送到任何雲端伺服器。        │
+│ 安全說明 ↗                       │
+└──────────────────────────────────┘
+```
+
+「**安全說明 ↗**」連到 `docs/SECURITY_FOR_USERS.md`（v0.9.3 新加的 layperson 友善安全文件）。
+
+兩段分黃藍配色語意不同：
+- 免責聲明 = 「什麼可能會錯」(warning)
+- 🔒 安全保證 = 「什麼不會發生」(info)
+
+混同段會打架，分開讀者更好理解。
+
+### 升級注意
+
+- Reload extension 即可。
+- 純 UI，沒有功能變動、bundle 內容跟 v0.9.3 完全一樣。
+- Popup 高度增加 ~30-40px — 仍在 360px 寬度設計範圍內。
+
+---
+
 ## 0.9.3 重點 — 2026-05-27
 
 獨立安全 audit 後的修補版 + 同步速度優化。0 個 P0/P1，把 P2/P3 一次清。
