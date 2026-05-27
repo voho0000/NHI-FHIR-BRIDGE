@@ -2,6 +2,41 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.11.6 重點 — 2026-05-28
+
+**🚨 修 v0 以來潛伏的 silent-drop bug — bare `HCT` display 整筆被當 imaging 過濾掉**
+
+User 從 2026-05-25 嘉義長庚 CBC 報告發現「健保存摺顯示 8 個 item，bundle 只有 7 個」。Trace 出 root cause：
+
+- `looksLikeImaging` 用 `${display} ${code}` 拼成 haystack，加上 substring 比對 `"ct "`（CT scan 的 trailing-space sentinel）
+- bare display "HCT" → haystack `"hct 08011c"` → 含 `"ct "` → 被誤判 imaging → drop
+- 從 commit `285deb4` (v0 initial public release) 就有，整整存在 6 個月。所有 v0.x bundle 都漏掉任何 bare display 結尾是 `ct` 的 lab row（HCT 為主，理論上 bare "Direct" 也會）
+
+**結構性修法（不只 patch symptom）**：
+
+完全拿掉 `looksLikeImaging` + `IMAGING_KEYWORDS` 從 Observation pipeline。理由 audit 確認：
+- 3 個 `page_type: "observations"` 來源（`adult_preventive` / `cancer_screening` / `other_labs`）**結構上不可能 emit imaging row**
+- Imaging 走另一個 `page_type: "diagnostic_reports"`，完全不接觸 Observation 路徑
+- 這個 filter 從 v0 就是 paranoid defensive dead code，防範一個結構上不存在的污染，反而製造實際 bug
+
+### 新增 standing CI 守門 — silent-drop audit
+
+`bundle-quality.test.ts` 加 v0.11.6 section：
+- **bare "HCT" 必過 filter + 必得 LOINC 4544-3**（regression seed lock 這個 bug）
+- **raw input N 筆 → output observation count 必須等於 N - documented drops**（任何未來新 filter 誤殺都會立刻 fail CI）
+
+這是 audit gap 修補 — 之前所有 audit 只測 mapping 對不對，從未測 filter 該不該擋。
+
+### Process 自我檢討
+
+之前 audit 跑了 282 個 display variant probe，全部從 `findLoinc` / `mapObservationsGrouped` 開始，**從未經過 filter stage**。bundle-quality test 的 synthetic input 剛好用 `display: "Ht"`（不觸發 bug），如果用 `"HCT"` 早就 catch 到。
+
+下次 audit 思維會加：「raw → adapter → filter → mapper → bundle」全 pipeline e2e 比對，count 對帳。
+
+純 mapper 改動，無 UI。Reload extension。Backend mode 需要 `docker compose up -d --build`。
+
+---
+
 ## 0.11.5 重點 — 2026-05-27
 
 **🧹 上架前最後清理**
