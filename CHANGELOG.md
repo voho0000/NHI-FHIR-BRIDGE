@@ -2,6 +2,31 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.11.1 重點 — 2026-05-27
+
+**🐛 Coagulation panel 3 個 bug 修補（長庚嘉義 report）**
+
+SMART app dev 又抓到一輪，全部 patient-safety-adjacent：
+
+- **P.T (含點) → 6301-6 (INR LOINC) ❌** — 修：08026C panel 加 `p.t` / `p.t.` / `p t` key。原因：`_keywordMatches` 用 `\b...\b` regex，**句點打斷 word boundary**，現有 `pt` key 對 "P.T" 完全 miss → fallback 到 NHI_TO_LOINC = 6301-6 → 11.9 sec PT 被當 INR=11.9 顯示（看起來像 fatal anticoagulation 過量）。現在 → `5902-2` ✅
+- **Nor.plasma mean (QC 控制) 被當病人 obs 輸出 ❌** — 修：新增 `looksLikeQcControl()` filter，drop 掉 9 種 QC pattern（`nor.plasma` / `normal plasma` / `abn.plasma` / `control mean` / `qc mean/control/plasma` / `對照血漿` / `控制血漿` / `正常血漿平均` 等）。原因：lab 內部 QC 控制讀數本來就不該進病人 bundle — 它是 ratio 計算的分母，不是病人測量值
+- **unit "倍數" 不是 UCUM ❌** — 修：`_canonicalizeUnit` 加 `倍數` / `倍` → `{ratio}`（UCUM annotation 合法）
+
+### 加 standing CI 守門
+
+`bundle-quality.test.ts` 新增 3 個 regression seeds：
+- QC control 必被 filter 出去
+- QC pattern 多種變體都要 filter
+- 倍數 必 normalize 成 `{ratio}`
+
+Backend suite 從 333 → 338 tests。
+
+### 升級
+
+Reload extension。Backend mode 需要 `docker compose up -d --build`。
+
+---
+
 ## 0.11.0 重點 — 2026-05-27
 
 **🛡️ CI bundle-quality 守門 — 三層 standing assertions**
