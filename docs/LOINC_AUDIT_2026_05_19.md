@@ -1,5 +1,7 @@
 # LOINC 對映表 Audit — 2026-05-19
 
+> **2026-05-27 follow-up (v0.9.6)**：本次 audit scope 不涵蓋 `DISPLAY_FIRST_CODES` panel codes 走的 `PANEL_LOINC_MAP` 路徑。後續發現 CBC panel codes (08011C / 08013C) 缺對應 entry，導致 MCV / MCHC / RDW / Basophil% / Lymphocyte% / Monocyte% / Neutrophil% / Eosinophil%(08013C) 落到錯誤 LOINC。已在 v0.9.6 補上 `PANEL_LOINC_MAP["08011C"]` 跟 `PANEL_LOINC_MAP["08013C"]` + 13 個 regression test。詳見 CHANGELOG v0.9.6。ABG panel (09041B) 可能有同類問題待另案處理。
+
 ## 為什麼要做這次 audit
 
 `packages/mapper/src/loinc-tables.ts` 是這個 bridge 在每一筆 lab observation 上標 LOINC code

@@ -2,6 +2,55 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.9.6 重點 — 2026-05-27
+
+**🔬 CBC 檢驗 LOINC 對映修正**（SMART app dev bug report）
+
+NHI CBC panel codes 08011C (基本 CBC) 跟 08013C (含分類計數) 的多項 analyte 帶到錯誤的 LOINC，下游 SMART app 信 LOINC 為主時會把資料路由到錯誤欄位（例如 MCV 95.2 fL 被當成 RBC、但 RBC 正常範圍是 4-6 M/uL）。
+
+### 修正前 → 修正後
+
+| Analyte | 修正前 LOINC | 修正後 LOINC |
+|---------|-------------|-------------|
+| MCV (平均紅血球容積) | 789-8 (RBC) ❌ | **787-2** ✅ |
+| MCHC | 24317-0 (panel) ❌ | **786-4** ✅ |
+| RDW | 24317-0 (panel) ❌ | **788-0** ✅ |
+| Basophils% | 6690-2 (WBC) ❌ | **706-2** ✅ |
+| Lymphocytes% | 6690-2 (WBC) ❌ | **736-9** ✅ |
+| Monocytes% | 6690-2 (WBC) ❌ | **5905-5** ✅ |
+| Neutrophils% | 6690-2 (WBC) ❌ | **770-8** ✅ |
+| Eosinophils% (08013C) | 711-2 (count) ❌ | **713-8** ✅ |
+
+所有 LOINC 都到 loinc.org 確認 Long Common Name。
+
+### 為什麼之前沒抓到
+
+之前的 LOINC audit (2026-05-19) 查的是 `NHI_TO_LOINC` 直接表，**沒走進 panel codes 的 display-keyword 比對路徑**。CBC panel 在 `DISPLAY_FIRST_CODES` 但 `PANEL_LOINC_MAP` 沒有對應 entry → fall through 到全域 `LOINC_MAP` → 較短的「紅血球」/「白血球」CJK key 比較容易命中 → 多個 analyte 被誤標。
+
+### 修法
+
+`packages/mapper/src/loinc-tables.ts` 新增：
+- `PANEL_LOINC_MAP["08011C"]` — RBC 指標 (MCV/MCH/MCHC/RDW) + HCT + HGB + RBC + WBC + PLT
+- `PANEL_LOINC_MAP["08013C"]` — 分類計數 % LOINCs
+
+加 13 個 regression test，backend test suite 252 → 265 全綠。
+
+### 升級注意
+
+**Mode A user**：Reload extension 即可。之前 sync 過的舊資料不會自動修正 — 重 sync 一次才會用新的 LOINC。
+
+**Mode B user**：
+1. `git pull`
+2. `docker compose down && docker compose up -d --build`
+3. Reload extension
+4. 重 sync 病人資料
+
+### 出範圍
+
+ABG panel (09041B) 可能有同類問題，之後另開議題。
+
+---
+
 ## 0.9.5 重點 — 2026-05-27
 
 Chrome Web Store 上架前最後一輪 UX polish。3 個必修，純文案 + UX 微調，沒有功能變動。
