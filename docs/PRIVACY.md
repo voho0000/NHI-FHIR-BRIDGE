@@ -80,7 +80,7 @@ NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrom
 
 如對本政策有任何疑問，請透過下列方式聯絡：
 
-- Email：voho0000 [at] gmail.com
+- Email：<voho0000@gmail.com>
 - GitHub Issues：https://github.com/voho0000/NHI-FHIR-BRIDGE/issues
 - 安全弱點通報：請見 [SECURITY.md](https://github.com/voho0000/NHI-FHIR-BRIDGE/blob/main/SECURITY.md)
 
@@ -157,6 +157,6 @@ Material changes (e.g. introducing any data collection) will be reflected in the
 
 ### 10. Contact
 
-- Email: voho0000 [at] gmail.com
+- Email: <voho0000@gmail.com>
 - GitHub Issues: https://github.com/voho0000/NHI-FHIR-BRIDGE/issues
 - Security disclosures: see [SECURITY.md](https://github.com/voho0000/NHI-FHIR-BRIDGE/blob/main/SECURITY.md)

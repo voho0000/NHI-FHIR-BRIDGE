@@ -135,7 +135,7 @@ Bridge 端做了上面那些防護，但**有些事我們替不了你**：
 
 | 你要做什麼 | 怎麼做 |
 |----------|--------|
-| 發現安全漏洞（想私下通報） | 寄信給 voho0000 [at] gmail.com（請見 [SECURITY.md](https://github.com/voho0000/NHI-FHIR-BRIDGE/blob/main/SECURITY.md)） |
+| 發現安全漏洞（想私下通報） | 寄信給 <voho0000@gmail.com>（請見 [SECURITY.md](https://github.com/voho0000/NHI-FHIR-BRIDGE/blob/main/SECURITY.md)） |
 | 報告 bug | [GitHub Issues](https://github.com/voho0000/NHI-FHIR-BRIDGE/issues) |
 | 提建議或一般問題 | GitHub Issues 或 email |
 
