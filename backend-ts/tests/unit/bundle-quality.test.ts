@@ -592,6 +592,71 @@ describe("CI Layer 1.3 — UCUM unit shape lint", () => {
 // the parser can't handle, this test fires immediately — flagging the
 // pattern for parser extension rather than letting it slip into a
 // SMART app bug report.
+// ── v0.11.1 — additional invariants from coag panel bug report ──
+// Two new standing checks added to the bundle-quality suite:
+//   • QC control rows must not be emitted as patient Observations
+//   • Non-UCUM Chinese unit "倍數" must be normalized
+describe("CI v0.11.1 — QC control rows must be filtered out", () => {
+  test("Nor.plasma mean (coag QC denominator) not emitted as patient Obs", () => {
+    const items = [
+      {
+        code: "08036C",
+        display: "APTT data/mean",
+        value: 1.08,
+        unit: "倍數",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+      {
+        code: "08036C",
+        display: "Nor.plasma mean",
+        value: 29,
+        unit: "sec",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    const texts = obs.map((o: any) => o.code?.text);
+    expect(texts).not.toContain("Nor.plasma mean");
+    expect(texts).toContain("APTT data/mean"); // real patient row preserved
+  });
+
+  test("QC control pattern variants all filtered", () => {
+    const items = [
+      { code: "08036C", display: "Normal plasma", value: 30, unit: "sec", date: "2025-05-18" },
+      { code: "08036C", display: "Abn.plasma mean", value: 60, unit: "sec", date: "2025-05-18" },
+      { code: "08036C", display: "Control mean", value: 28, unit: "sec", date: "2025-05-18" },
+      { code: "08036C", display: "對照血漿", value: 30, unit: "sec", date: "2025-05-18" },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    expect(obs).toHaveLength(0);
+  });
+});
+
+describe("CI v0.11.1 — 倍數 unit normalized to UCUM {ratio}", () => {
+  test("APTT ratio with unit='倍數' → '{ratio}' (UCUM annotation)", () => {
+    const items = [
+      {
+        code: "08036C",
+        display: "APTT ratio",
+        value: 1.08,
+        unit: "倍數",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    expect(obs[0]?.valueQuantity?.unit).toBe("{ratio}");
+  });
+});
+
 describe("CI Layer 1.4 — valueString must not start with digit", () => {
   test("synthetic bundle emits no numeric-leading valueString", () => {
     const bundle = buildSampleBundle();

@@ -1861,6 +1861,17 @@
       "pt-sec": "5902-2",
       \u51DD\u8840\u9176\u539F\u6642\u9593: "5902-2",
       \u51DD\u8840\u6642\u9593: "5902-2",
+      // Bug report 2026-05-27 v0.11.1: 長庚嘉義 LIS prints "P.T" (dot-
+      // separated initials). `_keywordMatches` uses \b...\b regex on
+      // ASCII keys, and the period in "p.t" breaks the implicit word
+      // boundary that "pt" relied on — so `pt` key never matched and
+      // path-C fallback returned NHI_TO_LOINC = 6301-6 (INR) for a
+      // 11.9 sec PT measurement. Patient-safety-adjacent: SMART app
+      // would plot 11.9 in the INR column (looks like fatal INR=11.9
+      // → emergency reversal). Adding period-separated variants.
+      "p.t": "5902-2",
+      "p . t": "5902-2",
+      "p t": "5902-2",
       inr: "6301-6",
       pt: "5902-2"
     },
@@ -2630,6 +2641,24 @@
     const haystack = `${display} ${code}`.toLowerCase();
     return IMAGING_KEYWORDS.some((kw) => haystack.includes(kw));
   }
+  var QC_CONTROL_PATTERNS = [
+    /\bnor\.?\s*plasma\b/i,
+    // Nor.plasma / Nor plasma / Norplasma
+    /\bnormal\s+plasma\b/i,
+    /\babn\.?\s*plasma\b/i,
+    // Abn.plasma
+    /\babnormal\s+plasma\b/i,
+    /\bcontrol\s+(mean|plasma)\b/i,
+    // "Control mean" / "Control plasma"
+    /\bqc\s+(mean|control|plasma)\b/i,
+    /對照血漿/,
+    /控制血漿/,
+    /正常血漿平均/
+  ];
+  function looksLikeQcControl(display) {
+    if (!display) return false;
+    return QC_CONTROL_PATTERNS.some((re) => re.test(display));
+  }
   var NHI_LAB_CODE_RE = /^\d{4,6}[A-Z]$/;
   function isAsciiOnly(s) {
     for (let i = 0; i < s.length; i++) {
@@ -2963,6 +2992,9 @@
     normalized = normalized.replace(/\bgm(\s*\/)/gi, "g$1");
     normalized = normalized.replace(/\/d[lL]\.?/g, "/dL");
     normalized = normalized.replace(/\/(\d*)l\b/g, "/$1L");
+    if (normalized === "\u500D\u6578" || normalized === "\u500D") {
+      return "{ratio}";
+    }
     return normalized;
   }
   var MEANINGFUL_INTERPS = /* @__PURE__ */ new Set([
@@ -3004,6 +3036,7 @@
       if (!raw || typeof raw !== "object") continue;
       const display = raw.display || raw.code || "";
       if (looksLikeImaging(display, raw.code || "")) continue;
+      if (looksLikeQcControl(String(display))) continue;
       const value = raw.value;
       const interp = (raw.interpretation ?? "").toString().toLowerCase();
       const hasValue = isMeaningfulValue(value);
@@ -3131,6 +3164,7 @@
     const display = raw.display || raw.code || "";
     const code = raw.code || "";
     if (looksLikeImaging(display, code)) return null;
+    if (looksLikeQcControl(String(display))) return null;
     const value = raw.value;
     const interp = (raw.interpretation ?? "").toString().toLowerCase();
     const hasValue = isMeaningfulValue(value);

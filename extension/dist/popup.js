@@ -873,6 +873,17 @@
       "pt-sec": "5902-2",
       \u51DD\u8840\u9176\u539F\u6642\u9593: "5902-2",
       \u51DD\u8840\u6642\u9593: "5902-2",
+      // Bug report 2026-05-27 v0.11.1: 長庚嘉義 LIS prints "P.T" (dot-
+      // separated initials). `_keywordMatches` uses \b...\b regex on
+      // ASCII keys, and the period in "p.t" breaks the implicit word
+      // boundary that "pt" relied on — so `pt` key never matched and
+      // path-C fallback returned NHI_TO_LOINC = 6301-6 (INR) for a
+      // 11.9 sec PT measurement. Patient-safety-adjacent: SMART app
+      // would plot 11.9 in the INR column (looks like fatal INR=11.9
+      // → emergency reversal). Adding period-separated variants.
+      "p.t": "5902-2",
+      "p . t": "5902-2",
+      "p t": "5902-2",
       inr: "6301-6",
       pt: "5902-2"
     },

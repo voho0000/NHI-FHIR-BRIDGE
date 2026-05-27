@@ -74,6 +74,41 @@ function looksLikeImaging(display: string, code: string): boolean {
   return IMAGING_KEYWORDS.some((kw) => haystack.includes(kw));
 }
 
+// QC / lab-internal-control row detection.
+//
+// Bug report 2026-05-27 v0.11.1: 長庚嘉義 coagulation report shipped
+// a row with display="Nor.plasma mean", value=29, unit=sec. This is
+// the lab's normal-plasma control reading used as denominator for the
+// APTT ratio — internal QC data, NOT a patient measurement. Without
+// filtering, the row was emitted as a patient Observation with LOINC
+// 14979-9 (APTT), so SMART app's APTT trend column showed 29 sec
+// alongside the patient's actual APTT readings.
+//
+// QC controls have no place in a patient bundle — drop them. The
+// patterns below cover Taiwan LIS conventions for control rows:
+//   - Nor.plasma / Normal plasma — normal-control plasma (coag QC)
+//   - Abn.plasma / Abnormal plasma — abnormal-control plasma
+//   - Control mean / QC mean — generic QC summary rows
+//   - 對照血漿 / 控制血漿 — Chinese variants
+// English-only word-boundary check avoids matching patient analytes
+// that happen to contain "control" in another context (none observed).
+const QC_CONTROL_PATTERNS: RegExp[] = [
+  /\bnor\.?\s*plasma\b/i, // Nor.plasma / Nor plasma / Norplasma
+  /\bnormal\s+plasma\b/i,
+  /\babn\.?\s*plasma\b/i, // Abn.plasma
+  /\babnormal\s+plasma\b/i,
+  /\bcontrol\s+(mean|plasma)\b/i, // "Control mean" / "Control plasma"
+  /\bqc\s+(mean|control|plasma)\b/i,
+  /對照血漿/,
+  /控制血漿/,
+  /正常血漿平均/,
+];
+
+function looksLikeQcControl(display: string): boolean {
+  if (!display) return false;
+  return QC_CONTROL_PATTERNS.some((re) => re.test(display));
+}
+
 // ── LOINC lookup ─────────────────────────────────────────────────────
 
 const NHI_LAB_CODE_RE = /^\d{4,6}[A-Z]$/;
@@ -531,6 +566,13 @@ function _canonicalizeUnit(display: string, _code: string, rawUnit: string): str
   normalized = normalized.replace(/\/d[lL]\.?/g, "/dL");
   // Lowercase "l" elsewhere in concentration suffixes ("mg/l" etc.)
   normalized = normalized.replace(/\/(\d*)l\b/g, "/$1L");
+  // v0.11.1: Chinese 倍數 ("ratio multiplier") seen in coag panel
+  // (APTT ratio). Not UCUM. Map to UCUM annotation {ratio} per
+  // unitsofmeasure.org convention (curly-brace annotation is valid
+  // UCUM and renders as "ratio" in unit-aware tools).
+  if (normalized === "倍數" || normalized === "倍") {
+    return "{ratio}";
+  }
 
   return normalized;
 }
@@ -576,6 +618,10 @@ function filterLabRows(rawItems: any[]): Record<string, any>[] {
     if (!raw || typeof raw !== "object") continue;
     const display = raw.display || raw.code || "";
     if (looksLikeImaging(display, raw.code || "")) continue;
+    // v0.11.1: drop QC control rows (Nor.plasma mean etc.) — these
+    // are lab-internal denominators for ratio calculations, NOT
+    // patient measurements. See looksLikeQcControl() for patterns.
+    if (looksLikeQcControl(String(display))) continue;
     const value = raw.value;
     const interp = (raw.interpretation ?? "").toString().toLowerCase();
     const hasValue = isMeaningfulValue(value);
@@ -734,6 +780,8 @@ export function mapObservation(
   const display = raw.display || raw.code || "";
   const code = raw.code || "";
   if (looksLikeImaging(display, code)) return null;
+  // v0.11.1: skip QC control rows in single-row path too.
+  if (looksLikeQcControl(String(display))) return null;
 
   const value = raw.value;
   const interp = (raw.interpretation ?? "").toString().toLowerCase();

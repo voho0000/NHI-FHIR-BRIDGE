@@ -408,6 +408,26 @@ describe("findLoinc", () => {
     expect(findLoinc("08011C", "RBC 紅血球")).toBe("789-8");
   });
 
+  // ── v0.11.1 — Coagulation LOINC + QC control bug report ────────
+  // SMART app dev report 2026-05-27 #3: 長庚嘉義 coag panel had 3
+  // distinct issues, all patient-safety-adjacent.
+
+  test("v0.11.1 — P.T (period-separated) under 08026C → 5902-2 (NOT 6301-6 INR)", () => {
+    // Bug: _keywordMatches uses \b...\b regex; the period in "P.T"
+    // breaks the implicit word boundary that the existing `pt` key
+    // relied on. Without period-separated variants, P.T fell to path
+    // C and got 6301-6 (INR) — SMART app would plot 11.9 sec as
+    // INR=11.9 (fatal-looking emergency reading).
+    expect(findLoinc("08026C", "P.T")).toBe("5902-2");
+    expect(findLoinc("08026C", "P.T.")).toBe("5902-2");
+    expect(findLoinc("08026C", "p.t")).toBe("5902-2");
+  });
+
+  test("v0.11.1 — bare PT and INR still work (regression guard for period-key add)", () => {
+    expect(findLoinc("08026C", "PT")).toBe("5902-2");
+    expect(findLoinc("08026C", "INR")).toBe("6301-6");
+  });
+
   // ── v0.10.0 — completed deferred panel tables ───────────────────
   // The v0.9.10 audit left 4 panels with TODO(panel) comments
   // (08128B / 09065B / 12204B / 17009B). v0.10.0 activates 3 of them
