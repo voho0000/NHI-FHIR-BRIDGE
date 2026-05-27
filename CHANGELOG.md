@@ -19,6 +19,34 @@ Newest first. GitHub Releases page keeps the latest version only; this file is t
   - PT Control → `5894-1`（PT Control reagent）
   - 空 display fallback 仍走 `6301-6`（INR 是抗凝追蹤的主指標）
 
+**Part 6 — 多醫院 LOINC audit（SMART app dev report）**
+
+跨 4 個 hospital 一次 audit，重新確認 bridge 用 `(NHI code, display) → LOINC` 全域查表（之前只有 panel 碼這樣做，現在擴大 scope）。Faithful transport 原則不變 — 不亂加 / 改 NHI 沒給的 data；但 LOINC 對應錯誤可以修正。
+
+- **N1 partial**（長庚嘉義）：display=`"血球比容值測定"`（7 字 CJK）沒命中現有 HCT key → 24317-0 fallback。`CBC_COMPONENT_KEYS` 補 `血球比容`（4 字）關鍵字
+- **N2**（多家醫院）：UACR 報告把 microalbumin 跟 urine creatinine 都 bill 在同一 code（09016C / 12111C）→ microalbumin 全部塌成 2161-8。新增 `URINE_BIOCHEM_KEYS` const + 09016C/12111C 升級進 DISPLAY_FIRST_CODES
+- **N3**（中國北港醫）：CBC differential bill 在 08002C（WBC count code）而非 08013C → diff cells 全部塌到 6690-2 (WBC)。抽 `CBC_DIFF_KEYS` 共用 const + spread 進所有 CBC sibling panel（08002C/08003C/08004C/08006C），08013C 也 refactor 用同一 const
+- **N7**（長庚嘉義）：1 row display=`"Neutrophil"` 完全沒 NHI code → 整個 coding array 空。global LOINC_MAP 補 neutrophil/basophil/lymphocyte/monocyte → /100 leukocytes form（Taiwan LIS diff 主流 unit）
+- **N5/N6**（多家醫院）：UCUM unit 正規化
+  - 全形 `㎡`（U+33A1）→ `m2`
+  - `gm/dl` / `gm/dL` → `g/dL`（UCUM "g" 不是 "gm"，"L" 大寫）
+  - `mg/dl` → `mg/dL`（純大小寫修正）
+  - `_canonicalizeUnit` 擴成兩 class：bogus unit fill-in + non-UCUM symbol normalization
+
+### N4（已修，在 v0.9.10 前次 commit）
+
+長庚嘉義 display=`"Segment"`（沒 -ed 後綴）→ 57021-8 panel fallback。前次 commit `0b5b6b5` 已加 6 個 singular/short variant key。
+
+### N1 嘉基 "Ht" + 長庚 HGB-under-08004C（已修，在 Part 5 commit）
+
+詳見下方 Part 5 section。
+
+### 設計筆記：`(code, display) → LOINC` 全域查表
+
+之前的「faithful transport」原則是：NHI billing code 為主，display 只在 panel scope 內 disambiguate。Part 5 + Part 6 把這個 model 擴大成**所有** NHI code 都可以走 `(code, display)` 查表（不只 panel）。當 display 跟 billing code 的 nominal analyte 衝突時（嘉基 HGB-under-08004C / Microalbumin-under-09016C）→ display 贏。Scope 限在 CBC + urine 家族（display 高度標準化、跨 analyte swap 是已觀察 bug）。
+
+⚠️ **不是** silent 改 NHI 沒給的 data — value/unit/date/performer 全部從 raw 直接 carry；只有 LOINC tag 是 bridge 推斷的。這跟 faithful transport（不亂加不亂改）相容。
+
 **CBC sibling 顯示 vs billing 對調修補**（SMART app dev Part 5 報告 — 嘉基 case，patient safety 級）
 - 嘉基某次 CBC report：row billed `08004C`（HCT）但 display text 寫 `"HGB"`、value 13 g/dL（明顯是 hemoglobin 數值；HCT 正常 30-50%）
 - v0.9.9 行為：NHI billing code 直接 win → 給 4544-3 (HCT LOINC) → SMART app HCT trend 欄顯示 13（看起來像 critical anemia / lab error）

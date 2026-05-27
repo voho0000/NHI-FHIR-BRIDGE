@@ -408,6 +408,121 @@ describe("findLoinc", () => {
     expect(findLoinc("08011C", "RBC 紅血球")).toBe("789-8");
   });
 
+  // ── v0.9.10 Part 6 — multi-hospital LOINC audit ─────────────────
+  // Single bug report covering N1-partial / N2 / N3 / N7. The architecture
+  // is (NHI code, display) → LOINC lookup (already the model for panels,
+  // now extended to CBC sibling and urine creatinine codes).
+
+  // N1 partial: 長庚嘉義 sent "血球比容值測定" (7-char form). Existing
+  // CBC_COMPONENT_KEYS only had 血球容積比 (容 before 比) and 血比容
+  // (no 球); neither matches "血球比容值測定" as CJK substring. Added
+  // 血球比容 (4-char) to bridge the gap.
+  test("v0.9.10 Part 6 N1 — 血球比容值測定 under 08011C → 4544-3", () => {
+    expect(findLoinc("08011C", "血球比容值測定")).toBe("4544-3");
+  });
+
+  // N3: 中國北港醫 billed CBC differential under 08002C (WBC count code).
+  // Without CBC_DIFF_KEYS spread into 08002C's panel table, every diff
+  // row fell to "白血球" → 6690-2 (WBC). Now diff keys are extracted
+  // and spread into all CBC sibling panels.
+  test("v0.9.10 Part 6 N3 — CBC differential cells under 08002C resolve to /100 leukocytes LOINCs", () => {
+    expect(findLoinc("08002C", "Basophils(嗜鹼性白血球)")).toBe("706-2");
+    expect(findLoinc("08002C", "Eosinophils(嗜酸性白血球)")).toBe("713-8");
+    expect(findLoinc("08002C", "Lymphocytes(淋巴白血球)")).toBe("736-9");
+    expect(findLoinc("08002C", "Monocytes(單核白血球)")).toBe("5905-5");
+    expect(findLoinc("08002C", "Neutrophilic Segment(嗜中性白血球)")).toBe("770-8");
+  });
+
+  test("v0.9.10 Part 6 N3 — defensive: 08013C diff still routes via shared CBC_DIFF_KEYS", () => {
+    // After extracting CBC_DIFF_KEYS into a shared const + spreading,
+    // 08013C should behave identically to before (regression guard).
+    expect(findLoinc("08013C", "Basophil")).toBe("706-2");
+    expect(findLoinc("08013C", "Lymphocyte 淋巴球")).toBe("736-9");
+    expect(findLoinc("08013C", "Monocyte 單核球")).toBe("5905-5");
+    expect(findLoinc("08013C", "Eosinophil")).toBe("713-8");
+    expect(findLoinc("08013C", "Neutrophil 中性球")).toBe("770-8");
+    expect(findLoinc("08013C", "WBC")).toBe("6690-2");
+  });
+
+  // N2: hospital bills both legs of UACR (Microalbumin + Urine Creatinine)
+  // under one creatinine code (09016C / 12111C). Without panel routing,
+  // Microalbumin rows returned 2161-8 (urine creatinine). Promoted both
+  // codes to DISPLAY_FIRST_CODES + added URINE_BIOCHEM_KEYS panel table.
+  test("v0.9.10 Part 6 N2 — Micro Albumin under 09016C → 14957-5 (NOT 2161-8 creatinine)", () => {
+    expect(findLoinc("09016C", "Micro Albumin:")).toBe("14957-5");
+    expect(findLoinc("09016C", "Microalbumin")).toBe("14957-5");
+    expect(findLoinc("09016C", "MALB")).toBe("14957-5");
+  });
+
+  test("v0.9.10 Part 6 N2 — Creatinine display under 09016C still → 2161-8 (preserves correct case)", () => {
+    expect(findLoinc("09016C", "Creatinine")).toBe("2161-8");
+    expect(findLoinc("09016C", "尿液肌酸酐")).toBe("2161-8");
+  });
+
+  test("v0.9.10 Part 6 N2 — 09016C empty display falls back to 2161-8 (NHI_TO_LOINC)", () => {
+    expect(findLoinc("09016C", "")).toBe("2161-8");
+  });
+
+  test("v0.9.10 Part 6 N2 — UACR under 09016C → 14959-1 (Microalbumin/Creatinine ratio)", () => {
+    expect(findLoinc("09016C", "UACR")).toBe("14959-1");
+  });
+
+  // N7: 長庚嘉義 sent display="Neutrophil" with EMPTY coding array — no
+  // NHI code for panel routing. Global LOINC_MAP had eosinophil but
+  // not neutrophil/monocyte/lymphocyte/basophil. Now added with /100
+  // leukocytes form (dominant diff context in Taiwan LIS).
+  test("v0.9.10 Part 6 N7 — Neutrophil with no NHI code → 770-8 (NOT null)", () => {
+    expect(findLoinc("", "Neutrophil")).toBe("770-8");
+    expect(findLoinc("", "Basophil")).toBe("706-2");
+    expect(findLoinc("", "Lymphocyte")).toBe("736-9");
+    expect(findLoinc("", "Monocyte")).toBe("5905-5");
+  });
+
+  test("v0.9.10 Part 6 N7 — global Micro Albumin (no NHI code) → 14957-5", () => {
+    expect(findLoinc("", "Micro Albumin")).toBe("14957-5");
+    expect(findLoinc("", "Microalbumin")).toBe("14957-5");
+  });
+
+  // ── v0.9.10 Part 6 N5/N6 — UCUM unit normalization ──────────────
+  // Two non-UCUM unit patterns observed:
+  //   N5: full-width ㎡ (U+33A1) — CJK typography character used by
+  //       some Taiwan LIS in eGFR area-normalized unit
+  //   N6: "gm/dl" / "gm/dL" — non-UCUM "gm" (UCUM uses "g") + lowercase
+  //       "l" (UCUM is case-sensitive, must be uppercase "L")
+  // _canonicalizeUnit now normalizes these to UCUM-compliant forms.
+
+  test("v0.9.10 Part 6 N5 — eGFR unit 'mL/min/1.73㎡' → 'mL/min/1.73m2'", () => {
+    const r = mapObservation(
+      { code: "", display: "eGFR", value: 90, unit: "mL/min/1.73㎡", date: "2026-05-27" },
+      PATIENT_ID,
+    );
+    expect(r?.valueQuantity?.unit).toBe("mL/min/1.73m2");
+  });
+
+  test("v0.9.10 Part 6 N6 — Hb unit 'gm/dl' → 'g/dL' (UCUM canonical)", () => {
+    const r = mapObservation(
+      { code: "08003C", display: "Hb", value: 13, unit: "gm/dl", date: "2026-05-27" },
+      PATIENT_ID,
+    );
+    expect(r?.valueQuantity?.unit).toBe("g/dL");
+  });
+
+  test("v0.9.10 Part 6 N6 — 'mg/dl' → 'mg/dL' (case-only fix)", () => {
+    const r = mapObservation(
+      { code: "09015C", display: "Crea", value: 1, unit: "mg/dl", date: "2026-05-27" },
+      PATIENT_ID,
+    );
+    expect(r?.valueQuantity?.unit).toBe("mg/dL");
+  });
+
+  test("v0.9.10 Part 6 N6 — already-canonical units pass through unchanged", () => {
+    const r = mapObservation(
+      { code: "", display: "TG", value: 100, unit: "mg/dL", date: "2026-05-27" },
+      PATIENT_ID,
+    );
+    expect(r?.valueQuantity?.unit).toBe("mg/dL");
+  });
+
   // ── v0.9.10 — Segment (no -ed suffix) variant (bug report Part 4) ─
   // Same root cause as Part 1's Basophil/Eosinophil/Lymphocyte: some
   // hospitals' CBC diff printouts show "Segment" (Taiwan LIS shorthand

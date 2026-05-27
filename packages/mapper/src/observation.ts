@@ -483,22 +483,56 @@ function isMeaningfulValue(value: unknown): boolean {
   return s !== "" && s !== "—" && s !== "-" && s !== "N/A" && s !== "null";
 }
 
-// Replace bogus NHI-supplied units with the canonical UCUM symbol for
-// known analytes. Bug report 2026-05-27 Part 3 C2: eGFR rows arrive
-// with unit "N" (a Taiwan LIS placeholder, not UCUM) — without this
-// override they ship as `{value: 36.3, unit: "N", code: "N"}` which
-// downstream consumers can't display or convert. Whitelist approach
-// keeps changes scoped: only known analyte + known-bogus-unit pairs
-// get rewritten, everything else passes through.
+// Replace bogus / non-UCUM units with canonical UCUM symbols. Two
+// classes of fixup:
+//   1. Bogus units (empty / "N" placeholder) → fill in canonical
+//      based on analyte. Bug report Part 3 C2 (eGFR).
+//   2. Non-UCUM symbols in otherwise-valid units → normalize to UCUM.
+//      Bug report Part 6 N5/N6: full-width ㎡ (U+33A1) used by some
+//      Taiwan LIS instead of "m2", and "gm/dl" instead of UCUM
+//      canonical "g/dL". Downstream unit-aware tools (UCUM converters,
+//      trend chart axis labelling, abnormal-flag computation) fail on
+//      non-canonical symbols.
+// Whitelist approach keeps changes scoped — only known patterns get
+// rewritten, everything else passes through.
 function _canonicalizeUnit(display: string, _code: string, rawUnit: string): string {
   const u = (rawUnit ?? "").trim();
+
+  // Class 1: bogus unit fixup (analyte-aware fill-in).
   const isBogus = u === "" || u === "N" || u === "n";
-  if (!isBogus) return rawUnit;
-  // eGFR — Taiwan LIS quirk. LOINC 33914-3 canonical unit is mL/min/1.73m2.
-  if (/egfr|estimated\s*gfr|estimated\s*glomerular|腎絲球過濾率/i.test(display)) {
-    return "mL/min/1.73m2";
+  if (isBogus) {
+    // eGFR — Taiwan LIS quirk. LOINC 33914-3 canonical unit is mL/min/1.73m2.
+    if (/egfr|estimated\s*gfr|estimated\s*glomerular|腎絲球過濾率/i.test(display)) {
+      return "mL/min/1.73m2";
+    }
+    return rawUnit;
   }
-  return rawUnit;
+
+  // Class 2: valid-but-non-UCUM normalization. Applies to all
+  // analytes (no display-keyword gate) since the substitutions are
+  // unambiguous: ㎡ is always meant as m2, "gm" is never a valid mass
+  // unit (UCUM uses "g"), uppercase "L" for liter.
+  let normalized = u;
+  // U+33A1 SQUARE M (full-width ㎡) → UCUM "m2". Other CJK-typography
+  // unit glyphs we've seen in NHI raw: U+339D SQUARE M (cm), U+33A0
+  // SQUARE MM (mm), U+33A2 SQUARE KM (km). Only ㎡ shows up in lab
+  // values (eGFR area-normalized), but normalize the family for safety.
+  normalized = normalized
+    .replace(/㎡/g, "m2") // ㎡
+    .replace(/㎝/g, "cm") // ㎝
+    .replace(/㎠/g, "mm") // ㎜
+    .replace(/㎢/g, "km"); // ㎞
+  // "gm" → "g" (mass) — bounded to mass-context only via the trailing
+  // "/". Patterns observed: "gm/dl", "gm/dL", "gm/L", "gm/100mL".
+  // Don't touch unrelated tokens (e.g. wouldn't change "stigma").
+  normalized = normalized.replace(/\bgm(\s*\/)/gi, "g$1");
+  // "/dl" / "/dl." / "/dL" → "/dL" (case fix only; UCUM is case-
+  // sensitive and "L" must be uppercase). Mass-volume concentrations.
+  normalized = normalized.replace(/\/d[lL]\.?/g, "/dL");
+  // Lowercase "l" elsewhere in concentration suffixes ("mg/l" etc.)
+  normalized = normalized.replace(/\/(\d*)l\b/g, "/$1L");
+
+  return normalized;
 }
 
 const MEANINGFUL_INTERPS = new Set([

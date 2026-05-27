@@ -1467,8 +1467,18 @@
     // Hemoglobin
     "08004C",
     // Hematocrit
-    "08006C"
+    "08006C",
     // Platelets
+    // ── Urine creatinine sibling codes (v0.9.10 Part 6 N2) ──
+    // Promoted to defend against the UACR billing pattern: hospitals
+    // bill both legs of the ratio (microalbumin + urine creatinine)
+    // under one creatinine code and distinguish by display text. Without
+    // display routing, microalbumin rows return LOINC 2161-8 (creatinine).
+    // See URINE_BIOCHEM_KEYS const for the analyte map.
+    "09016C",
+    // 肌酐、尿 — Urine creatinine billing
+    "12111C"
+    // Urine Creatinine (alternate billing)
   ]);
   var CBC_COMPONENT_KEYS = {
     // Hemoglobin
@@ -1478,8 +1488,15 @@
     hb: "718-7",
     "hb.": "718-7",
     // Hematocrit (HCT) — Taiwan LIS often shortens to "Ht" / "H.t."
+    // Wider CJK forms added v0.9.10 Part 6 after 長庚嘉義 sent
+    // "血球比容值測定" (7-char form not matching shorter 血球容積比 /
+    // 血比容 substrings due to character order — "球" comes between
+    // "血" and "比" in this variant). _keywordMatches uses CJK
+    // substring includes(), so we need the exact 4-char substring
+    // "血球比容" to match the full string.
     hematocrit: "4544-3",
     \u8840\u7403\u5BB9\u7A4D\u6BD4: "4544-3",
+    \u8840\u7403\u6BD4\u5BB9: "4544-3",
     \u8840\u6BD4\u5BB9: "4544-3",
     hct: "4544-3",
     ht: "4544-3",
@@ -1496,6 +1513,79 @@
     platelet: "777-3",
     \u8840\u5C0F\u677F: "777-3",
     plt: "777-3"
+  };
+  var CBC_DIFF_KEYS = {
+    // Neutrophil + Taiwan variants (incl. v0.9.10 Part 4 "Segment" fix)
+    "neutrophilic segment": "770-8",
+    // Neutrophils/100 leukocytes
+    neutrophil: "770-8",
+    neutrophils: "770-8",
+    segmented: "770-8",
+    segment: "770-8",
+    segments: "770-8",
+    seg: "770-8",
+    "seg.": "770-8",
+    "neut. seg": "770-8",
+    "neut seg": "770-8",
+    \u55DC\u4E2D\u6027\u767D\u8840\u7403: "770-8",
+    \u55DC\u4E2D\u6027\u7403: "770-8",
+    \u4E2D\u6027\u7403: "770-8",
+    // Lymphocyte
+    lymphocyte: "736-9",
+    // Lymphocytes/100 leukocytes
+    lymphocytes: "736-9",
+    \u6DCB\u5DF4\u767D\u8840\u7403: "736-9",
+    \u6DCB\u5DF4\u7403: "736-9",
+    \u6DCB\u5DF4\u7D30\u80DE: "736-9",
+    // Monocyte
+    monocyte: "5905-5",
+    // Monocytes/100 leukocytes
+    monocytes: "5905-5",
+    \u55AE\u6838\u767D\u8840\u7403: "5905-5",
+    \u55AE\u6838\u7403: "5905-5",
+    // Eosinophil (% form in CBC diff context, NOT 711-2 #/vol)
+    eosinophil: "713-8",
+    eosinophils: "713-8",
+    \u55DC\u9178\u6027\u767D\u8840\u7403: "713-8",
+    \u55DC\u9178: "713-8",
+    \u55DC\u4F0A\u7D05\u6027\u767D\u8840\u7403: "713-8",
+    \u55DC\u4F0A\u7D05: "713-8",
+    // Basophil
+    basophil: "706-2",
+    basophils: "706-2",
+    \u55DC\u9E7C\u6027\u767D\u8840\u7403: "706-2",
+    \u55DC\u9E7C: "706-2"
+  };
+  var URINE_BIOCHEM_KEYS = {
+    // Microalbumin variants (specimen + analyte)
+    "micro-albumin": "14957-5",
+    // Microalbumin Mass/vol Urine
+    microalbumin: "14957-5",
+    "micro albumin": "14957-5",
+    "u-malb": "14957-5",
+    "malb(u)": "14957-5",
+    "malb.": "14957-5",
+    malb: "14957-5",
+    \u5FAE\u5C0F\u767D\u86CB\u767D: "14957-5",
+    \u5C3F\u5FAE\u91CF\u767D\u86CB\u767D: "14957-5",
+    \u5C3F\u767D\u86CB\u767D: "14957-5",
+    // UACR (Microalbumin/Creatinine ratio Urine)
+    uacr: "14959-1",
+    "u-acr": "14959-1",
+    "alb/cre": "14959-1",
+    "albumin/creatinine": "14959-1",
+    // Urine creatinine variants
+    "urine creatinine": "2161-8",
+    "creatinine urine": "2161-8",
+    "creatinine(u)": "2161-8",
+    "u-cre": "2161-8",
+    "u-crea": "2161-8",
+    \u5C3F\u6DB2\u808C\u9178\u9150: "2161-8",
+    \u5C3F\u808C\u9178\u9150: "2161-8",
+    creatinine: "2161-8",
+    // bare — within 09016C/12111C scope, default to urine
+    crea: "2161-8",
+    \u808C\u9178\u9150: "2161-8"
   };
   var PANEL_LOINC_MAP = {
     // ── Urinalysis (06013C) ──────────────────────────────
@@ -1597,24 +1687,30 @@
       // CBC_COMPONENT_KEYS const below for the source of truth.
       ...CBC_COMPONENT_KEYS
     },
-    // ── CBC sibling billing codes (v0.9.10 Part 5) ──────────
+    // ── CBC sibling billing codes (v0.9.10 Part 5 + Part 6) ──
     // Single-analyte billing codes promoted to display-first so when a
     // hospital LIS swaps display vs code (e.g. row billed 08004C HCT
-    // but display text reads "HGB"), the unambiguous display wins. The
-    // panel uses the same shared keys — for a correctly-billed-and-
-    // labelled row this is a no-op (display matches what NHI_TO_LOINC
-    // would have returned); for a mis-labelled row it routes to the
-    // analyte the display intends. Fallback path C still hits the
-    // NHI_TO_LOINC entry for the row's billing code when display is
-    // empty/unrecognised. See 嘉基 bug report 2026-05-27.
-    "08002C": CBC_COMPONENT_KEYS,
+    // but display text reads "HGB"), the unambiguous display wins. Each
+    // sibling spreads BOTH CBC_COMPONENT_KEYS (basic counts) AND
+    // CBC_DIFF_KEYS (differential percentages) — hospitals bill the
+    // diff rows under whatever CBC code their LIS uses (中國北港醫
+    // observed billing diff under 08002C WBC count; bug report Part 6
+    // bug N3). Fallback path C still hits NHI_TO_LOINC entry for empty/
+    // unrecognised displays.
+    "08002C": { ...CBC_COMPONENT_KEYS, ...CBC_DIFF_KEYS },
     // WBC count billing
-    "08003C": CBC_COMPONENT_KEYS,
+    "08003C": { ...CBC_COMPONENT_KEYS, ...CBC_DIFF_KEYS },
     // Hemoglobin billing
-    "08004C": CBC_COMPONENT_KEYS,
+    "08004C": { ...CBC_COMPONENT_KEYS, ...CBC_DIFF_KEYS },
     // Hematocrit billing
-    "08006C": CBC_COMPONENT_KEYS,
+    "08006C": { ...CBC_COMPONENT_KEYS, ...CBC_DIFF_KEYS },
     // Platelet count billing
+    // ── Urine creatinine sibling codes (v0.9.10 Part 6 N2) ──
+    // See URINE_BIOCHEM_KEYS const docstring. When hospital bills UACR
+    // workup under 09016C / 12111C, the actual analyte (microalbumin
+    // vs creatinine vs UACR ratio) is distinguished only by display.
+    "09016C": URINE_BIOCHEM_KEYS,
+    "12111C": URINE_BIOCHEM_KEYS,
     // ── Serum creatinine + eGFR piggyback (09015C) ──────
     // NHI bills creatinine under 09015C; Taiwan labs auto-calculate eGFR
     // (CKD-EPI / MDRD) and append it as a separate sub-row using the
@@ -1715,47 +1811,12 @@
     // /100 leukocytes LOINCs instead of falling to global eosinophil
     // count or "白血球" → WBC.
     "08013C": {
-      neutrophil: "770-8",
-      // Neutrophils/100 leukocytes
-      neutrophils: "770-8",
-      "neutrophilic segment": "770-8",
-      segmented: "770-8",
-      // Bug report 2026-05-27 Part 4: NHI shows just "Segment" (no -ed
-      // suffix) in some hospitals' CBC diff printouts. Without these
-      // exact-singular variants the row missed all keys and fell back
-      // to the panel LOINC 57021-8 (CBC W Auto Diff panel) — making
-      // SMART apps think the row was an unfiled panel-level value.
-      // Adding singular + plural + Taiwan LIS shorthand variants.
-      segment: "770-8",
-      segments: "770-8",
-      seg: "770-8",
-      "seg.": "770-8",
-      "neut. seg": "770-8",
-      "neut seg": "770-8",
-      \u4E2D\u6027\u7403: "770-8",
-      \u55DC\u4E2D\u6027\u7403: "770-8",
-      \u55DC\u4E2D\u6027\u767D\u8840\u7403: "770-8",
-      lymphocyte: "736-9",
-      // Lymphocytes/100 leukocytes
-      lymphocytes: "736-9",
-      \u6DCB\u5DF4\u7403: "736-9",
-      \u6DCB\u5DF4\u7D30\u80DE: "736-9",
-      monocyte: "5905-5",
-      // Monocytes/100 leukocytes
-      monocytes: "5905-5",
-      \u55AE\u6838\u7403: "5905-5",
-      eosinophil: "713-8",
-      // Eosinophils/100 leukocytes (% not #/vol)
-      eosinophils: "713-8",
-      \u55DC\u9178\u6027\u767D\u8840\u7403: "713-8",
-      \u55DC\u9178: "713-8",
-      \u55DC\u4F0A\u7D05\u6027\u767D\u8840\u7403: "713-8",
-      \u55DC\u4F0A\u7D05: "713-8",
-      basophil: "706-2",
-      // Basophils/100 leukocytes
-      basophils: "706-2",
-      \u55DC\u9E7C\u6027\u767D\u8840\u7403: "706-2",
-      \u55DC\u9E7C: "706-2",
+      // Differential percentages — shared with the CBC sibling billing
+      // codes (08002C / 08003C / 08004C / 08006C) above; see
+      // CBC_DIFF_KEYS const for the source of truth (includes singular
+      // "Segment" Part 4 fix + 淋巴白血球 / 單核白血球 / 嗜中性白血球
+      // wider CJK variants added v0.9.10 Part 6 N3).
+      ...CBC_DIFF_KEYS,
       // WBC absolute count can also appear on the diff panel printout.
       \u767D\u8840\u7403: "6690-2",
       wbc: "6690-2"
@@ -1797,6 +1858,43 @@
     \u55DC\u4F0A\u7D05\u6027\u767D\u8840\u7403: "711-2",
     eosinophil: "711-2",
     eosinophils: "711-2",
+    // Other diff cells — added v0.9.10 Part 6 N7 (long庚嘉義 row had
+    // display="Neutrophil" with EMPTY coding array, ie. no NHI code
+    // context for panel routing to kick in). When no NHI code, fall
+    // back to /100 leukocytes form since that's the dominant diff
+    // context in Taiwan LIS. Absolute-count form has its own dedicated
+    // billing codes (08010C eosinophil count etc.) that resolve via
+    // NHI_TO_LOINC path A before this global table is consulted.
+    "neutrophilic segment": "770-8",
+    neutrophil: "770-8",
+    neutrophils: "770-8",
+    segmented: "770-8",
+    segment: "770-8",
+    segments: "770-8",
+    \u55DC\u4E2D\u6027\u767D\u8840\u7403: "770-8",
+    \u55DC\u4E2D\u6027\u7403: "770-8",
+    \u4E2D\u6027\u7403: "770-8",
+    lymphocyte: "736-9",
+    lymphocytes: "736-9",
+    \u6DCB\u5DF4\u767D\u8840\u7403: "736-9",
+    \u6DCB\u5DF4\u7403: "736-9",
+    \u6DCB\u5DF4\u7D30\u80DE: "736-9",
+    monocyte: "5905-5",
+    monocytes: "5905-5",
+    \u55AE\u6838\u767D\u8840\u7403: "5905-5",
+    \u55AE\u6838\u7403: "5905-5",
+    basophil: "706-2",
+    basophils: "706-2",
+    \u55DC\u9E7C\u6027\u767D\u8840\u7403: "706-2",
+    \u55DC\u9E7C: "706-2",
+    // Microalbumin (urine) — same Part 6 N7 reasoning: when no NHI
+    // code arrives, "Micro Albumin" / "MALB" display should still
+    // route to the right LOINC instead of falling to null.
+    "micro-albumin": "14957-5",
+    microalbumin: "14957-5",
+    "micro albumin": "14957-5",
+    malb: "14957-5",
+    \u5FAE\u5C0F\u767D\u86CB\u767D: "14957-5",
     wbc: "6690-2",
     \u767D\u8840\u7403: "6690-2",
     platelet: "777-3",
@@ -2742,11 +2840,18 @@
   function _canonicalizeUnit(display, _code, rawUnit) {
     const u = (rawUnit ?? "").trim();
     const isBogus = u === "" || u === "N" || u === "n";
-    if (!isBogus) return rawUnit;
-    if (/egfr|estimated\s*gfr|estimated\s*glomerular|腎絲球過濾率/i.test(display)) {
-      return "mL/min/1.73m2";
+    if (isBogus) {
+      if (/egfr|estimated\s*gfr|estimated\s*glomerular|腎絲球過濾率/i.test(display)) {
+        return "mL/min/1.73m2";
+      }
+      return rawUnit;
     }
-    return rawUnit;
+    let normalized = u;
+    normalized = normalized.replace(/㎡/g, "m2").replace(/㎝/g, "cm").replace(/㎠/g, "mm").replace(/㎢/g, "km");
+    normalized = normalized.replace(/\bgm(\s*\/)/gi, "g$1");
+    normalized = normalized.replace(/\/d[lL]\.?/g, "/dL");
+    normalized = normalized.replace(/\/(\d*)l\b/g, "/$1L");
+    return normalized;
   }
   var MEANINGFUL_INTERPS = /* @__PURE__ */ new Set([
     "normal",
