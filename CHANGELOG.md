@@ -2,6 +2,75 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.11.7 重點 — 2026-05-28
+
+兩個 patient-safety bug 一次修：
+
+---
+
+### 🚨 Bug 2：dedup collision silent-drop（urinalysis panel 9 items 漏掉）
+
+User 從 v0.11.6 bundle 看 06013C 尿生化檢查 2026-01-14 → 健保存摺 raw 有 20 row，bundle 只有 11。9 個尿液檢查項目（亞硝酸鹽 / 尿潛血 / 酮體 / 白血球酯脢 / Blood / 等）silent drop。
+
+**Root cause（兩層 dedup 都有同一個概念錯誤）**：
+
+1. `dedupePanelItems` (panel scope) 的 key 只用 `value`
+2. `dedupeCrossFormat` (全 bundle scope) 的 key 用 `(date, value, unit, order_code)` — **沒包含 display**
+
+→ 同一 panel 內不同 analyte 但都 "Negative" mg/dL（urinalysis 大多 negative 是 norm）→ 全部 collide → CJK+EN mix 觸發只留 enItems[0]，其他全 drop。
+
+**Fix**：兩個 dedup key 都加 `display.toLowerCase().trim()`。不同 analyte 永遠不會 collide；exact-duplicate rows（NHI 重複上傳）還是會正常 dedup；同 analyte 跨語言（如 `Bilirubin` ↔ `膽紅素` 同 value）走 `canonicalLabKey` → 同 stable ID → 在 `seenObsIds` 那層 dedup（intended）。
+
+**`canonicalLabKey` 同義詞表也修了** 4 處 urinalysis 同名衝突：
+- `肌酸酐(尿液)` → `URINE_CREATININE`（原本誤 map 成 serum CREATININE）
+- `微白蛋白/肌酐酸比值` → `UACR`（原本誤 map 成 CREATININE）
+- `微白蛋白(尿)` → `URINE_MICROALBUMIN`（原本誤 map 成 serum ALBUMIN）
+- `白血球酯脢` → `URINE_LEU_ESTERASE`（原本誤 map 成 blood WBC）
+
+**結果**：user 的 20-row case 從 11 → 15（5 個 legit cross-language merges：Bilirubin↔膽紅素、CREA(U)↔肌酸酐(尿液)、Glucose↔尿糖、Color↔顏色、Blood↔尿潛血）。**0 silent drop，「一筆檢驗就是一 row」**。
+
+### Code-scoped `canonicalLabKey` — 解決 polysemic 字（Glucose / Color / Blood）
+
+`canonicalLabKey` 加 optional `code` 參數 + URINALYSIS_PANEL_SYNONYMS 表。在 06013C urinalysis panel context 下，英文 polysemic 字（"Glucose" / "Color" / "Blood" 等）canonical 成 `URINE_X`，跟中文版（尿糖 / 顏色 / 尿潛血）merge 成一 row。在其他 panel context 下（如 09005C serum glucose），這些字維持原本 canonical（GLUCOSE 等），不會被 urinalysis context 干擾。
+
+Defensive test：同 patient 同日同 hospital 同時有 06013C "Glucose" + 09005C "Glucose" → 2 rows 都保留，不會被誤 merge。
+
+新增 standing regression seed lock 整個 20-row case + 跨 panel 防誤 merge 測試。
+
+---
+
+### 🩸 Bug 1：dipstick semi-quantitative 結果丟失 grade — `4+ (2000)` → 只剩 `2000 mg/dL`
+
+User bug report 2026-05-28：MediPrisma 顯示「Glucose 2000 mg/dL [Negative]」（看起來 critical 高血糖數值），但健保存摺實際是「4+ (2000)」— **`4+` 才是真實的 dipstick 半定量分級，`(2000)` 只是 lab 附的約等於估算值**。Bridge 丟掉了臨床更重要的 grade。
+
+### Root cause
+
+`tryParseQuantity` 在 v0.9.7 加的 fallback 邏輯：leading 數字 parse 失敗時，抓 parens 內 numeric。原意是「dipstick grade is leading, numeric is parenthesised — extract numeric」。**設計 trade-off 選錯了**：grade > 估算值 在臨床優先序。
+
+### 修法
+
+`packages/mapper/src/parsers.ts` 加 dipstick 偵測：leading 是 `[\d.]+\+` / `Trace` / `Positive` / `Negative` 時 → 直接 return null → caller 走 valueString path 完整保留 `"4+ (2000)"` 原始字串。
+
+### Behavior 比對
+
+| 輸入 | v0.11.6 之前 | v0.11.7 之後 |
+|------|-------------|-------------|
+| `"4+ (2000)"` mg/dL | valueQuantity 2000 ❌ | valueString "4+ (2000)" ✅ |
+| `"Trace (15)"` mg/dL | valueQuantity 15 ❌ | valueString "Trace (15)" ✅ |
+| `"1+ (80)"` mg/g | valueQuantity 80 ❌ | valueString "1+ (80)" ✅ |
+| `"33 (stage3:30-59)"` eGFR | valueQuantity 33 ✓ | valueQuantity 33 ✓（不變）|
+| `"2.3(36.1%)"` | valueQuantity 2.3 ✓ | valueQuantity 2.3 ✓（不變）|
+
+### Test 變動
+
+v0.9.7 加的 3 個 test 鎖了錯的行為（assertion 主張 4+ (2000) → 2000）。全 flip 成新行為：
+- `parsers.test.ts`：v0.9.7 → v0.11.7 dipstick null assertions + 加 regression seed for eGFR pattern 還是要 extract
+- `bundle-quality.test.ts`：拆 quantity 跟 dipstick 兩個 test block，分別 assert 對應行為
+
+純 parser 改動，無 UI。Reload extension。Backend mode 需要 `docker compose up -d --build`。
+
+---
+
 ## 0.11.6 重點 — 2026-05-28
 
 **🚨 修 v0 以來潛伏的 silent-drop bug — bare `HCT` display 整筆被當 imaging 過濾掉**
