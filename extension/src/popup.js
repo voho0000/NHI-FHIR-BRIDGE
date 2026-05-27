@@ -315,41 +315,51 @@ async function savePatientOverride() {
     gender: els.ovGender.value,
   };
   if (!ov.name) delete ov.name;
-  // id_no is no longer a UI field. Reuse the previously stored
-  // placeholder if one exists (so re-saves don't keep minting new IDs
-  // and orphaning backend resources keyed on the old one); otherwise
-  // mint a fresh auto-XXXX. background's NHI fetch swaps this for the
-  // real cid on first sync.
-  //
-  // The same read also feeds the identity-switch detection below.
+  // Read previous stored override so we can:
+  //   1. Detect whether the user is editing the SAME person (re-save)
+  //      or has switched to a DIFFERENT person.
+  //   2. Decide whether to reuse the previously stored id_no
+  //      (placeholder OR real cid) or mint a fresh one.
   const prevStored = (await chrome.storage.local.get("patientOverride"))
     .patientOverride;
-  ov.id_no = prevStored?.id_no || _generateAutoPatientId();
-  _storedIdNo = ov.id_no;
 
-  // Identity-change detection. Any of these field changes treats the
-  // save as "switched to a different person":
-  //   - id_no:       NHI account swap (auto-fetched from session)
-  //   - name:        manually editing name (most common in clinic
-  //                  setting: doctor swaps patients on the same NHI
-  //                  session, or fixes a wrong identity)
+  // Identity-change detection runs on the user-editable identity fields
+  // (name / gender / birth_date). id_no is auto-generated / auto-fetched
+  // so it CAN'T be the signal — the user never types it. Any of these
+  // changing means "switched to a different person":
+  //   - name:        manually editing name (clinic doctor swaps patients
+  //                  on the same NHI session)
   //   - gender:      identity-defining; also affects sex-stratified
   //                  reference ranges for labs
   //   - birth_date:  same person can't have two DOBs
-  //
-  // Any of these changing → drop the previously-captured bundle so
-  // the user can't accidentally download a JSON file labelled with
-  // the NEW patient's identity but populated with the OLD patient's
-  // medical records. PHI safety > convenience of "I just fixed a
-  // typo" (which loses at most one click to re-sync).
   const _norm = (v) => (v == null ? "" : String(v));
   const patientChanged = !!prevStored && (
-    _norm(prevStored.id_no) !== _norm(ov.id_no) ||
     _norm(prevStored.name) !== _norm(ov.name) ||
     _norm(prevStored.gender) !== _norm(ov.gender) ||
     _norm(prevStored.birth_date) !== _norm(ov.birth_date)
   );
 
+  // id_no policy:
+  //   • Same person (just re-saving the same identity) → reuse prev
+  //     id_no so we don't keep minting new placeholders and orphaning
+  //     backend resources keyed on the old one.
+  //   • Different person → mint a fresh placeholder; do NOT carry over
+  //     the previous patient's real cid (e.g. F22345****) onto the new
+  //     identity. The "✅ 病人身份已記住：[new name] · [old masked cid]"
+  //     UX bug came from carrying the cid forward indiscriminately.
+  //   • background's NHI fetch swaps the placeholder for the real cid
+  //     on first sync.
+  if (patientChanged) {
+    ov.id_no = _generateAutoPatientId();
+  } else {
+    ov.id_no = prevStored?.id_no || _generateAutoPatientId();
+  }
+  _storedIdNo = ov.id_no;
+
+  // PHI safety: any of the identity fields changing → drop the
+  // previously-captured bundle so the user can't accidentally download
+  // a JSON file labelled with the NEW patient's identity but populated
+  // with the OLD patient's medical records.
   await chrome.storage.local.set({ patientOverride: ov });
 
   if (patientChanged) {
@@ -363,6 +373,15 @@ async function savePatientOverride() {
       .catch(() => {});
     _latestStatus = null;
     setStatus("", null);
+    // 4. Reset in-memory caches that _renderDataState reads. Without
+    //    this, when refreshOverrideSummary calls _renderDataState
+    //    synchronously below, the data-state card still shows
+    //    「✓ A 的 81 筆 · 最後更新…」for the brief moment until the
+    //    async checkBackendPatient + chrome.storage.onChanged events
+    //    fire. Flip to "checking" / empty so the UI shows the loading
+    //    state immediately, then the async refreshes paint the truth.
+    _backendPatient = { state: "checking", count: 0, lastUpdated: null };
+    _localBundle = { exists: false, count: 0, generatedAt: 0, patientId: null };
   }
 
   _markStep2Confirmed(true);

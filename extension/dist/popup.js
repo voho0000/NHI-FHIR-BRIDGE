@@ -854,10 +854,14 @@
     };
     if (!ov.name) delete ov.name;
     const prevStored = (await chrome.storage.local.get("patientOverride")).patientOverride;
-    ov.id_no = prevStored?.id_no || _generateAutoPatientId();
-    _storedIdNo = ov.id_no;
     const _norm = (v) => v == null ? "" : String(v);
-    const patientChanged = !!prevStored && (_norm(prevStored.id_no) !== _norm(ov.id_no) || _norm(prevStored.name) !== _norm(ov.name) || _norm(prevStored.gender) !== _norm(ov.gender) || _norm(prevStored.birth_date) !== _norm(ov.birth_date));
+    const patientChanged = !!prevStored && (_norm(prevStored.name) !== _norm(ov.name) || _norm(prevStored.gender) !== _norm(ov.gender) || _norm(prevStored.birth_date) !== _norm(ov.birth_date));
+    if (patientChanged) {
+      ov.id_no = _generateAutoPatientId();
+    } else {
+      ov.id_no = prevStored?.id_no || _generateAutoPatientId();
+    }
+    _storedIdNo = ov.id_no;
     await chrome.storage.local.set({ patientOverride: ov });
     if (patientChanged) {
       await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {
@@ -866,6 +870,8 @@
       });
       _latestStatus = null;
       setStatus("", null);
+      _backendPatient = { state: "checking", count: 0, lastUpdated: null };
+      _localBundle = { exists: false, count: 0, generatedAt: 0, patientId: null };
     }
     _markStep2Confirmed(true);
     refreshOverrideSummary();
