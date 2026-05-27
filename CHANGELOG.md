@@ -2,6 +2,55 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.10.0 重點 — 2026-05-27
+
+**📦 Bundle traceability + 用藥劑量推導 + 完成延後的 panel tables**
+
+針對 SMART app dev 的 U1 / U4 unsolved items（U2 不能修見下方）+ 收尾 v0.9.10 audit 留下的 4 個 TODO panel。0.10.0 是 Chrome Web Store 上架前最後一個 0.x，1.0.0 預計就是上架版。
+
+### U4 — Bundle 加版本標記
+
+之前只在檔名（`nhi-...-v0.9.x.json`），檔案被改名後就追不到。現在 `Bundle.meta.tag` 加 bridge version：
+```json
+"meta": {
+  "tag": [{
+    "system": "https://github.com/voho0000/NHI-FHIR-BRIDGE/bridge-version",
+    "code": "0.10.0",
+    "display": "NHI-FHIR-Bridge v0.10.0"
+  }]
+}
+```
+SMART app dev 之後報 bug 直接從 bundle 內挖版本，不再依賴檔名。
+
+### U1 — MedicationRequest.dosageInstruction 推導
+
+之前 758/758 都沒 dosageInstruction。NHI 健保存摺 IHKE3306S02 **真的沒有獨立的「用法」欄位**，但有「給藥日數」+「給藥總量」。把比值推成文字：
+- qty=30, days=30 → `"30 dose(s) over 30 day(s) (≈ 1/day)"`
+- qty=60, days=30 → `"60 dose(s) over 30 day(s) (≈ 2/day)"`（BID pattern）
+
+優先順序：structured dose/freq > raw `dosage_text` > 推導文字 > 不出 dosageInstruction。**Faithful transport 不破** — value 全部來自 NHI raw，bridge 只是算了比值貼上 label。
+
+### Panel tables 收尾（v0.9.10 audit 留的 TODO）
+
+完成 3 個 panel（08128B 骨髓細胞 LOINC 不確定，繼續 TODO）：
+
+- **09065B 蛋白電泳（SPE）** — Albumin/α1/α2/β/γ globulin + A/G ratio 各對到自己的 LOINC（2865-7 / 2867-3 / 2868-1 / 2869-9 / 2871-5 / 1759-0）
+- **12204B Flow cytometry CD markers** — CD3/CD4/CD8/CD19/CD56/CD4-CD8 ratio 各對到自己（8124-0 / 8123-2 / 8128-1 / 8118-2 / 8125-7 / 54218-3）
+- **17009B DLCO** — DLCO / VA / DLCO/VA 各對到自己（24341-0 / 19850-7 / 19911-7）
+
+每個 panel 都加 fallback：display 空白時走原 NHI_TO_LOINC（panel-level LOINC）。
+
+### 沒修的：U2 + U3（標記為 blocked）
+
+- **U2 Encounter.participant**：NHI IHKE3303 raw 沒有 attending physician field。修等於憑空造 data，違反 faithful transport。需要 NHI 開新 endpoint 才能修
+- **U3 valueString packed multi-data point**：v0.9.7 已修了 `"33 (stage3:30-59)"` 跟 `"2.3(36.1%)"` 等常見 pattern。如果還有 broken case 需要 SMART app dev 給具體 failing example 才能擴充 parser
+
+### 升級
+
+Reload extension。Backend mode 需要 `docker compose up -d --build`。
+
+---
+
 ## 0.9.10 重點 — 2026-05-27
 
 **🔬 多分項 panel LOINC audit + 修 PT/INR + 補 16008C 體液 panel**
