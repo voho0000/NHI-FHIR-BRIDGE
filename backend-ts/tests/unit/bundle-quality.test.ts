@@ -34,7 +34,7 @@
 
 import { describe, expect, test } from "vitest";
 
-import { mapMedicationsDedup, mapObservationsGrouped } from "@nhi-fhir-bridge/mapper";
+import { findLoinc, mapMedicationsDedup, mapObservationsGrouped } from "@nhi-fhir-bridge/mapper";
 
 const PATIENT_ID = "A123456789";
 
@@ -635,6 +635,71 @@ describe("CI v0.11.1 — QC control rows must be filtered out", () => {
       (r) => r.resourceType === "Observation",
     );
     expect(obs).toHaveLength(0);
+  });
+});
+
+// ── v0.11.4 — proactive display-variant audit regression seeds ──
+// Bridge-author audit (not bug report driven): probed 282 plausible
+// display variants across 30+ analytes and panels. Found 49 misses
+// across 5 categories (period-separated abbrevs, CJK synonyms,
+// English short forms, full names, abbreviated dipstick codes).
+// All fixed; the seeds below lock the highest-risk ones permanently
+// so refactoring CBC_COMPONENT_KEYS / CBC_DIFF_KEYS / panel tables
+// can't regress them without CI catching it.
+describe("CI v0.11.4 — display-variant coverage (proactive audit)", () => {
+  test("period-separated abbreviations resolve correctly (W.B.C / M.C.V / A.B.E etc.)", () => {
+    expect(findLoinc("08011C", "W.B.C.")).toBe("6690-2");
+    expect(findLoinc("08011C", "R.B.C.")).toBe("789-8");
+    expect(findLoinc("08011C", "M.C.V.")).toBe("787-2");
+    expect(findLoinc("08011C", "M.C.H.")).toBe("785-6");
+    expect(findLoinc("08011C", "M.C.H.C.")).toBe("786-4");
+    expect(findLoinc("09041B", "A.B.E.")).toBe("1925-7");
+    expect(findLoinc("09041B", "S.B.E.")).toBe("1927-3");
+  });
+
+  test("CJK synonyms — 血色素 / 血紅蛋白 / 紅血球容積 / 淋巴 / 多核球", () => {
+    expect(findLoinc("08011C", "血色素")).toBe("718-7"); // Hb synonym
+    expect(findLoinc("08011C", "血紅蛋白")).toBe("718-7");
+    expect(findLoinc("08011C", "紅血球容積")).toBe("4544-3"); // HCT alt phrasing
+    expect(findLoinc("08013C", "淋巴")).toBe("736-9");
+    expect(findLoinc("08013C", "多核球")).toBe("770-8"); // Neutrophil alt
+  });
+
+  test("English short forms — Neut / Lym / Lymph / Lymph cell", () => {
+    expect(findLoinc("08013C", "Neut")).toBe("770-8");
+    expect(findLoinc("08013C", "Neut.")).toBe("770-8");
+    expect(findLoinc("08013C", "Lym")).toBe("736-9");
+    expect(findLoinc("08013C", "Lymph")).toBe("736-9");
+    expect(findLoinc("08013C", "Lymph cell")).toBe("736-9");
+  });
+
+  test("Urinalysis dipstick abbreviations route to per-item LOINCs", () => {
+    expect(findLoinc("06013C", "Bili")).toBe("5770-3");
+    expect(findLoinc("06013C", "KET")).toBe("5797-6");
+    expect(findLoinc("06013C", "OB")).toBe("5794-3");
+    expect(findLoinc("06013C", "NIT")).toBe("5802-4");
+    expect(findLoinc("06013C", "UBG")).toBe("5818-0");
+    expect(findLoinc("06013C", "SG")).toBe("5811-5");
+    expect(findLoinc("06013C", "Colour")).toBe("5778-6"); // UK spelling
+    expect(findLoinc("06013C", "WBC esterase")).toBe("5799-2"); // not 6690-2
+  });
+
+  test("ABG CJK + period variants resolve", () => {
+    expect(findLoinc("09041B", "酸鹼值")).toBe("11558-4");
+    expect(findLoinc("09041B", "二氧化碳分壓")).toBe("2019-8");
+    expect(findLoinc("09041B", "氧分壓")).toBe("2703-7");
+    expect(findLoinc("09041B", "碳酸氫根")).toBe("1959-6");
+    expect(findLoinc("09041B", "T.CO2")).toBe("2028-9");
+    expect(findLoinc("09041B", "O2 saturation")).toBe("2713-6");
+    expect(findLoinc("09041B", "血氧飽和度")).toBe("2713-6");
+  });
+
+  test("Flow CD3+/CD4+ ratio doesn't collapse to bare CD3 LOINC", () => {
+    // Bug: trailing "+" in keys broke \b boundary. Fixed by dropping
+    // trailing + from keys → "cd3+/cd4" key matches the "cd3+/cd4"
+    // prefix of display "CD3+/CD4+".
+    expect(findLoinc("12204B", "CD3+/CD4+")).toBe("8123-2"); // CD4
+    expect(findLoinc("12204B", "CD3+/CD8+")).toBe("8128-1"); // CD8
   });
 });
 
