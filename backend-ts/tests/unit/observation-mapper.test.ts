@@ -22,7 +22,13 @@ describe("mapObservation — unit canonicalization (bug report Part 3 C2)", () =
     // {value: 36.3, unit: "N", code: "N"} which can't be displayed or
     // compared. Mapper overrides to the LOINC 33914-3 canonical unit.
     const r = mapObservation(
-      { code: "09015C", display: "eGFR", value: 36.3, unit: "N", date: "2026-05-01" },
+      {
+        code: "09015C",
+        display: "eGFR",
+        value: 36.3,
+        unit: "N",
+        date: "2026-05-01",
+      },
       PATIENT_ID,
     );
     expect(r?.valueQuantity?.value).toBe(36.3);
@@ -31,7 +37,13 @@ describe("mapObservation — unit canonicalization (bug report Part 3 C2)", () =
 
   test("eGFR with empty unit also normalised", () => {
     const r = mapObservation(
-      { code: "09015C", display: "Estimated GFR", value: 90, unit: "", date: "2026-05-01" },
+      {
+        code: "09015C",
+        display: "Estimated GFR",
+        value: 90,
+        unit: "",
+        date: "2026-05-01",
+      },
       PATIENT_ID,
     );
     expect(r?.valueQuantity?.unit).toBe("mL/min/1.73m2");
@@ -57,7 +69,13 @@ describe("mapObservation — unit canonicalization (bug report Part 3 C2)", () =
     // known fix-up. Other rows with bogus unit "N" stay as-is so the
     // canonicalization doesn't silently rewrite unrelated data.
     const r = mapObservation(
-      { code: "09005C", display: "Glucose", value: 100, unit: "N", date: "2026-05-01" },
+      {
+        code: "09005C",
+        display: "Glucose",
+        value: 100,
+        unit: "N",
+        date: "2026-05-01",
+      },
       PATIENT_ID,
     );
     expect(r?.valueQuantity?.unit).toBe("N");
@@ -402,6 +420,65 @@ describe("findLoinc", () => {
     // the whole point of the fix. If anyone re-merges them in the
     // future this test will fire.
     expect(findLoinc("09041B", "ABE")).not.toBe(findLoinc("09041B", "SBE"));
+  });
+
+  // ── PT/INR panel split (08026C; v0.9.10) ────────────────────────
+  // 08026C bills BOTH PT seconds and INR under one code. Before v0.9.10
+  // every row inherited LOINC 6301-6 (INR) — warfarin trend views
+  // plotted PT seconds and INR on the same series (12 sec vs INR=2.5),
+  // creating either gibberish trends or critical-overdose-looking alarms.
+
+  test("v0.9.10 — INR under 08026C → 6301-6 (INR LOINC)", () => {
+    expect(findLoinc("08026C", "INR")).toBe("6301-6");
+    expect(findLoinc("08026C", "International Normalized Ratio")).toBe("6301-6");
+  });
+
+  test("v0.9.10 — PT under 08026C → 5902-2 (NOT 6301-6 INR)", () => {
+    expect(findLoinc("08026C", "PT")).toBe("5902-2");
+    expect(findLoinc("08026C", "Prothrombin Time")).toBe("5902-2");
+    expect(findLoinc("08026C", "凝血酶原時間")).toBe("5902-2");
+  });
+
+  test("v0.9.10 — PT Control under 08026C → 5894-1 (NOT 5902-2 PT)", () => {
+    // PT Control row is the reagent-batch reference value most LIS
+    // ships alongside PT seconds. Distinct LOINC so trend views don't
+    // accidentally mix patient PT with control PT.
+    expect(findLoinc("08026C", "PT Control")).toBe("5894-1");
+    expect(findLoinc("08026C", "Prothrombin Time Control")).toBe("5894-1");
+  });
+
+  test("v0.9.10 — PT and INR no longer collapse to the same LOINC under 08026C", () => {
+    expect(findLoinc("08026C", "PT")).not.toBe(findLoinc("08026C", "INR"));
+  });
+
+  test("v0.9.10 — empty display under 08026C still falls back to 6301-6 (INR is safer default)", () => {
+    // Path C fallback: panel + global table both miss → return
+    // NHI_TO_LOINC entry. INR is the more clinically actionable default.
+    expect(findLoinc("08026C", "")).toBe("6301-6");
+  });
+
+  // ── Body-fluid panel (16008C; v0.9.10) ──────────────────────────
+  // 16008C was in DISPLAY_FIRST_CODES but had no PANEL_LOINC_MAP entry,
+  // so per-item routing relied on global LOINC_MAP — shorter generic
+  // keys (e.g. "wbc" → 6690-2 BLOOD WBC) could shadow body-fluid LOINCs.
+
+  test("v0.9.10 — SF.WBC under 16008C → 26466-3 (Body fluid WBC, NOT 6690-2 Blood WBC)", () => {
+    expect(findLoinc("16008C", "SF.WBC")).toBe("26466-3");
+    expect(findLoinc("16008C", "WBC")).toBe("26466-3");
+  });
+
+  test("v0.9.10 — SF.Neutrophil under 16008C → 10328-6 (Body fluid)", () => {
+    expect(findLoinc("16008C", "SF.Neutrophil")).toBe("10328-6");
+    expect(findLoinc("16008C", "Neutrophil")).toBe("10328-6");
+  });
+
+  test("v0.9.10 — SF.Lympho under 16008C → 13046-8 (Body fluid)", () => {
+    expect(findLoinc("16008C", "SF.Lympho")).toBe("13046-8");
+    expect(findLoinc("16008C", "Lymphocyte")).toBe("13046-8");
+  });
+
+  test("v0.9.10 — SF.Color under 16008C → 5778-6", () => {
+    expect(findLoinc("16008C", "SF.Color")).toBe("5778-6");
   });
 
   test('findLoinc("14032C", "HBsAg") routes through NHI_TO_LOINC and returns correct HBsAg LOINC', () => {

@@ -1090,6 +1090,11 @@
     // 白血球分類計數 — CBC W Auto Diff panel
     "08128B": "47286-0",
     // 骨髓細胞形態判讀合併細胞分類計數
+    // TODO(panel, v0.9.10 audit): 08128B reports morphology + per-cell
+    // counts as multi-row. Low priority because bone marrow rarely
+    // surfaces in 健康存摺 + SMART app shows raw display text per row,
+    // so the visible-bug surface is small. Promote to DISPLAY_FIRST_CODES
+    // + add PANEL_LOINC_MAP if SMART app dev reports the issue.
     // ── Chemistry ─────────────────────────────────────
     "09011C": "17861-6",
     // 鈣 — Calcium Mass/vol S/P
@@ -1150,6 +1155,13 @@
     // ── Immunology / proteins ─────────────────────────
     "09065B": "90991-1",
     // 蛋白電泳分析
+    // TODO(panel, v0.9.10 audit): 09065B SPE reports Albumin / α1 / α2 /
+    // β / γ globulin fractions (each its own LOINC: 2865-7 / 2867-3 /
+    // 2868-1 / 2869-9 / 2871-5) + A/G ratio (1759-0). Currently all
+    // collapse to 90991-1. Deferred because (a) SPE is rarely tracked
+    // in 健康存摺 trend views, (b) SMART app shows raw display per row.
+    // Promote to DISPLAY_FIRST_CODES + add PANEL_LOINC_MAP if SMART app
+    // groups by LOINC anywhere.
     // 12028B / 12029B IgM (serum, immunodiffusion / nephelometry) — previously
     // both mapped to LOINC 14002-0 which is actually 'IgM [Units/volume] in
     // Cord blood' (neonatal specimen, verified loinc.org/14002-0/). Wrong
@@ -1163,6 +1175,11 @@
     // 抗嗜中性球細胞質抗體 (ANCA)
     "12204B": "20584-9",
     // 白血球表面標記
+    // TODO(panel, v0.9.10 audit): Flow cytometry CD markers — CD3 (8124-0)
+    // / CD4 (8123-2) / CD8 (8128-1) / CD19 (8118-2) / CD56 (8125-7) /
+    // CD4-CD8 ratio (54218-3). Currently collapse to panel 20584-9.
+    // Deferred (same reasoning as 09065B). Promote if SMART app pivots
+    // on LOINC.
     "25013B": "44596-5",
     // 螢光切片檢查
     // ── Hepatitis ─────────────────────────────────────
@@ -1188,6 +1205,9 @@
     // ── Audiology / pulmonary ─────────────────────────
     "17009B": "24341-0",
     // 一氧化碳肺瀰散量
+    // TODO(panel, v0.9.10 audit): DLCO test usually reports DLCO + VA +
+    // DLCO/VA as separate sub-rows. Deferred — pulmonary function rarely
+    // surfaces in 健康存摺 + low pivot-by-LOINC risk in current SMART apps.
     "22001C": "45498-3",
     // 純音聽力檢查
     "22015B": "45498-3",
@@ -1265,6 +1285,11 @@
     // Osmolality — Serum or Plasma
     "08079B": "30240-6",
     // D-dimer — Plt poor plasma
+    // ── Coag panel members (kept here as fallback) ────────
+    // 08026C PT/INR is a 2-row panel (PT in seconds + INR). Promoted to
+    // DISPLAY_FIRST_CODES so per-item displays route via PANEL_LOINC_MAP;
+    // this entry is only consumed when the display is empty/unrecognised,
+    // in which case INR is the safer default (more clinically tracked).
     // ── Thyroid ───────────────────────────────────────
     // Free T4 has TWO valid LOINCs that differ only in unit-system:
     //   3024-7  Component=Thyroxine.free, Property=MCnc (Mass conc, ng/dL)
@@ -1413,8 +1438,15 @@
     // is CKD stage 3a). Bug report 2026-05-27 (Part 2).
     "09041B",
     // ABG panel
-    "16008C"
+    "16008C",
     // Synovial / body-fluid panel
+    "08026C"
+    // PT/INR — Taiwan labs bill PT (seconds) AND INR under the
+    // same 08026C code as two sub-rows. Without panel-mode handling, both
+    // collapsed to LOINC 6301-6 (INR). For warfarin monitoring this is
+    // patient-safety-adjacent: a trend chart would plot PT seconds (~12)
+    // and INR (~2.5) on the same series, or label a PT=12 row as "INR=12"
+    // (instantly looks like critical anticoagulation overdose). v0.9.10.
   ]);
   var PANEL_LOINC_MAP = {
     // ── Urinalysis (06013C) ──────────────────────────────
@@ -1561,6 +1593,70 @@
       \u808C\u9178\u9150: "2160-0",
       \u808C\u9150\u9178: "2160-0",
       \u8840\u4E2D\u808C\u9178\u9150: "2160-0"
+    },
+    // ── PT/INR panel (08026C) ────────────────────────────
+    // Taiwan labs bill PT (seconds) and INR (ratio) under the SAME 08026C
+    // code, distinguished only by display string. Without this panel
+    // table both rows mapped to LOINC 6301-6 (INR); a warfarin trend
+    // view would plot a PT=12 sec point as INR=12 (instant overdose
+    // alarm) or merge PT and INR into one series. Each LOINC verified
+    // at loinc.org:
+    //   5902-2  Prothrombin time (PT) in Platelet poor plasma by
+    //           Coagulation assay
+    //   6301-6  INR in Platelet poor plasma by Coagulation assay
+    //   5894-1  Prothrombin time (PT) Control in Platelet poor plasma
+    //           by Coagulation assay
+    // Order is longest-key-wins inside _findLongestMatch so insertion
+    // order doesn't matter, but readability benefits from
+    // longest-specific first.
+    "08026C": {
+      "international normalized ratio": "6301-6",
+      "prothrombin time control": "5894-1",
+      "pt control": "5894-1",
+      "control pt": "5894-1",
+      \u5C0D\u7167: "5894-1",
+      \u5C0D\u7167\u7D44: "5894-1",
+      "prothrombin time": "5902-2",
+      "pt (sec)": "5902-2",
+      "pt sec": "5902-2",
+      "pt-sec": "5902-2",
+      \u51DD\u8840\u9176\u539F\u6642\u9593: "5902-2",
+      \u51DD\u8840\u6642\u9593: "5902-2",
+      inr: "6301-6",
+      pt: "5902-2"
+    },
+    // ── Synovial / body-fluid panel (16008C) ─────────────
+    // 16008C bills the full body-fluid analysis: appearance / color /
+    // WBC count / differential. Each sub-item has its own specimen-
+    // aware LOINC. Panel-scoped table runs before the global one so
+    // shorter generic keys (e.g. global "wbc" → 6690-2 blood WBC)
+    // can't shadow the body-fluid specific LOINCs. Each LOINC verified
+    // at loinc.org:
+    //   5778-6  Color of Urine (re-used for body-fluid color; cell-counter
+    //           descriptive LOINC, specimen-agnostic in practice)
+    //   26466-3 Leukocytes [#/volume] in Body fluid by Manual count
+    //   10328-6 Neutrophils/100 leukocytes in Body fluid
+    //   13046-8 Lymphocytes [#/volume] in Body fluid
+    // The "sf.*" notation matches Taiwan LIS prefixes ("SF" = Synovial
+    // Fluid) that appear in raw display text.
+    "16008C": {
+      "sf.neutrophil": "10328-6",
+      "sf neutrophil": "10328-6",
+      neutrophil: "10328-6",
+      "sf.lympho": "13046-8",
+      "sf lympho": "13046-8",
+      "sf.lymphocyte": "13046-8",
+      lymphocyte: "13046-8",
+      lymphocytes: "13046-8",
+      "sf.wbc": "26466-3",
+      "sf wbc": "26466-3",
+      wbc: "26466-3",
+      leukocyte: "26466-3",
+      leukocytes: "26466-3",
+      "sf.color": "5778-6",
+      "sf color": "5778-6",
+      color: "5778-6",
+      \u984F\u8272: "5778-6"
     },
     // ── CBC with auto diff (08013C) ──────────────────────
     // 08013C reports each cell type as a PERCENT of leukocytes (per 100),
@@ -1877,9 +1973,15 @@
     // ── Tumor markers / proteins (audit 2026-05-19) ──
     "1952-1": "Beta-2-Microglobulin [Mass/volume] in Serum or Plasma",
     // ── Coagulation ──────────────────────────────────
+    "5902-2": "Prothrombin time (PT) in Platelet poor plasma by Coagulation assay",
+    "5894-1": "Prothrombin time (PT) Control in Platelet poor plasma by Coagulation assay",
     "6301-6": "INR in Platelet poor plasma by Coagulation assay",
     "14979-9": "aPTT in Platelet poor plasma by Coagulation assay",
     "30240-6": "Fibrin D-dimer [Mass/volume] in Platelet poor plasma",
+    // ── Body fluid (16008C panel members; v0.9.10) ───
+    "26466-3": "Leukocytes [#/volume] in Body fluid by Manual count",
+    "10328-6": "Neutrophils/100 leukocytes in Body fluid",
+    "13046-8": "Lymphocytes [#/volume] in Body fluid",
     // ── Vital signs (IHKE3402) ───────────────────────
     "8302-2": "Body height",
     "29463-7": "Body weight",
@@ -2040,7 +2142,7 @@
         const seen = /* @__PURE__ */ new Set();
         const out = [];
         for (const e of entries) {
-          const c = e.appliesTo?.[0]?.coding[0]?.code;
+          const c = e.appliesTo?.[0]?.coding?.[0]?.code;
           if (!c || seen.has(c)) continue;
           seen.add(c);
           out.push(e);
