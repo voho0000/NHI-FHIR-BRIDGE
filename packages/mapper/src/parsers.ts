@@ -73,10 +73,20 @@ export interface RangeEntry {
   text: string;
   low?: Quantity;
   high?: Quantity;
-  appliesTo?: Array<{
-    coding: Array<{ system: string; code: string; display: string }>;
-    text: string;
-  }>;
+  appliesTo?: Array<
+    | { coding: Array<{ system: string; code: string; display: string }>; text: string }
+    | { text: string }
+  >;
+  /**
+   * Set when the raw "range" string is actually a result interpretation
+   * (e.g. "正常" / "異常，建議：請洽詢醫師") rather than a numeric range.
+   * Caller (observation mapper) should route this to
+   * Observation.interpretation / Observation.note instead of populating
+   * Observation.referenceRange. When this is set the RangeEntry should
+   * NOT be emitted as a referenceRange.
+   * Added v0.9.8 per bug report 2026-05-27 Part 3 C4.
+   */
+  interpretationText?: string;
 }
 
 // ── UCUM normalisation ────────────────────────────────────────────────
@@ -257,12 +267,53 @@ export function parseRangeMulti(rawRange: string, unit: string): RangeEntry[] {
 export function parseRange(rawRange: string, unit: string): RangeEntry | null {
   const s = translateFullwidth((rawRange || "").trim());
   if (!s) return null;
+
+  // C4 (bug report 2026-05-27 Part 3): result-interpretation strings
+  // packed into the reference-range field — "正常" / "異常，建議：請洽詢
+  // 醫師" / etc. These aren't ranges and shouldn't end up in
+  // Observation.referenceRange. Caller routes them to .interpretation.
+  if (_looksLikeInterpretationText(s)) {
+    return { text: rawRange, interpretationText: s };
+  }
+
   const entry: RangeEntry = { text: rawRange };
 
   const m = s.match(RR_LOWHIGH_BRACKETS);
   if (m) {
     const lo = (m[1] ?? "").trim();
     const hi = (m[2] ?? "").trim();
+
+    // C5 (bug report Part 3): specimen + threshold packed into one
+    // bracket side, e.g. "[][Random Urine＜ 1.9]" or "[][plasma ≦0.04]".
+    // Try this FIRST so the comparator inside doesn't trigger the
+    // "looks numeric → fall to regular parsing" branch below (which
+    // would catch the threshold but lose the specimen). Returns
+    // appliesTo (specimen) + structured low/high.
+    const isHiEmpty = !hi || hi === "無" || hi === "空白";
+    const isLoEmpty = !lo || lo === "無" || lo === "空白";
+    if (hi && isLoEmpty) {
+      const spec = _tryExtractSpecimenThreshold(hi, unit);
+      if (spec) return { text: rawRange, ...spec };
+    }
+    if (lo && isHiEmpty) {
+      const spec = _tryExtractSpecimenThreshold(lo, unit);
+      if (spec) return { text: rawRange, ...spec };
+    }
+
+    // C3 (bug report Part 3): qualitative bracket convention like
+    // "[Negative][]", "[Yellow][]", "[Nonreactive][]". The value is the
+    // expected NORMAL result (categorical), not a numeric range. Strip
+    // brackets and surface the cleaned qualitative term as range.text
+    // so downstream consumers don't have to parse VGH-internal syntax.
+    // Only applies when one side is non-numeric qualitative AND the
+    // other side is empty / placeholder.
+    if (lo && !_looksNumericLike(lo) && isHiEmpty) {
+      return { text: lo };
+    }
+    if (hi && !_looksNumericLike(hi) && isLoEmpty) {
+      return { text: hi };
+    }
+
     for (const [side, sideVal] of [
       ["low", lo],
       ["high", hi],
@@ -418,6 +469,72 @@ export function tryParseQuantity(
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
+
+/**
+ * True when the raw string is a result-interpretation phrase rather than
+ * a reference range. Used in parseRange to flag interpretation text that
+ * shouldn't be emitted as Observation.referenceRange (caller routes it
+ * to .interpretation or .note instead). Bug report 2026-05-27 Part 3 C4.
+ */
+function _looksLikeInterpretationText(s: string): boolean {
+  const t = s.trim();
+  if (!t) return false;
+  // Exact whole-string matches for the most common patient-result phrases
+  if (t === "正常" || t === "異常" || t === "陽性" || t === "陰性") return true;
+  // Free-text interpretive phrases — checked via substring (no brackets).
+  // Skip if the string looks structurally like a bracket range, dash
+  // range, or comparator (handled elsewhere).
+  if (t.startsWith("[")) return false;
+  if (t.includes("-") || t.includes("~") || /[<>≦≧≤≥]/.test(t)) return false;
+  return (
+    t.includes("建議") ||
+    t.includes("請洽詢") ||
+    t.includes("請聯絡") ||
+    t.includes("見備註")
+  );
+}
+
+/**
+ * Cheap test: is this side likely to carry numeric content (so the
+ * existing bracket-range branches should try to parse it) versus a
+ * categorical / qualitative term (e.g. "Negative" / "Yellow" / "Clear")?
+ * Used in parseRange C3 path to decide whether to keep parsing or to
+ * unwrap as plain text. Numbers, comparators, dash-ranges, percentages
+ * all count as "numeric-like".
+ */
+function _looksNumericLike(s: string): boolean {
+  return /\d/.test(s) || /[<>≦≧≤≥]/.test(s);
+}
+
+/**
+ * Try to extract specimen + comparator threshold from a single bracket
+ * side like "Random Urine＜ 1.9" or "plasma ≦0.04". Returns appliesTo +
+ * structured low/high when successful. Bug report 2026-05-27 Part 3 C5.
+ *
+ * Only matches "<specimen> <comparator> <number>" — anything more complex
+ * falls back to plain text.
+ */
+function _tryExtractSpecimenThreshold(
+  s: string,
+  unit: string,
+): { appliesTo: Array<{ text: string }>; low?: Quantity; high?: Quantity } | null {
+  // Comparator chars: ASCII < > <= >= and fullwidth ＜ ＞ ≦ ≧ ≤ ≥
+  const m = s.match(/^([^<>≦≧≤≥]+?)\s*([<>≦≧≤≥]=?)\s*([\d.]+)$/);
+  if (!m) return null;
+  const specimen = (m[1] ?? "").trim();
+  const op = (m[2] ?? "").trim();
+  const v = tryParseFloat(m[3] ?? "");
+  if (!specimen || v === null) return null;
+  const result: { appliesTo: Array<{ text: string }>; low?: Quantity; high?: Quantity } = {
+    appliesTo: [{ text: specimen }],
+  };
+  if (op === ">" || op === "≧" || op === "≥" || op === ">=") {
+    result.low = makeQuantity(v, unit);
+  } else {
+    result.high = makeQuantity(v, unit);
+  }
+  return result;
+}
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

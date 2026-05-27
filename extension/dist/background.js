@@ -989,6 +989,9 @@
     }
     if (parts.length > 0) {
       dosage.text = parts.join(" ");
+    } else if (raw.dosage_text) {
+      const t = String(raw.dosage_text).trim();
+      if (t) dosage.text = t;
     }
     if (raw.route) {
       dosage.route = {
@@ -1401,6 +1404,13 @@
     // CBC w/ auto diff panel
     "06013C",
     // Urinalysis macroscopic panel
+    "09015C",
+    // Serum creatinine — Taiwan labs report eGFR as a piggyback
+    // sub-row on the same Crea billing code. Without panel-mode handling,
+    // every row under 09015C (incl. the eGFR one) got LOINC 2160-0
+    // (Creatinine), causing SMART apps to display eGFR=33 as CREA=33 mg/dL
+    // — an instant fatal-looking false reading (real CREA ~1.94, real eGFR
+    // is CKD stage 3a). Bug report 2026-05-27 (Part 2).
     "09041B",
     // ABG panel
     "16008C"
@@ -1470,6 +1480,128 @@
       \u9178\u9E7C\u5EA6: "5803-2",
       glucose: "5792-7"
       // Last in this block so 'urine
+    },
+    // ── CBC basic panel (08011C) ─────────────────────────
+    // NHI 08011C bills the basic CBC items (RBC + indices, HGB, HCT,
+    // PLT, WBC). Without per-item LOINCs under the panel, MCV / MCHC /
+    // RDW were being shadowed:
+    //   • MCV "平均紅血球容積" → matched global "紅血球" → 789-8 (RBC) ✗
+    //   • MCHC "MCHC" → no key matched → fell back to panel 24317-0 ✗
+    //   • RDW → no key matched → fell back to panel 24317-0 ✗
+    //   • Basophil / Lymphocyte / Monocyte → fell to "白血球" → 6690-2 ✗
+    // Panel-scoped table runs BEFORE the global one so the longer,
+    // specific CJK / ASCII keys win. All LOINCs verified at loinc.org
+    // (Long Common Name documented inline). Bug report 2026-05-27.
+    "08011C": {
+      // RBC indices — longer CJK keys first so they beat the bare
+      // "紅血球" key in the global LOINC_MAP path. (longest-key-wins
+      // semantics in _findLongestMatch make insertion order irrelevant
+      // within this dict but readability still benefits.)
+      \u5E73\u5747\u7D05\u8840\u7403\u5BB9\u7A4D: "787-2",
+      // MCV — Erythrocyte mean corpuscular volume
+      \u5E73\u5747\u7D05\u8840\u7403\u9AD4\u7A4D: "787-2",
+      mcv: "787-2",
+      \u5E73\u5747\u7D05\u8840\u7403\u8840\u8272\u7D20\u6FC3\u5EA6: "786-4",
+      // MCHC — Erythrocytes mean corpuscular HGB concentration
+      mchc: "786-4",
+      \u5E73\u5747\u7D05\u8840\u7403\u8840\u8272\u7D20: "785-6",
+      // MCH — Erythrocyte mean corpuscular hemoglobin
+      mch: "785-6",
+      \u7D05\u8840\u7403\u5206\u5E03\u5BEC\u5EA6: "788-0",
+      // RDW — Erythrocyte distribution width
+      \u7D05\u8840\u7403\u9AD4\u7A4D\u5206\u4F48\u5BEC\u5EA6: "788-0",
+      rdw: "788-0",
+      // Basic counts — duplicated from global LOINC_MAP so the panel is
+      // self-contained and immune to future global-table tweaks.
+      hematocrit: "4544-3",
+      // HCT — Hematocrit volume fraction
+      \u8840\u7403\u5BB9\u7A4D\u6BD4: "4544-3",
+      \u8840\u6BD4\u5BB9: "4544-3",
+      hct: "4544-3",
+      hemoglobin: "718-7",
+      // HGB
+      \u8840\u7D05\u7D20: "718-7",
+      hgb: "718-7",
+      hb: "718-7",
+      \u7D05\u8840\u7403: "789-8",
+      // RBC (kept here so panel resolution doesn't depend on global table)
+      rbc: "789-8",
+      \u767D\u8840\u7403: "6690-2",
+      // WBC
+      wbc: "6690-2",
+      platelet: "777-3",
+      // PLT
+      \u8840\u5C0F\u677F: "777-3",
+      plt: "777-3"
+    },
+    // ── Serum creatinine + eGFR piggyback (09015C) ──────
+    // NHI bills creatinine under 09015C; Taiwan labs auto-calculate eGFR
+    // (CKD-EPI / MDRD) and append it as a separate sub-row using the
+    // SAME 09015C billing code, distinguished only by display text.
+    // Without this panel-scoped table, every 09015C row inherited LOINC
+    // 2160-0 (serum creatinine) and SMART apps routed eGFR values into
+    // the creatinine column — patient-safety issue (eGFR=33 displayed as
+    // CREA=33 mg/dL is instantly mistaken for acute kidney failure).
+    //
+    // MDRD (33914-3) is the default per Taiwan KDIGO guidelines. Newer
+    // CKD-EPI formulas (62238-1, 88293-6, 98979-8) covered as well so a
+    // single panel entry handles whichever formula the lab uses. The
+    // explicit creatinine entries are duplicated from the global LOINC_MAP
+    // so the panel is self-contained.
+    "09015C": {
+      egfr: "33914-3",
+      // eGFR — Glomerular filtration rate (MDRD default)
+      "estimated gfr": "33914-3",
+      "estimated glomerular filtration rate": "33914-3",
+      "glomerular filtration rate": "33914-3",
+      \u814E\u7D72\u7403\u904E\u6FFE\u7387: "33914-3",
+      \u4F30\u7B97\u814E\u7D72\u7403\u904E\u6FFE\u7387: "33914-3",
+      creatinine: "2160-0",
+      crea: "2160-0",
+      \u808C\u9178\u9150: "2160-0",
+      \u808C\u9150\u9178: "2160-0",
+      \u8840\u4E2D\u808C\u9178\u9150: "2160-0"
+    },
+    // ── CBC with auto diff (08013C) ──────────────────────
+    // 08013C reports each cell type as a PERCENT of leukocytes (per 100),
+    // distinct LOINCs from the absolute-count series (08010C Eosinophil
+    // count → 711-2 is a different billing code with the count semantics).
+    // Adding these here so under 08013C the diff entries route to the
+    // /100 leukocytes LOINCs instead of falling to global eosinophil
+    // count or "白血球" → WBC.
+    "08013C": {
+      neutrophil: "770-8",
+      // Neutrophils/100 leukocytes
+      neutrophils: "770-8",
+      "neutrophilic segment": "770-8",
+      segmented: "770-8",
+      \u4E2D\u6027\u7403: "770-8",
+      \u55DC\u4E2D\u6027\u7403: "770-8",
+      \u55DC\u4E2D\u6027\u767D\u8840\u7403: "770-8",
+      lymphocyte: "736-9",
+      // Lymphocytes/100 leukocytes
+      lymphocytes: "736-9",
+      \u6DCB\u5DF4\u7403: "736-9",
+      \u6DCB\u5DF4\u7D30\u80DE: "736-9",
+      monocyte: "5905-5",
+      // Monocytes/100 leukocytes
+      monocytes: "5905-5",
+      \u55AE\u6838\u7403: "5905-5",
+      eosinophil: "713-8",
+      // Eosinophils/100 leukocytes (% not #/vol)
+      eosinophils: "713-8",
+      \u55DC\u9178\u6027\u767D\u8840\u7403: "713-8",
+      \u55DC\u9178: "713-8",
+      \u55DC\u4F0A\u7D05\u6027\u767D\u8840\u7403: "713-8",
+      \u55DC\u4F0A\u7D05: "713-8",
+      basophil: "706-2",
+      // Basophils/100 leukocytes
+      basophils: "706-2",
+      \u55DC\u9E7C\u6027\u767D\u8840\u7403: "706-2",
+      \u55DC\u9E7C: "706-2",
+      // WBC absolute count can also appear on the diff panel printout.
+      \u767D\u8840\u7403: "6690-2",
+      wbc: "6690-2"
     }
   };
   var LOINC_MAP = {
@@ -1612,11 +1744,22 @@
     bicarbonate: "1959-6",
     tco2: "2028-9",
     // Total CO2 Moles/vol Arterial
-    sbe: "11555-0",
-    // Standard base excess Arterial
-    abe: "11555-0",
+    // Bug report 2026-05-27 Part 3 C1: SBE and ABE were both mapped to
+    // 11555-0 ("Base excess in Arterial blood by calculation"), so SMART
+    // apps that pivot by LOINC collapsed two clinically distinct analytes
+    // into one column. ABE is the actual (non-standardised) base excess;
+    // SBE is the standardised pH-7.40 / Hb-5 g/dL value. Different normal
+    // ranges, different clinical interpretation. Splitting per bug report.
+    // (Previous sbc → 1925-7 mapping kept as-is: SBC is rarely reported
+    // in Taiwan ABG; if it ever collides with the new ABE → 1925-7 in a
+    // single bundle, the SMART app will need to disambiguate via code.text
+    // — left as a known follow-up rather than guessing a new SBC LOINC.)
+    abe: "1925-7",
+    // ABE — Base excess in Blood by calculation
+    sbe: "1927-3",
+    // SBE — Base excess in Arterial blood adjusted to pH 7.40
     sbc: "1925-7",
-    // Standard bicarbonate Arterial
+    // SBC — Standard bicarbonate Arterial (legacy mapping; see comment above)
     saturat: "2713-6",
     // O2 saturation Arterial
     sao2: "2713-6",
@@ -1911,11 +2054,30 @@
   function parseRange(rawRange, unit) {
     const s = translateFullwidth((rawRange || "").trim());
     if (!s) return null;
+    if (_looksLikeInterpretationText(s)) {
+      return { text: rawRange, interpretationText: s };
+    }
     const entry = { text: rawRange };
     const m = s.match(RR_LOWHIGH_BRACKETS);
     if (m) {
       const lo = (m[1] ?? "").trim();
       const hi = (m[2] ?? "").trim();
+      const isHiEmpty = !hi || hi === "\u7121" || hi === "\u7A7A\u767D";
+      const isLoEmpty = !lo || lo === "\u7121" || lo === "\u7A7A\u767D";
+      if (hi && isLoEmpty) {
+        const spec = _tryExtractSpecimenThreshold(hi, unit);
+        if (spec) return { text: rawRange, ...spec };
+      }
+      if (lo && isHiEmpty) {
+        const spec = _tryExtractSpecimenThreshold(lo, unit);
+        if (spec) return { text: rawRange, ...spec };
+      }
+      if (lo && !_looksNumericLike(lo) && isHiEmpty) {
+        return { text: lo };
+      }
+      if (hi && !_looksNumericLike(hi) && isLoEmpty) {
+        return { text: hi };
+      }
       for (const [side, sideVal] of [
         ["low", lo],
         ["high", hi]
@@ -1993,7 +2155,20 @@
       comparator = cm[1] ?? null;
       s = (cm[2] ?? "").trim();
     }
-    const v = tryParseFloat(s.replace(/,/g, ""));
+    let v = tryParseFloat(s.replace(/,/g, ""));
+    if (v === null) {
+      const parenIdx = s.indexOf("(");
+      if (parenIdx > 0) {
+        const leading = s.slice(0, parenIdx).trim().replace(/,/g, "");
+        v = tryParseFloat(leading);
+      }
+      if (v === null) {
+        const m = s.match(/\(\s*([+\-\d.,]+)\s*\)/);
+        if (m && m[1]) {
+          v = tryParseFloat(m[1].replace(/,/g, ""));
+        }
+      }
+    }
     if (v === null) return null;
     const ucumCode = toUcum(unit);
     const qty = {
@@ -2010,6 +2185,34 @@
       qty.comparator = comparator;
     }
     return qty;
+  }
+  function _looksLikeInterpretationText(s) {
+    const t = s.trim();
+    if (!t) return false;
+    if (t === "\u6B63\u5E38" || t === "\u7570\u5E38" || t === "\u967D\u6027" || t === "\u9670\u6027") return true;
+    if (t.startsWith("[")) return false;
+    if (t.includes("-") || t.includes("~") || /[<>≦≧≤≥]/.test(t)) return false;
+    return t.includes("\u5EFA\u8B70") || t.includes("\u8ACB\u6D3D\u8A62") || t.includes("\u8ACB\u806F\u7D61") || t.includes("\u898B\u5099\u8A3B");
+  }
+  function _looksNumericLike(s) {
+    return /\d/.test(s) || /[<>≦≧≤≥]/.test(s);
+  }
+  function _tryExtractSpecimenThreshold(s, unit) {
+    const m = s.match(/^([^<>≦≧≤≥]+?)\s*([<>≦≧≤≥]=?)\s*([\d.]+)$/);
+    if (!m) return null;
+    const specimen = (m[1] ?? "").trim();
+    const op = (m[2] ?? "").trim();
+    const v = tryParseFloat(m[3] ?? "");
+    if (!specimen || v === null) return null;
+    const result = {
+      appliesTo: [{ text: specimen }]
+    };
+    if (op === ">" || op === "\u2267" || op === "\u2265" || op === ">=") {
+      result.low = makeQuantity(v, unit);
+    } else {
+      result.high = makeQuantity(v, unit);
+    }
+    return result;
   }
   function escapeRegex(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -2373,6 +2576,15 @@
     const s = String(value).trim();
     return s !== "" && s !== "\u2014" && s !== "-" && s !== "N/A" && s !== "null";
   }
+  function _canonicalizeUnit(display, _code, rawUnit) {
+    const u = (rawUnit ?? "").trim();
+    const isBogus = u === "" || u === "N" || u === "n";
+    if (!isBogus) return rawUnit;
+    if (/egfr|estimated\s*gfr|estimated\s*glomerular|腎絲球過濾率/i.test(display)) {
+      return "mL/min/1.73m2";
+    }
+    return rawUnit;
+  }
   var MEANINGFUL_INTERPS = /* @__PURE__ */ new Set([
     "normal",
     "abnormal",
@@ -2580,13 +2792,21 @@
       resource.effectiveDateTime = `${raw.date}T00:00:00+08:00`;
     }
     if (hasValue) {
-      const qty = tryParseQuantity(String(value), raw.unit ?? "");
+      const unit = _canonicalizeUnit(display, code, raw.unit ?? "");
+      const qty = tryParseQuantity(String(value), unit);
       if (qty) resource.valueQuantity = qty;
       else resource.valueString = String(value);
     }
+    let _interpFromRange = null;
     if (raw.reference_range) {
       const rr = parseRange(String(raw.reference_range), raw.unit ?? "");
-      if (rr) resource.referenceRange = [rr];
+      if (rr) {
+        if (rr.interpretationText) {
+          _interpFromRange = rr.interpretationText;
+        } else {
+          resource.referenceRange = [rr];
+        }
+      }
     }
     const interpCodingResult = mapInterpretation(interp) || deriveInterpretation(
       value !== null && value !== void 0 ? String(value) : "",
@@ -2595,6 +2815,9 @@
     );
     if (interpCodingResult) {
       resource.interpretation = [{ coding: [interpCodingResult] }];
+    } else if (_interpFromRange) {
+      const coded = mapInterpretation(_interpFromRange.toLowerCase());
+      resource.interpretation = coded ? [{ coding: [coded], text: _interpFromRange }] : [{ text: _interpFromRange }];
     }
     return resource;
   }
@@ -2700,13 +2923,18 @@
     if (specimen) resource.specimen = { display: specimen };
     const hasValue = isMeaningfulValue(value);
     if (hasValue) {
-      const qty = tryParseQuantity(String(value), raw.unit ?? "");
+      const unit = _canonicalizeUnit(display, code, raw.unit ?? "");
+      const qty = tryParseQuantity(String(value), unit);
       if (qty) resource.valueQuantity = qty;
       else resource.valueString = String(value);
     }
+    let _interpFromRange = null;
     if (raw.reference_range) {
       const rrs = parseRangeMulti(String(raw.reference_range), raw.unit ?? "");
-      if (rrs.length > 0) resource.referenceRange = rrs;
+      const realRanges = rrs.filter((r) => !r.interpretationText);
+      if (realRanges.length > 0) resource.referenceRange = realRanges;
+      const flagged = rrs.find((r) => r.interpretationText);
+      if (flagged?.interpretationText) _interpFromRange = flagged.interpretationText;
     }
     const interpCodingResult = mapInterpretation(interp) || deriveInterpretation(
       value !== null && value !== void 0 ? String(value) : "",
@@ -2715,6 +2943,9 @@
     );
     if (interpCodingResult) {
       resource.interpretation = [{ coding: [interpCodingResult] }];
+    } else if (_interpFromRange) {
+      const coded = mapInterpretation(_interpFromRange.toLowerCase());
+      resource.interpretation = coded ? [{ coding: [coded], text: _interpFromRange }] : [{ text: _interpFromRange }];
     }
     return resource;
   }
@@ -3125,6 +3356,7 @@
     const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
     const indication = stripIcdPrefix(pickEnglish(rawIndication));
     const indication_zh = visit?.icd9cm_CODE_CNAME2 || visit?.icd9cm_code_cname2 || stripIcdPrefix(pickChinese(rawIndication));
+    const dosageText = drug.drug_freq || drug.druG_FREQ || drug.drug_FREQ || drug.frequency || drug.FREQUENCY || drug.drug_use || drug.druG_USE || drug.drug_USE || drug.usage || drug.USAGE || drug.sig || drug.SIG || drug.dosage || drug.DOSAGE || "";
     return {
       date,
       // Only emit when meaningfully populated AND different from start.
@@ -3137,6 +3369,11 @@
       dose: "",
       frequency: "",
       route: "",
+      // Raw NHI 用法 text — passes verbatim into the mapper so SMART apps
+      // see at least the literal sig string even before any structured
+      // BID/TID/PC parsing is added. Empty when NHI fixture didn't carry
+      // any recognised 用法 field.
+      dosage_text: String(dosageText).trim(),
       quantity: drug.order_qty || drug.order_QTY || "",
       duration_days: Number.isFinite(days) ? days : 0,
       indication,

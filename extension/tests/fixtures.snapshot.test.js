@@ -136,6 +136,7 @@ describe("adapter fixture snapshots", () => {
         "code": "B025823100",
         "course_of_therapy": "",
         "date": "2025-05-18",
+        "dosage_text": "",
         "dose": "",
         "drug_class": "ANTIPLATELET AGENTS",
         "drug_class_zh": "抗血小板藥",

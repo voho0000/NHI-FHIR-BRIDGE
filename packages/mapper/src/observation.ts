@@ -483,6 +483,24 @@ function isMeaningfulValue(value: unknown): boolean {
   return s !== "" && s !== "—" && s !== "-" && s !== "N/A" && s !== "null";
 }
 
+// Replace bogus NHI-supplied units with the canonical UCUM symbol for
+// known analytes. Bug report 2026-05-27 Part 3 C2: eGFR rows arrive
+// with unit "N" (a Taiwan LIS placeholder, not UCUM) — without this
+// override they ship as `{value: 36.3, unit: "N", code: "N"}` which
+// downstream consumers can't display or convert. Whitelist approach
+// keeps changes scoped: only known analyte + known-bogus-unit pairs
+// get rewritten, everything else passes through.
+function _canonicalizeUnit(display: string, _code: string, rawUnit: string): string {
+  const u = (rawUnit ?? "").trim();
+  const isBogus = u === "" || u === "N" || u === "n";
+  if (!isBogus) return rawUnit;
+  // eGFR — Taiwan LIS quirk. LOINC 33914-3 canonical unit is mL/min/1.73m2.
+  if (/egfr|estimated\s*gfr|estimated\s*glomerular|腎絲球過濾率/i.test(display)) {
+    return "mL/min/1.73m2";
+  }
+  return rawUnit;
+}
+
 const MEANINGFUL_INTERPS = new Set([
   "normal",
   "abnormal",
@@ -734,14 +752,26 @@ export function mapObservation(
   }
 
   if (hasValue) {
-    const qty = tryParseQuantity(String(value), raw.unit ?? "");
+    const unit = _canonicalizeUnit(display, code, raw.unit ?? "");
+    const qty = tryParseQuantity(String(value), unit);
     if (qty) resource.valueQuantity = qty;
     else resource.valueString = String(value);
   }
 
+  // C4 (bug report 2026-05-27 Part 3): parseRange may flag the raw
+  // reference_range as actually being result-interpretation text
+  // ("正常" / "異常..."). Route to interpretation (below) instead of
+  // emitting it as a referenceRange.
+  let _interpFromRange: string | null = null;
   if (raw.reference_range) {
     const rr = parseRange(String(raw.reference_range), raw.unit ?? "");
-    if (rr) resource.referenceRange = [rr];
+    if (rr) {
+      if (rr.interpretationText) {
+        _interpFromRange = rr.interpretationText;
+      } else {
+        resource.referenceRange = [rr];
+      }
+    }
   }
 
   const interpCodingResult =
@@ -753,6 +783,14 @@ export function mapObservation(
     );
   if (interpCodingResult) {
     resource.interpretation = [{ coding: [interpCodingResult] }];
+  } else if (_interpFromRange) {
+    // Lower priority than explicit interp / value-vs-range derivation:
+    // when neither is available but the (mis-used) reference_range
+    // field carried interpretation text, surface it via .interpretation.
+    const coded = mapInterpretation(_interpFromRange.toLowerCase());
+    resource.interpretation = coded
+      ? [{ coding: [coded], text: _interpFromRange }]
+      : [{ text: _interpFromRange }];
   }
 
   return resource;
@@ -874,14 +912,23 @@ function buildObservation(
 
   const hasValue = isMeaningfulValue(value);
   if (hasValue) {
-    const qty = tryParseQuantity(String(value), raw.unit ?? "");
+    const unit = _canonicalizeUnit(display, code, raw.unit ?? "");
+    const qty = tryParseQuantity(String(value), unit);
     if (qty) resource.valueQuantity = qty;
     else resource.valueString = String(value);
   }
 
+  // C4 (bug report 2026-05-27 Part 3): keep entries flagged as
+  // interpretationText out of referenceRange (parseRangeMulti returns
+  // the same RangeEntry shape, including the .interpretationText
+  // marker). Surface them via .interpretation below.
+  let _interpFromRange: string | null = null;
   if (raw.reference_range) {
     const rrs = parseRangeMulti(String(raw.reference_range), raw.unit ?? "");
-    if (rrs.length > 0) resource.referenceRange = rrs;
+    const realRanges = rrs.filter((r) => !r.interpretationText);
+    if (realRanges.length > 0) resource.referenceRange = realRanges;
+    const flagged = rrs.find((r) => r.interpretationText);
+    if (flagged?.interpretationText) _interpFromRange = flagged.interpretationText;
   }
 
   const interpCodingResult =
@@ -893,6 +940,11 @@ function buildObservation(
     );
   if (interpCodingResult) {
     resource.interpretation = [{ coding: [interpCodingResult] }];
+  } else if (_interpFromRange) {
+    const coded = mapInterpretation(_interpFromRange.toLowerCase());
+    resource.interpretation = coded
+      ? [{ coding: [coded], text: _interpFromRange }]
+      : [{ text: _interpFromRange }];
   }
 
   return resource;

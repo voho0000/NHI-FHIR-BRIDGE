@@ -176,11 +176,56 @@ describe("parseRange — bracketed [low][high]", () => {
     expect(r?.high?.value).toBe(1.1);
   });
 
-  test("'Negative' (qualitative) → text-only entry", () => {
+  test("'Negative' (qualitative) → text-only entry, brackets stripped (v0.9.8)", () => {
+    // Bug report 2026-05-27 Part 3 C3: VGH bracket convention
+    // "[Negative][]" was leaking the brackets into referenceRange.text.
+    // Now the qualitative value gets unwrapped — SMART apps consume
+    // "Negative" directly instead of having to parse VGH-internal
+    // bracket syntax.
     const r = parseRange("[Negative][]", "");
-    expect(r?.text).toBe("[Negative][]");
+    expect(r?.text).toBe("Negative");
     expect(r?.low).toBeUndefined();
     expect(r?.high).toBeUndefined();
+  });
+
+  test("v0.9.8 — '[Yellow][]' qualitative → 'Yellow'", () => {
+    const r = parseRange("[Yellow][]", "");
+    expect(r?.text).toBe("Yellow");
+  });
+
+  test("v0.9.8 — '[Nonreactive][]' qualitative → 'Nonreactive'", () => {
+    const r = parseRange("[Nonreactive][]", "");
+    expect(r?.text).toBe("Nonreactive");
+  });
+
+  test("v0.9.8 — '[][Random Urine＜ 1.9]' → appliesTo + high", () => {
+    // Bug report Part 3 C5: specimen + threshold packed into a bracket
+    // side. Should split into structured appliesTo (specimen) + high
+    // (numeric threshold from comparator).
+    const r = parseRange("[][Random Urine＜ 1.9]", "mg/g");
+    expect(r?.appliesTo).toEqual([{ text: "Random Urine" }]);
+    expect(r?.high?.value).toBe(1.9);
+  });
+
+  test("v0.9.8 — '[][plasma ≦0.04]' → appliesTo + high", () => {
+    const r = parseRange("[][plasma ≦0.04]", "mg/dL");
+    expect(r?.appliesTo).toEqual([{ text: "plasma" }]);
+    expect(r?.high?.value).toBe(0.04);
+  });
+
+  test("v0.9.8 — '正常' is an interpretation, not a range", () => {
+    // Bug report Part 3 C4: free-text result phrase smuggled into the
+    // reference_range field. parseRange flags it with interpretationText
+    // so observation mapper routes it to .interpretation instead.
+    const r = parseRange("正常", "");
+    expect(r?.interpretationText).toBe("正常");
+    expect(r?.low).toBeUndefined();
+    expect(r?.high).toBeUndefined();
+  });
+
+  test("v0.9.8 — '異常，建議：請洽詢醫師' is an interpretation", () => {
+    const r = parseRange("異常，建議：請洽詢醫師", "");
+    expect(r?.interpretationText).toBe("異常，建議：請洽詢醫師");
   });
 });
 

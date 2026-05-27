@@ -166,9 +166,11 @@ export function mapMedicationRequest(
     resource.requester = { display: hospital };
   }
 
-  // Dosage — only when source actually has it. NHI's medication-list
-  // endpoint provides none of these; other HIS adapters get a
-  // structured dosage out.
+  // Dosage — try structured dose/unit/frequency first; if any are
+  // present they get joined into dosage.text. If those are empty but
+  // the adapter found a raw NHI 用法 string via dosage_text (bug report
+  // 2026-05-27 Part 3 C6), surface that verbatim as dosage.text so
+  // clinicians at least see "BID PC" / "QD AC" / etc. instead of nothing.
   const dosage: Record<string, any> = {};
   const parts: string[] = [];
   for (const k of ["dose", "unit", "frequency"] as const) {
@@ -176,6 +178,9 @@ export function mapMedicationRequest(
   }
   if (parts.length > 0) {
     dosage.text = parts.join(" ");
+  } else if (raw.dosage_text) {
+    const t = String(raw.dosage_text).trim();
+    if (t) dosage.text = t;
   }
   if (raw.route) {
     dosage.route = {

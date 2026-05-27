@@ -186,6 +186,30 @@ export function adaptMedicationFromDetail(drug, visit, options) {
     visit?.icd9cm_CODE_CNAME2 ||
     visit?.icd9cm_code_cname2 ||
     stripIcdPrefix(pickChinese(rawIndication));
+  // Bug report 2026-05-27 Part 3 C6: 758/758 MedicationRequests had no
+  // dosageInstruction. Author comment previously noted "List endpoint
+  // doesn't expose dose/frequency/route" but SMART app dev reported NHI
+  // 健保存摺 does expose 用法. Probe several likely raw NHI field names;
+  // if any contain a non-empty string we surface it via dosage_text →
+  // mapper sets MedicationRequest.dosageInstruction[0].text. Empty →
+  // no change (current behaviour preserved for fixtures that genuinely
+  // lack the field). Safe scaffolding.
+  const dosageText =
+    drug.drug_freq ||
+    drug.druG_FREQ ||
+    drug.drug_FREQ ||
+    drug.frequency ||
+    drug.FREQUENCY ||
+    drug.drug_use ||
+    drug.druG_USE ||
+    drug.drug_USE ||
+    drug.usage ||
+    drug.USAGE ||
+    drug.sig ||
+    drug.SIG ||
+    drug.dosage ||
+    drug.DOSAGE ||
+    "";
   return {
     date,
     // Only emit when meaningfully populated AND different from start.
@@ -198,6 +222,11 @@ export function adaptMedicationFromDetail(drug, visit, options) {
     dose: "",
     frequency: "",
     route: "",
+    // Raw NHI 用法 text — passes verbatim into the mapper so SMART apps
+    // see at least the literal sig string even before any structured
+    // BID/TID/PC parsing is added. Empty when NHI fixture didn't carry
+    // any recognised 用法 field.
+    dosage_text: String(dosageText).trim(),
     quantity: drug.order_qty || drug.order_QTY || "",
     duration_days: Number.isFinite(days) ? days : 0,
     indication,

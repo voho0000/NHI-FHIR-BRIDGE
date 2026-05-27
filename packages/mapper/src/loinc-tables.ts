@@ -562,9 +562,19 @@ export const LOINC_MAP: Record<string, string> = {
   hco3: "1959-6", // Bicarbonate Moles/vol Arterial
   bicarbonate: "1959-6",
   tco2: "2028-9", // Total CO2 Moles/vol Arterial
-  sbe: "11555-0", // Standard base excess Arterial
-  abe: "11555-0",
-  sbc: "1925-7", // Standard bicarbonate Arterial
+  // Bug report 2026-05-27 Part 3 C1: SBE and ABE were both mapped to
+  // 11555-0 ("Base excess in Arterial blood by calculation"), so SMART
+  // apps that pivot by LOINC collapsed two clinically distinct analytes
+  // into one column. ABE is the actual (non-standardised) base excess;
+  // SBE is the standardised pH-7.40 / Hb-5 g/dL value. Different normal
+  // ranges, different clinical interpretation. Splitting per bug report.
+  // (Previous sbc → 1925-7 mapping kept as-is: SBC is rarely reported
+  // in Taiwan ABG; if it ever collides with the new ABE → 1925-7 in a
+  // single bundle, the SMART app will need to disambiguate via code.text
+  // — left as a known follow-up rather than guessing a new SBC LOINC.)
+  abe: "1925-7", // ABE — Base excess in Blood by calculation
+  sbe: "1927-3", // SBE — Base excess in Arterial blood adjusted to pH 7.40
+  sbc: "1925-7", // SBC — Standard bicarbonate Arterial (legacy mapping; see comment above)
   saturat: "2713-6", // O2 saturation Arterial
   sao2: "2713-6",
   sat: "2713-6", // NHI display shows just "SAT"

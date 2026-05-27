@@ -15,6 +15,55 @@ import {
 
 const PATIENT_ID = "A123456789";
 
+describe("mapObservation — unit canonicalization (bug report Part 3 C2)", () => {
+  test("eGFR with NHI unit 'N' → canonical 'mL/min/1.73m2'", () => {
+    // Taiwan LIS quirk: eGFR rows ship with unit "N" (placeholder, not
+    // UCUM). Without canonicalization downstream FHIR consumers see
+    // {value: 36.3, unit: "N", code: "N"} which can't be displayed or
+    // compared. Mapper overrides to the LOINC 33914-3 canonical unit.
+    const r = mapObservation(
+      { code: "09015C", display: "eGFR", value: 36.3, unit: "N", date: "2026-05-01" },
+      PATIENT_ID,
+    );
+    expect(r?.valueQuantity?.value).toBe(36.3);
+    expect(r?.valueQuantity?.unit).toBe("mL/min/1.73m2");
+  });
+
+  test("eGFR with empty unit also normalised", () => {
+    const r = mapObservation(
+      { code: "09015C", display: "Estimated GFR", value: 90, unit: "", date: "2026-05-01" },
+      PATIENT_ID,
+    );
+    expect(r?.valueQuantity?.unit).toBe("mL/min/1.73m2");
+  });
+
+  test("eGFR with proper unit untouched (mL/min/1.73m2)", () => {
+    // Defensive: confirm we DON'T override an already-valid unit.
+    const r = mapObservation(
+      {
+        code: "09015C",
+        display: "eGFR",
+        value: 45.4,
+        unit: "mL/min/1.73m2",
+        date: "2026-05-01",
+      },
+      PATIENT_ID,
+    );
+    expect(r?.valueQuantity?.unit).toBe("mL/min/1.73m2");
+  });
+
+  test("non-eGFR rows with unit 'N' pass through unchanged", () => {
+    // The canonicalization is whitelisted by analyte — only eGFR has a
+    // known fix-up. Other rows with bogus unit "N" stay as-is so the
+    // canonicalization doesn't silently rewrite unrelated data.
+    const r = mapObservation(
+      { code: "09005C", display: "Glucose", value: 100, unit: "N", date: "2026-05-01" },
+      PATIENT_ID,
+    );
+    expect(r?.valueQuantity?.unit).toBe("N");
+  });
+});
+
 describe("mapObservation (single row)", () => {
   test("basic shape", () => {
     const r = mapObservation(
@@ -333,6 +382,26 @@ describe("findLoinc", () => {
     // through to global LOINC_MAP which has "egfr": "33914-3" since
     // the original adaptAdultPreventive implementation.
     expect(findLoinc("", "eGFR")).toBe("33914-3");
+  });
+
+  // ── ABG ABE / SBE split (bug report Part 3 C1) ────────────────
+  // Previously both were mapped to 11555-0 (generic "Base excess in
+  // Arterial blood by calculation"), so SMART apps collapsed them
+  // into one column. Now they get distinct LOINCs per loinc.org.
+
+  test("v0.9.8 — ABE under 09041B (ABG panel) → 1925-7 (NOT 11555-0)", () => {
+    expect(findLoinc("09041B", "ABE")).toBe("1925-7");
+  });
+
+  test("v0.9.8 — SBE under 09041B (ABG panel) → 1927-3 (NOT 11555-0)", () => {
+    expect(findLoinc("09041B", "SBE")).toBe("1927-3");
+  });
+
+  test("v0.9.8 — ABE and SBE no longer collapse to the same LOINC", () => {
+    // Defensive regression — splitting them into different LOINCs is
+    // the whole point of the fix. If anyone re-merges them in the
+    // future this test will fire.
+    expect(findLoinc("09041B", "ABE")).not.toBe(findLoinc("09041B", "SBE"));
   });
 
   test('findLoinc("14032C", "HBsAg") routes through NHI_TO_LOINC and returns correct HBsAg LOINC', () => {
