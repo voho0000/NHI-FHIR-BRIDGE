@@ -2,6 +2,38 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.11.3 重點 — 2026-05-27
+
+**🎨 Inline-link CTA 視覺統一**
+
+v0.11.2 的「→ 至 ④ 查看 開啟「醫析 MediPrisma」」CTA 用了藍底 banner 跟其他 panel 的「→ 請切到健保存摺分頁　回 ① 登入 →」hint 同型別卡片，視覺重量太重、跟下面兩張 meta card 競爭注意力。整 panel 三個藍塊堆疊不協調。
+
+改成 inline-link 統一 pattern：
+
+- `.status-action`（下載完 CTA）：藍色底線 link，no border / no background — 跟「安全說明 ↗」同 typography
+- `.cta-reason`（卡住提示）：同步改成藍色底線 link 風格，msg + jump 兩個 span 各帶底線、整個 row 仍可點
+
+兩處 CTA + 既有的「安全說明 ↗」現在共用同一個視覺語言。
+
+### Layout：sync hint 移到按鈕上方
+
+「→ 請切到健保存摺分頁　回 ① 登入 →」原本在 `取得健保存摺資料` button **下方**，現在改到**上方**：
+
+```
+→ 請切到健保存摺分頁              回 ① 登入 →
+[ 取得健保存摺資料 ]  (disabled)
+```
+
+讀的順序更直覺：先說「為什麼 button disable」再看到 disabled button。
+
+### Stale storage migration
+
+Pre-v0.11.2 的 syncStatus 帶有「— 接著至 ④ 查看 開啟「醫析 MediPrisma」瀏覽資料。」suffix（已被拆成 CTA button）。`_renderStatus()` 加 regex 一次性 strip 掉舊 suffix，避免 reload 後新版本同時顯示舊文字 + 新 CTA。
+
+純 popup UI，logic / mapper 沒變。Reload extension 即可。
+
+---
+
 ## 0.11.2 重點 — 2026-05-27
 
 **🖱️ 下載完狀態列加 CTA 按鈕 — 直接跳 Step 4**
