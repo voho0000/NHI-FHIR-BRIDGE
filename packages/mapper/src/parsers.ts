@@ -73,10 +73,10 @@ export interface RangeEntry {
   text: string;
   low?: Quantity;
   high?: Quantity;
-  appliesTo?: Array<
-    | { coding: Array<{ system: string; code: string; display: string }>; text: string }
-    | { text: string }
-  >;
+  appliesTo?: Array<{
+    coding?: Array<{ system: string; code: string; display: string }>;
+    text: string;
+  }>;
   /**
    * Set when the raw "range" string is actually a result interpretation
    * (e.g. "正常" / "異常，建議：請洽詢醫師") rather than a numeric range.
@@ -239,7 +239,7 @@ export function parseRangeMulti(rawRange: string, unit: string): RangeEntry[] {
       const seen = new Set<string>();
       const out: RangeEntry[] = [];
       for (const e of entries) {
-        const c = e.appliesTo?.[0]?.coding[0]?.code;
+        const c = e.appliesTo?.[0]?.coding?.[0]?.code;
         if (!c || seen.has(c)) continue;
         seen.add(c);
         out.push(e);
