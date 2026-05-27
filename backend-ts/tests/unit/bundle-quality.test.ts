@@ -638,6 +638,153 @@ describe("CI v0.11.1 — QC control rows must be filtered out", () => {
   });
 });
 
+// ── v0.11.7 — dedup-collision silent-drop in panels ────────────
+// Bug 2026-05-28 part 2: user's 20-row 06013C urinalysis panel
+// → bundle had only 11 (9 silent drops). Two dedup functions
+// (dedupePanelItems + dedupeCrossFormat) used (value)-only or
+// (date, value, unit, code) keys, which false-merged different
+// analytes that happened to share value="Negative" mg/dL. Plus
+// canonicalLabKey synonym table had wrong urinalysis mappings
+// (微白蛋白(尿) → ALBUMIN, 白血球酯脢 → WBC, etc.) that further
+// false-merged via stableId.
+describe("CI v0.11.7 — urinalysis panel: no silent drop from dedup collision", () => {
+  test("20-row 06013C panel (Bug 2026-05-28) — all distinct analytes preserved", () => {
+    // Exact reproduction of user's raw NHI response on 2026-01-14
+    // 長庚嘉義 — 20 rows under code 06013C. Bundle should contain
+    // 18 distinct analytes (2 legit cross-language merges of same
+    // analyte: Bilirubin/膽紅素 + CREA(U)/肌酸酐(尿液)).
+    const items = [
+      // Batch A (English-named)
+      {
+        code: "06013C",
+        display: "Bilirubin",
+        value: "Negative",
+        unit: "mg/dL",
+        date: "2026-01-14",
+      },
+      { code: "06013C", display: "Blood", value: "Negative", unit: "-", date: "2026-01-14" },
+      {
+        code: "06013C",
+        display: "CREA(U)(半定量)",
+        value: "100",
+        unit: "mg/dL",
+        date: "2026-01-14",
+      },
+      { code: "06013C", display: "Color", value: "Straw", unit: "-", date: "2026-01-14" },
+      { code: "06013C", display: "Glucose", value: "4+ (2000)", unit: "mg/dL", date: "2026-01-14" },
+      // Batch B (Chinese-named)
+      { code: "06013C", display: "亞硝酸鹽", value: "Negative", unit: "mg/dL", date: "2026-01-14" },
+      {
+        code: "06013C",
+        display: "尿潛血",
+        value: "Negative",
+        unit: "空白空白",
+        date: "2026-01-14",
+      },
+      { code: "06013C", display: "尿糖", value: "4+ (2000)", unit: "mg/dL", date: "2026-01-14" },
+      {
+        code: "06013C",
+        display: "尿膽素原",
+        value: "Normal (＜2.0)",
+        unit: "mg/dL",
+        date: "2026-01-14",
+      },
+      { code: "06013C", display: "尿蛋白", value: "Trace (15)", unit: "mg/dL", date: "2026-01-14" },
+      {
+        code: "06013C",
+        display: "微白蛋白(尿)(半定量)",
+        value: "80",
+        unit: "mg/L",
+        date: "2026-01-14",
+      },
+      {
+        code: "06013C",
+        display: "微白蛋白/肌酐酸比值(半定量)",
+        value: "1+ (80)",
+        unit: "mg/g",
+        date: "2026-01-14",
+      },
+      { code: "06013C", display: "比重", value: "1.021", unit: "空白空白", date: "2026-01-14" },
+      { code: "06013C", display: "濁度", value: "Clear", unit: "空白空白", date: "2026-01-14" },
+      {
+        code: "06013C",
+        display: "白血球酯脢",
+        value: "Negative",
+        unit: "空白空白",
+        date: "2026-01-14",
+      },
+      {
+        code: "06013C",
+        display: "肌酸酐(尿液)(半定量)",
+        value: "100",
+        unit: "mg/dL",
+        date: "2026-01-14",
+      },
+      { code: "06013C", display: "膽紅素", value: "Negative", unit: "mg/dL", date: "2026-01-14" },
+      { code: "06013C", display: "酮體", value: "Negative", unit: "mg/dL", date: "2026-01-14" },
+      { code: "06013C", display: "酸鹼值", value: "6.5", unit: "空白空白", date: "2026-01-14" },
+      { code: "06013C", display: "顏色", value: "Straw", unit: "空白空白", date: "2026-01-14" },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    // 20 raw - 5 cross-language merges (Bilirubin/膽紅素, CREA(U)/肌酸酐(尿液),
+    // Glucose/尿糖, Color/顏色, Blood/尿潛血) = 15 distinct analytes.
+    // Per-analyte: 1 row. English preferred when both languages present.
+    expect(obs.length).toBe(15);
+    const texts = obs.map((o: any) => o.code?.text);
+    // Cross-language pairs must collapse to 1 row each (English wins)
+    expect(texts).toContain("Bilirubin");
+    expect(texts).not.toContain("膽紅素");
+    expect(texts).toContain("CREA(U)(半定量)");
+    expect(texts).not.toContain("肌酸酐(尿液)(半定量)");
+    expect(texts).toContain("Glucose");
+    expect(texts).not.toContain("尿糖");
+    expect(texts).toContain("Color");
+    expect(texts).not.toContain("顏色");
+    expect(texts).toContain("Blood");
+    expect(texts).not.toContain("尿潛血");
+    // Chinese-only analytes (no English equivalent in raw) must stay
+    for (const must of [
+      "亞硝酸鹽", // Nitrite — must NOT merge with Bilirubin / 膽紅素 by value
+      "白血球酯脢", // Leukocyte Esterase — must NOT canonical-collide with blood WBC
+      "酮體", // Ketones
+      "微白蛋白(尿)(半定量)", // Microalbumin — must NOT collide with serum Albumin
+      "微白蛋白/肌酐酸比值(半定量)", // UACR
+    ]) {
+      expect(texts).toContain(must);
+    }
+  });
+
+  test("v0.11.7 — serum Glucose (09005C) NOT canonical-merged with urinalysis Glucose (06013C)", () => {
+    // Defensive: code-scoped canonical disambiguation must not cause
+    // cross-panel false merge. Patient with both urine glucose AND
+    // serum glucose on same date at same hospital must keep both rows.
+    const items = [
+      {
+        code: "06013C",
+        display: "Glucose",
+        value: "Negative",
+        unit: "",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+      },
+      {
+        code: "09005C",
+        display: "Glucose",
+        value: "95",
+        unit: "mg/dL",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    expect(obs.length).toBe(2);
+  });
+});
+
 // ── v0.11.6 — silent-drop audit (bug pattern caught in v0.11.5) ─
 // Background: long-standing v0 bug where `looksLikeImaging` substring-
 // matched "ct " (CT scan with trailing-space sentinel) against
@@ -813,7 +960,12 @@ describe("CI Layer 1.4 — valueString must not start with digit", () => {
   });
 
   test("known packed patterns route to valueQuantity (parser already handles)", () => {
-    const items = [
+    // v0.11.7 — split the assertions. eGFR + albumin patterns still
+    // extract to valueQuantity (leading IS a real numeric value).
+    // Dipstick patterns ("4+ (2000)") now preserve valueString —
+    // the grade is the clinically meaningful data point. Previous
+    // v0.9.7 design (extract parens number) lost the grade.
+    const quantityItems = [
       {
         code: "09015C",
         display: "eGFR",
@@ -822,14 +974,47 @@ describe("CI Layer 1.4 — valueString must not start with digit", () => {
         date: "2024-05-10",
       },
       { code: "06013C", display: "Bilirubin", value: "2.3(36.1%)", unit: "", date: "2024-04-01" },
-      { code: "06013C", display: "Protein", value: "4+ (2000)", unit: "mg/dL", date: "2024-04-01" },
     ];
-    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+    const quantityObs = mapObservationsGrouped(quantityItems, PATIENT_ID).filter(
       (r) => r.resourceType === "Observation",
     );
-    for (const o of obs) {
+    for (const o of quantityObs) {
       expect(o.valueQuantity).toBeDefined();
       expect(o.valueString).toBeUndefined();
     }
+  });
+
+  test("v0.11.7 — dipstick patterns preserved as valueString (NOT extracted to Quantity)", () => {
+    // Bug 2026-05-28: bridge extracted parens-numeric and lost the
+    // grade prefix. Clinically meaningful data lost. Now the raw
+    // string is preserved.
+    const dipstickItems = [
+      { code: "06013C", display: "Glucose", value: "4+ (2000)", unit: "mg/dL", date: "2026-01-14" },
+      {
+        code: "06013C",
+        display: "Protein",
+        value: "Trace (15)",
+        unit: "mg/dL",
+        date: "2026-01-14",
+      },
+      {
+        code: "06013C",
+        display: "Microalbumin",
+        value: "1+ (80)",
+        unit: "mg/g",
+        date: "2026-01-14",
+      },
+    ];
+    const dipstickObs = mapObservationsGrouped(dipstickItems, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    expect(dipstickObs).toHaveLength(3);
+    for (const o of dipstickObs as any[]) {
+      expect(o.valueQuantity).toBeUndefined();
+      expect(o.valueString).toMatch(/^(?:[\d.]+\+|Trace)/);
+    }
+    // Specifically: glucose row preserves "4+ (2000)" verbatim
+    const glucose = dipstickObs.find((o: any) => o.code?.text === "Glucose") as any;
+    expect(glucose?.valueString).toBe("4+ (2000)");
   });
 });

@@ -2640,6 +2640,9 @@
       if (parenIdx > 0) {
         const leading = s.slice(0, parenIdx).trim().replace(/,/g, "");
         v = tryParseFloat(leading);
+        if (v === null && /^(?:[\d.]+\+|trace|positive|negative)/i.test(leading)) {
+          return null;
+        }
       }
       if (v === null) {
         const m = s.match(/\(\s*([+\-\d.,]+)\s*\)/);
@@ -2919,6 +2922,17 @@
     LDL: "LDL_C",
     \u4F4E\u5BC6\u5EA6\u8102\u86CB\u767D: "LDL_C",
     // Renal — urine creatinine variants before serum.
+    // v0.11.7 fix (bug 2026-05-28): added longer-keyed entries for
+    // 肌酸酐(尿液) / 微白蛋白/肌酐酸比值 so urinalysis half-quantitative
+    // rows don't collide with serum creatinine via shorter "肌酸酐" key.
+    // Original short keys (肌酸酐 / 肌酐酸 → CREATININE) preserved for
+    // serum rows; longer urinalysis-specific keys take priority via
+    // longest-match in canonicalLabKey.
+    "\u5FAE\u767D\u86CB\u767D/\u808C\u9150\u9178\u6BD4\u503C": "UACR",
+    UACR: "UACR",
+    "MALB/CRE": "UACR",
+    "ALB/CRE": "UACR",
+    "\u808C\u9178\u9150(\u5C3F\u6DB2)": "URINE_CREATININE",
     \u5C3F\u6DB2\u808C\u9178\u9150: "URINE_CREATININE",
     "URINE CREATININE": "URINE_CREATININE",
     "CREATININE(U)": "URINE_CREATININE",
@@ -2949,8 +2963,20 @@
     GPT: "ALT",
     \u81BD\u7D05\u7D20: "BILIRUBIN",
     BILIRUBIN: "BILIRUBIN",
+    // v0.11.7 (bug 2026-05-28): longer keys for urinalysis to prevent
+    // collision with serum analytes — 微白蛋白(尿) wasn't 白蛋白; 白血
+    // 球酯脢 wasn't blood 白血球. Longer keys take priority via
+    // longest-match sorting.
+    "\u5FAE\u767D\u86CB\u767D(\u5C3F)": "URINE_MICROALBUMIN",
+    "\u5FAE\u767D\u86CB\u767D": "URINE_MICROALBUMIN",
+    "MALB(U)": "URINE_MICROALBUMIN",
+    MICROALBUMIN: "URINE_MICROALBUMIN",
     \u767D\u86CB\u767D: "ALBUMIN",
     ALBUMIN: "ALBUMIN",
+    \u767D\u8840\u7403\u916F\u8122: "URINE_LEU_ESTERASE",
+    \u767D\u8840\u7403\u916F\u9176: "URINE_LEU_ESTERASE",
+    "WBC ESTERASE": "URINE_LEU_ESTERASE",
+    "LEUKOCYTE ESTERASE": "URINE_LEU_ESTERASE",
     // Cardiac
     \u5FC3\u808C\u65CB\u8F49\u86CB\u767D: "TROPONIN",
     TROPONIN: "TROPONIN",
@@ -2989,11 +3015,87 @@
     INR: "INR"
   };
   var LAB_SYNONYM_KEYS_SORTED = Object.keys(LAB_SYNONYMS).sort((a, b) => b.length - a.length);
-  function canonicalLabKey(display) {
+  var URINALYSIS_PANEL_SYNONYMS = {
+    // English / abbreviation variants
+    GLUCOSE: "URINE_GLUCOSE",
+    "U-SUGAR": "URINE_GLUCOSE",
+    SUGAR: "URINE_GLUCOSE",
+    "U-GLUCOSE": "URINE_GLUCOSE",
+    COLOR: "URINE_COLOR",
+    COLOUR: "URINE_COLOR",
+    BLOOD: "URINE_OCCULT_BLOOD",
+    "U-BLOOD": "URINE_OCCULT_BLOOD",
+    OB: "URINE_OCCULT_BLOOD",
+    "OCCULT BLOOD": "URINE_OCCULT_BLOOD",
+    PROTEIN: "URINE_PROTEIN",
+    "U-PRO": "URINE_PROTEIN",
+    "U-PROTEIN": "URINE_PROTEIN",
+    KETONE: "URINE_KETONES",
+    KETONES: "URINE_KETONES",
+    KET: "URINE_KETONES",
+    NITRITE: "URINE_NITRITE",
+    NIT: "URINE_NITRITE",
+    TURBIDITY: "URINE_TURBIDITY",
+    "SP.GRAVITY": "URINE_SG",
+    SG: "URINE_SG",
+    "S.G.": "URINE_SG",
+    "S.G": "URINE_SG",
+    "SPECIFIC GRAVITY": "URINE_SG",
+    UROBILINOGEN: "URINE_UROBILINOGEN",
+    UBG: "URINE_UROBILINOGEN",
+    URO: "URINE_UROBILINOGEN",
+    // pH variants — v0.11.7 missing in initial commit; user reported
+    // pH (英) + 酸鹼值 (中) still as 2 rows in 06013C bundle.
+    PH: "URINE_PH",
+    "P.H.": "URINE_PH",
+    "P.H": "URINE_PH",
+    "U-PH": "URINE_PH",
+    // Bilirubin variants — separate from serum BILIRUBIN so urine
+    // bilirubin (06013C) doesn't cross-panel-collide with serum
+    // total bilirubin (09029C). Within scope, English "Bilirubin" and
+    // CJK 膽紅素 both → URINE_BILIRUBIN → merge as 1 row.
+    BILIRUBIN: "URINE_BILIRUBIN",
+    BILI: "URINE_BILIRUBIN",
+    "U-BILI": "URINE_BILIRUBIN",
+    // CJK variants — paired with English above so cross-language dedup works
+    \u5C3F\u7CD6: "URINE_GLUCOSE",
+    \u984F\u8272: "URINE_COLOR",
+    \u5C3F\u6F5B\u8840: "URINE_OCCULT_BLOOD",
+    \u5C3F\u86CB\u767D: "URINE_PROTEIN",
+    \u916E\u9AD4: "URINE_KETONES",
+    \u4E9E\u785D\u9178\u9E7D: "URINE_NITRITE",
+    \u6FC1\u5EA6: "URINE_TURBIDITY",
+    \u6BD4\u91CD: "URINE_SG",
+    \u5C3F\u81BD\u7D20\u539F: "URINE_UROBILINOGEN",
+    \u9178\u9E7C\u503C: "URINE_PH",
+    \u9178\u9E7C\u5EA6: "URINE_PH",
+    \u81BD\u7D05\u7D20: "URINE_BILIRUBIN"
+  };
+  var CODE_SCOPED_SYNONYMS = {
+    "06013C": URINALYSIS_PANEL_SYNONYMS
+  };
+  var CODE_SCOPED_CJK_KEYS_SORTED = Object.fromEntries(
+    Object.entries(CODE_SCOPED_SYNONYMS).map(([code, table]) => [
+      code,
+      Object.keys(table).filter((k) => !isAsciiOnly(k)).sort((a, b) => b.length - a.length)
+    ])
+  );
+  function canonicalLabKey(display, code) {
     if (!display) return "";
     const s = display.trim();
     if (!s) return "";
     const sUpper = s.toUpperCase();
+    if (code) {
+      const codeUpper = code.toUpperCase();
+      const scoped = CODE_SCOPED_SYNONYMS[codeUpper];
+      if (scoped) {
+        if (scoped[sUpper]) return scoped[sUpper];
+        if (scoped[s]) return scoped[s];
+        for (const key of CODE_SCOPED_CJK_KEYS_SORTED[codeUpper] ?? []) {
+          if (s.includes(key)) return scoped[key];
+        }
+      }
+    }
     for (const key of LAB_SYNONYM_KEYS_SORTED) {
       const ku = key.toUpperCase();
       if (isAsciiOnly(ku)) {
@@ -3064,15 +3166,15 @@
     "negative"
   ]);
   function dedupePanelItems(items) {
-    const byValue = /* @__PURE__ */ new Map();
+    const byKey = /* @__PURE__ */ new Map();
     for (const it of items) {
-      const k = normalizeValueForDedup(it.value);
-      const group = byValue.get(k);
+      const k = `${normalizeValueForDedup(it.value)}|${String(it.display ?? "").toLowerCase().trim()}`;
+      const group = byKey.get(k);
       if (group) group.push(it);
-      else byValue.set(k, [it]);
+      else byKey.set(k, [it]);
     }
     const out = [];
-    for (const group of byValue.values()) {
+    for (const group of byKey.values()) {
       if (group.length === 1) {
         out.push(group[0]);
         continue;
@@ -3117,7 +3219,8 @@
         item.date ?? "",
         v.toLowerCase(),
         unit.toLowerCase(),
-        orderCode(item)
+        orderCode(item),
+        String(item.display ?? "").toLowerCase().trim()
       ].join("|");
       const existing = byKey.get(key);
       if (!existing) {
@@ -3348,7 +3451,7 @@
     const code = (panelCode ? String(panelCode) : "") || raw.order_code || raw.code || "";
     const value = raw.value;
     const interp = (raw.interpretation ?? "").toString().toLowerCase();
-    const canonical = canonicalLabKey(display) || display;
+    const canonical = canonicalLabKey(display, code) || display;
     const obsId = stableId(patientId, "obs", canonical, raw.date ?? "", raw.hospital ?? "");
     const loinc = findLoinc(code, display);
     const catCode = raw.category || "laboratory";

@@ -110,17 +110,38 @@ describe("tryParseQuantity", () => {
     expect(q?.value).toBe(2.3);
   });
 
-  test("v0.9.7 — non-numeric leading + parens: '4+ (2000)' → 2000 (fallback to parens)", () => {
-    // Urine glucose dipstick grade + quantitative mg/dL. Leading "4+"
-    // fails numeric parse, fallback extracts "2000" from parens.
+  // v0.11.7 — FLIPPED from v0.9.7 behavior. Dipstick grade patterns
+  // ("4+", "1+", "Trace", etc.) now return null so caller emits
+  // valueString preserving the raw "4+ (2000)" string. The grade is
+  // the clinically meaningful data; the parenthesised number is just
+  // a lab-supplied equivalence estimate. Bug 2026-05-28: MediPrisma
+  // showed "Glucose 2000 mg/dL [Negative]" — clinically alarming
+  // false-positive because the actual reading was "4+ (2000)".
+
+  test("v0.11.7 — dipstick '4+ (2000)' returns null (preserves valueString)", () => {
+    // Urine glucose dipstick semi-quantitative. Caller will emit raw
+    // string as valueString so SMART app shows "4+ (2000)" intact
+    // instead of just "2000 mg/dL".
     const q = tryParseQuantity("4+ (2000)", "mg/dL");
-    expect(q?.value).toBe(2000);
-    expect(q?.unit).toBe("mg/dL");
+    expect(q).toBeNull();
   });
 
-  test("v0.9.7 — dipstick + UACR: '1+ (80)' → 80 (fallback to parens)", () => {
+  test("v0.11.7 — dipstick '1+ (80)' returns null (preserves valueString)", () => {
     const q = tryParseQuantity("1+ (80)", "mg/g");
-    expect(q?.value).toBe(80);
+    expect(q).toBeNull();
+  });
+
+  test("v0.11.7 — dipstick 'Trace (15)' returns null (preserves valueString)", () => {
+    const q = tryParseQuantity("Trace (15)", "mg/dL");
+    expect(q).toBeNull();
+  });
+
+  test("v0.11.7 — eGFR '33 (stage3:30-59)' still extracts 33 (NOT a dipstick)", () => {
+    // Regression guard: the v0.11.7 dipstick check must not break the
+    // v0.9.7 eGFR pattern where leading IS a real numeric value and
+    // parens is just an interpretation annotation.
+    const q = tryParseQuantity("33 (stage3:30-59)", "mL/min/1.73m2");
+    expect(q?.value).toBe(33);
   });
 
   test("v0.9.7 — comparator + parens: '> 33 (stage3)' still parses 33", () => {

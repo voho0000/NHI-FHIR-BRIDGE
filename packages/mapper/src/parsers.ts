@@ -435,10 +435,25 @@ export function tryParseQuantity(
     if (parenIdx > 0) {
       const leading = s.slice(0, parenIdx).trim().replace(/,/g, "");
       v = tryParseFloat(leading);
+      // v0.11.7 fix: when leading is a dipstick semi-quantitative
+      // grade ("4+", "Trace", "Positive", etc.), the grade itself is
+      // the clinically meaningful data — the parenthesised number is
+      // just a lab-supplied equivalence estimate. Returning null here
+      // lets the caller emit the raw string as valueString so
+      // downstream SMART apps display "4+ (2000)" intact instead of
+      // showing just "2000 mg/dL" (which loses the grade).
+      //
+      // Original v0.9.7 design chose to extract the parens number;
+      // bug report 2026-05-28 ("MediPrisma shows 2000 mg/dL but
+      // health bank shows 4+(2000)") confirmed that trade-off was
+      // wrong: grade > equivalence estimate in clinical priority.
+      if (v === null && /^(?:[\d.]+\+|trace|positive|negative)/i.test(leading)) {
+        return null;
+      }
     }
-    // If leading didn't parse (e.g. "4+ (2000)"), try content INSIDE
-    // parens — handles dipstick patterns where grade is leading and
-    // numeric is parenthesised.
+    // If leading didn't parse AND it's not a dipstick pattern (e.g.
+    // some unusual format we haven't seen), try content INSIDE parens
+    // as a last resort.
     if (v === null) {
       const m = s.match(/\(\s*([+\-\d.,]+)\s*\)/);
       if (m && m[1]) {

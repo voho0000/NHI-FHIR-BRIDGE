@@ -377,6 +377,17 @@ const LAB_SYNONYMS: Record<string, string> = {
   LDL: "LDL_C",
   低密度脂蛋白: "LDL_C",
   // Renal — urine creatinine variants before serum.
+  // v0.11.7 fix (bug 2026-05-28): added longer-keyed entries for
+  // 肌酸酐(尿液) / 微白蛋白/肌酐酸比值 so urinalysis half-quantitative
+  // rows don't collide with serum creatinine via shorter "肌酸酐" key.
+  // Original short keys (肌酸酐 / 肌酐酸 → CREATININE) preserved for
+  // serum rows; longer urinalysis-specific keys take priority via
+  // longest-match in canonicalLabKey.
+  "微白蛋白/肌酐酸比值": "UACR",
+  UACR: "UACR",
+  "MALB/CRE": "UACR",
+  "ALB/CRE": "UACR",
+  "肌酸酐(尿液)": "URINE_CREATININE",
   尿液肌酸酐: "URINE_CREATININE",
   "URINE CREATININE": "URINE_CREATININE",
   "CREATININE(U)": "URINE_CREATININE",
@@ -407,8 +418,20 @@ const LAB_SYNONYMS: Record<string, string> = {
   GPT: "ALT",
   膽紅素: "BILIRUBIN",
   BILIRUBIN: "BILIRUBIN",
+  // v0.11.7 (bug 2026-05-28): longer keys for urinalysis to prevent
+  // collision with serum analytes — 微白蛋白(尿) wasn't 白蛋白; 白血
+  // 球酯脢 wasn't blood 白血球. Longer keys take priority via
+  // longest-match sorting.
+  "微白蛋白(尿)": "URINE_MICROALBUMIN",
+  "微白蛋白": "URINE_MICROALBUMIN",
+  "MALB(U)": "URINE_MICROALBUMIN",
+  MICROALBUMIN: "URINE_MICROALBUMIN",
   白蛋白: "ALBUMIN",
   ALBUMIN: "ALBUMIN",
+  白血球酯脢: "URINE_LEU_ESTERASE",
+  白血球酯酶: "URINE_LEU_ESTERASE",
+  "WBC ESTERASE": "URINE_LEU_ESTERASE",
+  "LEUKOCYTE ESTERASE": "URINE_LEU_ESTERASE",
   // Cardiac
   心肌旋轉蛋白: "TROPONIN",
   TROPONIN: "TROPONIN",
@@ -450,11 +473,108 @@ const LAB_SYNONYMS: Record<string, string> = {
 // Pre-sort keys longest-first so longer/more-specific matches win.
 const LAB_SYNONYM_KEYS_SORTED = Object.keys(LAB_SYNONYMS).sort((a, b) => b.length - a.length);
 
-export function canonicalLabKey(display: string | null | undefined): string {
+// v0.11.7: code-scoped synonym tables. The SAME display word can mean
+// different analytes in different NHI panel codes — e.g. "Glucose" in
+// 06013C (urinalysis dipstick) is urine glucose, but in 09005C/09140C
+// is serum glucose. Without code context, plain "Glucose" canonical=
+// GLUCOSE in global table, which causes cross-language pairs like
+// "Glucose"+"尿糖" to live as two separate rows under the same
+// urinalysis panel. Code-scoped table is checked FIRST when a code
+// hint is supplied, then falls through to global.
+const URINALYSIS_PANEL_SYNONYMS: Record<string, string> = {
+  // English / abbreviation variants
+  GLUCOSE: "URINE_GLUCOSE",
+  "U-SUGAR": "URINE_GLUCOSE",
+  SUGAR: "URINE_GLUCOSE",
+  "U-GLUCOSE": "URINE_GLUCOSE",
+  COLOR: "URINE_COLOR",
+  COLOUR: "URINE_COLOR",
+  BLOOD: "URINE_OCCULT_BLOOD",
+  "U-BLOOD": "URINE_OCCULT_BLOOD",
+  OB: "URINE_OCCULT_BLOOD",
+  "OCCULT BLOOD": "URINE_OCCULT_BLOOD",
+  PROTEIN: "URINE_PROTEIN",
+  "U-PRO": "URINE_PROTEIN",
+  "U-PROTEIN": "URINE_PROTEIN",
+  KETONE: "URINE_KETONES",
+  KETONES: "URINE_KETONES",
+  KET: "URINE_KETONES",
+  NITRITE: "URINE_NITRITE",
+  NIT: "URINE_NITRITE",
+  TURBIDITY: "URINE_TURBIDITY",
+  "SP.GRAVITY": "URINE_SG",
+  SG: "URINE_SG",
+  "S.G.": "URINE_SG",
+  "S.G": "URINE_SG",
+  "SPECIFIC GRAVITY": "URINE_SG",
+  UROBILINOGEN: "URINE_UROBILINOGEN",
+  UBG: "URINE_UROBILINOGEN",
+  URO: "URINE_UROBILINOGEN",
+  // pH variants — v0.11.7 missing in initial commit; user reported
+  // pH (英) + 酸鹼值 (中) still as 2 rows in 06013C bundle.
+  PH: "URINE_PH",
+  "P.H.": "URINE_PH",
+  "P.H": "URINE_PH",
+  "U-PH": "URINE_PH",
+  // Bilirubin variants — separate from serum BILIRUBIN so urine
+  // bilirubin (06013C) doesn't cross-panel-collide with serum
+  // total bilirubin (09029C). Within scope, English "Bilirubin" and
+  // CJK 膽紅素 both → URINE_BILIRUBIN → merge as 1 row.
+  BILIRUBIN: "URINE_BILIRUBIN",
+  BILI: "URINE_BILIRUBIN",
+  "U-BILI": "URINE_BILIRUBIN",
+  // CJK variants — paired with English above so cross-language dedup works
+  尿糖: "URINE_GLUCOSE",
+  顏色: "URINE_COLOR",
+  尿潛血: "URINE_OCCULT_BLOOD",
+  尿蛋白: "URINE_PROTEIN",
+  酮體: "URINE_KETONES",
+  亞硝酸鹽: "URINE_NITRITE",
+  濁度: "URINE_TURBIDITY",
+  比重: "URINE_SG",
+  尿膽素原: "URINE_UROBILINOGEN",
+  酸鹼值: "URINE_PH",
+  酸鹼度: "URINE_PH",
+  膽紅素: "URINE_BILIRUBIN",
+};
+
+const CODE_SCOPED_SYNONYMS: Record<string, Record<string, string>> = {
+  "06013C": URINALYSIS_PANEL_SYNONYMS,
+};
+// Pre-sort CJK keys longest-first per scope (for substring matching).
+const CODE_SCOPED_CJK_KEYS_SORTED: Record<string, string[]> = Object.fromEntries(
+  Object.entries(CODE_SCOPED_SYNONYMS).map(([code, table]) => [
+    code,
+    Object.keys(table)
+      .filter((k) => !isAsciiOnly(k))
+      .sort((a, b) => b.length - a.length),
+  ]),
+);
+
+export function canonicalLabKey(
+  display: string | null | undefined,
+  code?: string | null,
+): string {
   if (!display) return "";
   const s = display.trim();
   if (!s) return "";
   const sUpper = s.toUpperCase();
+
+  // v0.11.7: code-scoped lookup first. Disambiguates polysemic words
+  // like "Glucose"/"Blood"/"Color" that have different analyte meaning
+  // inside vs outside the urinalysis panel.
+  if (code) {
+    const codeUpper = code.toUpperCase();
+    const scoped = CODE_SCOPED_SYNONYMS[codeUpper];
+    if (scoped) {
+      if (scoped[sUpper]) return scoped[sUpper]!;
+      if (scoped[s]) return scoped[s]!; // CJK case-sensitive
+      for (const key of CODE_SCOPED_CJK_KEYS_SORTED[codeUpper] ?? []) {
+        if (s.includes(key)) return scoped[key]!;
+      }
+    }
+  }
+
   for (const key of LAB_SYNONYM_KEYS_SORTED) {
     const ku = key.toUpperCase();
     if (isAsciiOnly(ku)) {
@@ -574,19 +694,40 @@ const MEANINGFUL_INTERPS = new Set([
 ]);
 
 function dedupePanelItems(items: Record<string, any>[]): Record<string, any>[] {
-  const byValue = new Map<string, Record<string, any>[]>();
+  // v0.11.7 fix: dedup key now includes display string. Original
+  // (value-only) key was meant to merge same-analyte cross-language
+  // variants (e.g. "Hb"+"血紅素" both 14 g/dL → keep English). BUT
+  // it falsely merged DIFFERENT analytes with same value within a
+  // panel (e.g. 06013C urinalysis: Bilirubin, 亞硝酸鹽, 酮體, 膽紅素
+  // are all "Negative" mg/dL — all collided into one group; CJK+EN
+  // mix branch then kept only enItems[0]=Bilirubin, silently dropping
+  // 3+ distinct analytes per panel per day). Bug 2026-05-28: user's
+  // 20-row 06013C urinalysis panel → 11 in bundle (9 silent drops).
+  //
+  // Adding display to the key prevents the false merge. Cost: same-
+  // analyte cross-language duplicates (Hb+血紅素) no longer auto-
+  // merge — but in real Taiwan LIS data this is rare (hospitals pick
+  // one display convention). Future enhancement: use canonicalLabKey
+  // for known synonyms so Hb/血紅素 still merge while preserving
+  // distinct analyte separation.
+  const byKey = new Map<string, Record<string, any>[]>();
   for (const it of items) {
-    const k = normalizeValueForDedup(it.value);
-    const group = byValue.get(k);
+    const k = `${normalizeValueForDedup(it.value)}|${String(it.display ?? "")
+      .toLowerCase()
+      .trim()}`;
+    const group = byKey.get(k);
     if (group) group.push(it);
-    else byValue.set(k, [it]);
+    else byKey.set(k, [it]);
   }
   const out: Record<string, any>[] = [];
-  for (const group of byValue.values()) {
+  for (const group of byKey.values()) {
     if (group.length === 1) {
       out.push(group[0]!);
       continue;
     }
+    // Group with multiple items = exact display + value match → these
+    // are true duplicates from NHI re-uploading. Apply the original
+    // EN-preferred merge logic.
     const cjkItems = group.filter((g) => cjkChars(String(g.display ?? "")) >= 2);
     const enItems = group.filter((g) => isEnglishDominant(String(g.display ?? "")));
     if (cjkItems.length > 0 && enItems.length > 0) {
@@ -630,11 +771,18 @@ function dedupeCrossFormat(items: Record<string, any>[]): Record<string, any>[] 
       byKey.set(`__no_dedup__|${idxCounter++}`, item);
       continue;
     }
+    // v0.11.7 fix: include display in key (same fix as dedupePanelItems
+    // — see that function's docstring for full rationale). Bug 2026-05-28:
+    // 06013C urinalysis panel collisions on "Negative" mg/dL across
+    // different analytes.
     const key = [
       (item.date as string) ?? "",
       v.toLowerCase(),
       unit.toLowerCase(),
       orderCode(item),
+      String(item.display ?? "")
+        .toLowerCase()
+        .trim(),
     ].join("|");
     const existing = byKey.get(key);
     if (!existing) {
@@ -929,7 +1077,10 @@ function buildObservation(
   const value = raw.value;
   const interp = (raw.interpretation ?? "").toString().toLowerCase();
 
-  const canonical = canonicalLabKey(display) || display;
+  // v0.11.7: pass code to canonicalLabKey for panel-scoped synonym
+  // disambiguation (urinalysis "Glucose" → URINE_GLUCOSE so it dedups
+  // with "尿糖" within the panel, while serum "Glucose" stays GLUCOSE).
+  const canonical = canonicalLabKey(display, code) || display;
   const obsId = stableId(patientId, "obs", canonical, raw.date ?? "", raw.hospital ?? "");
   const loinc = findLoinc(code, display);
 
