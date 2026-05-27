@@ -2,6 +2,37 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.11.4 重點 — 2026-05-27
+
+**🔍 Proactive LOINC display-variant audit + FHIR R4 conformance audit**
+
+Bridge-author（不靠 SMART app dev 報 bug）主動跑兩輪 audit：
+- LOINC display variant：282 個 probe 找到 **49 個 miss**（28 個是 panel LOINC 洩漏到個別 obs — patient-safety relevant）
+- FHIR R4 conformance：3 輪檢查 8 種 resource type，**結構全 clean** — 沒踩到 R4 violation
+
+### LOINC display variant 補強（5 類）
+
+| 類別 | 例子 | 修法 |
+|------|------|------|
+| 句點分隔縮寫（`\b` regex 邊界 bug）| `W.B.C.` `R.B.C.` `M.C.V.` `M.C.H.C.` `A.B.E.` `S.B.E.` `T.CO2` `P.CO2` `p.H.` | 加 key（不帶尾端點，cover 兩種輸入形式）|
+| CJK 同義詞 | `血色素` `血紅蛋白` → HGB；`紅血球容積` → HCT；`淋巴` `多核球` `多形核球` → diff cells | 加 CJK key |
+| 英文短形 | `Neut` `Neut.` `Lym` `Lym.` `Lymph` `Lymph cell` | 加 key |
+| 尿液 dipstick 縮寫（都漏到 panel LOINC `24356-8`）| `Bili` `KET` `OB` `NIT` `UBG` `URO` `SG` `S.G.` `Colour` `WBC esterase` | 加 panel key（`WBC esterase` 還擋 global `wbc` shadow）|
+| ABG CJK 描述名 + 縮寫（全 `null` fallback）| `酸鹼值` `二氧化碳分壓` `氧分壓` `碳酸氫根` `Total CO2` `O2 saturation` `血氧飽和度` | 新增 `PANEL_LOINC_MAP["09041B"]` |
+| Flow CD 比值 trailing `+` bug | `CD3+/CD4+` 應 → CD4 (`8123-2`) 卻給 CD3 (`8124-0`) | drop trailing `+` from keys |
+
+### FHIR R4 audit 結論
+
+**全 clean**：Patient / Observation / DiagnosticReport / MedicationRequest / Encounter / Condition / AllergyIntolerance / Immunization / Procedure — 8 種 resource 都通過結構檢查。沒踩到 status enum / choice element / datetime / reference / coding system / cardinality / quantity 等任一 violation。
+
+### 新增 6 個 standing regression seeds
+
+`bundle-quality.test.ts` 加 v0.11.4 audit section — 每類各 lock 一組代表 case，未來 refactor 改壞會立刻 fail CI。
+
+純 mapper + test，**沒 UI / 沒 logic 改動**。Reload extension 即可。Backend mode 需要 `docker compose up -d --build`。
+
+---
+
 ## 0.11.3 重點 — 2026-05-27
 
 **🎨 Inline-link CTA 視覺統一**
