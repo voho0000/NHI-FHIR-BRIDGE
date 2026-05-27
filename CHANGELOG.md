@@ -2,6 +2,60 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.9.7 重點 — 2026-05-27
+
+**🚨 兩個 patient-safety 等級 bug 修正**（SMART app dev bug report Part 2）
+
+### Bug A — eGFR 被誤標成肌酸酐 LOINC
+
+NHI 09015C 是「血中肌酸酐」，但實驗室在同 code 下用 sub-row 報告 eGFR。Bridge 沒做 panel 處理 → eGFR 也被標成 2160-0（肌酸酐）→ SMART app 把 eGFR=33 顯示成 CREA=33 mg/dL → **看起來像急性腎衰竭**。
+
+| Analyte | 之前 | 現在 |
+|---------|------|------|
+| eGFR / Estimated GFR / 腎絲球過濾率 | 2160-0 (Creatinine) ❌ | **33914-3** ✅ |
+
+修法：09015C 加進 `DISPLAY_FIRST_CODES` + 新增 `PANEL_LOINC_MAP["09015C"]`。
+
+### Bug B — 「打包」型 valueString 拆不出數值
+
+NHI 有時把「數值 + 註解」擠在同欄位，`tryParseQuantity` 解析失敗就 fall back 到 valueString，丟失數值。
+
+| 原始字串 | 之前 | 現在 |
+|---------|------|------|
+| `33 (stage3:30-59)` (eGFR + CKD 階段) | valueString | **valueQuantity=33** ✅ |
+| `2.3(36.1%)` (Albumin) | valueString | **valueQuantity=2.3** ✅ |
+| `4+ (2000)` (尿糖 dipstick) | valueString | **valueQuantity=2000** ✅ |
+| `1+ (80)` (UACR) | valueString | **valueQuantity=80** ✅ |
+| `1:20(-)` (titer) | valueString | valueString（不變，本質非數字） |
+
+修法：`tryParseQuantity` 在原本失敗時先試「`(` 前 token」(eGFR/Albumin)、再試「括弧內容」(dipstick)。
+
+### 為什麼之前沒抓到
+
+- 過去 LOINC audit 查 `NHI_TO_LOINC` 直接表，沒走 panel codes 的 display-keyword 路徑。09015C 看起來是 single analyte 但其實是隱性 panel。
+- valueString packing 模式不在 unit test fixture 內，要有真實患者 NHI 回應才看得到。
+
+### 升級注意
+
+**Mode A**：Reload extension。之前 sync 過的舊資料不會自動修正 — 重 sync 一次才會用新 LOINC + 拆 packed values。
+
+**Mode B**：
+1. `git pull`
+2. `docker compose down && docker compose up -d --build`
+3. Reload extension
+4. 重 sync 病人資料
+
+### 出範圍
+
+- ABG panel (09041B) PANEL_LOINC_MAP 仍是 stub，pH / pCO2 / pO2 可能類似問題
+- 拆兩個 Observation 模式（如 albumin abs + frac）未實作 — 後續考慮
+
+### Tests
+
+backend-ts: 265 → **275** (+4 eGFR + 7 packed-value parser tests)
+
+---
+
 ## 0.9.6 重點 — 2026-05-27
 
 **🔬 CBC 檢驗 LOINC 對映修正**（SMART app dev bug report）
