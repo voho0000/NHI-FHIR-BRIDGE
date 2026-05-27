@@ -2,6 +2,35 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.9.3 重點 — 2026-05-27
+
+獨立安全 audit 後的修補版 + 同步速度優化。0 個 P0/P1，把 P2/P3 一次清。
+
+### 🔒 Security audit 修補（6 項）
+
+- **P2 #1** Dashboard `/api/backend/*` proxy 加 Origin check — 防 CSRF
+- **P2 #2** 進階設定的 SMART App URL 驗 scheme — 必須 https:// 或本機
+- **P2 #3** PRIVACY.md / README 修正 `chrome.storage.sync` → `.local`（code 比 docs 更安全）
+- **P3 #4** 上架版本不含 inline sourcemap — `.crx` 大小縮 ~3.7×（1.1MB → 280KB）
+- **P3 #6** 刪除 stale Python `test.yml` workflow
+- **P3 #7** popup.js onMessage sender check 嚴格化（對齊 background.js）
+
+### ⚡ 同步速度 — 省 10-15 秒
+
+NHI detail fan-out 的 jitter 從 `0-150ms` 縮到 `0-50ms`（6 處 fan-out）。對 imaging (110 筆) / chronic (508 筆) / encounter (164 筆) 大量 fan-out 累積可省 10-15s。並發數 `CONC=3` 維持以避免 NHI rate limit。
+
+### 📄 新增「給民眾的安全說明」
+
+`docs/SECURITY_FOR_USERS.md` — 給對安全性有疑慮、不敢用的 user 看。不講工程術語，涵蓋資料路徑視覺化、12 項「不做的事」、12 項「主動防護」、自我驗證指引、user 端責任、6 個 Q&A。
+
+### 升級注意
+
+- Reload extension 即可。
+- 「下載 zip 自行載入」的 user 這版 `.crx` 從 ~330KB 縮到 ~97KB。
+- 無 breaking change。
+
+---
+
 ## 0.9.2 重點 — 2026-05-27
 
 ### 🔧 Encounter.type FHIR-conformant 升級（破壞性變更）
