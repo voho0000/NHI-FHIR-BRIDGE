@@ -2,6 +2,38 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.11.0 重點 — 2026-05-27
+
+**🛡️ CI bundle-quality 守門 — 三層 standing assertions**
+
+採納 SMART app dev 的 CI 建議的高價值部分（Layer 1.1 + 1.3 + 1.4），把過去 6 份 bug report 的 pattern 變成永久 CI invariant。任何未來的 code change 如果 regress 就立刻 fail，不用等 SMART app dev 再報。
+
+### 新檔：`backend-ts/tests/unit/bundle-quality.test.ts`
+
+跑一份 synthetic 多醫院 bundle（涵蓋長庚嘉義 / 嘉基 / 中國北港 / 馬偕 / 北榮 5 家觀察過的 LIS pattern + 各 panel 種類）通過完整 mapper pipeline，然後驗：
+
+- **1.1 LOINC blacklist**：任何 individual Observation 都不能用 panel-level LOINC（24317-0 / 57021-8 / 24356-8 / 11555-0 / 20584-9 / 90991-1）— 除非 display 完全認不出來才允許 fallback。Regression seed 直接 lock：Segment 必走 770-8、HGB-billed-as-08004C 必走 718-7
+- **1.3 UCUM unit shape lint**：valueQuantity.unit 不能含全形 CJK 單位字 / `gm` / 小寫 `l` 在 concentration suffix。Regression seed：㎡ → m2、gm/dl → g/dL 經過 `_canonicalizeUnit` 後必須 pass UCUM lint
+- **1.4 valueString numeric-leading lint**：valueString 開頭是數字就 fail — parser 應該抽成 valueQuantity（regression seed：`"33 (stage3:30-59)"` 等 packed pattern 必走 valueQuantity）
+
+8 個新 test case。Backend suite 從 325 → 333 tests。
+
+### 不採納的部分 + 為什麼
+
+跟 SMART app dev 討論過，這些**不做**（理由都記在 CHANGELOG）：
+- **NHI canonical CSV + no-hardcoded-LOINC lint**：過度設計，inline const 已是 single source of truth；refactor 到 CSV 增加 build complexity 但不增加正確性
+- **FHIR R4 schema validator (Java validator_cli)**：Java 依賴拖累 CI、跑得慢；我們 mapper typecheck 已涵蓋大部分 shape errors
+- **Per-performer fixture snapshots**：bridge 端沒有跨醫院 production data（只有 synthetic fixtures）；要做 SMART app dev 要先 share 脫敏 raw NHI
+- **Fuzzer / property-based**：scope 太大；先靠 1.1/1.3/1.4 守門
+
+更重要的：**不採納 "single canonical NHI → LOINC table" 的根本建議**。我們的設計是 `(NHI code, display) → LOINC`，不是 `code → LOINC`，因為 panel code 一定會有多個 sub-row。SMART app dev 看到的「per-text 不一致」是 panel disambiguation 正確展開 — by design 而不是 bug。
+
+### 升級
+
+純 test 新增 + version bump，logic 沒變。Reload extension 即可。Backend mode 不需要 rebuild container（因為只有 test 變動）。
+
+---
+
 ## 0.10.0 重點 — 2026-05-27
 
 **📦 Bundle traceability + 用藥劑量推導 + 完成延後的 panel tables**
