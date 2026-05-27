@@ -2199,6 +2199,7 @@
     const status = _latestStatus;
     if (!status) return;
     let text = status.progress || "(sync \u9032\u884C\u4E2D)";
+    text = text.replace(/\s*[—-]\s*接著至\s*④.*$/u, "").trim();
     if (status.running && status.started) {
       const elapsed = Date.now() - status.started;
       text = `\u23F1 ${_fmtElapsed(elapsed)} \xB7 ${text}`;

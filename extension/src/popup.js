@@ -1783,6 +1783,12 @@ function _renderStatus() {
   const status = _latestStatus;
   if (!status) return;
   let text = status.progress || "(sync 進行中)";
+  // Strip legacy "— 接著至 ④ 查看 開啟「醫析 MediPrisma」..." suffix
+  // from any syncStatus that was persisted by pre-v0.11.2 builds. The
+  // suffix became a CTA button below; without this strip, freshly-
+  // upgraded popups show both old text AND the new button until the
+  // user does the next sync. Idempotent (no-op once already stripped).
+  text = text.replace(/\s*[—-]\s*接著至\s*④.*$/u, "").trim();
   if (status.running && status.started) {
     const elapsed = Date.now() - status.started;
     text = `⏱ ${_fmtElapsed(elapsed)} · ${text}`;

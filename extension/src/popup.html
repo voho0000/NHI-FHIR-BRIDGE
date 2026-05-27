@@ -529,51 +529,57 @@
        the warning color so it doesn't read as a primary CTA. */
     /* Inline guidance below the disabled CTA. NOT a warning — it's
        an explanation of why the button is currently inactive +
-       shortcut to fix it. Blue "info" palette (deliberately NOT the
-       amber palette used for the persistent disclaimer card below)
-       so the two never blur into "one big warning region" in the
-       user's eye. Card-like presence so users notice it; click
-       jumps back to the blocking step. */
+       shortcut to fix it. Subtle blue text link style (no border, no
+       background) — shares one visual language with .status-action
+       (post-download CTA) and the "安全說明 ↗" footer link, so all
+       inline-navigation cues read consistently as "secondary link".
+       Click anywhere on the row navigates to the target step. */
     .cta-reason {
-      margin-top: 8px;
-      padding: 7px 10px;
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-left: 3px solid #3b82f6;
-      border-radius: 6px;
-      color: #1e40af;
+      margin-bottom: 8px;
+      padding: 0;
+      background: transparent;
+      border: none;
+      color: #2563eb;
       font-size: 12px;
-      line-height: 1.4;
+      line-height: 1.5;
       font-family: inherit;
       font-weight: 500;
       text-align: left;
       width: 100%;
       cursor: pointer;
       display: flex;
-      align-items: center;
-      gap: 8px;
-      transition: background 0.12s, border-color 0.12s;
+      align-items: baseline;
+      gap: 12px;
+      transition: color 0.12s;
     }
     .cta-reason:hover {
-      background: #dbeafe;
-      border-color: #93c5fd;
+      color: #1e3a8a;
     }
     .cta-reason:focus-visible {
       outline: 2px solid #f59e0b;
-      outline-offset: 1px;
+      outline-offset: 2px;
+      border-radius: 2px;
     }
-    .cta-reason-msg { flex: 1; min-width: 0; word-break: break-word; }
+    .cta-reason-msg {
+      flex: 1;
+      min-width: 0;
+      word-break: break-word;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      text-decoration-color: rgba(37, 99, 235, 0.3);
+      transition: text-decoration-color 0.12s;
+    }
     .cta-reason-jump {
       flex: 0 0 auto;
-      font-size: 11px;
-      font-weight: 600;
-      color: #1d4ed8;
       white-space: nowrap;
-      transition: color 0.12s;
-    }
-    .cta-reason:hover .cta-reason-jump {
-      color: #1e3a8a;
       text-decoration: underline;
+      text-underline-offset: 2px;
+      text-decoration-color: rgba(37, 99, 235, 0.3);
+      transition: text-decoration-color 0.12s;
+    }
+    .cta-reason:hover .cta-reason-msg,
+    .cta-reason:hover .cta-reason-jump {
+      text-decoration-color: currentColor;
     }
 
     .btn-secondary {
@@ -815,28 +821,38 @@
       opacity: 0.95;
       background: rgba(0, 0, 0, 0.06);
     }
-    /* Phase-CTA button rendered between the status header and any
-       detail toggles. Used by the "downloaded" phase to jump straight
-       to step 4 without the user having to find the wizard tab. Styled
-       as an inline link-button so it reads as actionable but doesn't
-       dominate the status panel visually. */
+    /* Phase-CTA inline link rendered between the status header and
+       any detail toggles. Shares the same visual language as
+       .cta-reason (wizard-block hint) and "安全說明 ↗" (security
+       card footer link) — subtle blue underlined text, no box. Used
+       by the "downloaded" phase to jump straight to step 4 without
+       the user having to find the wizard tab manually. */
     .status-action {
       display: inline-block;
-      margin-top: 6px;
-      padding: 4px 10px;
-      border: 1px solid currentColor;
-      border-radius: 4px;
+      margin-top: 4px;
+      padding: 0;
       background: transparent;
-      color: currentColor;
+      border: none;
+      color: #2563eb;
       font-size: 12px;
+      line-height: 1.5;
+      font-family: inherit;
       font-weight: 500;
+      text-align: left;
       cursor: pointer;
-      opacity: 0.85;
-      transition: opacity 0.12s, background 0.12s;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      text-decoration-color: rgba(37, 99, 235, 0.3);
+      transition: color 0.12s, text-decoration-color 0.12s;
     }
     .status-action:hover {
-      opacity: 1;
-      background: rgba(0, 0, 0, 0.04);
+      color: #1e3a8a;
+      text-decoration-color: currentColor;
+    }
+    .status-action:focus-visible {
+      outline: 2px solid #f59e0b;
+      outline-offset: 2px;
+      border-radius: 2px;
     }
     /* Status reads as a subtle summary line, not an alert box. Only
        errors keep the loud border — success / info use a left color
@@ -1516,11 +1532,14 @@
           </details>
         </div>
 
-        <!-- Primary CTA -->
+        <!-- Primary CTA — hint above the button so users see "why
+             it's disabled / what to do" BEFORE encountering the
+             greyed-out button itself. Read top-to-bottom: reason
+             then action. -->
+        <button type="button" id="sync-blocked-reason" class="cta-reason" hidden></button>
         <button class="btn-cta" id="sync-api-btn" disabled>
           取得健保存摺資料
         </button>
-        <button type="button" id="sync-blocked-reason" class="cta-reason" hidden></button>
         <button class="btn-danger" id="stop-btn" hidden>
           取消
         </button>
