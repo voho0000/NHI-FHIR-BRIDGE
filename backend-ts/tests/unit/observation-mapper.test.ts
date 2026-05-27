@@ -229,6 +229,81 @@ describe("findLoinc", () => {
     expect(findLoinc("", "MCHC")).not.toBe("785-6");
   });
 
+  // ── CBC panel-scoped LOINC mappings (bug report 2026-05-27) ──────
+  // Before v0.9.6, NHI 08011C (CBC basic) and 08013C (CBC w/ diff)
+  // were in DISPLAY_FIRST_CODES but had no PANEL_LOINC_MAP entries.
+  // So MCV / MCHC / RDW were either shadowed by the global "紅血球"
+  // key (→ wrong, RBC LOINC) or fell back to the panel LOINC 24317-0.
+  // Differential cell types under 08013C fell to "白血球" → WBC 6690-2.
+  // Each expected LOINC below is verified at loinc.org.
+
+  test("v0.9.6 — MCV under 08011C panel → 787-2 (NOT RBC 789-8)", () => {
+    expect(findLoinc("08011C", "MCV 平均紅血球容積")).toBe("787-2");
+    expect(findLoinc("08011C", "MCV")).toBe("787-2");
+  });
+
+  test("v0.9.6 — MCH under 08011C panel → 785-6", () => {
+    expect(findLoinc("08011C", "MCH 平均紅血球血色素")).toBe("785-6");
+    expect(findLoinc("08011C", "MCH")).toBe("785-6");
+  });
+
+  test("v0.9.6 — MCHC under 08011C panel → 786-4 (NOT MCH 785-6, NOT panel 24317-0)", () => {
+    expect(findLoinc("08011C", "MCHC 平均紅血球血色素濃度")).toBe("786-4");
+    expect(findLoinc("08011C", "MCHC")).toBe("786-4");
+  });
+
+  test("v0.9.6 — RDW under 08011C panel → 788-0 (NOT panel fallback)", () => {
+    expect(findLoinc("08011C", "RDW")).toBe("788-0");
+    expect(findLoinc("08011C", "RDW 紅血球分布寬度")).toBe("788-0");
+  });
+
+  test("v0.9.6 — HCT under 08011C panel → 4544-3", () => {
+    expect(findLoinc("08011C", "HCT 血球容積比")).toBe("4544-3");
+  });
+
+  test("v0.9.6 — HGB under 08011C panel → 718-7", () => {
+    expect(findLoinc("08011C", "HGB 血紅素")).toBe("718-7");
+  });
+
+  test("v0.9.6 — RBC under 08011C panel → 789-8 (preserved by panel-scoped entry)", () => {
+    expect(findLoinc("08011C", "RBC 紅血球")).toBe("789-8");
+  });
+
+  test("v0.9.6 — Basophils% under 08013C → 706-2 (NOT WBC 6690-2)", () => {
+    expect(findLoinc("08013C", "Basophil 嗜鹼性白血球")).toBe("706-2");
+    expect(findLoinc("08013C", "Basophils")).toBe("706-2");
+  });
+
+  test("v0.9.6 — Lymphocytes% under 08013C → 736-9 (NOT WBC 6690-2)", () => {
+    expect(findLoinc("08013C", "Lymphocyte 淋巴球")).toBe("736-9");
+  });
+
+  test("v0.9.6 — Monocytes% under 08013C → 5905-5 (NOT WBC 6690-2)", () => {
+    expect(findLoinc("08013C", "Monocyte 單核球")).toBe("5905-5");
+  });
+
+  test("v0.9.6 — Neutrophils% / Segmented under 08013C → 770-8 (NOT WBC 6690-2)", () => {
+    expect(findLoinc("08013C", "Neutrophil 中性球")).toBe("770-8");
+    expect(findLoinc("08013C", "Neutrophilic Segment")).toBe("770-8");
+    expect(findLoinc("08013C", "Segmented")).toBe("770-8");
+  });
+
+  test("v0.9.6 — Eosinophils under 08013C panel → 713-8 (% — diff panel context, NOT count 711-2)", () => {
+    // Same display text under different NHI codes resolves differently:
+    //   08010C (Eosinophil count, standalone billing) → 711-2 (#/vol)
+    //   08013C (CBC w/ diff)                          → 713-8 (%)
+    // Verifies panel-scoped table beats both global LOINC_MAP "嗜酸性
+    // 白血球":711-2 and global "eosinophil":711-2.
+    expect(findLoinc("08013C", "Eosinophil 嗜酸性白血球")).toBe("713-8");
+    expect(findLoinc("08013C", "Eosinophils")).toBe("713-8");
+    // 08010C standalone still works (NHI direct map, no display lookup).
+    expect(findLoinc("08010C", "Eosinophil count")).toBe("711-2");
+  });
+
+  test("v0.9.6 — WBC under 08013C panel still routes to 6690-2 (basic count slot in diff printout)", () => {
+    expect(findLoinc("08013C", "WBC 白血球")).toBe("6690-2");
+  });
+
   test('findLoinc("14032C", "HBsAg") routes through NHI_TO_LOINC and returns correct HBsAg LOINC', () => {
     expect(findLoinc("14032C", "HBsAg")).toBe("5196-1");
   });

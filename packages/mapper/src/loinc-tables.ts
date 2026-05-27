@@ -309,6 +309,88 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     酸鹼度: "5803-2",
     glucose: "5792-7", // Last in this block so 'urine
   },
+
+  // ── CBC basic panel (08011C) ─────────────────────────
+  // NHI 08011C bills the basic CBC items (RBC + indices, HGB, HCT,
+  // PLT, WBC). Without per-item LOINCs under the panel, MCV / MCHC /
+  // RDW were being shadowed:
+  //   • MCV "平均紅血球容積" → matched global "紅血球" → 789-8 (RBC) ✗
+  //   • MCHC "MCHC" → no key matched → fell back to panel 24317-0 ✗
+  //   • RDW → no key matched → fell back to panel 24317-0 ✗
+  //   • Basophil / Lymphocyte / Monocyte → fell to "白血球" → 6690-2 ✗
+  // Panel-scoped table runs BEFORE the global one so the longer,
+  // specific CJK / ASCII keys win. All LOINCs verified at loinc.org
+  // (Long Common Name documented inline). Bug report 2026-05-27.
+  "08011C": {
+    // RBC indices — longer CJK keys first so they beat the bare
+    // "紅血球" key in the global LOINC_MAP path. (longest-key-wins
+    // semantics in _findLongestMatch make insertion order irrelevant
+    // within this dict but readability still benefits.)
+    平均紅血球容積: "787-2", // MCV — Erythrocyte mean corpuscular volume
+    平均紅血球體積: "787-2",
+    mcv: "787-2",
+    平均紅血球血色素濃度: "786-4", // MCHC — Erythrocytes mean corpuscular HGB concentration
+    mchc: "786-4",
+    平均紅血球血色素: "785-6", // MCH — Erythrocyte mean corpuscular hemoglobin
+    mch: "785-6",
+    紅血球分布寬度: "788-0", // RDW — Erythrocyte distribution width
+    紅血球體積分佈寬度: "788-0",
+    rdw: "788-0",
+    // Basic counts — duplicated from global LOINC_MAP so the panel is
+    // self-contained and immune to future global-table tweaks.
+    hematocrit: "4544-3", // HCT — Hematocrit volume fraction
+    血球容積比: "4544-3",
+    血比容: "4544-3",
+    hct: "4544-3",
+    hemoglobin: "718-7", // HGB
+    血紅素: "718-7",
+    hgb: "718-7",
+    hb: "718-7",
+    紅血球: "789-8", // RBC (kept here so panel resolution doesn't depend on global table)
+    rbc: "789-8",
+    白血球: "6690-2", // WBC
+    wbc: "6690-2",
+    platelet: "777-3", // PLT
+    血小板: "777-3",
+    plt: "777-3",
+  },
+
+  // ── CBC with auto diff (08013C) ──────────────────────
+  // 08013C reports each cell type as a PERCENT of leukocytes (per 100),
+  // distinct LOINCs from the absolute-count series (08010C Eosinophil
+  // count → 711-2 is a different billing code with the count semantics).
+  // Adding these here so under 08013C the diff entries route to the
+  // /100 leukocytes LOINCs instead of falling to global eosinophil
+  // count or "白血球" → WBC.
+  "08013C": {
+    neutrophil: "770-8", // Neutrophils/100 leukocytes
+    neutrophils: "770-8",
+    "neutrophilic segment": "770-8",
+    segmented: "770-8",
+    中性球: "770-8",
+    嗜中性球: "770-8",
+    嗜中性白血球: "770-8",
+    lymphocyte: "736-9", // Lymphocytes/100 leukocytes
+    lymphocytes: "736-9",
+    淋巴球: "736-9",
+    淋巴細胞: "736-9",
+    monocyte: "5905-5", // Monocytes/100 leukocytes
+    monocytes: "5905-5",
+    單核球: "5905-5",
+    eosinophil: "713-8", // Eosinophils/100 leukocytes (% not #/vol)
+    eosinophils: "713-8",
+    嗜酸性白血球: "713-8",
+    嗜酸: "713-8",
+    嗜伊紅性白血球: "713-8",
+    嗜伊紅: "713-8",
+    basophil: "706-2", // Basophils/100 leukocytes
+    basophils: "706-2",
+    嗜鹼性白血球: "706-2",
+    嗜鹼: "706-2",
+    // WBC absolute count can also appear on the diff panel printout.
+    白血球: "6690-2",
+    wbc: "6690-2",
+  },
 };
 
 // ── _LOINC_MAP ────────────────────────────────────────────
