@@ -26,13 +26,20 @@ const watch = process.argv.includes("--watch");
 rmSync(DIST, { recursive: true, force: true });
 mkdirSync(DIST, { recursive: true });
 
-/** Common esbuild options for the three bundled entry points. */
+/** Common esbuild options for the three bundled entry points.
+ *
+ * Sourcemap policy (v0.9.3+): only ship inline sourcemaps in --watch
+ * (dev) mode. Production builds drop them entirely to (a) keep the
+ * .crx small for Chrome Web Store, and (b) avoid leaking internal
+ * comments / dev-only diagnostic logic to anyone who base64-decodes
+ * the published bundle. Source remains public on GitHub anyway, but
+ * stripping sourcemaps removes the trivial in-browser DevTools view. */
 const bundleOpts = {
   bundle: true,
   format: "iife", // service worker accepts classic-script IIFE
   platform: "browser",
   target: "chrome120",
-  sourcemap: "inline",
+  sourcemap: watch ? "inline" : false,
   logLevel: "info",
 };
 

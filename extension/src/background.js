@@ -234,7 +234,7 @@ async function _fetchMedicationDetailsInTab({ tabId, baseUrl, visits, skipRowIds
       async function worker() {
         while (next < items.length) {
           const i = next++;
-          await new Promise((r) => setTimeout(r, Math.random() * 150));
+          await new Promise((r) => setTimeout(r, Math.random() * 50));
           out[i] = await one(items[i].row_ID);
         }
       }
@@ -333,7 +333,7 @@ async function _fetchChronicMedicationDetailsInTab({ tabId, baseUrl, visits }) {
       async function worker() {
         while (next < items.length) {
           const i = next++;
-          await new Promise((r) => setTimeout(r, Math.random() * 150));
+          await new Promise((r) => setTimeout(r, Math.random() * 50));
           out[i] = await one(items[i].row_ID, items[i].ctype);
         }
       }
@@ -407,7 +407,7 @@ async function _fetchImagingDetailsInTab({ tabId, baseUrl, visits }) {
       async function worker() {
         while (next < items.length) {
           const i = next++;
-          await new Promise((r) => setTimeout(r, Math.random() * 150));
+          await new Promise((r) => setTimeout(r, Math.random() * 50));
           out[i] = await one(items[i].row_ID, items[i].ctype);
         }
       }
@@ -504,7 +504,7 @@ async function _fetchProcedureDetailsInTab({ tabId, baseUrl, visits }) {
       async function worker() {
         while (next < items.length) {
           const i = next++;
-          await new Promise((r) => setTimeout(r, Math.random() * 150));
+          await new Promise((r) => setTimeout(r, Math.random() * 50));
           out[i] = await one(items[i].row_ID, items[i].ctype);
         }
       }
@@ -593,7 +593,7 @@ async function _fetchEncounterDetailsInTab({ tabId, baseUrl, visits }) {
       async function worker() {
         while (next < items.length) {
           const i = next++;
-          await new Promise((r) => setTimeout(r, Math.random() * 150));
+          await new Promise((r) => setTimeout(r, Math.random() * 50));
           out[i] = await one(items[i].row_ID);
         }
       }
@@ -671,7 +671,7 @@ async function _fetchInpatientDetailsInTab({ tabId, baseUrl, visits }) {
       async function worker() {
         while (next < items.length) {
           const i = next++;
-          await new Promise((r) => setTimeout(r, Math.random() * 150));
+          await new Promise((r) => setTimeout(r, Math.random() * 50));
           out[i] = await fetchOne(items[i].row_ID);
         }
       }
@@ -1073,7 +1073,14 @@ async function _stashFhirBundle(bundle, patientId, dateRange) {
     s = fmt(oneYearAgo);
     e = fmt(now);
   }
-  const filename = `nhi-${safePid}-${s}-${e}.json`;
+  // Bridge version embedded in the filename (v0.9.3+) so anyone
+  // receiving the bundle file later — the user, a SMART app dev, an
+  // IRB reviewer — can immediately see which bridge produced it.
+  // Matters for contract evolution (e.g. v0.9.2 changed Encounter.type
+  // shape) and bug triage. chrome.runtime.getManifest() reads from the
+  // bundled manifest.json — guaranteed available in an MV3 SW.
+  const version = chrome.runtime.getManifest()?.version || "unknown";
+  const filename = `nhi-${safePid}-${s}-${e}-v${version}.json`;
   const json = JSON.stringify(bundle, null, 2);
   await chrome.storage.session.set({
     [PENDING_BUNDLE_KEY]: {

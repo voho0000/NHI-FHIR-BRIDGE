@@ -1220,15 +1220,44 @@ els.maskNameEnabled?.addEventListener("change", async () => {
   refreshOverrideSummary();
 });
 
+// Reject SMART App Launch URLs that aren't https:// or localhost
+// loopback. Otherwise a typo or paste from a chat message could send
+// the (short-lived but real) iss + launch token to an attacker-
+// controlled origin, who can then walk the OAuth flow and obtain a
+// patient-scoped Bearer token. Validated here on change AND again at
+// launch time below — two gates because a malicious extension peer
+// could otherwise write directly to chrome.storage.local.
+function _isSafeSmartAppUrl(s) {
+  try {
+    const u = new URL(s);
+    if (u.protocol === "https:") return true;
+    if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 els.smartAppUrl.addEventListener("change", () => {
   // Persist trimmed value. Empty string → restore default on next load.
   const v = els.smartAppUrl.value.trim();
-  if (v) {
-    chrome.storage.local.set({ smartAppLaunchUrl: v });
-  } else {
+  if (!v) {
     chrome.storage.local.remove("smartAppLaunchUrl");
     els.smartAppUrl.value = DEFAULT_SMART_APP_LAUNCH;
+    return;
   }
+  if (!_isSafeSmartAppUrl(v)) {
+    setStatus(
+      "⛔ SMART App URL 必須是 https:// 或本機 (http://localhost)；已還原預設。",
+      "error",
+    );
+    chrome.storage.local.remove("smartAppLaunchUrl");
+    els.smartAppUrl.value = DEFAULT_SMART_APP_LAUNCH;
+    return;
+  }
+  chrome.storage.local.set({ smartAppLaunchUrl: v });
 });
 
 function setStatus(text, kind, breakdown, errors) {
@@ -1802,7 +1831,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // dropped silently. Defends against rogue extensions spoofing sync
 // progress and tricking the popup UI. (Security audit #6.)
 chrome.runtime.onMessage.addListener((msg, sender) => {
-  if (sender?.id && sender.id !== chrome.runtime.id) return;
+  // Strict equality with background.js handler: undefined sender.id
+  // (e.g. native-app channels — we don't use them) also rejected.
+  if (sender?.id !== chrome.runtime.id) return;
   if (msg?.type === "syncProgress") {
     applySyncStatus(msg.status);
   }
@@ -1958,6 +1989,17 @@ async function launch() {
   const ov = getPatientOverride();
   const rawId = ov?.id_no;
   const smartAppLaunch = els.smartAppUrl.value.trim() || DEFAULT_SMART_APP_LAUNCH;
+  // Defense-in-depth: even if a malicious browser extension wrote a
+  // non-HTTPS / non-loopback URL straight into chrome.storage.local
+  // (bypassing the change-listener validator above), the launch path
+  // double-checks before sending the launch token anywhere.
+  if (!_isSafeSmartAppUrl(smartAppLaunch)) {
+    setStatus(
+      "⛔ SMART App URL 不安全（必須 https:// 或本機）；請到進階設定修正。",
+      "error",
+    );
+    return;
+  }
   if (!rawId) {
     setStatus("還沒有身分資料 — 請先按「取得健保存摺資料」一次", "error");
     return;

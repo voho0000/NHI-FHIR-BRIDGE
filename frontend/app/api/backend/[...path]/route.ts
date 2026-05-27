@@ -31,7 +31,27 @@ const HOP_BY_HOP = new Set([
   "content-length",
 ]);
 
+// Origins that may invoke this proxy. The dashboard is served from
+// these two URLs (Docker bind = 127.0.0.1:3010, but Next.js default
+// dev / preview also responds to localhost:3010). Anything else —
+// including a random web page the user has open — is rejected, even
+// for credentialed simple requests that CORS can't help with (e.g.
+// <form method="POST">). Pre-empts CSRF on /api/backend/*.
+const SAME_SITE_ORIGINS = new Set([
+  "http://localhost:3010",
+  "http://127.0.0.1:3010",
+]);
+
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  // Browser fetch/XHR includes Origin on all cross-origin calls and on
+  // POST/PUT/DELETE/PATCH calls (even same-origin). Same-origin GET/HEAD
+  // doesn't always set Origin — allow when missing (matches normal
+  // dashboard usage) but reject any explicit non-allowlisted origin.
+  const origin = req.headers.get("origin");
+  if (origin && !SAME_SITE_ORIGINS.has(origin)) {
+    return new Response("forbidden: cross-origin request", { status: 403 });
+  }
+
   const { path } = await ctx.params;
   const search = req.nextUrl.search ?? "";
   const target = `${BACKEND_URL}/${path.join("/")}${search}`;

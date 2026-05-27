@@ -32,7 +32,7 @@ NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrom
 | 資料類別 | 來源 | 用途 | 儲存位置 |
 |---------|------|------|---------|
 | 醫療紀錄（就醫、用藥、檢驗、影像、過敏、預防接種等） | 健保署「健康存摺」API（使用者本人帳號） | 轉換為 FHIR R4 格式 | 瀏覽器記憶體 → 使用者選擇下載為 JSON 檔 或 上傳至使用者自架的本機後端 |
-| 個人識別資料（姓名、性別、出生日期、身分證字號） | 健保署「健康存摺」API + 使用者於 popup 自行填寫 | 產生 FHIR Patient 資源 | 同上，加上 `chrome.storage.sync` 保存使用者偏好（性別、出生年） |
+| 個人識別資料（姓名、性別、出生日期、身分證字號） | 健保署「健康存摺」API + 使用者於 popup 自行填寫 | 產生 FHIR Patient 資源 | 同上；使用者偏好（性別、出生年、Backend URL 等）存於 `chrome.storage.local`（**僅本機，不會同步至 Google 帳號**）。產生的健康紀錄檔暫存於 `chrome.storage.session`（**關閉瀏覽器自動清除**，且最長 1 小時 TTL；user 下載完成立即清除） |
 | 同步狀態與設定 | 擴充功能執行過程 | UI 狀態顯示 | `chrome.storage.local`（瀏覽器本地） |
 
 ### 四、資料外傳路徑
@@ -113,7 +113,7 @@ The data below is **only processed on the user's own machine** and never leaves 
 | Data Category | Source | Purpose | Storage Location |
 |--------------|--------|---------|------------------|
 | Medical records (encounters, medications, lab results, imaging, allergies, immunizations, etc.) | NHI "My Health Bank" APIs (user's own account) | Convert to FHIR R4 | Browser memory → user-initiated download as JSON, or upload to user's self-hosted local backend |
-| Personal identifiers (name, sex, DOB, national ID) | NHI APIs + user input in popup | Generate FHIR Patient resource | Same as above, plus `chrome.storage.sync` for user preferences |
+| Personal identifiers (name, sex, DOB, national ID) | NHI APIs + user input in popup | Generate FHIR Patient resource | Same as above; user preferences (sex, birth year, backend URL, etc.) live in `chrome.storage.local` (**browser-local only — never replicated to your Google account**). The generated health-record bundle is temporarily staged in `chrome.storage.session` (**wiped automatically when the browser closes**, with a 1-hour TTL; cleared the moment the user-initiated download completes) |
 | Sync state and settings | Extension runtime | UI state display | `chrome.storage.local` (browser-local) |
 
 ### 4. Data egress paths
