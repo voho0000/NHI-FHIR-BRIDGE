@@ -1028,6 +1028,43 @@
       font-size: 11px;
       color: #374151;
     }
+    /* Generic "common causes" fallback expander — only shown when the
+       conn-block is in fail state. Complements the per-kind .conn-help
+       above with a checklist of all the usual suspects, for cases where
+       the auto-detected kind doesn't quite match the user's situation. */
+    .conn-fallback {
+      display: none;
+      padding: 6px 10px 10px;
+      border-top: 1px dashed #fecaca;
+      font-size: 11px;
+      color: #6b7280;
+      line-height: 1.6;
+      background: #fef9f9;
+    }
+    .conn-block[data-state="fail"] .conn-fallback { display: block; }
+    .conn-fallback > summary {
+      cursor: pointer;
+      padding: 4px 0;
+      color: #b91c1c;
+      list-style: none;
+      user-select: none;
+    }
+    .conn-fallback > summary::-webkit-details-marker { display: none; }
+    .conn-fallback > summary::before {
+      content: "▸";
+      display: inline-block;
+      width: 12px;
+      transition: transform 0.12s;
+    }
+    .conn-fallback[open] > summary::before { transform: rotate(90deg); }
+    .conn-fallback ol { margin: 4px 0 0; padding-left: 20px; }
+    .conn-fallback li { margin-bottom: 4px; }
+    .conn-fallback code {
+      background: rgba(0, 0, 0, 0.05);
+      padding: 1px 6px;
+      border-radius: 3px;
+      color: #374151;
+    }
 
     /* ── Inline help icon + CSS tooltip (no native delay) ─────────── */
     .help-icon {
@@ -1441,6 +1478,19 @@
             <button class="conn-retry" id="conn-retry-btn" hidden>重試</button>
           </div>
           <div class="conn-help" id="conn-help" hidden></div>
+          <!-- Static "common causes" checklist — only displays on fail state
+               via .conn-block[data-state="fail"] CSS rule. Complements the
+               kind-specific .conn-help above. -->
+          <details class="conn-fallback">
+            <summary>💡 還是不行嗎？常見原因檢查清單</summary>
+            <ol>
+              <li>本機伺服器（Docker backend）沒啟動 → 終端機跑 <code>docker compose up -d</code></li>
+              <li>Backend URL 拼錯（例 port 寫錯）→ 點 ⚙️ 齒輪檢查「進階設定 → Backend URL」</li>
+              <li>第一次連 LAN backend 沒授權 Chrome 跨來源 → 關掉 popup 重開，當權限對話框跳出時按「允許」</li>
+              <li>Backend 剛啟動還在 migration（首次啟動會慢）→ 等 30 秒再按「重試」</li>
+              <li>防火牆 / VPN 擋住 localhost → 暫時關掉測試</li>
+            </ol>
+          </details>
         </div>
 
         <!-- Primary CTA -->
@@ -1546,11 +1596,12 @@
           <li>🤖 <b>AI 問答</b> — 看不懂的數值或藥物可隨時詢問</li>
         </ul>
         <div class="hint" style="margin-bottom:12px;">
-          點下方按鈕在新分頁開啟，把剛下載的檔案<b>拖到頁面上</b>，
-          或點「<b>匯入資料</b>」按鈕選取，即可載入。
+          <b>使用方法</b>：點下方按鈕 → 新分頁會打開「醫析 MediPrisma」<b>空白頁面</b>
+          → 把<b>剛下載的 JSON 檔</b>拖到頁面上、或點頁面上的「<b>匯入資料</b>」
+          按鈕選取，就會看到你的健康資料。
         </div>
         <button class="btn-primary" id="open-smart-app-btn">
-          🚀 開啟「醫析 MediPrisma」
+          🚀 開啟「醫析 MediPrisma」新分頁
         </button>
       </section>
     </div><!-- /STEP 4 -->
