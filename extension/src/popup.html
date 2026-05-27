@@ -1145,14 +1145,23 @@
        header+body. Cream tone instead of saturated amber so the card
        sits quietly in the popup rather than competing with action
        buttons for attention. */
+    /* Meta card holds TWO stacked sections sharing one rounded border:
+         • .popup-meta-disclaimer  — amber, "what could be wrong" warning
+         • .popup-meta-safety      — blue,  "what we never do" reassurance
+       Section backgrounds clipped to the outer rounded corners via
+       overflow:hidden. Thin amber separator between the two so the
+       eye reads them as one card with two messages, not two cards. */
     .popup-meta {
       margin: 14px 12px 10px;
-      padding: 12px 14px;
-      background: #fefce8;             /* very light cream, calmer than #fffbeb */
       border: 1px solid #f3e8c5;       /* desaturated amber */
       border-radius: 8px;
       font-size: 11px;
       line-height: 1.6;
+      overflow: hidden;
+    }
+    .popup-meta-disclaimer {
+      padding: 12px 14px;
+      background: #fefce8;             /* very light cream */
       color: #78350f;
     }
     .popup-meta-header {
@@ -1190,6 +1199,26 @@
       text-decoration: underline;
     }
     .popup-meta-body a:hover { text-decoration-thickness: 2px; }
+    /* Safety reassurance section — blue "info" palette so it reads
+       as a different category from the amber disclaimer above.
+       Lock emoji as the visual anchor, single line of plain prose,
+       trailing inline link to the full safety doc. */
+    .popup-meta-safety {
+      padding: 10px 14px;
+      background: #eff6ff;             /* very light blue */
+      color: #1e40af;                  /* dark blue */
+      border-top: 1px solid #f3e8c5;   /* match outer border for continuity */
+    }
+    .popup-meta-safety a {
+      color: #1e40af;
+      font-weight: 500;
+      text-decoration: underline;
+      white-space: nowrap;
+    }
+    .popup-meta-safety a:hover {
+      color: #1e3a8a;
+      text-decoration-thickness: 2px;
+    }
     .footer a { color: #6b7280; text-decoration: none; }
     .footer a:hover { color: #2563eb; }
     /* Compact data-accuracy disclaimer sitting above the footer.
@@ -1580,22 +1609,32 @@
 
   </div>
 
-  <!-- Persistent meta card: header row carries "免責聲明" + utility
-       meta (Dashboard ↗ + version) at baseline; body holds the
-       disclaimer text. One unified cream-toned card, no internal
-       split. Visible on every step. -->
+  <!-- Persistent meta card. Two stacked sections share one rounded
+       border (overflow:hidden clips children):
+         • disclaimer  — amber, "what could be wrong" + Dashboard +
+           version pinned right
+         • safety      — blue,  "what we never do" + link to full
+           safety doc on GitHub Pages
+       Visible on every step. -->
   <div class="popup-meta">
-    <div class="popup-meta-header">
-      <span class="popup-meta-title">免責聲明</span>
-      <span class="popup-meta-utility">
-        <a href="#" id="dashboard-link" class="backend-only" target="_blank">管理介面 ↗</a>
-        <span id="version"></span>
-      </span>
+    <div class="popup-meta-disclaimer">
+      <div class="popup-meta-header">
+        <span class="popup-meta-title">免責聲明</span>
+        <span class="popup-meta-utility">
+          <a href="#" id="dashboard-link" class="backend-only" target="_blank">管理介面 ↗</a>
+          <span id="version"></span>
+        </span>
+      </div>
+      <div class="popup-meta-body">
+        本工具僅供參考。產生的資料無法保證完全準確，請以
+        <a href="https://myhealthbank.nhi.gov.tw/" target="_blank" rel="noopener">健保署健康存摺</a>
+        顯示的內容為主。
+      </div>
     </div>
-    <div class="popup-meta-body">
-      本工具僅供參考。產生的資料無法保證完全準確，請以
-      <a href="https://myhealthbank.nhi.gov.tw/" target="_blank" rel="noopener">健保署健康存摺</a>
-      顯示的內容為主。
+    <div class="popup-meta-safety">
+      🔒 你的健康資料只在你電腦上處理，不會傳送到任何雲端伺服器。
+      <a href="https://voho0000.github.io/NHI-FHIR-BRIDGE/SECURITY_FOR_USERS.html"
+         target="_blank" rel="noopener">安全說明 ↗</a>
     </div>
   </div>
 
