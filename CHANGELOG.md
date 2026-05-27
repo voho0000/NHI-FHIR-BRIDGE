@@ -2,6 +2,20 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.9.9 重點 — 2026-05-27
+
+**🐛 修：切換病人後身分證號顯示舊病人 cid**
+
+`savePatientOverride` 順序問題 — 先把 `ov.id_no = prevStored?.id_no` (carry forward 舊 cid)、後檢查 patient 變了沒。改成 B 病人會看到「✅ 已記住：B 的姓名 · A 的 F22345****」混淆 banner。
+
+**修法**：先用 name/gender/dob 偵測 `patientChanged`，再決定：
+- 換人 → 新 placeholder（下次 sync 帶入 B 的真實 cid）
+- 同人 re-save → reuse 舊 id_no（避免 orphan backend resources）
+
+純 popup UI 邏輯，無 bundle/backend 變動。
+
+---
+
 ## 0.9.8 重點 — 2026-05-27
 
 **SMART app dev bug report Part 3** — 7 個 issue 中修了 5 個（C1 / C2 / C3 / C4 / C5 / C6 scaffold）。剩 2 個（C7 encounter physician + diagnosis link）延後到下版。
