@@ -1671,6 +1671,18 @@
       neutrophils: "770-8",
       "neutrophilic segment": "770-8",
       segmented: "770-8",
+      // Bug report 2026-05-27 Part 4: NHI shows just "Segment" (no -ed
+      // suffix) in some hospitals' CBC diff printouts. Without these
+      // exact-singular variants the row missed all keys and fell back
+      // to the panel LOINC 57021-8 (CBC W Auto Diff panel) — making
+      // SMART apps think the row was an unfiled panel-level value.
+      // Adding singular + plural + Taiwan LIS shorthand variants.
+      segment: "770-8",
+      segments: "770-8",
+      seg: "770-8",
+      "seg.": "770-8",
+      "neut. seg": "770-8",
+      "neut seg": "770-8",
       \u4E2D\u6027\u7403: "770-8",
       \u55DC\u4E2D\u6027\u7403: "770-8",
       \u55DC\u4E2D\u6027\u767D\u8840\u7403: "770-8",

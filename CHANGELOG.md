@@ -19,6 +19,10 @@ Newest first. GitHub Releases page keeps the latest version only; this file is t
   - PT Control → `5894-1`（PT Control reagent）
   - 空 display fallback 仍走 `6301-6`（INR 是抗凝追蹤的主指標）
 
+**08013C Segment（CBC w/ diff）**（SMART app dev Part 4 報告）
+- v0.9.6 已修了 Basophil/Eosinophil/Lymphocyte/Monocyte，但有醫院 NHI 顯示用 `Segment`（沒 -ed），現有 key `segmented` 沒命中 → fallback 到 panel LOINC `57021-8`
+- 補 `segment` / `segments` / `seg` / `seg.` / `neut. seg` / `neut seg` 6 個變體 → `770-8` (Neutrophils/100 leukocytes)
+
 **16008C 體液 panel**（順手修）
 - 之前在 `DISPLAY_FIRST_CODES` 但沒對應 `PANEL_LOINC_MAP` → 走 global table，shorter generic key（如 `wbc` → 6690-2 BLOOD WBC）可能 shadow body-fluid 專用 LOINC
 - 新增 `PANEL_LOINC_MAP["16008C"]`：SF.WBC → `26466-3`、SF.Neutrophil → `10328-6`、SF.Lympho → `13046-8`、SF.Color → `5778-6`

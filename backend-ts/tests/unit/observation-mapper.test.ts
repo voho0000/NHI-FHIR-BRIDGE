@@ -355,6 +355,19 @@ describe("findLoinc", () => {
     expect(findLoinc("08013C", "Segmented")).toBe("770-8");
   });
 
+  // ── v0.9.10 — Segment (no -ed suffix) variant (bug report Part 4) ─
+  // Same root cause as Part 1's Basophil/Eosinophil/Lymphocyte: some
+  // hospitals' CBC diff printouts show "Segment" (Taiwan LIS shorthand
+  // for segmented neutrophil) which didn't match any panel key and
+  // fell back to 57021-8 (panel LOINC). SMART app reported v0.9.9
+  // bundles still contained {"text":"Segment", coding=57021-8}.
+  test("v0.9.10 — Segment (singular) under 08013C → 770-8 (NOT panel 57021-8)", () => {
+    expect(findLoinc("08013C", "Segment")).toBe("770-8");
+    expect(findLoinc("08013C", "Segments")).toBe("770-8");
+    expect(findLoinc("08013C", "Seg")).toBe("770-8");
+    expect(findLoinc("08013C", "Neut. Seg")).toBe("770-8");
+  });
+
   test("v0.9.6 — Eosinophils under 08013C panel → 713-8 (% — diff panel context, NOT count 711-2)", () => {
     // Same display text under different NHI codes resolves differently:
     //   08010C (Eosinophil count, standalone billing) → 711-2 (#/vol)
