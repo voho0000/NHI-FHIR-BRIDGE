@@ -503,6 +503,299 @@
     return chars[0] + "O".repeat(chars.length - 2) + chars[chars.length - 1];
   }
 
+  // ../packages/mapper/src/loinc-tables.ts
+  var CBC_COMPONENT_KEYS = {
+    // Hemoglobin
+    hemoglobin: "718-7",
+    \u8840\u7D05\u7D20: "718-7",
+    hgb: "718-7",
+    hb: "718-7",
+    "hb.": "718-7",
+    // Hematocrit (HCT) — Taiwan LIS often shortens to "Ht" / "H.t."
+    hematocrit: "4544-3",
+    \u8840\u7403\u5BB9\u7A4D\u6BD4: "4544-3",
+    \u8840\u6BD4\u5BB9: "4544-3",
+    hct: "4544-3",
+    ht: "4544-3",
+    "h.t.": "4544-3",
+    "h.t": "4544-3",
+    "%ht": "4544-3",
+    // RBC
+    \u7D05\u8840\u7403: "789-8",
+    rbc: "789-8",
+    // WBC
+    \u767D\u8840\u7403: "6690-2",
+    wbc: "6690-2",
+    // Platelet
+    platelet: "777-3",
+    \u8840\u5C0F\u677F: "777-3",
+    plt: "777-3"
+  };
+  var PANEL_LOINC_MAP = {
+    // ── Urinalysis (06013C) ──────────────────────────────
+    // All routine dipstick items reside on a single NHI billing code.
+    // Without this table they'd all collapse to the panel LOINC 24356-8,
+    // losing per-item granularity that's clinically useful (e.g.
+    // bilirubin vs urobilinogen for liver workup).
+    "06013C": {
+      // Order matters: longer/more-specific keys before generic ones
+      // (matches _LOINC_MAP iteration semantics — first hit wins).
+      "specific gravity": "5811-5",
+      // Specific gravity Urine
+      "sp.gravity": "5811-5",
+      "sp gravity": "5811-5",
+      \u6BD4\u91CD: "5811-5",
+      "micro-albumin": "14957-5",
+      // Microalbumin Mass/vol Urine
+      microalbumin: "14957-5",
+      "malb(u)": "14957-5",
+      malb: "14957-5",
+      \u5FAE\u5C0F\u767D\u86CB\u767D: "14957-5",
+      uacr: "14959-1",
+      // Microalbumin/Creatinine ratio Urine
+      "urine glucose": "5792-7",
+      sugar: "5792-7",
+      // NHI '尿糖' / 'Sugar' under 06013C
+      \u5C3F\u7CD6: "5792-7",
+      urobilinogen: "5818-0",
+      // Urobilinogen Urine Ql
+      \u5C3F\u81BD\u7D20\u539F: "5818-0",
+      bilirubin: "5770-3",
+      // Bilirubin Urine Ql
+      \u5C3F\u81BD\u7D05\u7D20: "5770-3",
+      nitrite: "5802-4",
+      // Nitrite Urine
+      \u4E9E\u785D\u9178: "5802-4",
+      ketones: "5797-6",
+      // Ketones Urine
+      ketone: "5797-6",
+      \u916E\u9AD4: "5797-6",
+      protein: "20454-5",
+      // Protein Mass/vol Urine
+      \u5C3F\u86CB\u767D: "20454-5",
+      \u86CB\u767D: "20454-5",
+      leukocyte: "5799-2",
+      // Leukocytes Urine
+      leu: "5799-2",
+      \u767D\u8840\u7403\u916F\u9176: "5799-2",
+      blood: "5794-3",
+      // Hemoglobin Urine Ql
+      \u6F5B\u8840: "5794-3",
+      \u8272: "5778-6",
+      // Color of Urine (CJK substring)
+      color: "5778-6",
+      turbidity: "5767-9",
+      // Appearance of Urine
+      appearance: "5767-9",
+      \u5916\u89C0: "5767-9",
+      ph: "5803-2",
+      // pH of Urine (urine-specific, NOT
+      // the arterial 11558-4 that the
+      // global map points to)
+      \u9178\u9E7C\u5EA6: "5803-2",
+      glucose: "5792-7"
+      // Last in this block so 'urine
+    },
+    // ── CBC basic panel (08011C) ─────────────────────────
+    // NHI 08011C bills the basic CBC items (RBC + indices, HGB, HCT,
+    // PLT, WBC). Without per-item LOINCs under the panel, MCV / MCHC /
+    // RDW were being shadowed:
+    //   • MCV "平均紅血球容積" → matched global "紅血球" → 789-8 (RBC) ✗
+    //   • MCHC "MCHC" → no key matched → fell back to panel 24317-0 ✗
+    //   • RDW → no key matched → fell back to panel 24317-0 ✗
+    //   • Basophil / Lymphocyte / Monocyte → fell to "白血球" → 6690-2 ✗
+    // Panel-scoped table runs BEFORE the global one so the longer,
+    // specific CJK / ASCII keys win. All LOINCs verified at loinc.org
+    // (Long Common Name documented inline). Bug report 2026-05-27.
+    "08011C": {
+      // RBC indices — longer CJK keys first so they beat the bare
+      // "紅血球" key in the global LOINC_MAP path. (longest-key-wins
+      // semantics in _findLongestMatch make insertion order irrelevant
+      // within this dict but readability still benefits.)
+      \u5E73\u5747\u7D05\u8840\u7403\u5BB9\u7A4D: "787-2",
+      // MCV — Erythrocyte mean corpuscular volume
+      \u5E73\u5747\u7D05\u8840\u7403\u9AD4\u7A4D: "787-2",
+      mcv: "787-2",
+      \u5E73\u5747\u7D05\u8840\u7403\u8840\u8272\u7D20\u6FC3\u5EA6: "786-4",
+      // MCHC — Erythrocytes mean corpuscular HGB concentration
+      mchc: "786-4",
+      \u5E73\u5747\u7D05\u8840\u7403\u8840\u8272\u7D20: "785-6",
+      // MCH — Erythrocyte mean corpuscular hemoglobin
+      mch: "785-6",
+      \u7D05\u8840\u7403\u5206\u5E03\u5BEC\u5EA6: "788-0",
+      // RDW — Erythrocyte distribution width
+      \u7D05\u8840\u7403\u9AD4\u7A4D\u5206\u4F48\u5BEC\u5EA6: "788-0",
+      rdw: "788-0",
+      // CBC basic counts — shared with the single-analyte billing codes
+      // (08002C / 08003C / 08004C / 08006C) below; see
+      // CBC_COMPONENT_KEYS const below for the source of truth.
+      ...CBC_COMPONENT_KEYS
+    },
+    // ── CBC sibling billing codes (v0.9.10 Part 5) ──────────
+    // Single-analyte billing codes promoted to display-first so when a
+    // hospital LIS swaps display vs code (e.g. row billed 08004C HCT
+    // but display text reads "HGB"), the unambiguous display wins. The
+    // panel uses the same shared keys — for a correctly-billed-and-
+    // labelled row this is a no-op (display matches what NHI_TO_LOINC
+    // would have returned); for a mis-labelled row it routes to the
+    // analyte the display intends. Fallback path C still hits the
+    // NHI_TO_LOINC entry for the row's billing code when display is
+    // empty/unrecognised. See 嘉基 bug report 2026-05-27.
+    "08002C": CBC_COMPONENT_KEYS,
+    // WBC count billing
+    "08003C": CBC_COMPONENT_KEYS,
+    // Hemoglobin billing
+    "08004C": CBC_COMPONENT_KEYS,
+    // Hematocrit billing
+    "08006C": CBC_COMPONENT_KEYS,
+    // Platelet count billing
+    // ── Serum creatinine + eGFR piggyback (09015C) ──────
+    // NHI bills creatinine under 09015C; Taiwan labs auto-calculate eGFR
+    // (CKD-EPI / MDRD) and append it as a separate sub-row using the
+    // SAME 09015C billing code, distinguished only by display text.
+    // Without this panel-scoped table, every 09015C row inherited LOINC
+    // 2160-0 (serum creatinine) and SMART apps routed eGFR values into
+    // the creatinine column — patient-safety issue (eGFR=33 displayed as
+    // CREA=33 mg/dL is instantly mistaken for acute kidney failure).
+    //
+    // MDRD (33914-3) is the default per Taiwan KDIGO guidelines. Newer
+    // CKD-EPI formulas (62238-1, 88293-6, 98979-8) covered as well so a
+    // single panel entry handles whichever formula the lab uses. The
+    // explicit creatinine entries are duplicated from the global LOINC_MAP
+    // so the panel is self-contained.
+    "09015C": {
+      egfr: "33914-3",
+      // eGFR — Glomerular filtration rate (MDRD default)
+      "estimated gfr": "33914-3",
+      "estimated glomerular filtration rate": "33914-3",
+      "glomerular filtration rate": "33914-3",
+      \u814E\u7D72\u7403\u904E\u6FFE\u7387: "33914-3",
+      \u4F30\u7B97\u814E\u7D72\u7403\u904E\u6FFE\u7387: "33914-3",
+      creatinine: "2160-0",
+      crea: "2160-0",
+      \u808C\u9178\u9150: "2160-0",
+      \u808C\u9150\u9178: "2160-0",
+      \u8840\u4E2D\u808C\u9178\u9150: "2160-0"
+    },
+    // ── PT/INR panel (08026C) ────────────────────────────
+    // Taiwan labs bill PT (seconds) and INR (ratio) under the SAME 08026C
+    // code, distinguished only by display string. Without this panel
+    // table both rows mapped to LOINC 6301-6 (INR); a warfarin trend
+    // view would plot a PT=12 sec point as INR=12 (instant overdose
+    // alarm) or merge PT and INR into one series. Each LOINC verified
+    // at loinc.org:
+    //   5902-2  Prothrombin time (PT) in Platelet poor plasma by
+    //           Coagulation assay
+    //   6301-6  INR in Platelet poor plasma by Coagulation assay
+    //   5894-1  Prothrombin time (PT) Control in Platelet poor plasma
+    //           by Coagulation assay
+    // Order is longest-key-wins inside _findLongestMatch so insertion
+    // order doesn't matter, but readability benefits from
+    // longest-specific first.
+    "08026C": {
+      "international normalized ratio": "6301-6",
+      "prothrombin time control": "5894-1",
+      "pt control": "5894-1",
+      "control pt": "5894-1",
+      \u5C0D\u7167: "5894-1",
+      \u5C0D\u7167\u7D44: "5894-1",
+      "prothrombin time": "5902-2",
+      "pt (sec)": "5902-2",
+      "pt sec": "5902-2",
+      "pt-sec": "5902-2",
+      \u51DD\u8840\u9176\u539F\u6642\u9593: "5902-2",
+      \u51DD\u8840\u6642\u9593: "5902-2",
+      inr: "6301-6",
+      pt: "5902-2"
+    },
+    // ── Synovial / body-fluid panel (16008C) ─────────────
+    // 16008C bills the full body-fluid analysis: appearance / color /
+    // WBC count / differential. Each sub-item has its own specimen-
+    // aware LOINC. Panel-scoped table runs before the global one so
+    // shorter generic keys (e.g. global "wbc" → 6690-2 blood WBC)
+    // can't shadow the body-fluid specific LOINCs. Each LOINC verified
+    // at loinc.org:
+    //   5778-6  Color of Urine (re-used for body-fluid color; cell-counter
+    //           descriptive LOINC, specimen-agnostic in practice)
+    //   26466-3 Leukocytes [#/volume] in Body fluid by Manual count
+    //   10328-6 Neutrophils/100 leukocytes in Body fluid
+    //   13046-8 Lymphocytes [#/volume] in Body fluid
+    // The "sf.*" notation matches Taiwan LIS prefixes ("SF" = Synovial
+    // Fluid) that appear in raw display text.
+    "16008C": {
+      "sf.neutrophil": "10328-6",
+      "sf neutrophil": "10328-6",
+      neutrophil: "10328-6",
+      "sf.lympho": "13046-8",
+      "sf lympho": "13046-8",
+      "sf.lymphocyte": "13046-8",
+      lymphocyte: "13046-8",
+      lymphocytes: "13046-8",
+      "sf.wbc": "26466-3",
+      "sf wbc": "26466-3",
+      wbc: "26466-3",
+      leukocyte: "26466-3",
+      leukocytes: "26466-3",
+      "sf.color": "5778-6",
+      "sf color": "5778-6",
+      color: "5778-6",
+      \u984F\u8272: "5778-6"
+    },
+    // ── CBC with auto diff (08013C) ──────────────────────
+    // 08013C reports each cell type as a PERCENT of leukocytes (per 100),
+    // distinct LOINCs from the absolute-count series (08010C Eosinophil
+    // count → 711-2 is a different billing code with the count semantics).
+    // Adding these here so under 08013C the diff entries route to the
+    // /100 leukocytes LOINCs instead of falling to global eosinophil
+    // count or "白血球" → WBC.
+    "08013C": {
+      neutrophil: "770-8",
+      // Neutrophils/100 leukocytes
+      neutrophils: "770-8",
+      "neutrophilic segment": "770-8",
+      segmented: "770-8",
+      // Bug report 2026-05-27 Part 4: NHI shows just "Segment" (no -ed
+      // suffix) in some hospitals' CBC diff printouts. Without these
+      // exact-singular variants the row missed all keys and fell back
+      // to the panel LOINC 57021-8 (CBC W Auto Diff panel) — making
+      // SMART apps think the row was an unfiled panel-level value.
+      // Adding singular + plural + Taiwan LIS shorthand variants.
+      segment: "770-8",
+      segments: "770-8",
+      seg: "770-8",
+      "seg.": "770-8",
+      "neut. seg": "770-8",
+      "neut seg": "770-8",
+      \u4E2D\u6027\u7403: "770-8",
+      \u55DC\u4E2D\u6027\u7403: "770-8",
+      \u55DC\u4E2D\u6027\u767D\u8840\u7403: "770-8",
+      lymphocyte: "736-9",
+      // Lymphocytes/100 leukocytes
+      lymphocytes: "736-9",
+      \u6DCB\u5DF4\u7403: "736-9",
+      \u6DCB\u5DF4\u7D30\u80DE: "736-9",
+      monocyte: "5905-5",
+      // Monocytes/100 leukocytes
+      monocytes: "5905-5",
+      \u55AE\u6838\u7403: "5905-5",
+      eosinophil: "713-8",
+      // Eosinophils/100 leukocytes (% not #/vol)
+      eosinophils: "713-8",
+      \u55DC\u9178\u6027\u767D\u8840\u7403: "713-8",
+      \u55DC\u9178: "713-8",
+      \u55DC\u4F0A\u7D05\u6027\u767D\u8840\u7403: "713-8",
+      \u55DC\u4F0A\u7D05: "713-8",
+      basophil: "706-2",
+      // Basophils/100 leukocytes
+      basophils: "706-2",
+      \u55DC\u9E7C\u6027\u767D\u8840\u7403: "706-2",
+      \u55DC\u9E7C: "706-2",
+      // WBC absolute count can also appear on the diff panel printout.
+      \u767D\u8840\u7403: "6690-2",
+      wbc: "6690-2"
+    }
+  };
+
   // ../packages/mapper/src/observation.ts
   var LAB_SYNONYMS = {
     // Diabetes

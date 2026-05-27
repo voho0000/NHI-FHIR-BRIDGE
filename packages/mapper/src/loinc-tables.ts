@@ -285,7 +285,63 @@ export const DISPLAY_FIRST_CODES: ReadonlySet<string> = new Set([
   // patient-safety-adjacent: a trend chart would plot PT seconds (~12)
   // and INR (~2.5) on the same series, or label a PT=12 row as "INR=12"
   // (instantly looks like critical anticoagulation overdose). v0.9.10.
+  // ── CBC component billing codes (v0.9.10, bug report Part 5) ─────
+  // These are SINGLE-analyte billing codes (one analyte per code, NOT
+  // panels). Why are they here? Hospital LIS labelling errors swap
+  // displays across CBC siblings: 嘉基's bundle billed 08004C (HCT)
+  // but the row's display text was "HGB" with value 13 g/dL — clearly
+  // a hemoglobin measurement mis-billed as HCT, or a label/display
+  // swap inside the LIS. Trusting the NHI code returned LOINC 4544-3
+  // (HCT) for a hemoglobin row → SMART app's HCT trend column showed
+  // 13 (impossible for HCT, normal 30-50%). Promoting these to
+  // display-first lets unambiguous display text ("HGB", "HCT", "Hb",
+  // "Ht") override the LIS billing-swap. SCOPED to CBC family ONLY —
+  // we don't generalize to other single-test codes because outside
+  // CBC the display strings are less standardized and the risk of
+  // wrong over-ride is higher. v0.9.10 Part 5.
+  "08002C", // WBC count (Leukocytes)
+  "08003C", // Hemoglobin
+  "08004C", // Hematocrit
+  "08006C", // Platelets
 ]);
+
+// ── CBC component display keys (shared) ──────────────────
+// Source of truth for the basic CBC analyte keys reused by:
+//   • 08011C — CBC umbrella panel (sub-rows for each analyte)
+//   • 08002C / 08003C / 08004C / 08006C — single-analyte billing codes
+//     promoted to DISPLAY_FIRST_CODES in v0.9.10 to defend against
+//     hospital LIS labelling swaps (bug report 2026-05-27 Part 5).
+// Each LOINC verified at loinc.org. "ht" / "h.t." added v0.9.10 — they
+// were missing under 08011C, causing rows displayed as "Ht" to fall
+// back to the panel LOINC 24317-0 (Hemogram panel) which SMART app
+// pivot-by-LOINC then dropped from per-analyte trend columns.
+const CBC_COMPONENT_KEYS: Record<string, string> = {
+  // Hemoglobin
+  hemoglobin: "718-7",
+  血紅素: "718-7",
+  hgb: "718-7",
+  hb: "718-7",
+  "hb.": "718-7",
+  // Hematocrit (HCT) — Taiwan LIS often shortens to "Ht" / "H.t."
+  hematocrit: "4544-3",
+  血球容積比: "4544-3",
+  血比容: "4544-3",
+  hct: "4544-3",
+  ht: "4544-3",
+  "h.t.": "4544-3",
+  "h.t": "4544-3",
+  "%ht": "4544-3",
+  // RBC
+  紅血球: "789-8",
+  rbc: "789-8",
+  // WBC
+  白血球: "6690-2",
+  wbc: "6690-2",
+  // Platelet
+  platelet: "777-3",
+  血小板: "777-3",
+  plt: "777-3",
+};
 
 // ── _PANEL_LOINC_MAP ──────────────────────────────────────
 // Panel-specific display → LOINC overrides. These run BEFORE the global
@@ -373,24 +429,26 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     紅血球分布寬度: "788-0", // RDW — Erythrocyte distribution width
     紅血球體積分佈寬度: "788-0",
     rdw: "788-0",
-    // Basic counts — duplicated from global LOINC_MAP so the panel is
-    // self-contained and immune to future global-table tweaks.
-    hematocrit: "4544-3", // HCT — Hematocrit volume fraction
-    血球容積比: "4544-3",
-    血比容: "4544-3",
-    hct: "4544-3",
-    hemoglobin: "718-7", // HGB
-    血紅素: "718-7",
-    hgb: "718-7",
-    hb: "718-7",
-    紅血球: "789-8", // RBC (kept here so panel resolution doesn't depend on global table)
-    rbc: "789-8",
-    白血球: "6690-2", // WBC
-    wbc: "6690-2",
-    platelet: "777-3", // PLT
-    血小板: "777-3",
-    plt: "777-3",
+    // CBC basic counts — shared with the single-analyte billing codes
+    // (08002C / 08003C / 08004C / 08006C) below; see
+    // CBC_COMPONENT_KEYS const below for the source of truth.
+    ...CBC_COMPONENT_KEYS,
   },
+
+  // ── CBC sibling billing codes (v0.9.10 Part 5) ──────────
+  // Single-analyte billing codes promoted to display-first so when a
+  // hospital LIS swaps display vs code (e.g. row billed 08004C HCT
+  // but display text reads "HGB"), the unambiguous display wins. The
+  // panel uses the same shared keys — for a correctly-billed-and-
+  // labelled row this is a no-op (display matches what NHI_TO_LOINC
+  // would have returned); for a mis-labelled row it routes to the
+  // analyte the display intends. Fallback path C still hits the
+  // NHI_TO_LOINC entry for the row's billing code when display is
+  // empty/unrecognised. See 嘉基 bug report 2026-05-27.
+  "08002C": CBC_COMPONENT_KEYS, // WBC count billing
+  "08003C": CBC_COMPONENT_KEYS, // Hemoglobin billing
+  "08004C": CBC_COMPONENT_KEYS, // Hematocrit billing
+  "08006C": CBC_COMPONENT_KEYS, // Platelet count billing
 
   // ── Serum creatinine + eGFR piggyback (09015C) ──────
   // NHI bills creatinine under 09015C; Taiwan labs auto-calculate eGFR

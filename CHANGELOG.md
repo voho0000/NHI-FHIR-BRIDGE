@@ -19,6 +19,17 @@ Newest first. GitHub Releases page keeps the latest version only; this file is t
   - PT Control → `5894-1`（PT Control reagent）
   - 空 display fallback 仍走 `6301-6`（INR 是抗凝追蹤的主指標）
 
+**CBC sibling 顯示 vs billing 對調修補**（SMART app dev Part 5 報告 — 嘉基 case，patient safety 級）
+- 嘉基某次 CBC report：row billed `08004C`（HCT）但 display text 寫 `"HGB"`、value 13 g/dL（明顯是 hemoglobin 數值；HCT 正常 30-50%）
+- v0.9.9 行為：NHI billing code 直接 win → 給 4544-3 (HCT LOINC) → SMART app HCT trend 欄顯示 13（看起來像 critical anemia / lab error）
+- 另一個 row display=`"Ht"` 沒有 key 命中 → fallback 到 08011C panel LOINC 24317-0 → SMART app 不認識 → 整 row 被丟掉
+- 修法：
+  - 抽 `CBC_COMPONENT_KEYS` 共用 const（hgb/hct/wbc/rbc/plt 各種變體，含新增的 `ht` / `h.t.` / `%ht`）
+  - 把 08002C / 08003C / 08004C / 08006C 四個單一 analyte billing code 升級進 `DISPLAY_FIRST_CODES`，shared the same panel table
+  - 結果：unambiguous display text（"HGB" / "HCT" / "Hb" / "Ht"）會 override 醫院 LIS 的 label-billing 對調
+  - Defensive fallback：display 空白 → 還是走 NHI_TO_LOINC（顯示 billing code 原意）
+- ⚠️ 此修法**部分突破** v0.9.x 之前的 "faithful transport" 原則 — 但 scope 嚴格限在 CBC 家族，因 display 高度標準化、誤判風險低；同時 patient-safety impact 高（看到 HCT=13 會誤判 critical case）
+
 **08013C Segment（CBC w/ diff）**（SMART app dev Part 4 報告）
 - v0.9.6 已修了 Basophil/Eosinophil/Lymphocyte/Monocyte，但有醫院 NHI 顯示用 `Segment`（沒 -ed），現有 key `segmented` 沒命中 → fallback 到 panel LOINC `57021-8`
 - 補 `segment` / `segments` / `seg` / `seg.` / `neut. seg` / `neut seg` 6 個變體 → `770-8` (Neutrophils/100 leukocytes)

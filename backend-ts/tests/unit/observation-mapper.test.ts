@@ -355,6 +355,59 @@ describe("findLoinc", () => {
     expect(findLoinc("08013C", "Segmented")).toBe("770-8");
   });
 
+  // ── v0.9.10 — CBC sibling display-vs-billing-code swap (Part 5) ──
+  // 嘉基 bundle had a row billed under 08004C (HCT) with display "HGB"
+  // and value 13 g/dL — clearly a hemoglobin measurement that the LIS
+  // mis-billed or mis-labelled. Before v0.9.10, NHI code won outright
+  // → row got LOINC 4544-3 (HCT), SMART app HCT trend column showed
+  // 13 (impossible — HCT normal 30-50%, 13 looks like critical anemia
+  // / lab error). Promoting CBC sibling codes (08002C/08003C/08004C/
+  // 08006C) to DISPLAY_FIRST_CODES lets unambiguous display text
+  // ("HGB" / "HCT" / "Hb" / "Ht") override the billing-code swap.
+  // Also adds the "Ht" / "H.t." key family which was missing.
+
+  test("v0.9.10 — Ht under 08011C panel → 4544-3 (was 24317-0 fallback)", () => {
+    expect(findLoinc("08011C", "Ht")).toBe("4544-3");
+    expect(findLoinc("08011C", "H.t.")).toBe("4544-3");
+  });
+
+  test("v0.9.10 — HGB billed as 08004C (HCT) → display wins → 718-7", () => {
+    // The bug-of-the-day case: hospital LIS labelling swap. Display
+    // "HGB" is unambiguous hemoglobin → 718-7 even though NHI billing
+    // code 08004C nominally means HCT.
+    expect(findLoinc("08004C", "HGB")).toBe("718-7");
+    expect(findLoinc("08004C", "Hb")).toBe("718-7");
+  });
+
+  test("v0.9.10 — HCT correctly billed (08004C + display 'HCT') still routes to 4544-3", () => {
+    expect(findLoinc("08004C", "HCT")).toBe("4544-3");
+    expect(findLoinc("08004C", "Ht")).toBe("4544-3");
+  });
+
+  test("v0.9.10 — 08004C with empty display still falls back to 4544-3 (NHI_TO_LOINC)", () => {
+    // Path C fallback: panel match misses → global misses → NHI_TO_LOINC
+    // returns 4544-3 (HCT, the code's nominal meaning).
+    expect(findLoinc("08004C", "")).toBe("4544-3");
+  });
+
+  test("v0.9.10 — 08003C / 08006C / 08002C also display-first", () => {
+    expect(findLoinc("08003C", "HCT")).toBe("4544-3"); // display fixes swap
+    expect(findLoinc("08003C", "HGB")).toBe("718-7");
+    expect(findLoinc("08003C", "")).toBe("718-7"); // fallback = code's meaning
+    expect(findLoinc("08006C", "PLT")).toBe("777-3");
+    expect(findLoinc("08002C", "WBC")).toBe("6690-2");
+  });
+
+  test("v0.9.10 — 08011C MCV / WBC still resolve correctly (no regression from spread)", () => {
+    // Defensive: the CBC_COMPONENT_KEYS spread merge into 08011C
+    // panel table must not shadow the indices-specific keys (MCV/
+    // MCH/MCHC/RDW) that 08011C has on top of the basic counts.
+    expect(findLoinc("08011C", "MCV")).toBe("787-2");
+    expect(findLoinc("08011C", "MCHC")).toBe("786-4");
+    expect(findLoinc("08011C", "WBC")).toBe("6690-2");
+    expect(findLoinc("08011C", "RBC 紅血球")).toBe("789-8");
+  });
+
   // ── v0.9.10 — Segment (no -ed suffix) variant (bug report Part 4) ─
   // Same root cause as Part 1's Basophil/Eosinophil/Lymphocyte: some
   // hospitals' CBC diff printouts show "Segment" (Taiwan LIS shorthand
