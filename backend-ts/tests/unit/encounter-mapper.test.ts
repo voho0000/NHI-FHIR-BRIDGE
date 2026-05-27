@@ -137,10 +137,7 @@ describe("mapEncounter", () => {
   test("v0.9.2 — kind + channel takes precedence over legacy type_display", () => {
     // If a caller somehow sends all three, the new fields win and
     // type_display is ignored (otherwise we'd emit three entries).
-    const r = mapEncounter(
-      { kind: "門診", channel: "IC卡資料", type_display: "申報資料" },
-      PID,
-    );
+    const r = mapEncounter({ kind: "門診", channel: "IC卡資料", type_display: "申報資料" }, PID);
     expect(r.type).toHaveLength(2);
     expect(r.type[0].coding[0].system).toBe(
       "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-kind",
