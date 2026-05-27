@@ -1008,10 +1008,27 @@ function _assembleLocalBundle(byType, patientOverride, maskEnabled) {
   linkEncountersInResources(unique, unique);
   resolveSexStratifiedRanges(patient, unique);
 
+  // Bundle.meta.tag carries bridge version + source identifier so SMART
+  // app devs / IRB reviewers can identify the producing bridge even
+  // after the file is renamed (the filename also has the version, but
+  // file rename is common). Tag system uses a bridge-specific URI so it
+  // can be queried without colliding with clinical tags.
+  // Bug report 2026-05-27 Part 6 U4: bundle had no version marker → bug
+  // reports couldn't pin down which bridge version produced the data.
+  const bridgeVersion = chrome.runtime.getManifest()?.version || "unknown";
   return {
     resourceType: "Bundle",
     type: "collection",
     timestamp: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+    meta: {
+      tag: [
+        {
+          system: "https://github.com/voho0000/NHI-FHIR-BRIDGE/bridge-version",
+          code: bridgeVersion,
+          display: `NHI-FHIR-Bridge v${bridgeVersion}`,
+        },
+      ],
+    },
     entry: unique.map((r) => ({
       fullUrl: `${r.resourceType}/${r.id}`,
       resource: r,

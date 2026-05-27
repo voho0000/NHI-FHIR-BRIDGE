@@ -166,11 +166,17 @@ export function mapMedicationRequest(
     resource.requester = { display: hospital };
   }
 
-  // Dosage — try structured dose/unit/frequency first; if any are
-  // present they get joined into dosage.text. If those are empty but
-  // the adapter found a raw NHI 用法 string via dosage_text (bug report
-  // 2026-05-27 Part 3 C6), surface that verbatim as dosage.text so
-  // clinicians at least see "BID PC" / "QD AC" / etc. instead of nothing.
+  // Dosage — three-level fallback:
+  //   1. structured dose/unit/frequency from adapter (preferred)
+  //   2. raw NHI 用法 text via dosage_text (Part 3 C6 scaffold)
+  //   3. derived "${qty}/${days} days" from quantity + duration_days
+  //      (Part 6 U4 — NHI 健保存摺 IHKE3306S02 doesn't expose 用法 as a
+  //      separate field but DOES expose 給藥日數 + 給藥總量. The ratio
+  //      is the only daily-frequency signal we get from NHI raw, so
+  //      emit it as a transport-only text so clinicians see SOMETHING
+  //      rather than nothing. Format intentionally generic — we don't
+  //      know units (tablet vs ml) or timing (QD vs BID with halves).
+  //      SMART app can choose to display raw or parse further.)
   const dosage: Record<string, any> = {};
   const parts: string[] = [];
   for (const k of ["dose", "unit", "frequency"] as const) {
@@ -181,6 +187,26 @@ export function mapMedicationRequest(
   } else if (raw.dosage_text) {
     const t = String(raw.dosage_text).trim();
     if (t) dosage.text = t;
+  } else {
+    // Level 3: derive from qty + days. Only fires when both > 0 to
+    // avoid emitting "0/0 days" or partial nonsense.
+    const qtyRaw = raw.quantity;
+    const qtyNum =
+      qtyRaw !== null && qtyRaw !== undefined && qtyRaw !== ""
+        ? Number.parseFloat(String(qtyRaw).replace(/,/g, ""))
+        : Number.NaN;
+    const daysNum = Number.parseInt(String(raw.duration_days ?? 0), 10);
+    if (Number.isFinite(qtyNum) && qtyNum > 0 && Number.isFinite(daysNum) && daysNum > 0) {
+      // Render qty without trailing zeros (3.0 → "3", 1.5 stays).
+      const qtyStr = Number.isInteger(qtyNum) ? String(qtyNum) : String(qtyNum);
+      const perDay = qtyNum / daysNum;
+      // Round daily rate to 2 decimals to avoid 0.6666666666 noise.
+      // parseFloat round-trip strips trailing zeros: 1.50 → "1.5", 0.67 → "0.67".
+      const perDayStr = Number.isInteger(perDay)
+        ? String(perDay)
+        : Number.parseFloat(perDay.toFixed(2)).toString();
+      dosage.text = `${qtyStr} dose(s) over ${daysNum} day(s) (≈ ${perDayStr}/day)`;
+    }
   }
   if (raw.route) {
     dosage.route = {

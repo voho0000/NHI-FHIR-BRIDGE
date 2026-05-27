@@ -62,14 +62,9 @@ export const NHI_TO_LOINC: Record<string, string> = {
   // (Component=Beta-2-Microglobulin, Property=MCnc) — loinc.org/1952-1/.
   "12052B": "1952-1", // β2-microglobulin — Mass/vol S/P
   // ── Immunology / proteins ─────────────────────────
-  "09065B": "90991-1", // 蛋白電泳分析
-  // TODO(panel, v0.9.10 audit): 09065B SPE reports Albumin / α1 / α2 /
-  // β / γ globulin fractions (each its own LOINC: 2865-7 / 2867-3 /
-  // 2868-1 / 2869-9 / 2871-5) + A/G ratio (1759-0). Currently all
-  // collapse to 90991-1. Deferred because (a) SPE is rarely tracked
-  // in 健康存摺 trend views, (b) SMART app shows raw display per row.
-  // Promote to DISPLAY_FIRST_CODES + add PANEL_LOINC_MAP if SMART app
-  // groups by LOINC anywhere.
+  "09065B": "90991-1", // 蛋白電泳分析 — panel LOINC (sub-rows
+  // routed via DISPLAY_FIRST_CODES + PANEL_LOINC_MAP since v0.10.0;
+  // this entry is fallback for empty display)
   // 12028B / 12029B IgM (serum, immunodiffusion / nephelometry) — previously
   // both mapped to LOINC 14002-0 which is actually 'IgM [Units/volume] in
   // Cord blood' (neonatal specimen, verified loinc.org/14002-0/). Wrong
@@ -78,12 +73,9 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "12103B": "95801-7", // 免疫電泳分析
   "12160B": "15189-4", // IgG κ/λ
   "12171B": "17351-8", // 抗嗜中性球細胞質抗體 (ANCA)
-  "12204B": "20584-9", // 白血球表面標記
-  // TODO(panel, v0.9.10 audit): Flow cytometry CD markers — CD3 (8124-0)
-  // / CD4 (8123-2) / CD8 (8128-1) / CD19 (8118-2) / CD56 (8125-7) /
-  // CD4-CD8 ratio (54218-3). Currently collapse to panel 20584-9.
-  // Deferred (same reasoning as 09065B). Promote if SMART app pivots
-  // on LOINC.
+  "12204B": "20584-9", // 白血球表面標記 — Lymphocyte subset panel
+  // (sub-rows routed via DISPLAY_FIRST_CODES + PANEL_LOINC_MAP since
+  // v0.10.0; this entry is fallback for empty display)
   "25013B": "44596-5", // 螢光切片檢查
   // ── Hepatitis ─────────────────────────────────────
   "14030C": "5195-3", // HBsAg
@@ -97,10 +89,9 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "27062B": "10861-3", // 黃體激素接受體 (PR)
   "30103B": "83052-1", // PD-L1 IHC
   // ── Audiology / pulmonary ─────────────────────────
-  "17009B": "24341-0", // 一氧化碳肺瀰散量
-  // TODO(panel, v0.9.10 audit): DLCO test usually reports DLCO + VA +
-  // DLCO/VA as separate sub-rows. Deferred — pulmonary function rarely
-  // surfaces in 健康存摺 + low pivot-by-LOINC risk in current SMART apps.
+  "17009B": "24341-0", // 一氧化碳肺瀰散量 — DLCO panel (sub-rows
+  // routed via DISPLAY_FIRST_CODES + PANEL_LOINC_MAP since v0.10.0;
+  // this entry is fallback for empty display)
   "22001C": "45498-3", // 純音聽力檢查
   "22015B": "45498-3", // 詐聾聽力檢查
   "22025B": "46530-2", // 自記聽力檢查
@@ -311,6 +302,14 @@ export const DISPLAY_FIRST_CODES: ReadonlySet<string> = new Set([
   // See URINE_BIOCHEM_KEYS const for the analyte map.
   "09016C", // 肌酐、尿 — Urine creatinine billing
   "12111C", // Urine Creatinine (alternate billing)
+  // ── Specialised panels (v0.10.0 — completing the v0.9.10 TODO list)
+  // Same reasoning as CBC umbrella + urine: each billing code unfolds
+  // into multiple sub-rows with distinct LOINCs. Previously deferred
+  // under TODO(panel) comments in NHI_TO_LOINC; now activated with
+  // verified LOINCs.
+  "09065B", // SPE — albumin/α1/α2/β/γ globulin fractions + A/G ratio
+  "12204B", // Flow cytometry CD markers — CD3/CD4/CD8/CD19/CD56/ratio
+  "17009B", // DLCO — DLCO + VA + DLCO/VA
 ]);
 
 // ── CBC component display keys (shared) ──────────────────
@@ -560,6 +559,77 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
   // vs creatinine vs UACR ratio) is distinguished only by display.
   "09016C": URINE_BIOCHEM_KEYS,
   "12111C": URINE_BIOCHEM_KEYS,
+
+  // ── Serum protein electrophoresis (09065B; v0.10.0) ─────
+  // SPE reports 5 fractions (Albumin / α1 / α2 / β / γ globulins) plus
+  // A/G ratio. Each fraction has its own LOINC verified at loinc.org.
+  // Previously all 6 sub-rows collapsed to 90991-1 (SPE panel LOINC) —
+  // SMART app pivot-by-LOINC merged everything into one column.
+  "09065B": {
+    // Specific fractions — long names first (longest-match wins)
+    "alpha-1 globulin": "2867-3",
+    "alpha 1 globulin": "2867-3",
+    "α1-globulin": "2867-3",
+    α1: "2867-3",
+    "alpha-2 globulin": "2868-1",
+    "alpha 2 globulin": "2868-1",
+    "α2-globulin": "2868-1",
+    α2: "2868-1",
+    "beta globulin": "2869-9",
+    "β-globulin": "2869-9",
+    β: "2869-9",
+    "gamma globulin": "2871-5",
+    "γ-globulin": "2871-5",
+    γ: "2871-5",
+    "a/g ratio": "1759-0", // Albumin/Globulin ratio
+    "a/g": "1759-0",
+    "alb/glb": "1759-0",
+    albumin: "2865-7", // Albumin in SPE context (Sercon-MoMt/MS)
+    白蛋白: "2865-7",
+    alb: "2865-7",
+  },
+
+  // ── Flow cytometry CD markers (12204B; v0.10.0) ─────────
+  // Lymphocyte surface markers — each CD subtype has its own LOINC.
+  // Previously all CD3/CD4/CD8/CD19/CD56/ratio rows collapsed to
+  // 20584-9 (Lymphocyte subset panel). Critical for HIV monitoring
+  // (CD4 absolute count is the actionable indicator).
+  "12204B": {
+    "cd3+/cd8+": "8128-1",
+    "cd3+/cd4+": "8123-2",
+    "cd4/cd8": "54218-3", // CD4/CD8 ratio
+    "cd4/cd8 ratio": "54218-3",
+    "cd8/cd4": "54218-3",
+    cd3: "8124-0", // CD3 #/area in Blood
+    "cd3+": "8124-0",
+    cd4: "8123-2", // CD4 #/area in Blood
+    "cd4+": "8123-2",
+    cd8: "8128-1", // CD8 #/area in Blood
+    "cd8+": "8128-1",
+    cd19: "8118-2", // CD19 #/area in Blood (B cell)
+    "cd19+": "8118-2",
+    cd16: "8112-5", // CD16 + CD56 (NK cell)
+    cd56: "8125-7", // CD56 #/area in Blood (NK cell)
+    "cd16+cd56": "8112-5",
+    "cd16/cd56": "8112-5",
+  },
+
+  // ── DLCO (17009B; v0.10.0) ──────────────────────────────
+  // Carbon monoxide diffusing capacity test — reports DLCO + alveolar
+  // volume (VA) + DLCO/VA ratio as 3 sub-rows. LOINCs verified at
+  // loinc.org. Pulmonary function rarely surfaces in 健康存摺 but the
+  // panel exists for completeness.
+  "17009B": {
+    "dlco/va": "19911-7", // DLCO/VA ratio
+    "dlco/alveolar volume": "19911-7",
+    "kco": "19911-7", // Transfer coefficient (same as DLCO/VA)
+    dlco: "24341-0", // Diffusing capacity for CO
+    "dlco sb": "24341-0", // Single-breath variant
+    一氧化碳肺瀰散量: "24341-0",
+    "va": "19850-7", // Alveolar volume
+    "alveolar volume": "19850-7",
+    "肺泡容積": "19850-7",
+  },
 
   // ── Serum creatinine + eGFR piggyback (09015C) ──────
   // NHI bills creatinine under 09015C; Taiwan labs auto-calculate eGFR
@@ -998,6 +1068,24 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "26466-3": "Leukocytes [#/volume] in Body fluid by Manual count",
   "10328-6": "Neutrophils/100 leukocytes in Body fluid",
   "13046-8": "Lymphocytes [#/volume] in Body fluid",
+  // ── SPE fractions (09065B; v0.10.0) ──────────────
+  "2865-7": "Albumin [Mass/volume] in Serum or Plasma by Electrophoresis",
+  "2867-3": "Globulin.alpha 1 [Mass/volume] in Serum or Plasma by Electrophoresis",
+  "2868-1": "Globulin.alpha 2 [Mass/volume] in Serum or Plasma by Electrophoresis",
+  "2869-9": "Globulin.beta [Mass/volume] in Serum or Plasma by Electrophoresis",
+  "2871-5": "Globulin.gamma [Mass/volume] in Serum or Plasma by Electrophoresis",
+  "1759-0": "Albumin/Globulin [Mass Ratio] in Serum or Plasma",
+  // ── Flow cytometry CD (12204B; v0.10.0) ──────────
+  "8124-0": "CD3 cells [#/area] in Blood",
+  "8123-2": "CD4 cells [#/area] in Blood",
+  "8128-1": "CD8 cells [#/area] in Blood",
+  "8118-2": "CD19 cells [#/area] in Blood",
+  "8125-7": "CD56 cells [#/area] in Blood",
+  "8112-5": "CD16+CD56 cells [#/area] in Blood",
+  "54218-3": "CD4/CD8 [Ratio] in Blood",
+  // ── DLCO (17009B; v0.10.0) ───────────────────────
+  "19850-7": "Alveolar volume [Volume]",
+  "19911-7": "Transfer factor coefficient for carbon monoxide (DLCO/VA)",
   // ── Vital signs (IHKE3402) ───────────────────────
   "8302-2": "Body height",
   "29463-7": "Body weight",

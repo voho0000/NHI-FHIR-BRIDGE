@@ -735,6 +735,88 @@
     // vs creatinine vs UACR ratio) is distinguished only by display.
     "09016C": URINE_BIOCHEM_KEYS,
     "12111C": URINE_BIOCHEM_KEYS,
+    // ── Serum protein electrophoresis (09065B; v0.10.0) ─────
+    // SPE reports 5 fractions (Albumin / α1 / α2 / β / γ globulins) plus
+    // A/G ratio. Each fraction has its own LOINC verified at loinc.org.
+    // Previously all 6 sub-rows collapsed to 90991-1 (SPE panel LOINC) —
+    // SMART app pivot-by-LOINC merged everything into one column.
+    "09065B": {
+      // Specific fractions — long names first (longest-match wins)
+      "alpha-1 globulin": "2867-3",
+      "alpha 1 globulin": "2867-3",
+      "\u03B11-globulin": "2867-3",
+      \u03B11: "2867-3",
+      "alpha-2 globulin": "2868-1",
+      "alpha 2 globulin": "2868-1",
+      "\u03B12-globulin": "2868-1",
+      \u03B12: "2868-1",
+      "beta globulin": "2869-9",
+      "\u03B2-globulin": "2869-9",
+      \u03B2: "2869-9",
+      "gamma globulin": "2871-5",
+      "\u03B3-globulin": "2871-5",
+      \u03B3: "2871-5",
+      "a/g ratio": "1759-0",
+      // Albumin/Globulin ratio
+      "a/g": "1759-0",
+      "alb/glb": "1759-0",
+      albumin: "2865-7",
+      // Albumin in SPE context (Sercon-MoMt/MS)
+      \u767D\u86CB\u767D: "2865-7",
+      alb: "2865-7"
+    },
+    // ── Flow cytometry CD markers (12204B; v0.10.0) ─────────
+    // Lymphocyte surface markers — each CD subtype has its own LOINC.
+    // Previously all CD3/CD4/CD8/CD19/CD56/ratio rows collapsed to
+    // 20584-9 (Lymphocyte subset panel). Critical for HIV monitoring
+    // (CD4 absolute count is the actionable indicator).
+    "12204B": {
+      "cd3+/cd8+": "8128-1",
+      "cd3+/cd4+": "8123-2",
+      "cd4/cd8": "54218-3",
+      // CD4/CD8 ratio
+      "cd4/cd8 ratio": "54218-3",
+      "cd8/cd4": "54218-3",
+      cd3: "8124-0",
+      // CD3 #/area in Blood
+      "cd3+": "8124-0",
+      cd4: "8123-2",
+      // CD4 #/area in Blood
+      "cd4+": "8123-2",
+      cd8: "8128-1",
+      // CD8 #/area in Blood
+      "cd8+": "8128-1",
+      cd19: "8118-2",
+      // CD19 #/area in Blood (B cell)
+      "cd19+": "8118-2",
+      cd16: "8112-5",
+      // CD16 + CD56 (NK cell)
+      cd56: "8125-7",
+      // CD56 #/area in Blood (NK cell)
+      "cd16+cd56": "8112-5",
+      "cd16/cd56": "8112-5"
+    },
+    // ── DLCO (17009B; v0.10.0) ──────────────────────────────
+    // Carbon monoxide diffusing capacity test — reports DLCO + alveolar
+    // volume (VA) + DLCO/VA ratio as 3 sub-rows. LOINCs verified at
+    // loinc.org. Pulmonary function rarely surfaces in 健康存摺 but the
+    // panel exists for completeness.
+    "17009B": {
+      "dlco/va": "19911-7",
+      // DLCO/VA ratio
+      "dlco/alveolar volume": "19911-7",
+      "kco": "19911-7",
+      // Transfer coefficient (same as DLCO/VA)
+      dlco: "24341-0",
+      // Diffusing capacity for CO
+      "dlco sb": "24341-0",
+      // Single-breath variant
+      \u4E00\u6C27\u5316\u78B3\u80BA\u7030\u6563\u91CF: "24341-0",
+      "va": "19850-7",
+      // Alveolar volume
+      "alveolar volume": "19850-7",
+      "\u80BA\u6CE1\u5BB9\u7A4D": "19850-7"
+    },
     // ── Serum creatinine + eGFR piggyback (09015C) ──────
     // NHI bills creatinine under 09015C; Taiwan labs auto-calculate eGFR
     // (CKD-EPI / MDRD) and append it as a separate sub-row using the

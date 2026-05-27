@@ -259,4 +259,90 @@ describe("mapMedicationsDedup", () => {
     expect(r.medicationCodeableConcept.text).toBe("RARE DRUG WITH NO CHINESE");
     expect(r.medicationCodeableConcept.coding[0].display).toBe("RARE DRUG WITH NO CHINESE");
   });
+
+  // ── v0.10.0 — derived dosageInstruction.text from qty + days ────
+  // SMART app dev bug report U1: 758/758 MedicationRequests shipped
+  // without dosageInstruction. NHI 健保存摺 IHKE3306S02 doesn't expose
+  // 用法 as a discrete field, BUT it does ship 給藥日數 + 給藥總量.
+  // The ratio is the only daily-frequency signal we get from NHI raw,
+  // so we derive a transport-only text. Faithful transport preserved —
+  // value comes entirely from NHI raw, we just compute the ratio and
+  // label it.
+
+  test("v0.10.0 — qty + days derive dosageInstruction.text", () => {
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "ASPIRIN 100MG",
+          code: "B025823100",
+          date: "2025-05-18",
+          quantity: 30,
+          duration_days: 30,
+        },
+      ],
+      PATIENT_ID,
+    );
+    const r = resources[0]!;
+    expect(r.dosageInstruction).toBeDefined();
+    expect(r.dosageInstruction[0].text).toBe("30 dose(s) over 30 day(s) (≈ 1/day)");
+  });
+
+  test("v0.10.0 — BID-pattern qty (60 over 30 days) shows ≈ 2/day", () => {
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "METFORMIN 500MG",
+          code: "B000000",
+          date: "2025-05-18",
+          quantity: 60,
+          duration_days: 30,
+        },
+      ],
+      PATIENT_ID,
+    );
+    expect(resources[0]!.dosageInstruction[0].text).toBe("60 dose(s) over 30 day(s) (≈ 2/day)");
+  });
+
+  test("v0.10.0 — non-integer rate rounds to 2 decimals", () => {
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "TEST",
+          code: "B000001",
+          date: "2025-05-18",
+          quantity: 45,
+          duration_days: 30,
+        },
+      ],
+      PATIENT_ID,
+    );
+    expect(resources[0]!.dosageInstruction[0].text).toBe("45 dose(s) over 30 day(s) (≈ 1.5/day)");
+  });
+
+  test("v0.10.0 — explicit dosage_text still wins over derived (priority preserved)", () => {
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "ASPIRIN",
+          code: "B025823100",
+          date: "2025-05-18",
+          quantity: 30,
+          duration_days: 30,
+          dosage_text: "QD AC",
+        },
+      ],
+      PATIENT_ID,
+    );
+    // dosage_text branch fires first — derived qty/days branch never reached.
+    expect(resources[0]!.dosageInstruction[0].text).toBe("QD AC");
+  });
+
+  test("v0.10.0 — qty or days missing → no derived dosageInstruction emitted", () => {
+    const resources = mapMedicationsDedup(
+      [{ drug_name: "TEST", code: "B000002", date: "2025-05-18", quantity: 30 }],
+      PATIENT_ID,
+    );
+    // days missing → no derived text → no dosageInstruction at all.
+    expect(resources[0]!.dosageInstruction).toBeUndefined();
+  });
 });
