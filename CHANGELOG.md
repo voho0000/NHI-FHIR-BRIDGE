@@ -2,6 +2,46 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.9.10 重點 — 2026-05-27
+
+**🔬 多分項 panel LOINC audit + 修 PT/INR + 補 16008C 體液 panel**
+
+跟 SMART app dev 沿用同一個討論線：再 audit 一次「同個 NHI 碼底下多個 sub-row」的潛在 bug，按嚴重度排序處理。
+
+### 已修
+
+**08026C PT/INR**（必修，高影響）
+- Taiwan labs 同一 billing code 出 PT (秒) + INR + 可選 PT control 三 sub-row
+- 之前全部塌到 `6301-6` (INR) → 抗凝血 trend view 會把 PT=12 sec 標成 INR=12（爆表 critical 假象）
+- 改 `08026C` 進 `DISPLAY_FIRST_CODES` + 新增 `PANEL_LOINC_MAP["08026C"]`：
+  - PT → `5902-2`（Prothrombin time）
+  - INR → `6301-6`（International Normalized Ratio）
+  - PT Control → `5894-1`（PT Control reagent）
+  - 空 display fallback 仍走 `6301-6`（INR 是抗凝追蹤的主指標）
+
+**16008C 體液 panel**（順手修）
+- 之前在 `DISPLAY_FIRST_CODES` 但沒對應 `PANEL_LOINC_MAP` → 走 global table，shorter generic key（如 `wbc` → 6690-2 BLOOD WBC）可能 shadow body-fluid 專用 LOINC
+- 新增 `PANEL_LOINC_MAP["16008C"]`：SF.WBC → `26466-3`、SF.Neutrophil → `10328-6`、SF.Lympho → `13046-8`、SF.Color → `5778-6`
+
+### 延後（加 `TODO(panel)` 註解標記）
+
+不會進累積報告、SMART app pivot-by-LOINC 風險低 → 等真的踩雷再修：
+
+- **09065B** 蛋白電泳（SPE）— 5 fraction 全塌到 90991-1
+- **12204B** Flow CD markers — CD3/CD4/CD8 等全塌到 20584-9
+- **17009B** DLCO — DLCO + VA + DLCO/VA 全塌到 24341-0
+- **08128B** 骨髓細胞形態 — morphology + 各細胞 % 全塌到 47286-0
+
+### 新增 test
+
+`backend-ts/tests/unit/observation-mapper.test.ts` 補 9 個 panel 行為測試：PT/INR/Control 三向 LOINC + defensive non-collapse + 16008C 4 個 SF.* member。
+
+### 升級
+
+純 mapper logic 變更 — Reload extension 即可。Backend mode 需要 `docker compose up -d --build` 才會帶到新 LOINC table。
+
+---
+
 ## 0.9.9 重點 — 2026-05-27
 
 **🐛 修：切換病人後身分證號顯示舊病人 cid**

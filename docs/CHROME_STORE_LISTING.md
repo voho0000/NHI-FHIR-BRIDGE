@@ -239,7 +239,7 @@ https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html
 
 提交前確認：
 
-- [ ] Zip 已上傳（最新 v0.9.9）
+- [ ] Zip 已上傳（最新 v0.9.10）
 - [x] ~~Manifest 描述對齊~~ (v0.9.5 已修正)
 - [ ] Short description（繁中、英文）
 - [ ] Long description（繁中、英文）
