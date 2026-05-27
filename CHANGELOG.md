@@ -2,6 +2,54 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+## 0.9.8 重點 — 2026-05-27
+
+**SMART app dev bug report Part 3** — 7 個 issue 中修了 5 個（C1 / C2 / C3 / C4 / C5 / C6 scaffold）。剩 2 個（C7 encounter physician + diagnosis link）延後到下版。
+
+### C1 — ABE / SBE 共用 LOINC 11555-0 → 拆開（HIGH）
+
+| Analyte | 之前 | 現在 |
+|---------|------|------|
+| ABE (Actual Base Excess) | 11555-0 ❌ | **1925-7** ✅ |
+| SBE (Standard Base Excess) | 11555-0 ❌ | **1927-3** ✅ |
+
+### C2 — eGFR 帶 NHI 單位「N」自動正規化（HIGH）
+
+新增 `_canonicalizeUnit` whitelist：display 含 eGFR 關鍵字 + unit 是 `N`/空 → 改寫 `"mL/min/1.73m2"`。其他 analyte 不動避免 silently rewrite。
+
+### C3 — VGH bracket 慣例 `[Negative][]` → 拆框（MEDIUM）
+
+`text: "[Negative][]"` → `text: "Negative"`（自動拆框、保留 categorical 資訊）。同理 Yellow / Nonreactive 等。
+
+### C4 — 「正常」/「異常⋯」誤入 referenceRange → 路由到 interpretation（LOW）
+
+偵測到結果解讀 phrase → 不再作為 `referenceRange`、改放 `Observation.interpretation`。已知 phrases 對應 `normal`/`abnormal` coded；其他純文字。
+
+### C5 — 檢體 + 閾值打包 `[][Random Urine＜ 1.9]` → 結構化（LOW）
+
+- `appliesTo: [{ text: "Random Urine" }]`
+- `high: { value: 1.9, unit: ... }`
+
+### C6 — Adapter 試多個 NHI 用法 field name（scaffold）
+
+之前 hard-coded `dose=""/frequency=""`。現在 adapter 試 ~15 個可能 NHI raw field name，找到就傳 → mapper 設 `dosageInstruction[0].text`。**目前 fixture 沒符合**任何 field → 輸出不變；需要 SMART app dev 確認 NHI 確切 field 名才能完全 fix。
+
+### 升級注意
+
+**Mode B**：`git pull && docker compose down && docker compose up -d --build`
+
+### 出範圍
+
+- C7 Encounter participant + diagnosis link → 下版
+- SBC LOINC（1925-7 跟 ABE 衝突，SBC 罕用、留 follow-up）
+- dosageInstruction 結構化 timing/dose → 下版
+
+### Tests
+
+backend-ts: 275 → **288** (+13)、extension: 142（snapshot 重生）、biome lint: 綠
+
+---
+
 ## 0.9.7 重點 — 2026-05-27
 
 **🚨 兩個 patient-safety 等級 bug 修正**（SMART app dev bug report Part 2）
