@@ -716,6 +716,28 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     "s.g": "5811-5",
     colour: "5778-6", // UK spelling
     "wbc esterase": "5799-2", // blocks global "wbc" → 6690-2 shadow
+    // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): hospital
+    // 長庚嘉義 ships urine creatinine rows under NHI 06013C (尿生化
+    // panel) — NOT under 09015C as the v0.12.1 fix targeted. Without
+    // explicit urine variants here, "肌酸酐(尿液)(半定量)" routed via
+    // LOINC_MAP global "肌酸酐" → 2160-0 serum LOINC under 06013C
+    // billing (4 rows affected in user's v0.12.1 bundle). Mirror the
+    // same urine creatinine variants from PANEL_LOINC_MAP["09015C"]
+    // — longest-match guarantees urine LOINC 2161-8 wins over generic.
+    "肌酸酐(尿液)(半定量)": "2161-8",
+    "肌酸酐(尿液)": "2161-8",
+    "肌酸酐(尿)": "2161-8",
+    "肌酸酐(u)": "2161-8",
+    // ASCII keys ending in ")" fail \b regex boundary at end of match
+    // (same \b-non-word-char-no-boundary issue documented in v0.11.13
+    // APTT ratio fix). Use opening-paren-only form so \b at end fires
+    // on the word char preceding ")" — "creatinine(u" matches inside
+    // "creatinine(u)" with \b after "u".
+    "creatinine(u": "2161-8",
+    "creatinine(urine": "2161-8",
+    "u-creatinine": "2161-8",
+    "urine creatinine": "2161-8",
+    "creatinine, urine": "2161-8",
   },
 
   // ── ABG panel (09041B) ───────────────────────────────
@@ -782,6 +804,17 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     // (08002C / 08003C / 08004C / 08006C) below; see
     // CBC_COMPONENT_KEYS const below for the source of truth.
     ...CBC_COMPONENT_KEYS,
+    // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): hospital
+    // 中國北港醫 ships CBC differential rows under BOTH 08013C (CBC W
+    // diff billing) AND 08011C (CBC-8項 umbrella billing) for the
+    // same draw. v0.11.11 spread CBC_DIFF_KEYS into 08013C but NOT
+    // into 08011C — so the 08011C-billed diff rows still fell back
+    // to panel-default 6690-2 (WBC count) for all diff cells. Mirror
+    // the spread so per-analyte LOINCs (706-2 Basophils / 713-8
+    // Eosinophils / 736-9 Lymphocytes / 770-8 Neutrophils / 5905-5
+    // Monocytes / 740-1 Metamyelocyte / 764-1 Band) win regardless
+    // of which CBC NHI code the hospital bills under.
+    ...CBC_DIFF_KEYS,
   },
 
   // ── CBC sibling billing codes (v0.9.10 Part 5 + Part 6) ──
@@ -932,8 +965,13 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     "肌酸酐(尿液)": "2161-8",
     "肌酸酐(尿)": "2161-8",
     "肌酸酐(u)": "2161-8",
-    "creatinine(u)": "2161-8",
-    "creatinine(urine)": "2161-8",
+    // ASCII keys ending in ")" fail \b regex boundary at end of match
+    // (same \b-non-word-char-no-boundary issue documented in v0.11.13
+    // APTT ratio fix). Use opening-paren-only form so \b at end fires
+    // on the word char preceding ")" — "creatinine(u" matches inside
+    // "creatinine(u)" with \b after "u".
+    "creatinine(u": "2161-8",
+    "creatinine(urine": "2161-8",
     "u-creatinine": "2161-8",
     "urine creatinine": "2161-8",
     "creatinine, urine": "2161-8",
@@ -1323,6 +1361,16 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "5767-9": "Appearance of Urine",
   "5818-0": "Urobilinogen Urine Ql",
   "20454-5": "Protein Mass/Vol in Urine",
+  // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): quantitative
+  // urine protein LOINC. Verified at loinc.org/2888-6/ —
+  //   Component=Protein, Property=MCnc (Mass concentration),
+  //   System=Urine, Scale=Qn (Quantitative), Class=UA.
+  // Distinct from 20454-5 which is Property=PrThr (Presence) /
+  // Scale=Ord (Ordinal) — dipstick presence test. Bridge routes
+  // numeric mg/dL values to 2888-6 and qualitative dipstick values
+  // (Negative / Trace / 1+ / "4+ (2000)" combined) to 20454-5 — see
+  // classifyUrineProteinValue() in observation.ts.
+  "2888-6": "Protein [Mass/volume] in Urine",
   "14957-5": "Microalbumin Mass/Vol in Urine",
   "14959-1": "Microalbumin/Creatinine Ratio in Urine",
   "5792-7": "Glucose Urine Ql",
@@ -1644,6 +1692,11 @@ export const LOINC_SHORT_TEXT: Record<string, string> = {
   // the specimen explicitly. LOINC_DISPLAY[20454-5] already correctly
   // reads "Protein Mass/Vol in Urine" (catalog-faithful, FHIR R4 OK).
   "20454-5": "Urine Protein",
+  // v0.12.2: quantitative urine protein. Same clean label as the
+  // qualitative twin so SMART app per-LOINC pivot shows both under
+  // the same column header "Urine Protein"; the LOINC code itself
+  // disambiguates which scale (Ord vs Qn) downstream consumers see.
+  "2888-6": "Urine Protein",
 };
 
 // ── _NHI_CODE_PANEL_NAME ─────────────────────────────────

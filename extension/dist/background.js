@@ -1878,8 +1878,30 @@
       "s.g": "5811-5",
       colour: "5778-6",
       // UK spelling
-      "wbc esterase": "5799-2"
+      "wbc esterase": "5799-2",
       // blocks global "wbc" → 6690-2 shadow
+      // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): hospital
+      // 長庚嘉義 ships urine creatinine rows under NHI 06013C (尿生化
+      // panel) — NOT under 09015C as the v0.12.1 fix targeted. Without
+      // explicit urine variants here, "肌酸酐(尿液)(半定量)" routed via
+      // LOINC_MAP global "肌酸酐" → 2160-0 serum LOINC under 06013C
+      // billing (4 rows affected in user's v0.12.1 bundle). Mirror the
+      // same urine creatinine variants from PANEL_LOINC_MAP["09015C"]
+      // — longest-match guarantees urine LOINC 2161-8 wins over generic.
+      "\u808C\u9178\u9150(\u5C3F\u6DB2)(\u534A\u5B9A\u91CF)": "2161-8",
+      "\u808C\u9178\u9150(\u5C3F\u6DB2)": "2161-8",
+      "\u808C\u9178\u9150(\u5C3F)": "2161-8",
+      "\u808C\u9178\u9150(u)": "2161-8",
+      // ASCII keys ending in ")" fail \b regex boundary at end of match
+      // (same \b-non-word-char-no-boundary issue documented in v0.11.13
+      // APTT ratio fix). Use opening-paren-only form so \b at end fires
+      // on the word char preceding ")" — "creatinine(u" matches inside
+      // "creatinine(u)" with \b after "u".
+      "creatinine(u": "2161-8",
+      "creatinine(urine": "2161-8",
+      "u-creatinine": "2161-8",
+      "urine creatinine": "2161-8",
+      "creatinine, urine": "2161-8"
     },
     // ── ABG panel (09041B) ───────────────────────────────
     // 09041B has DISPLAY_FIRST_CODES but no PANEL_LOINC_MAP entry until
@@ -1947,7 +1969,18 @@
       // CBC basic counts — shared with the single-analyte billing codes
       // (08002C / 08003C / 08004C / 08006C) below; see
       // CBC_COMPONENT_KEYS const below for the source of truth.
-      ...CBC_COMPONENT_KEYS
+      ...CBC_COMPONENT_KEYS,
+      // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): hospital
+      // 中國北港醫 ships CBC differential rows under BOTH 08013C (CBC W
+      // diff billing) AND 08011C (CBC-8項 umbrella billing) for the
+      // same draw. v0.11.11 spread CBC_DIFF_KEYS into 08013C but NOT
+      // into 08011C — so the 08011C-billed diff rows still fell back
+      // to panel-default 6690-2 (WBC count) for all diff cells. Mirror
+      // the spread so per-analyte LOINCs (706-2 Basophils / 713-8
+      // Eosinophils / 736-9 Lymphocytes / 770-8 Neutrophils / 5905-5
+      // Monocytes / 740-1 Metamyelocyte / 764-1 Band) win regardless
+      // of which CBC NHI code the hospital bills under.
+      ...CBC_DIFF_KEYS
     },
     // ── CBC sibling billing codes (v0.9.10 Part 5 + Part 6) ──
     // Single-analyte billing codes promoted to display-first so when a
@@ -2113,8 +2146,13 @@
       "\u808C\u9178\u9150(\u5C3F\u6DB2)": "2161-8",
       "\u808C\u9178\u9150(\u5C3F)": "2161-8",
       "\u808C\u9178\u9150(u)": "2161-8",
-      "creatinine(u)": "2161-8",
-      "creatinine(urine)": "2161-8",
+      // ASCII keys ending in ")" fail \b regex boundary at end of match
+      // (same \b-non-word-char-no-boundary issue documented in v0.11.13
+      // APTT ratio fix). Use opening-paren-only form so \b at end fires
+      // on the word char preceding ")" — "creatinine(u" matches inside
+      // "creatinine(u)" with \b after "u".
+      "creatinine(u": "2161-8",
+      "creatinine(urine": "2161-8",
       "u-creatinine": "2161-8",
       "urine creatinine": "2161-8",
       "creatinine, urine": "2161-8"
@@ -2507,6 +2545,16 @@
     "5767-9": "Appearance of Urine",
     "5818-0": "Urobilinogen Urine Ql",
     "20454-5": "Protein Mass/Vol in Urine",
+    // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): quantitative
+    // urine protein LOINC. Verified at loinc.org/2888-6/ —
+    //   Component=Protein, Property=MCnc (Mass concentration),
+    //   System=Urine, Scale=Qn (Quantitative), Class=UA.
+    // Distinct from 20454-5 which is Property=PrThr (Presence) /
+    // Scale=Ord (Ordinal) — dipstick presence test. Bridge routes
+    // numeric mg/dL values to 2888-6 and qualitative dipstick values
+    // (Negative / Trace / 1+ / "4+ (2000)" combined) to 20454-5 — see
+    // classifyUrineProteinValue() in observation.ts.
+    "2888-6": "Protein [Mass/volume] in Urine",
     "14957-5": "Microalbumin Mass/Vol in Urine",
     "14959-1": "Microalbumin/Creatinine Ratio in Urine",
     "5792-7": "Glucose Urine Ql",
@@ -2789,7 +2837,12 @@
     // both DR title and obs.code.text to "Urine Protein" — disambiguating
     // the specimen explicitly. LOINC_DISPLAY[20454-5] already correctly
     // reads "Protein Mass/Vol in Urine" (catalog-faithful, FHIR R4 OK).
-    "20454-5": "Urine Protein"
+    "20454-5": "Urine Protein",
+    // v0.12.2: quantitative urine protein. Same clean label as the
+    // qualitative twin so SMART app per-LOINC pivot shows both under
+    // the same column header "Urine Protein"; the LOINC code itself
+    // disambiguates which scale (Ord vs Qn) downstream consumers see.
+    "2888-6": "Urine Protein"
   };
   var NHI_CODE_PANEL_NAME = {
     // v0.11.10 FHIR R4 compliance audit (2026-05-29): values must match
@@ -3828,6 +3881,23 @@
     }
     return loinc;
   }
+  var URINE_PROTEIN_QUALITATIVE_LOINC = "20454-5";
+  var URINE_PROTEIN_QUANTITATIVE_LOINC = "2888-6";
+  var URINE_PROTEIN_COMBINED_RE = /^(?:[\d.]+\+|trace|positive|negative|\+|-)\s*[(（]/i;
+  var URINE_PROTEIN_NUMERIC_RE = /^[\d.]+$/;
+  var URINE_PROTEIN_MASS_UNIT_RE = /^mg\s*\/\s*d\s*l$/i;
+  function urineProteinLoincFix(loinc, rawValue, rawUnit) {
+    if (loinc !== URINE_PROTEIN_QUALITATIVE_LOINC) return loinc;
+    const v = String(rawValue ?? "").trim();
+    const u = String(rawUnit ?? "").trim();
+    if (URINE_PROTEIN_COMBINED_RE.test(v)) {
+      return URINE_PROTEIN_QUALITATIVE_LOINC;
+    }
+    if (URINE_PROTEIN_NUMERIC_RE.test(v) && URINE_PROTEIN_MASS_UNIT_RE.test(u)) {
+      return URINE_PROTEIN_QUANTITATIVE_LOINC;
+    }
+    return URINE_PROTEIN_QUALITATIVE_LOINC;
+  }
   function mapObservation(raw, patientId) {
     const display = raw.display || raw.code || "";
     const code = raw.code || "";
@@ -3840,6 +3910,7 @@
     const obsId = stableId(patientId, code, raw.date ?? "");
     let loinc = findLoinc(code, display);
     loinc = structuralLoincFix(loinc, raw.unit);
+    loinc = urineProteinLoincFix(loinc, value, raw.unit);
     const resource = {
       resourceType: "Observation",
       id: obsId,
@@ -3983,6 +4054,7 @@
     );
     let loinc = findLoinc(code, display);
     loinc = structuralLoincFix(loinc, raw.unit);
+    loinc = urineProteinLoincFix(loinc, value, raw.unit);
     const catCode = raw.category || "laboratory";
     const CAT_DISPLAY = {
       laboratory: "Laboratory",

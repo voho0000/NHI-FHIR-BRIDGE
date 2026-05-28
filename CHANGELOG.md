@@ -3,6 +3,124 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.12.2 重點 — 2026-05-29
+
+**🪞 v0.12.1 audit 後 mirror fix + 尿蛋白 Ord/Qn structural routing**
+
+SMART app dev 對 v0.12.1 bundle audit 抓到 3 件事：
+1. **Bug 5'/6'/7' mirror miss**：CBC diff variants 加到 08013C 跟 CBC 兄弟 codes 但**沒**加 08011C (CBC-8項 panel) — 中國北港醫雙billing 在 08011C 那份還是 fall back 6690-2
+2. **Bug 10 wrong slot**：v0.12.1 把尿肌酸酐 variants 加到 09015C，但 raw data 是 **06013C** 06013C panel
+3. **新發現**：LOINC 20454-5 是 dipstick presence (Property=PrThr, Scale=Ord)，但 bundle 上 quantitative `48 mg/dL` 數字也 route 到 20454-5 → 結構錯，FHIR R4 LOINC scale mismatch
+
+### Bug 5'/6'/7' mirror — `CBC_DIFF_KEYS` spread 到 08011C
+
+之前我 v0.11.11 加 `...CBC_DIFF_KEYS` 到 08013C 和 CBC siblings (08002/3/4/6C)，但**漏了** 08011C (CBC umbrella)。中國北港醫 ship 同 row 在 08013C 跟 08011C 兩 panel 下 — 08013C 那份對，08011C 那份還是 6690-2 panel default。
+
+```ts
+"08011C": {
+  ... 紅血球 indices ...
+  ...CBC_COMPONENT_KEYS,
+  ...CBC_DIFF_KEYS,   // ← v0.12.2 加
+}
+```
+
+5 row 修對。Side effect 提醒：raw 兩 panel 下都有同 5 row → bundle 會 emit 10 obs（5 對對）。Faithful transport，app side dedup。
+
+### Bug 10 mirror — 尿肌酸酐 variants 加到 06013C
+
+v0.12.1 加到 09015C 是預期 hospital 用 09015C billing 把尿肌酸酐塞進去。實際 raw data 是 06013C（尿生化 panel）—  PANEL_LOINC_MAP["06013C"] 沒 urine creatinine 變體，bare `肌酸酐` (LOINC_MAP global) → 2160-0 serum。
+
+```ts
+"06013C": {
+  ...
+  // v0.12.2 mirror
+  "肌酸酐(尿液)(半定量)": "2161-8",
+  "肌酸酐(尿液)": "2161-8",
+  "肌酸酐(尿)": "2161-8",
+  "creatinine(u": "2161-8",  // ← 結尾不收 `)` 避開 \b regex 邊界 issue
+  "creatinine(urine": "2161-8",
+  ...
+}
+```
+
+ASCII `(` 結尾 key 的 \b 邊界陷阱 跟 v0.11.13 APTT ratio 同 issue — 用「不收 `)` 的形式」當 key（regex `\bcreatinine\(u\b` 跟 word char `u` 結尾 \b 成立）。
+
+### 尿蛋白 structural routing — 3-class dispatch
+
+WebFetch loinc.org 2026-05-29 確認 2888-6：
+- Long Common Name: **"Protein [Mass/volume] in Urine"**
+- Component: Protein
+- Property: **MCnc** (Mass concentration)
+- System: Urine
+- Scale: **Qn** (Quantitative)
+- Class: UA
+
+跟 20454-5（PrThr/Ord, dipstick）是不同 LOINC，scale 不同。Bridge 之前一律 route 20454-5 — quantitative 值塞 Ord LOINC = FHIR R4 結構錯。
+
+**新 helper `urineProteinLoincFix()`** 3-class dispatch:
+
+```ts
+const URINE_PROTEIN_COMBINED_RE =
+  /^(?:[\d.]+\+|trace|positive|negative|\+|-)\s*[(（]/i;
+const URINE_PROTEIN_NUMERIC_RE = /^[\d.]+$/;
+const URINE_PROTEIN_MASS_UNIT_RE = /^mg\s*\/\s*d\s*l$/i;
+
+function urineProteinLoincFix(loinc, value, unit) {
+  if (loinc !== "20454-5") return loinc;
+  const v = String(value ?? "").trim();
+  const u = String(unit ?? "").trim();
+  // "4+ (2000)" / "Trace (15)" — 試紙條 grade + 括號內 mg/dL approx
+  if (URINE_PROTEIN_COMBINED_RE.test(v)) return "20454-5";
+  // 純 numeric + mg/dL
+  if (URINE_PROTEIN_NUMERIC_RE.test(v) && URINE_PROTEIN_MASS_UNIT_RE.test(u)) {
+    return "2888-6";  // ← upgrade to Qn LOINC
+  }
+  return "20454-5";  // Negative / Trace / 1+ etc
+}
+```
+
+跟 v0.11.13 9a (`structuralLoincFix` INR-sec→PT reroute) 同模式 — LOINC 跟 value/unit 結構對不上時自動修 LOINC。
+
+接到 `buildObservation` + `mapObservation` 兩條 path。
+
+**新增 LOINC_DISPLAY + LOINC_SHORT_TEXT entries** for 2888-6：
+- `LOINC_DISPLAY["2888-6"] = "Protein [Mass/volume] in Urine"` (canonical Long Common Name)
+- `LOINC_SHORT_TEXT["2888-6"] = "Urine Protein"` (同 20454-5 短 label，SMART app pivot 看同個 column header 「Urine Protein」，LOINC code 區分 scale)
+
+### Bundle 預期影響
+
+App dev v0.12.1 bundle 6 個 obs 在 20454-5 + quantitative value，v0.12.2 之後：
+- 純 numeric + mg/dL rows → 2888-6（structurally correct）
+- 純 dipstick (Negative/Trace/1+) → 20454-5（不變）
+- combined "4+ (2000)" → 20454-5 + valueString（不變）
+
+### FHIR R4 compliance audit ✅
+
+- `Coding.display` 全部 verified LOINC Long Common Name (2888-6 WebFetch verified)
+- `Coding.code` reroute 還是 valid LOINC（20454-5 → 2888-6 都在 LOINC_DISPLAY）
+- `CodeableConcept.text` LOINC_SHORT_TEXT 兩 LOINC 同 label「Urine Protein」對 SMART app 友善
+- FHIR R4 Observation modeling: Qn LOINC 配 valueQuantity / Ord LOINC 配 valueString = ✓ scale 一致
+- **沒有任何 dedup or drop**（per CLAUDE.md strict rule）
+
+### CI 守門（8 個 v0.12.2 regression tests）
+
+1. CBC diff 5 個 display (Basophils/Eosinophils/Lymphocytes/Monocytes/Neutrophilic Segment) 在 **08011C** panel routes 對
+2. Bare diff CJK (嗜鹼性白血球 / 嗜酸性白血球 / 淋巴白血球) 在 08011C 也對
+3. 肌酸酐(尿液)(半定量) / 肌酸酐(尿液) / 肌酸酐(尿) 在 06013C → 2161-8
+4. ASCII Creatinine(U) / Urine Creatinine 在 06013C → 2161-8
+5. Quantitative urine protein (48 mg/dL) → 2888-6 + valueQuantity + code.text = "Urine Protein"
+6. Qualitative (Negative / Trace / 1+ / 2+ / 3+) → 20454-5 + valueString
+7. Combined "4+ (2000)" / "Trace (15)" / "1+ (30)" → 20454-5 + valueString
+8. Coding.display 跟 LOINC Long Common Name 一致（兩個 LOINC 都驗）
+
+### Files
+
+- `packages/mapper/src/loinc-tables.ts` — `PANEL_LOINC_MAP["08011C"]` 加 `...CBC_DIFF_KEYS`；`PANEL_LOINC_MAP["06013C"]` 加尿肌酸酐 9 變體；`LOINC_DISPLAY["2888-6"]` + `LOINC_SHORT_TEXT["2888-6"]`
+- `packages/mapper/src/observation.ts` — `urineProteinLoincFix()` helper + `URINE_PROTEIN_*` constants；接到 `buildObservation` + `mapObservation`
+- `backend-ts/tests/unit/bundle-quality.test.ts` — 4 個 `describe` block，8 個 v0.12.2 tests
+
+---
+
 ## 0.12.1 重點 — 2026-05-29
 
 **📐 SMART app dev v0.11.13 bundle audit 收尾 + 嚴格 no-dedup rule + 順手抓到 微白蛋白 routing bug**

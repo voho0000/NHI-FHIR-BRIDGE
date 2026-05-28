@@ -2576,3 +2576,150 @@ describe("CI v0.12.1 — Bug 8': single-obs urine-protein DR title uses 'Urine P
     expect(dr.code.coding[0].display).toBe("全蛋白");
   });
 });
+
+// ── v0.12.2 — SMART app dev v0.12.1 audit ─────────────────────────
+// Three follow-up items from app dev's v0.12.1 bundle audit:
+//   - Bug 5'/6'/7' mirror: CBC diff displays under 08011C still fell
+//     to panel-default 6690-2 (only 08013C had CBC_DIFF_KEYS spread).
+//   - Bug 10 mirror: urine creatinine variants under 06013C still hit
+//     serum 2160-0 (only 09015C had the urine variants).
+//   - Urine protein scale: LOINC 20454-5 is dipstick PrThr/Ord but
+//     bridge routed quantitative mg/dL values to it too — should
+//     reroute to 2888-6 (MCnc/Qn) for numeric+mg/dL rows; combined
+//     "4+ (2000)" and qualitative ("Negative") stay on 20454-5.
+describe("CI v0.12.2 — Bug 5'/6'/7' mirror: CBC diff under 08011C routes correctly", () => {
+  test("Diff displays under 08011C panel route to per-analyte LOINCs (not 6690-2 panel default)", () => {
+    const cases: Array<[string, string]> = [
+      ["Basophils(嗜鹼性白血球)", "706-2"],
+      ["Eosinophils(嗜酸性白血球)", "713-8"],
+      ["Lymphocytes(淋巴白血球)", "736-9"],
+      ["Monocytes(單核白血球)", "5905-5"],
+      ["Neutrophilic Segment(嗜中性白血球)", "770-8"],
+    ];
+    for (const [display, expected] of cases) {
+      expect(findLoinc("08011C", display)).toBe(expected);
+    }
+  });
+
+  test("Bare diff CJK terms under 08011C also route correctly (e.g. 嗜鹼性白血球, 淋巴球)", () => {
+    expect(findLoinc("08011C", "嗜鹼性白血球")).toBe("706-2");
+    expect(findLoinc("08011C", "嗜酸性白血球")).toBe("713-8");
+    expect(findLoinc("08011C", "淋巴白血球")).toBe("736-9");
+  });
+});
+
+describe("CI v0.12.2 — Bug 10 mirror: urine creatinine under 06013C routes to urine 2161-8", () => {
+  test("肌酸酐(尿液)(半定量) under 06013C → 2161-8 (NOT 2160-0 serum)", () => {
+    expect(findLoinc("06013C", "肌酸酐(尿液)(半定量)")).toBe("2161-8");
+    expect(findLoinc("06013C", "肌酸酐(尿液)")).toBe("2161-8");
+    expect(findLoinc("06013C", "肌酸酐(尿)")).toBe("2161-8");
+  });
+
+  test("Urine creatinine ASCII variants under 06013C also route correctly", () => {
+    expect(findLoinc("06013C", "Creatinine(U)")).toBe("2161-8");
+    expect(findLoinc("06013C", "Urine Creatinine")).toBe("2161-8");
+  });
+});
+
+describe("CI v0.12.2 — Urine protein scale routing (qualitative vs quantitative vs combined)", () => {
+  test("Pure quantitative urine protein ('48' + mg/dL) → 2888-6 (Qn LOINC)", () => {
+    const items = [
+      {
+        order_code: "09040C",
+        code: "09040C",
+        display: "Urine Protein",
+        value: 48,
+        unit: "mg/dL",
+        date: "2025-05-18",
+        order_name: "全蛋白",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+    expect(loinc).toBe("2888-6");
+    expect(o.valueQuantity?.value).toBe(48);
+    expect(o.code.text).toBe("Urine Protein"); // LOINC_SHORT_TEXT for both LOINCs
+  });
+
+  test("Pure qualitative urine protein ('Negative' / 'Trace' / '1+') → 20454-5 (Ord LOINC)", () => {
+    const cases = ["Negative", "Trace", "1+", "2+", "3+"];
+    for (const value of cases) {
+      const items = [
+        {
+          code: "06013C",
+          display: "尿蛋白",
+          value,
+          unit: "",
+          date: "2025-05-18",
+        },
+      ];
+      const o = mapObservationsGrouped(items, PATIENT_ID).find(
+        (r) => r.resourceType === "Observation",
+      ) as any;
+      const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+      expect(loinc).toBe("20454-5");
+      expect(o.valueString).toBe(value);
+    }
+  });
+
+  test("Combined dipstick+numeric ('4+ (2000)' / 'Trace (15)') → 20454-5 with valueString", () => {
+    const cases = ["4+ (2000)", "Trace (15)", "1+ (30)"];
+    for (const value of cases) {
+      const items = [
+        {
+          code: "06013C",
+          display: "尿蛋白",
+          value,
+          unit: "mg/dL", // some LIS still ship a unit even for combined
+          date: "2025-05-18",
+        },
+      ];
+      const o = mapObservationsGrouped(items, PATIENT_ID).find(
+        (r) => r.resourceType === "Observation",
+      ) as any;
+      const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+      // Combined stays on dipstick (Ord) LOINC; valueString preserves both grade + number
+      expect(loinc).toBe("20454-5");
+      expect(o.valueString).toBe(value);
+    }
+  });
+
+  test("Coding.display matches LOINC Long Common Name for both qualitative and quantitative routes", () => {
+    // Qualitative
+    const qual = mapObservationsGrouped(
+      [
+        {
+          code: "06013C",
+          display: "尿蛋白",
+          value: "Negative",
+          unit: "",
+          date: "2025-05-18",
+        },
+      ],
+      PATIENT_ID,
+    ).find((r) => r.resourceType === "Observation") as any;
+    const qualLoinc = qual.code.coding.find((c: any) => c.system === "http://loinc.org");
+    expect(qualLoinc.code).toBe("20454-5");
+    expect(qualLoinc.display).toBe("Protein Mass/Vol in Urine");
+
+    // Quantitative
+    const quant = mapObservationsGrouped(
+      [
+        {
+          order_code: "09040C",
+          code: "09040C",
+          display: "Urine Protein",
+          value: 48,
+          unit: "mg/dL",
+          date: "2025-05-18",
+        },
+      ],
+      PATIENT_ID,
+    ).find((r) => r.resourceType === "Observation") as any;
+    const quantLoinc = quant.code.coding.find((c: any) => c.system === "http://loinc.org");
+    expect(quantLoinc.code).toBe("2888-6");
+    expect(quantLoinc.display).toBe("Protein [Mass/volume] in Urine");
+  });
+});

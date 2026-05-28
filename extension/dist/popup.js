@@ -857,8 +857,30 @@
       "s.g": "5811-5",
       colour: "5778-6",
       // UK spelling
-      "wbc esterase": "5799-2"
+      "wbc esterase": "5799-2",
       // blocks global "wbc" → 6690-2 shadow
+      // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): hospital
+      // 長庚嘉義 ships urine creatinine rows under NHI 06013C (尿生化
+      // panel) — NOT under 09015C as the v0.12.1 fix targeted. Without
+      // explicit urine variants here, "肌酸酐(尿液)(半定量)" routed via
+      // LOINC_MAP global "肌酸酐" → 2160-0 serum LOINC under 06013C
+      // billing (4 rows affected in user's v0.12.1 bundle). Mirror the
+      // same urine creatinine variants from PANEL_LOINC_MAP["09015C"]
+      // — longest-match guarantees urine LOINC 2161-8 wins over generic.
+      "\u808C\u9178\u9150(\u5C3F\u6DB2)(\u534A\u5B9A\u91CF)": "2161-8",
+      "\u808C\u9178\u9150(\u5C3F\u6DB2)": "2161-8",
+      "\u808C\u9178\u9150(\u5C3F)": "2161-8",
+      "\u808C\u9178\u9150(u)": "2161-8",
+      // ASCII keys ending in ")" fail \b regex boundary at end of match
+      // (same \b-non-word-char-no-boundary issue documented in v0.11.13
+      // APTT ratio fix). Use opening-paren-only form so \b at end fires
+      // on the word char preceding ")" — "creatinine(u" matches inside
+      // "creatinine(u)" with \b after "u".
+      "creatinine(u": "2161-8",
+      "creatinine(urine": "2161-8",
+      "u-creatinine": "2161-8",
+      "urine creatinine": "2161-8",
+      "creatinine, urine": "2161-8"
     },
     // ── ABG panel (09041B) ───────────────────────────────
     // 09041B has DISPLAY_FIRST_CODES but no PANEL_LOINC_MAP entry until
@@ -926,7 +948,18 @@
       // CBC basic counts — shared with the single-analyte billing codes
       // (08002C / 08003C / 08004C / 08006C) below; see
       // CBC_COMPONENT_KEYS const below for the source of truth.
-      ...CBC_COMPONENT_KEYS
+      ...CBC_COMPONENT_KEYS,
+      // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): hospital
+      // 中國北港醫 ships CBC differential rows under BOTH 08013C (CBC W
+      // diff billing) AND 08011C (CBC-8項 umbrella billing) for the
+      // same draw. v0.11.11 spread CBC_DIFF_KEYS into 08013C but NOT
+      // into 08011C — so the 08011C-billed diff rows still fell back
+      // to panel-default 6690-2 (WBC count) for all diff cells. Mirror
+      // the spread so per-analyte LOINCs (706-2 Basophils / 713-8
+      // Eosinophils / 736-9 Lymphocytes / 770-8 Neutrophils / 5905-5
+      // Monocytes / 740-1 Metamyelocyte / 764-1 Band) win regardless
+      // of which CBC NHI code the hospital bills under.
+      ...CBC_DIFF_KEYS
     },
     // ── CBC sibling billing codes (v0.9.10 Part 5 + Part 6) ──
     // Single-analyte billing codes promoted to display-first so when a
@@ -1092,8 +1125,13 @@
       "\u808C\u9178\u9150(\u5C3F\u6DB2)": "2161-8",
       "\u808C\u9178\u9150(\u5C3F)": "2161-8",
       "\u808C\u9178\u9150(u)": "2161-8",
-      "creatinine(u)": "2161-8",
-      "creatinine(urine)": "2161-8",
+      // ASCII keys ending in ")" fail \b regex boundary at end of match
+      // (same \b-non-word-char-no-boundary issue documented in v0.11.13
+      // APTT ratio fix). Use opening-paren-only form so \b at end fires
+      // on the word char preceding ")" — "creatinine(u" matches inside
+      // "creatinine(u)" with \b after "u".
+      "creatinine(u": "2161-8",
+      "creatinine(urine": "2161-8",
       "u-creatinine": "2161-8",
       "urine creatinine": "2161-8",
       "creatinine, urine": "2161-8"

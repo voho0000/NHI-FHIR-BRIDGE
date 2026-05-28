@@ -1078,6 +1078,55 @@ function structuralLoincFix(
   return loinc;
 }
 
+// ── Urine protein scale routing (v0.12.2) ────────────────────────────
+// SMART app dev v0.12.1 audit 2026-05-29: LOINC 20454-5 is dipstick
+// presence (Property=PrThr, Scale=Ord — Negative/Trace/+/2+) but bridge
+// was routing quantitative mg/dL values to it too, producing
+// structurally-mismatched Observations (Qn data on an Ord LOINC).
+//
+// Three real-world value patterns per loinc.org verification:
+//   - Pure qualitative (e.g. "Negative" / "Trace" / "1+") → 20454-5 (Ord)
+//   - Pure quantitative (e.g. "48" with unit "mg/dL") → 2888-6 (Qn) —
+//     verified at loinc.org/2888-6/ as Protein MCnc Urine
+//   - Combined dipstick+number (e.g. "4+ (2000)" / "Trace (15)") →
+//     20454-5 with valueString preserving the full hybrid form. The
+//     leading dipstick grade is the primary clinical reading; the
+//     parenthetical is the strip's approximate mg/dL conversion.
+//     valueString keeps both pieces; promoting to 2888-6 + extracting
+//     just the number would lose the grade context.
+//
+// Same structural-fix pattern as v0.11.13 9a structuralLoincFix (for
+// INR-sec mistag → PT reroute). Patient value/unit untouched; only
+// LOINC and downstream display labels swap. Per CLAUDE.md rule, LOINC
+// corrections are allowed.
+const URINE_PROTEIN_QUALITATIVE_LOINC = "20454-5";
+const URINE_PROTEIN_QUANTITATIVE_LOINC = "2888-6";
+const URINE_PROTEIN_COMBINED_RE =
+  /^(?:[\d.]+\+|trace|positive|negative|\+|-)\s*[(（]/i;
+const URINE_PROTEIN_NUMERIC_RE = /^[\d.]+$/;
+const URINE_PROTEIN_MASS_UNIT_RE = /^mg\s*\/\s*d\s*l$/i;
+
+function urineProteinLoincFix(
+  loinc: string | null,
+  rawValue: unknown,
+  rawUnit: unknown,
+): string | null {
+  if (loinc !== URINE_PROTEIN_QUALITATIVE_LOINC) return loinc;
+  const v = String(rawValue ?? "").trim();
+  const u = String(rawUnit ?? "").trim();
+  // Combined "4+ (2000)" / "Trace (15)" → keep qualitative LOINC; the
+  // valueString already preserves both the grade and the parenthetical.
+  if (URINE_PROTEIN_COMBINED_RE.test(v)) {
+    return URINE_PROTEIN_QUALITATIVE_LOINC;
+  }
+  // Pure numeric + mass-conc unit → quantitative LOINC.
+  if (URINE_PROTEIN_NUMERIC_RE.test(v) && URINE_PROTEIN_MASS_UNIT_RE.test(u)) {
+    return URINE_PROTEIN_QUANTITATIVE_LOINC;
+  }
+  // Everything else (Negative / Trace / 1+ / etc) stays qualitative.
+  return URINE_PROTEIN_QUALITATIVE_LOINC;
+}
+
 // ── Map single Observation (non-grouped path) ────────────────────────
 
 export function mapObservation(
@@ -1099,6 +1148,8 @@ export function mapObservation(
   let loinc = findLoinc(code, display);
   // v0.11.13 bug 9a: structural reroute if LOINC vs unit mismatch
   loinc = structuralLoincFix(loinc, raw.unit);
+  // v0.12.2: urine protein scale routing — see urineProteinLoincFix() docstring
+  loinc = urineProteinLoincFix(loinc, value, raw.unit);
 
   const resource: Record<string, any> = {
     resourceType: "Observation",
@@ -1319,6 +1370,10 @@ function buildObservation(
   // v0.11.13 (SMART app dev bug 9a 2026-05-29): structural LOINC vs
   // unit consistency check — see structuralLoincFix() docstring.
   loinc = structuralLoincFix(loinc, raw.unit);
+  // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): urine protein
+  // scale routing — quantitative mg/dL values get 2888-6 (Qn LOINC),
+  // qualitative / combined values stay on 20454-5 (Ord LOINC).
+  loinc = urineProteinLoincFix(loinc, value, raw.unit);
 
   const catCode = raw.category || "laboratory";
   const CAT_DISPLAY: Record<string, string> = {
