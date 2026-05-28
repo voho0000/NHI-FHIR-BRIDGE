@@ -14,6 +14,16 @@ export * from "./diagnostic-report";
 export * from "./dispatch";
 export * from "./encounter";
 export * from "./helpers";
+// v0.12.0: export LOINC tables so CI invariant tests can walk them.
+export {
+  NHI_TO_LOINC,
+  PANEL_LOINC_MAP,
+  LOINC_MAP,
+  LOINC_DISPLAY,
+  LOINC_SHORT_TEXT,
+  NHI_CODE_PANEL_NAME,
+  DISPLAY_FIRST_CODES,
+} from "./loinc-tables";
 export * from "./immunization";
 export * from "./link";
 export * from "./medication";

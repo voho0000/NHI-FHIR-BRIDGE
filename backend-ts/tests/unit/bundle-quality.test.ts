@@ -34,7 +34,15 @@
 
 import { describe, expect, test } from "vitest";
 
-import { findLoinc, mapMedicationsDedup, mapObservationsGrouped } from "@nhi-fhir-bridge/mapper";
+import {
+  LOINC_DISPLAY,
+  LOINC_MAP,
+  NHI_TO_LOINC,
+  PANEL_LOINC_MAP,
+  findLoinc,
+  mapMedicationsDedup,
+  mapObservationsGrouped,
+} from "@nhi-fhir-bridge/mapper";
 
 const PATIENT_ID = "A123456789";
 
@@ -2376,5 +2384,44 @@ describe("CI v0.11.13 — Note 10 lockdown: 08036C ships BOTH 14979-9 + 63561-5"
     );
     expect(loincs).toContain("14979-9"); // APTT time
     expect(loincs).toContain("63561-5"); // APTT ratio
+  });
+});
+
+// ── v0.12.0 — FHIR R4 Coding.display structural invariant ─────────
+// Every LOINC value referenced in any of the bridge's LOINC mapping
+// tables MUST have a corresponding LOINC_DISPLAY entry (canonical
+// Long Common Name per loinc.org). Without one, buildCodings falls
+// back to the raw row display when emitting coding[loinc].display —
+// violating FHIR R4 "Coding.display follows the rules of the system".
+//
+// This invariant ran a one-time sweep during v0.12.0 development and
+// is locked in as a standing CI gate: any future addition of a LOINC
+// to NHI_TO_LOINC / PANEL_LOINC_MAP / LOINC_MAP that forgets the
+// LOINC_DISPLAY twin will fail this test.
+describe("CI v0.12.0 — LOINC_DISPLAY coverage invariant", () => {
+  test("every LOINC referenced in NHI_TO_LOINC has a LOINC_DISPLAY entry", () => {
+    const missing: string[] = [];
+    for (const loinc of Object.values(NHI_TO_LOINC)) {
+      if (!(loinc in LOINC_DISPLAY)) missing.push(loinc);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  test("every LOINC referenced in PANEL_LOINC_MAP has a LOINC_DISPLAY entry", () => {
+    const missing = new Set<string>();
+    for (const table of Object.values(PANEL_LOINC_MAP)) {
+      for (const loinc of Object.values(table)) {
+        if (!(loinc in LOINC_DISPLAY)) missing.add(loinc);
+      }
+    }
+    expect(Array.from(missing).sort()).toEqual([]);
+  });
+
+  test("every LOINC referenced in LOINC_MAP has a LOINC_DISPLAY entry", () => {
+    const missing = new Set<string>();
+    for (const loinc of Object.values(LOINC_MAP)) {
+      if (!(loinc in LOINC_DISPLAY)) missing.add(loinc);
+    }
+    expect(Array.from(missing).sort()).toEqual([]);
   });
 });

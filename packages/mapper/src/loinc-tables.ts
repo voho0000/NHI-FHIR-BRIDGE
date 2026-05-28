@@ -92,9 +92,16 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "17009B": "24341-0", // 一氧化碳肺瀰散量 — DLCO panel (sub-rows
   // routed via DISPLAY_FIRST_CODES + PANEL_LOINC_MAP since v0.10.0;
   // this entry is fallback for empty display)
-  "22001C": "45498-3", // 純音聽力檢查
-  "22015B": "45498-3", // 詐聾聽力檢查
-  "22025B": "46530-2", // 自記聽力檢查
+  // 22001C 純音聽力檢查 — previously mapped to LOINC 45498-3 which is
+  // actually 'Hearing [Minimum Data Set]' (an MDS long-term-care survey
+  // item, NOT a pure-tone audiometry measurement; verified loinc.org/
+  // 45498-3/ 2026-05-29). Wrong analyte type entirely. Leaving unmapped;
+  // falls through to NHI-code-only coding. v0.12.0 audit.
+  // 22015B 詐聾聽力檢查 — same wrong 45498-3 mapping. Removed.
+  // 22025B 自記聽力檢查 — previously mapped to LOINC 46530-2 which is
+  // actually 'Sensory status - hearing and ability to understand spoken
+  // language [OASIS]' (an OASIS home-health survey item, verified
+  // loinc.org/46530-2/ 2026-05-29). Wrong type. Leaving unmapped.
   // ═════════════════════════════════════════════════════════════════
   // SUPPLEMENTAL (not in PAS ConceptMap — hand-curated from common
   // NHI codes seen in 健康存摺. LOINC verified against loinc.org
@@ -137,7 +144,11 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "08011C": "24317-0", // CBC panel — Hematology panel Blood
   "08026C": "6301-6", // PT/INR — INR Platelet poor plasma
   "08036C": "14979-9", // APTT — Platelet poor plasma
-  "08075C": "2692-7", // Osmolality — Serum or Plasma
+  // v0.12.0 audit fix: 2692-7 typo; LOINC 2692-7 does NOT exist in the
+  // LOINC database (verified loinc.org/2692-7/ → not found, suggests
+  // 2692-2). Correct LOINC for serum/plasma osmolality is 2692-2,
+  // "Osmolality of Serum or Plasma" (verified loinc.org/2692-2/).
+  "08075C": "2692-2", // Osmolality — Serum or Plasma
   "08079B": "30240-6", // D-dimer — Plt poor plasma
   // ── Coag panel members (kept here as fallback) ────────
   // 08026C PT/INR is a 2-row panel (PT in seconds + INR). Promoted to
@@ -232,10 +243,19 @@ export const NHI_TO_LOINC: Record<string, string> = {
   //   Ab.IgM, Property=ACnc) — loinc.org/7853-5/.
   "14066C": "80383-3", // Influenza A — Ag Respiratory
   "14084C": "94558-4", // SARS-CoV-2 Ag — Respiratory
-  "12184C": "88157-3", // CMV DNA quant PCR — Plasma
+  // 12184C CMV DNA quant PCR — previously mapped to LOINC 88157-3 which
+  // is actually 'Microscopic observation [Identifier] in Semen by Acid
+  // fast stain' (semen AFB, verified loinc.org/88157-3/ 2026-05-29).
+  // Completely wrong analyte + specimen. Leaving unmapped; falls through
+  // to NHI-code-only coding. v0.12.0 audit.
   // ── Mycobacterium / acid-fast (added after audit) ─
-  "13025C": "29260-7", // 抗酸性濃縮抹片染色檢查 — Mycobacterium AFB stain
-  "13026C": "29553-5", // 抗酸菌培養 — Mycobacterium culture liquid+solid
+  // 13025C 抗酸性濃縮抹片染色檢查 — previously mapped to LOINC 29260-7
+  // which is actually 'Monocytes Abnormal [#/volume] in Blood by Manual
+  // count' (verified loinc.org/29260-7/ 2026-05-29). Wrong analyte
+  // (hematology, not microbiology). Leaving unmapped. v0.12.0 audit.
+  // 13026C 抗酸菌培養 — previously mapped to LOINC 29553-5 which is
+  // actually 'Age calculated' (verified loinc.org/29553-5/ 2026-05-29).
+  // Completely unrelated to mycobacteria. Leaving unmapped. v0.12.0 audit.
   // ── ABG panel (09041B) ────────────────────────────
   // Intentionally NOT mapped here — 09041B is a panel order that
   // unfolds into many items (pH / pCO2 / pO2 / HCO3 / TCO2 / SBE /
@@ -1390,6 +1410,85 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "8480-6": "Systolic blood pressure",
   "8462-4": "Diastolic blood pressure",
   "85354-9": "Blood pressure panel with all children optional",
+  // ── v0.12.0 legacy sweep (46 entries) ─────────────
+  // All Long Common Names below WebFetch-verified at loinc.org
+  // 2026-05-29 for the LOINCs already routed to by the bridge but
+  // missing LOINC_DISPLAY entries. Without these, Coding.display fell
+  // back to raw row display — FHIR R4 violation ("follow rules of the
+  // system"). Audit during this sweep also found 6 incorrect mappings
+  // + 1 invalid LOINC (2692-7) which were corrected in NHI_TO_LOINC
+  // above (12184C / 22001C / 22015B / 22025B / 13025C / 13026C
+  // unmapped; 08075C 2692-7 → 2692-2 typo fix).
+  // CBC differential percentages
+  "706-2": "Basophils/Leukocytes in Blood by Automated count",
+  "713-8": "Eosinophils/Leukocytes in Blood by Automated count",
+  "736-9": "Lymphocytes/Leukocytes in Blood by Automated count",
+  "770-8": "Neutrophils/Leukocytes in Blood by Automated count",
+  "5905-5": "Monocytes/Leukocytes in Blood by Automated count",
+  // Tumor markers
+  "1834-1": "Alpha-1-Fetoprotein [Mass/volume] in Serum or Plasma",
+  "2039-6": "Carcinoembryonic Ag [Mass/volume] in Serum or Plasma",
+  "2857-1": "Prostate specific Ag [Mass/volume] in Serum or Plasma",
+  "10861-3": "Progesterone receptor [Mass/mass] in Tissue",
+  "10886-0": "Prostate Specific Ag Free [Mass/volume] in Serum or Plasma",
+  "24108-3": "Cancer Ag 19-9 [Units/volume] in Serum or Plasma",
+  "83113-1":
+    "Prostate Specific Ag Free [Mass/volume] in Serum or Plasma by Immunoassay",
+  // Hepatitis / virology
+  "5197-9":
+    "Hepatitis B virus surface Ag [Presence] in Serum by Radioimmunoassay (RIA)",
+  "14118-4": "Lactate [Mass/volume] in Serum or Plasma",
+  "80383-3":
+    "Influenza virus B Ag [Presence] in Upper respiratory specimen by Rapid immunoassay",
+  "94558-4":
+    "SARS-CoV-2 (COVID-19) Ag [Presence] in Respiratory system specimen by Rapid immunoassay",
+  // Immunology / autoimmune
+  "5048-4": "Nuclear Ab [Titer] in Serum by Immunofluorescence",
+  // 5292-8 is canonically the VDRL LOINC; bridge maps NHI 12001C (RPR
+  // billing) here because RPR + VDRL are clinically interchangeable
+  // serology methods for the same anti-cardiolipin antibody. Display
+  // follows the LOINC's own canonical name (VDRL) per FHIR R4.
+  "5292-8": "Reagin Ab [Presence] in Serum by VDRL",
+  "15189-4":
+    "Kappa light chains/Lambda light chains [Mass Ratio] in Serum",
+  "16124-0": "Cryptococcus sp Ab [Titer] in Serum",
+  "17351-8": "Neutrophil cytoplasmic Ab [Presence] in Serum",
+  "20584-9": "Leukocytes [#/volume] in Specimen by Automated count",
+  "47286-0": "Differential panel - Bone marrow",
+  "95801-7": "Immunoglobulin light chains.free and IFE panel - Urine",
+  // Pathology / IHC
+  "18474-7": "HER2 Ag [Presence] in Tissue by Immune stain",
+  "14130-9": "Estrogen receptor [Moles/mass] in Tissue",
+  "14196-0": "Reticulocytes [#/volume] in Blood",
+  "35672-5": "Bilirubin.direct/Bilirubin.total in Serum or Plasma",
+  "83052-1":
+    "PD-L1 by clone 22C3 [Presence] in Tissue by Immune stain",
+  // ABG / Pulmonary
+  "24341-0": "Gas and Carbon Monoxide Panel - Arterial blood",
+  "44596-5": "IgG Ag [Presence] in Skin by Immunofluorescence",
+  // Chemistry (general)
+  "1927-3": "Base excess in Venous blood by calculation",
+  "1995-0": "Calcium.ionized [Moles/volume] in Serum or Plasma",
+  "14563-1":
+    "Hemoglobin [Presence] in Stool from gastrointestinal --1st specimen",
+  "2276-4": "Ferritin [Mass/volume] in Serum or Plasma",
+  "2458-8": "IgA [Mass/volume] in Serum or Plasma",
+  "2465-3": "IgG [Mass/volume] in Serum or Plasma",
+  "2500-7": "Iron binding capacity [Mass/volume] in Serum or Plasma",
+  "2692-2": "Osmolality of Serum or Plasma", // typo fix from 2692-7
+  "2777-1": "Phosphate [Mass/volume] in Serum or Plasma",
+  "2991-8": "Testosterone Free [Mass/volume] in Serum or Plasma",
+  "3040-3": "Lipase [Enzymatic activity/volume] in Serum or Plasma",
+  "19113-0": "IgE [Units/volume] in Serum or Plasma",
+  "19123-9": "Magnesium [Mass/volume] in Serum or Plasma",
+  // Stool / GI
+  "58453-2":
+    "Hemoglobin [Mass/volume] in Stool from gastrointestinal lower by Immunoassay",
+  // Microbiology
+  "600-7": "Bacteria identified in Blood by Culture",
+  // SPE panel parent
+  "90991-1":
+    "Protein electrophoresis and M protein isotype panel - Serum or Plasma",
 };
 
 // ── _LOINC_SHORT_TEXT ─────────────────────────────────────

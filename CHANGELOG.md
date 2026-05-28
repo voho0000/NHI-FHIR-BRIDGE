@@ -3,6 +3,79 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.12.0 重點 — 2026-05-29
+
+**🔍 Legacy LOINC_DISPLAY sweep — 補 46 entries + audit 抓到 7 個錯 / 失效 LOINC mappings**
+
+v0.11.12 audit 留下 52 個 pre-existing legacy LOINCs 缺 LOINC_DISPLAY entries — Coding.display fallback 到 row display 不是 LOINC Long Common Name，違反 FHIR R4 "Coding.display follows rules of the system"。v0.12.0 一次清掉。
+
+### 全部 52 個 WebFetch loinc.org 驗（per 新規矩）
+
+每個 LOINC 都上 loinc.org 拿 canonical Long Common Name。過程中又抓到 **7 個錯/失效 mapping**：
+
+| NHI code | 之前 LOINC | loinc.org 真實意義 | 動作 |
+|---|---|---|---|
+| 12184C CMV DNA quant PCR | 88157-3 | Microscopic observation in Semen by Acid fast stain | 移除（unmap）|
+| 22001C 純音聽力檢查 | 45498-3 | Hearing [Minimum Data Set] (MDS survey) | 移除 |
+| 22015B 詐聾聽力檢查 | 45498-3 | (同上) | 移除 |
+| 22025B 自記聽力檢查 | 46530-2 | Sensory status [OASIS survey] | 移除 |
+| 13025C 抗酸性濃縮抹片染色檢查 | 29260-7 | Monocytes Abnormal [#/volume] in Blood | 移除 |
+| 13026C 抗酸菌培養 | 29553-5 | Age calculated | 移除 |
+| 08075C Osmolality | **2692-7** | **LOINC 不存在**（typo）| **替換為 2692-2** "Osmolality of Serum or Plasma" |
+
+7 個都跟 v0.11.9 D 修 5894-1 一樣同模式 — 之前歷史 mapping 錯標。leaving unmapped 或 typo fix。每個都加 inline audit comment 註明 loinc.org 驗證日期 + 真實意義。
+
+### 46 個 LOINC_DISPLAY 新增 entries
+
+分類：
+- CBC differential 5 個（706-2 / 713-8 / 736-9 / 770-8 / 5905-5）
+- Tumor markers 7 個（AFP 1834-1 / CEA 2039-6 / PSA 2857-1 / PR 10861-3 / Free PSA 10886-0 + 83113-1 / CA19-9 24108-3）
+- 肝炎/Virology 4 個（HBsAg RIA 5197-9 / Lactate 14118-4 / Flu B Ag 80383-3 / COVID Ag 94558-4）
+- Immunology 8 個（ANA 5048-4 / VDRL 5292-8 / Kappa/Lambda 15189-4 / Cryptococcus Ab 16124-0 / ANCA 17351-8 / WBC 20584-9 / BM diff panel 47286-0 / FLC+IFE panel 95801-7）
+- Pathology IHC 5 個（HER2 18474-7 / ER 14130-9 / Reticulocyte 14196-0 / Bilirubin ratio 35672-5 / PD-L1 83052-1）
+- ABG/Pulmonary 2 個（ABG panel 24341-0 / IgG skin 44596-5）
+- Chemistry 13 個（Base excess venous 1927-3 / Ca ionized 1995-0 / FOBT 14563-1 / Ferritin 2276-4 / IgA 2458-8 / IgG 2465-3 / TIBC 2500-7 / Osmolality 2692-2 / Phosphate 2777-1 / Free testosterone 2991-8 / Lipase 3040-3 / IgE 19113-0 / Mg 19123-9）
+- Stool/GI 1 個（iFOBT 58453-2）
+- Microbiology 1 個（Blood culture 600-7）
+- SPE panel 1 個（90991-1）
+
+每個 Long Common Name 都是 loinc.org canonical 原文 verbatim。
+
+### CI Coding.display invariant 守門（v0.12.0 永久 lock）
+
+新增 3 個 structural invariant tests：
+1. 每個 NHI_TO_LOINC value 都必須 in LOINC_DISPLAY
+2. 每個 PANEL_LOINC_MAP value 都必須 in LOINC_DISPLAY
+3. 每個 LOINC_MAP value 都必須 in LOINC_DISPLAY
+
+之後任何加 LOINC 但忘記 LOINC_DISPLAY entry 的 PR 都會被擋下。FHIR R4 compliance 不會回頭破。
+
+### FHIR R4 compliance audit ✅（per memory checklist）
+
+- ✅ Coding.display 全部來自 verified Long Common Name（rules of the system）
+- ✅ 錯 mapping 全部 unmap，fall back 到 NHI-coding-only（safer than 錯標 LOINC）
+- ✅ Invalid LOINC（2692-7 不存在）替換為 valid LOINC（2692-2）
+- ✅ Faithful transport — LOINC 對應修正允許；patient value/date/hospital/unit 完全沒動
+
+### Files
+
+- `packages/mapper/src/loinc-tables.ts` — NHI_TO_LOINC 移除 6 個錯 mapping + audit comments + 08075C typo fix; LOINC_DISPLAY 加 46 entries
+- `packages/mapper/src/index.ts` — export LOINC tables 給 CI invariant test 用
+- `backend-ts/tests/unit/bundle-quality.test.ts` — 3 個 v0.12.0 invariant tests
+
+### 累積收尾（v0.11.9 → v0.12.0 6 個 release 一個下午）
+
+| Release | 主題 |
+|---|---|
+| v0.11.9 | APTT panel routing + blood-type multi-reading + Bug A-H |
+| v0.11.10 | 9 LOINC_SHORT_TEXT + DR title 對齊 + FHIR R4 audit |
+| v0.11.11 | SMART app dev v0.11.9 bundle audit 8 bugs |
+| v0.11.12 | FHIR R4 follow-up: 7 LOINC_DISPLAY entries |
+| v0.11.13 | Bug 9 INR/placeholder + Note 10 lockdown |
+| v0.12.0 | Legacy LOINC_DISPLAY sweep (46) + 7 wrong mapping audit + CI invariant lock |
+
+---
+
 ## 0.11.13 重點 — 2026-05-29
 
 **🩸 Bug 9 — INR LOINC + sec unit 結構不可能 + placeholder unit pollution**
