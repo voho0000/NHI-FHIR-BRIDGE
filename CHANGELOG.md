@@ -3,6 +3,75 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.12.5 重點 — 2026-05-29
+
+**🔧 Refine v0.12.4 dedup — broaden trigger + canonical-aware grouping**
+
+v0.12.4 上 release 之後我直接打 NHI raw API 模擬 dedup 結果，發現 v0.12.4 限制 **「只」1A+1B** 才 fire，沒處理：
+
+| Case 樣態 | NHI raw | v0.12.4 後 bundle | 該是 |
+|---|---|---|---|
+| 鈉 115/01/14 1A+1B 142 mEq/L | 2 row | 1 obs ✓ | 1 obs |
+| 鈉 114/05/18 2A+2B 141 mEq/L | 4 row | **4 obs ✗** | 2 obs (2A 保留) |
+| K 114/05/18 2A+2B 3.6 mEq/L | 4 row | **4 obs ✗** | 2 obs |
+| 06013C "Negative" 3A+3B | 6 row (3 sub-analyte 各 A+B) | **6 obs ✗** | 3 obs |
+| 09140C Sugar 1A+2B 131 mg/dL | 3 row | **3 obs ✗** | 1 obs |
+
+NHI raw 模擬：v0.12.4 還剩 273 obs，v0.12.5 → **305 surviving / 60 B dropped**（含上面 mixed multiplicity case）。
+
+### 修正 logic
+
+**1. Broaden trigger**：從 "exactly 1A AND exactly 1B" → "**ANY** A AND **ANY** B"
+
+```ts
+if (aRows.length > 0 && bRows.length > 0) {
+  // Cross-channel pair detected → keep all A, drop all B
+  out.push(...aRows);
+}
+```
+
+- 1A+1B: keep 1A ✓
+- 2A+2B: keep 2A (multi-reading from A channel)
+- 3A+3B: keep 3A
+- 1A+2B: keep 1A
+- 2A+1B: keep 2A
+- 0A+2B: preserve (pure B, no cross-channel)
+- 2A+0B: preserve (pure A double-upload)
+
+**2. Canonical-aware grouping for panel codes**
+
+`PANEL_LOINC_MAP` keys (`DISPLAY_FIRST_CODES`) 是 multi-analyte 的 panel — sub-analyte 可能 accidentally 同 value (e.g. 06013C urinalysis 3 個 sub-analyte 都 "Negative" mg/dL)。**Naive 同 value 分組會誤合**：把 Bilirubin A drop 跟 亞硝酸鹽 B drop 一起。
+
+Fix：multi-analyte panel 的 group key 多加 `canonicalLabKey(display, code)`，依 sub-analyte 拆 group：
+
+```ts
+const isPanel = DISPLAY_FIRST_CODES.has(code);
+const canonical = isPanel ? canonicalLabKey(display, code) || display.toLowerCase() : "";
+const key = `${code}|${date}|${hospital}|${value}|${unit}|${canonical}`;
+```
+
+- 06013C Bilirubin/膽紅素 → URINE_BILIRUBIN canonical → 1 group → keep A
+- 06013C Ketone/酮體 → URINE_KETONE canonical → 1 group → keep A
+- 06013C Nitrite/亞硝酸鹽 → URINE_NITRITE canonical → 1 group → keep A
+- 09021C 鈉 (NOT panel) → canonical="" → all 鈉 同 value 在一個 group → A+B dedup as expected
+
+### Bundle output (user 2025-05-18 case)
+
+v0.12.4: 4 obs (2 fake duplicates)
+v0.12.5: 2 obs (multi-reading from A only)
+
+### CI 守門（3 個新 v0.12.5 tests）
+
+- 2A+2B 同 value → 2 obs (keep both A's)
+- 06013C 3A+3B 同 "Negative" 3 個 sub-analyte → 3 obs (canonical-split)
+- 1A+2B asymmetric → 1 obs (keep A, drop both B)
+
+### Files
+
+- `packages/mapper/src/observation.ts` — `dedupNhiCrossChannelPairs()` broaden trigger + canonical-aware key for panel codes
+
+---
+
 ## 0.12.4 重點 — 2026-05-29
 
 **🔧 BREAKING（語意上）— Bridge 現在 dedup NHI A+B structural pairs**

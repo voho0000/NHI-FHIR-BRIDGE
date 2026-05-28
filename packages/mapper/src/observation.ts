@@ -927,21 +927,40 @@ function filterLabRows(rawItems: any[]): Record<string, any>[] {
 function dedupNhiCrossChannelPairs(
   items: Record<string, any>[],
 ): Record<string, any>[] {
-  // Group by (code, date, hospital, value, unit) — value is in raw shape
-  // as a string already so direct comparison works for both numeric and
-  // qualitative values ("Negative" / "4+ (2000)" etc).
+  // v0.12.5 (NHI raw audit 2026-05-29): refine v0.12.4 logic which
+  // only fired for exactly 1A+1B. NHI raw also has higher-multiplicity
+  // mixed cases — 2A+2B (hospital uploaded same analyte twice via each
+  // channel) and 3A+3B (urinalysis Negative-valued rows across 3
+  // distinct sub-analytes). Need:
+  //   1. Wider trigger: ANY A AND ANY B in same group → cross-channel
+  //      pair detected, keep A's drop B's.
+  //   2. Canonical-aware grouping for multi-analyte panels: under
+  //      06013C three different sub-analytes (Bilirubin/Ketone/Nitrite)
+  //      all carry value="Negative" — without canonical-split they'd
+  //      collapse into one group and the B Chinese sub-analytes might
+  //      drop against the wrong A English sub-analyte. Use
+  //      canonicalLabKey() (which has code-scoped synonyms) to ensure
+  //      Bilirubin/膽紅素 group separately from Nitrite/亞硝酸鹽.
+  //
+  // For single-analyte codes (NOT in DISPLAY_FIRST_CODES), the canonical
+  // is intentionally NOT used in the grouping key — under 09021C every
+  // row IS sodium regardless of whether display is "Na" or "鈉", and we
+  // want them to collapse in one group.
   const groups = new Map<string, Record<string, any>[]>();
-  const order: string[] = []; // preserve first-seen order for the output
+  const order: string[] = [];
   for (const item of items) {
     const code = String(item.code ?? item.order_code ?? "").trim();
     const date = String(item.date ?? "").trim();
     const hospital = String(item.hospital ?? "").trim();
     const value = String(item.value ?? "").trim();
     const unit = String(item.unit ?? "").trim();
-    // Without a known NHI code we can't be sure it's a multi-channel
-    // dup candidate — group by `code` (or empty) anyway; only same-key
-    // groups will be inspected for the A+B pattern.
-    const key = `${code}|${date}|${hospital}|${value}|${unit}`;
+    // Multi-analyte panels carry per-row sub-analyte identity — use
+    // canonical to split. Single-analyte codes don't need it (the panel
+    // billing code itself identifies the analyte).
+    const display = String(item.display ?? "").trim();
+    const isPanel = DISPLAY_FIRST_CODES.has(code);
+    const canonical = isPanel ? canonicalLabKey(display, code) || display.toLowerCase() : "";
+    const key = `${code}|${date}|${hospital}|${value}|${unit}|${canonical}`;
     if (!groups.has(key)) {
       groups.set(key, []);
       order.push(key);
@@ -956,20 +975,20 @@ function dedupNhiCrossChannelPairs(
       out.push(...group);
       continue;
     }
-    // Inspect source channels in this group.
     const aRows = group.filter(
       (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "A",
     );
     const bRows = group.filter(
       (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "B",
     );
-    // Strict 1A + 1B pair → dedup, keep A. Any other multiplicity (2A+0B,
-    // 0A+2B, 3 rows etc) preserves all rows — those are NHI same-source
-    // double-uploads or higher-order dups that the faithful-transport
-    // rule explicitly protects.
-    if (aRows.length === 1 && bRows.length === 1) {
-      out.push(aRows[0]!);
+    // Cross-channel detected (any A AND any B): keep all A rows
+    // (numeric refRange more clinically useful), drop all B rows.
+    // This handles 1A+1B / 2A+2B / 3A+3B / 2A+1B / 1A+2B uniformly.
+    if (aRows.length > 0 && bRows.length > 0) {
+      out.push(...aRows);
     } else {
+      // Pure A or pure B (no cross-channel) → preserve all rows. Same-
+      // source double-uploads are real NHI signal per multi-reading rule.
       out.push(...group);
     }
   }

@@ -3755,7 +3755,10 @@
       const hospital = String(item.hospital ?? "").trim();
       const value = String(item.value ?? "").trim();
       const unit = String(item.unit ?? "").trim();
-      const key = `${code}|${date}|${hospital}|${value}|${unit}`;
+      const display = String(item.display ?? "").trim();
+      const isPanel = DISPLAY_FIRST_CODES.has(code);
+      const canonical = isPanel ? canonicalLabKey(display, code) || display.toLowerCase() : "";
+      const key = `${code}|${date}|${hospital}|${value}|${unit}|${canonical}`;
       if (!groups.has(key)) {
         groups.set(key, []);
         order.push(key);
@@ -3775,8 +3778,8 @@
       const bRows = group.filter(
         (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "B"
       );
-      if (aRows.length === 1 && bRows.length === 1) {
-        out.push(aRows[0]);
+      if (aRows.length > 0 && bRows.length > 0) {
+        out.push(...aRows);
       } else {
         out.push(...group);
       }
