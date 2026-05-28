@@ -2138,3 +2138,243 @@ describe("CI v0.11.12 — Coding.display uses LOINC Long Common Name (not raw di
     }
   });
 });
+
+// ── v0.11.13 — SMART app dev bug 9 (INR mistag + placeholder unit) ──
+// Three sub-bugs rolled into one v0.11.10 bundle pattern:
+//   9a — 11.9 sec value emitted under LOINC 6301-6 (INR); structurally
+//        impossible (INR is dimensionless RelTime). Reroute to 5902-2 PT.
+//   9b — unit field literally "空白空白" (or "-") emitted as UCUM code.
+//        Both should normalise to empty (FHIR R4 Quantity.unit is 0..1).
+//   9c — two INR obs per draw differ only in placeholder unit; should
+//        dedup to one. After 9b cleans units, dedupeCrossFormat collapses.
+describe("CI v0.11.13 — Bug 9a: INR LOINC + time unit → reroute to PT", () => {
+  test("11.9 sec row mistakenly labelled INR routes to LOINC 5902-2 PT (not 6301-6 INR)", () => {
+    const items = [
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "INR",
+        value: 11.9,
+        unit: "sec",
+        date: "2025-05-18",
+        hospital: "X",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+    expect(loinc).toBe("5902-2"); // PT, not INR
+    expect(o.code.text).toBe("PT");
+  });
+
+  test("APTT (ratio) LOINC 63561-5 with sec unit → reroute to APTT time 14979-9", () => {
+    const items = [
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "APTT data/mean",
+        value: 31.4,
+        unit: "sec",
+        date: "2025-05-18",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+    expect(loinc).toBe("14979-9");
+  });
+
+  test("INR with dimensionless unit ('{ratio}') is NOT rerouted (correct case stays)", () => {
+    const items = [
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "INR",
+        value: 1.08,
+        unit: "{ratio}",
+        date: "2025-05-18",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+    expect(loinc).toBe("6301-6");
+  });
+});
+
+describe("CI v0.11.13 — Bug 9b: placeholder unit ('空白空白' / '-' / 'N/A') normalised to empty", () => {
+  test("INR with unit='空白空白' emits valueQuantity without unit", () => {
+    const items = [
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "INR",
+        value: 1.08,
+        unit: "空白空白",
+        date: "2025-05-18",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    // Bridge should produce a Quantity without a "空白空白" unit; either
+    // unit is undefined or the code field is empty.
+    if (o.valueQuantity) {
+      expect(o.valueQuantity.unit).not.toBe("空白空白");
+      expect(o.valueQuantity.code).not.toBe("空白空白");
+    }
+  });
+
+  test("Various placeholder unit strings all collapse to empty (-, —, N/A, nil, 無)", () => {
+    const placeholders = ["-", "—", "–", "N/A", "n/a", "nil", "NIL", "無", "空白"];
+    for (const p of placeholders) {
+      const items = [
+        {
+          order_code: "08026C",
+          code: "08026C",
+          display: "INR",
+          value: 1.08,
+          unit: p,
+          date: "2025-05-18",
+        },
+      ];
+      const o = mapObservationsGrouped(items, PATIENT_ID).find(
+        (r) => r.resourceType === "Observation",
+      ) as any;
+      if (o.valueQuantity) {
+        expect(o.valueQuantity.unit).not.toBe(p);
+      }
+    }
+  });
+});
+
+describe("CI v0.11.13 — Bug 9c: 2 placeholder-unit INR rows collapse to 1 obs", () => {
+  test("INR row with unit='空白空白' and unit='-' but same value/display → 1 obs after dedup", () => {
+    const items = [
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "INR",
+        value: 1.08,
+        unit: "空白空白",
+        date: "2025-05-18",
+        hospital: "X",
+      },
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "INR",
+        value: 1.08,
+        unit: "-",
+        date: "2025-05-18",
+        hospital: "X",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    expect(obs).toHaveLength(1);
+  });
+
+  test("End-to-end bug 9 scenario: 4-row raw → 2 obs (1 PT + 1 INR), not 4", () => {
+    // Reproduces user's v0.11.10 bundle: per draw raw had PT row +
+    // mistag (display=INR, val=11.9 sec) + 2 placeholder-unit INR rows.
+    // After v0.11.13: mistag rerouted to PT and collides with real PT
+    // (same canonical+value+code → same stableId); 2 placeholder-unit
+    // rows dedup. Net: 1 PT + 1 INR.
+    const items = [
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "PT",
+        value: 11.9,
+        unit: "sec",
+        date: "2025-05-18",
+        hospital: "X",
+      },
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "INR",
+        value: 11.9,
+        unit: "sec",
+        date: "2025-05-18",
+        hospital: "X",
+      },
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "INR",
+        value: 1.08,
+        unit: "空白空白",
+        date: "2025-05-18",
+        hospital: "X",
+      },
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "INR",
+        value: 1.08,
+        unit: "-",
+        date: "2025-05-18",
+        hospital: "X",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    // Group by LOINC
+    const byLoinc: Record<string, number> = {};
+    for (const o of obs) {
+      const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+      byLoinc[loinc] = (byLoinc[loinc] ?? 0) + 1;
+    }
+    // After fixes: at most 2 obs under 5902-2 (PT) [original + rerouted mistag]
+    // — same value+date+canonical+code may collide → could be 1.
+    // And exactly 1 obs under 6301-6 INR (placeholder dedup).
+    expect(byLoinc["6301-6"]).toBe(1); // INR collapsed via placeholder normalisation
+    // No INR obs should carry a sec-valued reading
+    const inrObs = obs.find((o: any) =>
+      o.code.coding.find((c: any) => c.system === "http://loinc.org" && c.code === "6301-6"),
+    );
+    expect(inrObs?.valueQuantity?.unit).not.toBe("sec");
+    expect(inrObs?.valueQuantity?.code).not.toBe("sec");
+  });
+});
+
+describe("CI v0.11.13 — Note 10 lockdown: 08036C ships BOTH 14979-9 + 63561-5", () => {
+  test("APTT panel with sec row + ratio row → bundle has one 14979-9 AND one 63561-5", () => {
+    // Forward-compatibility lockdown per app dev's note 10 2026-05-29.
+    // Bridge must keep the time/ratio LOINC split alive. If a future
+    // refactor collapses them under one LOINC, this test fires.
+    const items = [
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "APTT",
+        value: 31.4,
+        unit: "sec",
+        date: "2025-05-18",
+      },
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "APTT (ratio)",
+        value: 1.08,
+        unit: "{ratio}",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    const loincs = obs.map(
+      (o) => o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code,
+    );
+    expect(loincs).toContain("14979-9"); // APTT time
+    expect(loincs).toContain("63561-5"); // APTT ratio
+  });
+});

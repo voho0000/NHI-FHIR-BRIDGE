@@ -2109,6 +2109,15 @@
       "aptt actual/normal": "63561-5",
       "aptt ratio": "63561-5",
       "aptt mean": "63561-5",
+      // v0.11.13: parenthesised variant ("APTT (ratio)" with space + paren)
+      // observed in v0.11.10 lockdown test. \b-bounded "aptt (ratio)" key
+      // doesn't match at the trailing ")" (non-word char has no \b before
+      // end of string). Workaround: add bare "ratio" key — \b around the
+      // ASCII word "ratio" matches even inside parens, longest-match wins
+      // over bare "aptt" (5 chars > 4). Combined with "{ratio}" unit
+      // pre-canonicalisation, this routes the ratio analyte cleanly.
+      ratio: "63561-5",
+      "aptt-ratio": "63561-5",
       // Bare time variants — fall through to seconds LOINC.
       aptt: "14979-9",
       "a.p.t.t": "14979-9",
@@ -3440,14 +3449,18 @@
     const s = String(value).trim();
     return s !== "" && s !== "\u2014" && s !== "-" && s !== "N/A" && s !== "null";
   }
+  var PLACEHOLDER_UNIT_RE = /^(?:空白空白|空白|n\/a|n\.a\.?|nil|無|null|none|未|—|–|-{1,3})$/i;
   function _canonicalizeUnit(display, _code, rawUnit) {
-    const u = (rawUnit ?? "").trim();
+    let u = (rawUnit ?? "").trim();
+    if (PLACEHOLDER_UNIT_RE.test(u)) {
+      u = "";
+    }
     const isBogus = u === "" || u === "N" || u === "n";
     if (isBogus) {
       if (/egfr|estimated\s*gfr|estimated\s*glomerular|腎絲球過濾率/i.test(display)) {
         return "mL/min/1.73m2";
       }
-      return rawUnit;
+      return u;
     }
     let normalized = u;
     normalized = normalized.replace(/㎡/g, "m2").replace(/㎝/g, "cm").replace(/㎠/g, "mm").replace(/㎢/g, "km");
@@ -3515,7 +3528,8 @@
     let idxCounter = 0;
     for (const item of items) {
       const v = String(item.value ?? "").trim();
-      const unit = (item.unit ?? "").trim();
+      const rawUnit = (item.unit ?? "").trim();
+      const unit = PLACEHOLDER_UNIT_RE.test(rawUnit) ? "" : rawUnit;
       if (!v) {
         byKey.set(`__no_dedup__|${idxCounter++}`, item);
         continue;
@@ -3624,6 +3638,25 @@
     }
     return null;
   }
+  var RATIO_TO_TIME_LOINC = {
+    "6301-6": "5902-2",
+    // INR → PT (Prothrombin time, sec)
+    "63561-5": "14979-9",
+    // APTT actual/normal ratio → APTT time (sec)
+    "5894-1": "5902-2"
+    // PT actual/Normal ratio → PT time (sec)
+  };
+  var TIME_UNIT_RE = /^(?:sec|s|seconds?|秒)$/i;
+  function structuralLoincFix(loinc, rawUnit) {
+    if (!loinc) return loinc;
+    const sibling = RATIO_TO_TIME_LOINC[loinc];
+    if (!sibling) return loinc;
+    const u = String(rawUnit ?? "").trim();
+    if (TIME_UNIT_RE.test(u)) {
+      return sibling;
+    }
+    return loinc;
+  }
   function mapObservation(raw, patientId) {
     const display = raw.display || raw.code || "";
     const code = raw.code || "";
@@ -3634,7 +3667,8 @@
     const hasMeaningfulInterp = MEANINGFUL_INTERPS.has(interp);
     if (!hasValue && !hasMeaningfulInterp) return null;
     const obsId = stableId(patientId, code, raw.date ?? "");
-    const loinc = findLoinc(code, display);
+    let loinc = findLoinc(code, display);
+    loinc = structuralLoincFix(loinc, raw.unit);
     const resource = {
       resourceType: "Observation",
       id: obsId,
@@ -3775,7 +3809,8 @@
       code,
       String(raw.value ?? "")
     );
-    const loinc = findLoinc(code, display);
+    let loinc = findLoinc(code, display);
+    loinc = structuralLoincFix(loinc, raw.unit);
     const catCode = raw.category || "laboratory";
     const CAT_DISPLAY = {
       laboratory: "Laboratory",

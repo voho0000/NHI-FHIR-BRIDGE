@@ -1102,6 +1102,15 @@
       "aptt actual/normal": "63561-5",
       "aptt ratio": "63561-5",
       "aptt mean": "63561-5",
+      // v0.11.13: parenthesised variant ("APTT (ratio)" with space + paren)
+      // observed in v0.11.10 lockdown test. \b-bounded "aptt (ratio)" key
+      // doesn't match at the trailing ")" (non-word char has no \b before
+      // end of string). Workaround: add bare "ratio" key — \b around the
+      // ASCII word "ratio" matches even inside parens, longest-match wins
+      // over bare "aptt" (5 chars > 4). Combined with "{ratio}" unit
+      // pre-canonicalisation, this routes the ratio analyte cleanly.
+      ratio: "63561-5",
+      "aptt-ratio": "63561-5",
       // Bare time variants — fall through to seconds LOINC.
       aptt: "14979-9",
       "a.p.t.t": "14979-9",

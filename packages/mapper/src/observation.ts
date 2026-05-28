@@ -726,8 +726,33 @@ function isMeaningfulValue(value: unknown): boolean {
 //      non-canonical symbols.
 // Whitelist approach keeps changes scoped — only known patterns get
 // rewritten, everything else passes through.
+// v0.11.13 (SMART app dev bug 9b 2026-05-29): placeholder strings
+// emitted by Taiwan LIS as the unit field — not UCUM, not real units,
+// just LIS's way of encoding "no unit". Patterns observed in user's
+// v0.11.10 bundle for INR rows (LOINC 6301-6 is dimensionless):
+//   "空白空白" / "空白"    LIS literal for "blank blank"
+//   "-" / "—" / "–"        ASCII / em-dash / en-dash dashes
+//   "N/A" / "n/a"          not-applicable text
+//   "nil" / "NIL" / "Nil"  Latin nil
+//   "無"                   Chinese "no"
+// All of these get coerced to empty so the downstream Quantity has
+// no `unit` field (FHIR R4 Quantity.unit is 0..1 — optional and the
+// preferred form for genuinely dimensionless values like INR).
+//
+// Also enables dedup collapse: two INR rows with placeholder unit
+// "空白空白" and "-" but same value collide after cleaning since
+// dedupeCrossFormat key includes unit.
+const PLACEHOLDER_UNIT_RE =
+  /^(?:空白空白|空白|n\/a|n\.a\.?|nil|無|null|none|未|—|–|-{1,3})$/i;
+
 function _canonicalizeUnit(display: string, _code: string, rawUnit: string): string {
-  const u = (rawUnit ?? "").trim();
+  let u = (rawUnit ?? "").trim();
+
+  // v0.11.13: collapse placeholder strings to empty BEFORE bogus check
+  // so they get the analyte-aware auto-fill path (e.g. eGFR units).
+  if (PLACEHOLDER_UNIT_RE.test(u)) {
+    u = "";
+  }
 
   // Class 1: bogus unit fixup (analyte-aware fill-in).
   const isBogus = u === "" || u === "N" || u === "n";
@@ -736,7 +761,7 @@ function _canonicalizeUnit(display: string, _code: string, rawUnit: string): str
     if (/egfr|estimated\s*gfr|estimated\s*glomerular|腎絲球過濾率/i.test(display)) {
       return "mL/min/1.73m2";
     }
-    return rawUnit;
+    return u; // return cleaned empty string, not the raw placeholder
   }
 
   // Class 2: valid-but-non-UCUM normalization. Applies to all
@@ -866,7 +891,12 @@ function dedupeCrossFormat(items: Record<string, any>[]): Record<string, any>[] 
   let idxCounter = 0;
   for (const item of items) {
     const v = String(item.value ?? "").trim();
-    const unit = ((item.unit as string) ?? "").trim();
+    const rawUnit = ((item.unit as string) ?? "").trim();
+    // v0.11.13: collapse placeholder unit strings before keying so two
+    // INR rows shipped under "空白空白" and "-" collide here and dedup
+    // to one (bug 9c — both rows survived previously because raw units
+    // differed).
+    const unit = PLACEHOLDER_UNIT_RE.test(rawUnit) ? "" : rawUnit;
     if (!v) {
       byKey.set(`__no_dedup__|${idxCounter++}`, item);
       continue;
@@ -1004,6 +1034,42 @@ function inferSpecimen(...hints: Array<string | null | undefined>): string | nul
   return null;
 }
 
+// ── Structural LOINC vs unit consistency fix (v0.11.13) ──────────────
+// SMART app dev bug 9a 2026-05-29: some Taiwan LIS rows shipped INR
+// (dimensionless RelTime LOINC 6301-6) with a seconds unit — that
+// combination is structurally impossible. Reroute the LOINC to the
+// time-domain sibling so the obs is internally consistent and the
+// downstream SMART app's LOINC-pivoted trend chart doesn't show "INR
+// = 11.9" (which reads as a fatal anticoagulation overdose).
+//
+// Faithful transport: LOINC corrections are allowed per user rule.
+// Patient value / date / hospital / unit untouched. Raw NHI display
+// stays in coding[nhi].display via buildCodings.
+//
+// FHIR R4 compliance: this only modifies Coding.code (LOINC code is
+// still a valid LOINC after reroute); display/text resolution after
+// reroute uses LOINC_DISPLAY[new-loinc] + LOINC_SHORT_TEXT[new-loinc].
+const RATIO_TO_TIME_LOINC: Record<string, string> = {
+  "6301-6": "5902-2", // INR → PT (Prothrombin time, sec)
+  "63561-5": "14979-9", // APTT actual/normal ratio → APTT time (sec)
+  "5894-1": "5902-2", // PT actual/Normal ratio → PT time (sec)
+};
+const TIME_UNIT_RE = /^(?:sec|s|seconds?|秒)$/i;
+
+function structuralLoincFix(
+  loinc: string | null,
+  rawUnit: unknown,
+): string | null {
+  if (!loinc) return loinc;
+  const sibling = RATIO_TO_TIME_LOINC[loinc];
+  if (!sibling) return loinc;
+  const u = String(rawUnit ?? "").trim();
+  if (TIME_UNIT_RE.test(u)) {
+    return sibling;
+  }
+  return loinc;
+}
+
 // ── Map single Observation (non-grouped path) ────────────────────────
 
 export function mapObservation(
@@ -1022,7 +1088,9 @@ export function mapObservation(
   if (!hasValue && !hasMeaningfulInterp) return null;
 
   const obsId = stableId(patientId, code, raw.date ?? "");
-  const loinc = findLoinc(code, display);
+  let loinc = findLoinc(code, display);
+  // v0.11.13 bug 9a: structural reroute if LOINC vs unit mismatch
+  loinc = structuralLoincFix(loinc, raw.unit);
 
   const resource: Record<string, any> = {
     resourceType: "Observation",
@@ -1228,7 +1296,10 @@ function buildObservation(
     code,
     String(raw.value ?? ""),
   );
-  const loinc = findLoinc(code, display);
+  let loinc = findLoinc(code, display);
+  // v0.11.13 (SMART app dev bug 9a 2026-05-29): structural LOINC vs
+  // unit consistency check — see structuralLoincFix() docstring.
+  loinc = structuralLoincFix(loinc, raw.unit);
 
   const catCode = raw.category || "laboratory";
   const CAT_DISPLAY: Record<string, string> = {

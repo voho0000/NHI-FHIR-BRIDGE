@@ -3,6 +3,82 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.11.13 重點 — 2026-05-29
+
+**🩸 Bug 9 — INR LOINC + sec unit 結構不可能 + placeholder unit pollution**
+
+SMART app dev v0.11.10 bundle audit 報告 Bug 9：每張 PT/INR panel 都出現 3 個 LOINC 6301-6 (INR) obs：
+- 1 個 value=11.9 sec ← **structurally 不可能**（INR 是 dimensionless ratio，配 sec 不對）
+- 1 個 value=1.08 unit="**空白空白**" ← 真 INR 但 unit 是 LIS 編碼的 placeholder
+- 1 個 value=1.08 unit="**-**" ← 同上，duplicate
+
+三層 bug 一次拆：
+
+### 9a — Structural LOINC validation（reroute INR-sec → PT-sec）
+
+INR (6301-6) / APTT ratio (63561-5) / PT ratio (5894-1) 都是 dimensionless `RelTime` LOINCs（loinc.org verified）。如果 row 跑到這些 LOINC 但 unit 是 sec/s/秒 → LIS 標錯，真實 row 是 time-domain sibling。
+
+**新 helper `structuralLoincFix()`** in observation.ts：
+
+```ts
+const RATIO_TO_TIME_LOINC: Record<string, string> = {
+  "6301-6": "5902-2",   // INR → PT time
+  "63561-5": "14979-9", // APTT ratio → APTT time
+  "5894-1": "5902-2",   // PT ratio → PT time
+};
+const TIME_UNIT_RE = /^(?:sec|s|seconds?|秒)$/i;
+
+function structuralLoincFix(loinc, rawUnit) {
+  if (RATIO_TO_TIME_LOINC[loinc] && TIME_UNIT_RE.test(rawUnit)) {
+    return RATIO_TO_TIME_LOINC[loinc];
+  }
+  return loinc;
+}
+```
+
+接到 buildObservation 跟 mapObservation 兩條路徑（panel + single-row 都套）。Patient value/date/hospital/unit 沒動，只 reroute LOINC — faithful transport rule 允許 LOINC 對應修正。
+
+### 9b — Placeholder unit cleanup
+
+「空白空白」/「-」/「—」/「N/A」/「nil」/「無」這類 LIS 編碼的「我沒 unit」placeholder 被當 UCUM code emit 是錯的。新增 `PLACEHOLDER_UNIT_RE` 在 `_canonicalizeUnit` 開頭把它們 collapse 成 empty string。下游 `Quantity.unit` 就 0..1 缺省（FHIR R4 Quantity.unit 是 optional），對 dimensionless 分析物（INR / ratio）這是正確結構。
+
+### 9c — 兩個 placeholder-unit INR 自動 dedup
+
+之前 dedupeCrossFormat key 把「空白空白」跟「-」當不同字串 → 兩 row 都存活。`dedupeCrossFormat` 改成先過 `PLACEHOLDER_UNIT_RE` 再算 key → 兩 row 自動 collapse 成 1 個。9c 不用單獨修，9b 一改就連帶解決。
+
+### Note 10 forward-compat lockdown
+
+App dev confirm v0.11.10 APTT split (14979-9 time + 63561-5 ratio) 結構是對的，請求保留。加 regression test：08036C panel 同時收 sec + ratio 兩 row → bundle 必須產生 14979-9 AND 63561-5 兩個 obs。順便補 PANEL_LOINC_MAP["08036C"]：display "APTT (ratio)" 的 `(` 把 `\b` 邊界打掉，新增 bare "ratio" key + `aptt-ratio` variant 讓 longest-match 拿到正確 routing。
+
+### FHIR R4 compliance audit ✅
+
+| Change | FHIR R4 field | Verdict |
+|---|---|---|
+| structuralLoincFix reroute | `Coding.code` (LOINC system) | ✅ rerouted LOINC 還是 valid LOINC; LOINC_DISPLAY + LOINC_SHORT_TEXT 都 cover |
+| PLACEHOLDER_UNIT_RE 清空 unit | `Quantity.unit` (UCUM) | ✅ Quantity.unit 是 0..1 — empty/missing 對 dimensionless ratio 是正確結構 |
+| Added "ratio" key + "aptt-ratio" | `Coding.code` | ✅ 對應 LOINC 63561-5 已驗 |
+| dedupeCrossFormat key normalisation | 內部，不碰 FHIR field | ✅ |
+
+### CI 守門（7 個新 regression tests）
+
+- Bug 9a：11.9 sec mistag → reroute LOINC 5902-2 PT; APTT ratio + sec → 14979-9; **defensive**: INR + {ratio} unit 不 reroute（正確 case 不動）
+- Bug 9b：8 種 placeholder strings 都 collapse to empty unit
+- Bug 9c：兩 placeholder-unit INR rows → 1 obs
+- End-to-end bug 9 scenario：4 raw rows → 2 obs (1 PT + 1 INR) 不是 4 + INR obs 沒 sec unit
+- Note 10 lockdown：08036C 同時 ship 14979-9 + 63561-5
+
+### Files
+
+- `packages/mapper/src/loinc-tables.ts` — PANEL_LOINC_MAP["08036C"] 加 `ratio` key + `aptt-ratio` variant
+- `packages/mapper/src/observation.ts` — 新 `structuralLoincFix()` helper + `RATIO_TO_TIME_LOINC` table + `TIME_UNIT_RE`; `PLACEHOLDER_UNIT_RE` + `_canonicalizeUnit` 套用; `dedupeCrossFormat` 也套; buildObservation 跟 mapObservation 都呼叫 structuralLoincFix
+- `backend-ts/tests/unit/bundle-quality.test.ts` — v0.11.13 describe blocks + Note 10 lockdown describe block (7 regressions)
+
+### v0.12 sweep 提醒（next release）
+
+52 個 legacy LOINCs 缺 LOINC_DISPLAY entries — 完整補需要每個 WebFetch loinc.org 驗 Long Common Name。User 確認列入 v0.12.0 處理。
+
+---
+
 ## 0.11.12 重點 — 2026-05-29
 
 **🔍 FHIR R4 audit follow-up — 補上 7 個漏掉的 LOINC_DISPLAY entries**
