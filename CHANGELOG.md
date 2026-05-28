@@ -3,6 +3,155 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.11.10 重點 — 2026-05-29
+
+**🏷️ Category B + C：DR title 跟 obs.text 對齊 — 9 個 single-analyte panel 名稱統一**
+
+延續 v0.11.9 SMART app dev bug report — Category B (DR vs obs 命名不一致) 跟 Category C (DR title 帶 method 字尾) 列了 9 個 single-analyte panel 有跨來源名稱衝突。這版按新規矩**先 WebFetch loinc.org 驗證每個 LOINC 的 Component / Property / System / Method** 再下判斷。
+
+### Loinc.org 驗證結果（2026-05-29）
+
+| LOINC | Component | Property | System | NHI code | LOINC_SHORT_TEXT |
+|---|---|---|---|---|---|
+| 4548-4 | Hemoglobin A1c/Hb.total | MFr | Blood | 09006C | `HbA1c` |
+| 1975-2 | Bilirubin total | MCnc | Ser/Plas | 09029C | `Total Bilirubin` |
+| 10839-9 | Troponin I.cardiac | MCnc | Ser/Plas | 09099C | `Troponin I` |
+| 13457-7 | Cholesterol in LDL (calc) | MCnc | Ser/Plas | 09044C | `LDL-C` |
+| 3016-3 | Thyrotropin (TSH) | ACnc | Ser/Plas | 09112C | `TSH` |
+| 2143-6 | Cortisol | MCnc | Ser/Plas | 09113C | `Cortisol` |
+| 2132-9 | Cobalamin (B12) | MCnc | Ser/Plas | 09129C | `Vitamin B12` |
+| 2284-8 | Folate | MCnc | Ser/Plas | 09130C | `Folate` |
+| 83112-3 | PSA | MCnc | Ser/Plas (IA) | 12081C | `PSA` |
+
+⚠️ 4548-4 副註：是 NGSP standardisation（%）。Taiwan 健保 09006C 報的 HbA1c 是 %（NGSP-aligned），所以對；如果哪天 NHI 改 IFCC mmol/mol 才需要切到 59261-8。bridge 當前先保留 4548-4 對應。
+
+### LOINC_SHORT_TEXT 接到 DR title 構造
+
+之前 LOINC_SHORT_TEXT 只用於 `obs.code.text`（v0.11.9 C），這版擴到 DR title：
+
+```ts
+// observation.ts groupByOrderCode
+const panelLoinc = NHI_TO_LOINC[groupCodeStr];
+const loincShortText = panelLoinc ? LOINC_SHORT_TEXT[panelLoinc] : undefined;
+
+if (deduped.length === 1) {
+  panelTitle = loincShortText || NHI_CODE_PANEL_NAME[code] || orderName || ...;
+} else {
+  // 但 multi-row panel (08011C CBC) 各 sub-row 對到不同 LOINC，
+  // 不能用 LOINC_SHORT_TEXT 統一 → 只在 NOT in DISPLAY_FIRST_CODES 時 fire
+  const allSameAnalyte = !DISPLAY_FIRST_CODES.has(groupCodeStr);
+  panelTitle = (allSameAnalyte && loincShortText) || orderName || ...;
+}
+```
+
+效果：09112C 「甲狀腺刺激素免疫分析」DR title 變 `TSH`，obs.code.text 也是 `TSH` — SMART app 看不到中間打架。
+
+### DR.code.coding[0].display 仍保留 raw NHI 目錄名（faithful transport）
+
+分開 `DR.code.text`（乾淨 short label）跟 `DR.code.coding[0].display`（raw NHI 目錄名）：
+
+```ts
+const drCodingDisplay = orderName || NHI_CODE_PANEL_NAME[code] || panelTitle;
+const drText = panelTitle;
+```
+
+09112C 例子：
+- `DR.code.text` = `TSH` （乾淨 label）
+- `DR.code.coding[0].display` = `甲狀腺刺激素免疫分析` （raw 目錄名）
+- obs 同 convention：`code.text = TSH`、`coding[nhi].display = 甲狀腺刺激素免疫分析`
+
+⇒ DR 跟 obs 完全對齊 + raw 還在。
+
+### Fullwidth → halfwidth normalisation
+
+09099C「心肌旋轉蛋白Ｉ」用全形 Ｉ (U+FF29)。新增 `normalizeFullwidth()`：
+
+```ts
+function normalizeFullwidth(s: string): string {
+  return s.replace(/[！-～]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) - 0xfee0),
+  );
+}
+```
+
+只套在 `code.text` 跟 `DR.code.text`（我們自己出的 label），**不**套在 `coding[nhi].display`（faithful — NHI 目錄選擇全形是他們的事）。同類 v0.11.4 ㎡ → m2 cleanup 是 UCUM 側、這次是 display-text 側。
+
+### CI 守門
+
+新增 8 個 v0.11.10 regression seeds：
+1. 09006C HbA1c — DR + obs both `HbA1c` + 原 catalog name 在 coding[nhi].display
+2. 09029C total bilirubin — DR + obs both `Total Bilirubin`
+3. 09099C Troponin I — LOINC_SHORT_TEXT path 給 halfwidth `Troponin I`
+4. 09099C defensive — 沒 LOINC_SHORT_TEXT 也走 normalizeFullwidth fallback (ＡＢＣＤ → ABCD)
+5. 09112C TSH — DR title 脫掉「免疫分析」變 `TSH`，raw 在 coding[0].display
+6. 12081C PSA — DR title 脫掉「(EIA/LIA法)」變 `PSA`
+7. 09044C/09113C/09129C/09130C — `LDL-C` / `Cortisol` / `Vitamin B12` / `Folate`
+8. **Defensive：multi-row panel 08011C CBC** — LOINC_SHORT_TEXT **不能**蓋 DR title（因為各 sub-row 不同 LOINC），fall back 到 orderName「血液常規檢查」
+
+### Faithful transport check ✅
+
+- LOINC mapping 沒新增，全是現有 NHI_TO_LOINC 對應
+- 每個 LOINC_SHORT_TEXT entry 都 WebFetch 驗過 Component/Property/System/Method
+- Raw NHI catalog name 完整保留在 coding[*].display
+- 全寬→半寬只在 bridge-side 我們自己出的 label，coding[nhi].display 保留原樣
+
+### FHIR R4 compliance audit（user 要求 2026-05-29）
+
+逐項對照 spec:
+
+| 改動 | FHIR R4 reference | Verdict |
+|---|---|---|
+| `CodeableConcept.text = LOINC_SHORT_TEXT[loinc]` | text 是 "representation of the concept as entered or chosen by the user" — free-form OK | ✅ |
+| `Coding.display` (loinc) = LOINC_DISPLAY (Long Common Name) | "follow the rules of the system" — LOINC 規定 Long Common Name | ✅ |
+| `Coding.display` (nhi) = raw `order_name` | NHI system 沒有 published rule 但目錄 supplied name = authoritative source | ✅ |
+| `normalizeFullwidth()` 套在 `CodeableConcept.text` | text free-form 可清理 | ✅ |
+| **`normalizeFullwidth()` 原本也套在 `Coding.display`** | Coding.display 須 follow rules of the system；NHI 全形 Ｉ 是 NHI 自己的選擇 | ❌ **改掉**（這版 audit 抓到）|
+| stableId hash 加 value | Resource.id syntactic constraint (≤64 chars, alphanumeric + `-` + `.`) — SHA1 hex 合格 | ✅ |
+| `NHI_CODE_PANEL_NAME` 值跟 NHI 目錄對齊 | 既然會 fall back 進 Coding.display，得是 catalog-faithful | ⚠️ **這版同時修**（v0.11.9 F 的 paraphrase 拉回 catalog 原文）|
+
+#### Audit 抓到的兩個修正
+
+1. **`drCodingDisplay` 不再過 `normalizeFullwidth`**：
+   ```ts
+   // 之前 (v0.11.10 pre-audit)
+   const drCodingDisplay = normalizeFullwidth(orderName || NHI_CODE_PANEL_NAME[code] || panelTitle);
+
+   // 現在
+   const drCodingDisplay = orderName || NHI_CODE_PANEL_NAME[code] || panelTitle;
+   const drText = normalizeFullwidth(panelTitle);  // text 還是 normalize
+   ```
+   保證 NHI 目錄選的 Ｉ 留在 DR.code.coding[0].display，只在 DR.code.text + obs.code.text 用半形。
+
+2. **`NHI_CODE_PANEL_NAME` 拉回 NHI 目錄正式名稱**：
+   ```ts
+   // 之前 (v0.11.9 F 我自己縮的)
+   "11001C": "ABO 血型測定",
+   "11003C": "RH(D) 型檢驗",
+
+   // 現在 (NHI 目錄 verbatim)
+   "11001C": "ABO血型測定檢驗",
+   "11003C": "RH（D）型檢驗",  // 全形括號
+   ```
+   這個 map fall-back 進 `Coding.display` 時就會是 catalog-faithful。SMART app 看 obs.code.text 還是會看到 `normalizeFullwidth("RH（D）型檢驗")` = `"RH(D)型檢驗"`（半形）。
+
+### 結果分層
+
+| 欄位 | 規則 | 11003C example |
+|---|---|---|
+| `coding[nhi].display` (Coding.display) | NHI catalog 原文 verbatim | `"RH（D）型檢驗"` (全形) |
+| `coding[loinc].display` (Coding.display) | LOINC Long Common Name | (此 panel 無 LOINC) |
+| `code.text` (CodeableConcept.text) | LOINC_SHORT_TEXT > NHI_CODE_PANEL_NAME > display，過 normalizeFullwidth | `"RH(D)型檢驗"` (半形) |
+| `DR.code.text` | 同 code.text 邏輯，過 normalizeFullwidth | `"RH(D)型檢驗"` (半形) |
+| `DR.code.coding[0].display` | orderName > NHI_CODE_PANEL_NAME > panelTitle, **不**過 normalize | `"RH（D）型檢驗"` (全形) |
+
+### Files
+
+- `packages/mapper/src/loinc-tables.ts` — `LOINC_SHORT_TEXT` 加 9 個 verified entries；`NHI_CODE_PANEL_NAME` 值拉回 NHI catalog 正式名稱（11001C/11003C）
+- `packages/mapper/src/observation.ts` — 加 `normalizeFullwidth()`; buildObservation + mapObservation code.text wrapped；DR title precedence 加 LOINC_SHORT_TEXT；DR.code.coding[0].display 分離成 `drCodingDisplay` (**不**過 normalize) + DR.code.text 用 `drText` (過 normalize)
+- `backend-ts/tests/unit/bundle-quality.test.ts` — 新 v0.11.10 describe block + 8 個 regression tests；既有 v0.11.9 blood-type 測試的 expected values 更新對齊 catalog 正式名稱
+
+---
+
 ## 0.11.9 重點 — 2026-05-29
 
 **🩸 APTT (08036C) panel routing 修正 — ratio 跟 time 用同一 LOINC、外加 QC pattern + display text 整理**

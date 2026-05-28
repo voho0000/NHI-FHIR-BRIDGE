@@ -1299,6 +1299,38 @@ export const LOINC_SHORT_TEXT: Record<string, string> = {
   "5894-1": "PT (ratio)", // v0.11.9: 5894-1 is PT actual/normal RATIO
   // (Property=RelTime), NOT PT Control as previously (incorrectly) labelled.
   // See LOINC_DISPLAY comment for full audit trail.
+  //
+  // ── Single-analyte panels (v0.11.10) ─────────────
+  // SMART app dev report 2026-05-29 Category B + C: bridge previously
+  // shipped DR title and obs.text from two different sources for
+  // these single-analyte panels — DR title from order_name (with NHI-
+  // catalog method suffix like 「免疫分析」), obs.text from row display
+  // (lab-shorthand or alternate Chinese). Unifying via LOINC_SHORT_TEXT
+  // means both DR title and obs.text resolve to the same clean
+  // clinical short name when the row's NHI code maps to one of these
+  // LOINCs (via NHI_TO_LOINC path A).
+  //
+  // Each LOINC below verified via WebFetch loinc.org 2026-05-29 —
+  // Component / Property / System / Method all confirmed appropriate
+  // for the Taiwan NHI billing context:
+  //   4548-4   Hemoglobin A1c/Hemoglobin.total, MFr, Blood (NGSP %; Taiwan default)
+  //   1975-2   Bilirubin total, MCnc, Ser/Plas
+  //   10839-9  Troponin I.cardiac, MCnc, Ser/Plas
+  //   13457-7  Cholesterol in LDL (calculated), MCnc, Ser/Plas
+  //   3016-3   Thyrotropin (TSH), ACnc, Ser/Plas
+  //   2143-6   Cortisol, MCnc, Ser/Plas
+  //   2132-9   Cobalamin (Vitamin B12), MCnc, Ser/Plas
+  //   2284-8   Folate, MCnc, Ser/Plas
+  //   83112-3  Prostate specific Ag, MCnc, Ser/Plas, IA (covers EIA/LIA both)
+  "4548-4": "HbA1c", // NHI 09006C (was: DR "醣化血紅素" / obs "Hb-A1c")
+  "1975-2": "Total Bilirubin", // NHI 09029C (was: DR "膽紅素總量" / obs "全膽紅素")
+  "10839-9": "Troponin I", // NHI 09099C (was: DR "心肌旋轉蛋白Ｉ" fullwidth)
+  "13457-7": "LDL-C", // NHI 09044C (was: DR "低密度脂蛋白－膽固醇" / obs "LDL-C(direct)")
+  "3016-3": "TSH", // NHI 09112C (was: DR "甲狀腺刺激素免疫分析" / obs "甲狀腺刺激素")
+  "2143-6": "Cortisol", // NHI 09113C (was: DR "皮質素免疫分析")
+  "2132-9": "Vitamin B12", // NHI 09129C (was: DR "維生素B12免疫分析")
+  "2284-8": "Folate", // NHI 09130C (was: DR "葉酸免疫分析")
+  "83112-3": "PSA", // NHI 12081C (was: DR "攝護腺特異抗原(EIA/LIA法)")
 };
 
 // ── _NHI_CODE_PANEL_NAME ─────────────────────────────────
@@ -1330,7 +1362,16 @@ export const LOINC_SHORT_TEXT: Record<string, string> = {
 // where each sub-row has a unique analyte display, NO entry — display
 // (which is already specific) wins.
 export const NHI_CODE_PANEL_NAME: Record<string, string> = {
-  "11001C": "ABO 血型測定",
-  "11003C": "RH(D) 型檢驗",
+  // v0.11.10 FHIR R4 compliance audit (2026-05-29): values must match
+  // the NHI catalog's authoritative panel name verbatim — this map is
+  // also consulted by `buildCodings` as the fallback for
+  // `Observation.code.coding[nhi].display` when `raw.order_name` is
+  // missing, and Coding.display per FHIR R4 must "follow the rules of
+  // the system". Treating my paraphrase ("ABO 血型測定") as the NHI
+  // catalog name would be wrong on both counts (FHIR semantic + faithful
+  // transport). NHI 健保 catalog formal names confirmed via the SMART
+  // app dev's bug report enumeration of observed DR titles.
+  "11001C": "ABO血型測定檢驗",
+  "11003C": "RH（D）型檢驗",
   "11004C": "抗體反應 (不規則抗體)",
 };

@@ -795,13 +795,24 @@ describe("CI v0.11.8 — different NHI codes with shared display must NOT collid
     const abo = byNhi("11001C");
     const rh = byNhi("11003C");
     const ab = byNhi("11004C");
-    expect(abo.code.text).toBe("ABO 血型測定");
-    expect(rh.code.text).toBe("RH(D) 型檢驗");
+    // v0.11.10 FHIR R4 compliance:
+    //   - NHI_CODE_PANEL_NAME values aligned to NHI catalog formal
+    //     names (was: my paraphrase "ABO 血型測定"; now: catalog
+    //     "ABO血型測定檢驗"). Catalog 11003C uses FULLWIDTH parens.
+    //   - code.text is free-form (FHIR R4 CodeableConcept.text), so
+    //     normalizeFullwidth() converts fullwidth parens → halfwidth
+    //     for SMART app column-header readability.
+    //   - coding[nhi].display is Coding.display, must "follow rules of
+    //     the system" (FHIR R4) — preserves NHI's choice of fullwidth.
+    expect(abo.code.text).toBe("ABO血型測定檢驗");
+    expect(rh.code.text).toBe("RH(D)型檢驗"); // halfwidth (normalized)
     expect(ab.code.text).toBe("抗體反應 (不規則抗體)");
-    // Without order_name, coding[nhi].display falls back to
-    // NHI_CODE_PANEL_NAME override (v0.11.9 H precedence).
+    // coding[nhi].display preserves NHI catalog name verbatim — for
+    // 11003C that's "RH（D）型檢驗" with FULLWIDTH parens.
     const aboNhi = abo.code.coding.find((c: any) => c.system?.endsWith("nhi-medical-order-code"));
-    expect(aboNhi.display).toBe("ABO 血型測定");
+    const rhNhi = rh.code.coding.find((c: any) => c.system?.endsWith("nhi-medical-order-code"));
+    expect(aboNhi.display).toBe("ABO血型測定檢驗");
+    expect(rhNhi.display).toBe("RH（D）型檢驗"); // fullwidth preserved
   });
 
   test("v0.11.9 H — coding[nhi].display = panel catalog name when order_name is set", () => {
@@ -1550,5 +1561,225 @@ describe("CI v0.11.9 — 5894-1 PT control mapping removed", () => {
       // NEVER 5894-1 (incorrect ratio mapping).
       expect(loinc?.code).not.toBe("5894-1");
     }
+  });
+});
+
+// ── v0.11.10 — Category B + C from SMART app dev report 2026-05-29 ─
+// 9 single-analyte panels had DR title vs obs.text inconsistencies:
+//   B (medium): DR + obs use different Chinese/English forms for the
+//               same analyte (膽紅素總量 vs 全膽紅素 / HbA1c vs 醣化血紅素)
+//   B-fullwidth: 09099C "心肌旋轉蛋白Ｉ" uses fullwidth Ｉ
+//   C (low): DR title carries method suffix ("免疫分析" / "(EIA/LIA法)")
+//            while obs.text strips it
+// Fix path: LOINC_SHORT_TEXT extended to cover these 9 LOINCs (each
+// WebFetch-verified at loinc.org per the new project rule), and DR
+// title construction now consults LOINC_SHORT_TEXT first when the
+// panel's NHI code maps to a known LOINC.
+//
+// Result: DR.code.text and obs.code.text are both the clean LOINC
+// short text; DR.code.coding[0].display + obs.coding[nhi].display
+// still preserve the raw NHI catalog name (faithful transport).
+describe("CI v0.11.10 — Category B/C DR vs obs name unification via LOINC_SHORT_TEXT", () => {
+  test("09006C HbA1c — DR title and obs.text both 'HbA1c'", () => {
+    const items = [
+      {
+        order_code: "09006C",
+        code: "09006C",
+        display: "Hb-A1c",
+        value: 5.8,
+        unit: "%",
+        date: "2025-05-18",
+        hospital: "某醫院",
+        order_name: "醣化血紅素",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const dr = all.find((r) => r.resourceType === "DiagnosticReport") as any;
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    expect(dr.code.text).toBe("HbA1c");
+    expect(obs.code.text).toBe("HbA1c");
+    // Raw catalog name preserved in coding[*].display (faithful)
+    expect(dr.code.coding[0].display).toBe("醣化血紅素");
+    const obsNhi = obs.code.coding.find((c: any) => c.system?.endsWith("nhi-medical-order-code"));
+    expect(obsNhi.display).toBe("醣化血紅素");
+  });
+
+  test("09029C total bilirubin — DR + obs both 'Total Bilirubin'", () => {
+    const items = [
+      {
+        order_code: "09029C",
+        code: "09029C",
+        display: "全膽紅素",
+        value: 0.8,
+        unit: "mg/dL",
+        date: "2025-05-18",
+        order_name: "膽紅素總量",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const dr = all.find((r) => r.resourceType === "DiagnosticReport") as any;
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    expect(dr.code.text).toBe("Total Bilirubin");
+    expect(obs.code.text).toBe("Total Bilirubin");
+  });
+
+  test("09099C Troponin I — fullwidth Ｉ normalised to halfwidth I in code.text", () => {
+    const items = [
+      {
+        order_code: "09099C",
+        code: "09099C",
+        display: "心肌旋轉蛋白Ｉ", // fullwidth Ｉ
+        value: 0.02,
+        unit: "ng/mL",
+        date: "2025-05-18",
+        order_name: "心肌旋轉蛋白Ｉ",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const dr = all.find((r) => r.resourceType === "DiagnosticReport") as any;
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    // LOINC_SHORT_TEXT[10839-9] override wins, fullwidth not a concern
+    // for code.text path since LOINC short text is already halfwidth.
+    expect(dr.code.text).toBe("Troponin I");
+    expect(obs.code.text).toBe("Troponin I");
+  });
+
+  test("09099C Troponin I — fullwidth fallback path (no LOINC_SHORT_TEXT) still normalised", () => {
+    // Defensive: even if the LOINC override is missing, the fullwidth
+    // normaliser should still kick in on the fallback display path.
+    // Use a fake NHI code with NO entry in LOINC_SHORT_TEXT / NHI_TO_LOINC.
+    const items = [
+      {
+        order_code: "99999X",
+        code: "99999X",
+        display: "ＡＢＣＤ", // fullwidth ASCII
+        value: 1,
+        unit: "",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(obs.code.text).toBe("ABCD");
+  });
+
+  test("09112C TSH — DR title strips '免疫分析' via LOINC_SHORT_TEXT override", () => {
+    const items = [
+      {
+        order_code: "09112C",
+        code: "09112C",
+        display: "甲狀腺刺激素",
+        value: 1.5,
+        unit: "uIU/mL",
+        date: "2025-05-18",
+        order_name: "甲狀腺刺激素免疫分析",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const dr = all.find((r) => r.resourceType === "DiagnosticReport") as any;
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    expect(dr.code.text).toBe("TSH");
+    expect(obs.code.text).toBe("TSH");
+    // Raw NHI catalog name (with method suffix) preserved in coding[*].display
+    expect(dr.code.coding[0].display).toBe("甲狀腺刺激素免疫分析");
+  });
+
+  test("12081C PSA — DR title strips '(EIA/LIA法)' via LOINC_SHORT_TEXT override", () => {
+    const items = [
+      {
+        order_code: "12081C",
+        code: "12081C",
+        display: "PSA",
+        value: 1.2,
+        unit: "ng/mL",
+        date: "2025-05-18",
+        order_name: "攝護腺特異抗原(EIA/LIA法)",
+      },
+    ];
+    const dr = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "DiagnosticReport",
+    ) as any;
+    expect(dr.code.text).toBe("PSA");
+    // Raw catalog name + method preserved in coding[0].display
+    expect(dr.code.coding[0].display).toBe("攝護腺特異抗原(EIA/LIA法)");
+  });
+
+  test("13457-7 LDL-C / 2143-6 Cortisol / 2132-9 Vitamin B12 / 2284-8 Folate short-text labels", () => {
+    const items = [
+      {
+        order_code: "09044C",
+        code: "09044C",
+        display: "LDL-C(direct)",
+        value: 110,
+        unit: "mg/dL",
+        date: "2025-05-18",
+        order_name: "低密度脂蛋白－膽固醇",
+      },
+      {
+        order_code: "09113C",
+        code: "09113C",
+        display: "皮質素",
+        value: 12,
+        unit: "ug/dL",
+        date: "2025-05-18",
+        order_name: "皮質素免疫分析",
+      },
+      {
+        order_code: "09129C",
+        code: "09129C",
+        display: "維生素B12",
+        value: 450,
+        unit: "pg/mL",
+        date: "2025-05-18",
+        order_name: "維生素B12免疫分析",
+      },
+      {
+        order_code: "09130C",
+        code: "09130C",
+        display: "葉酸",
+        value: 8.2,
+        unit: "ng/mL",
+        date: "2025-05-18",
+        order_name: "葉酸免疫分析",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    const texts = obs.map((o) => o.code.text).sort();
+    expect(texts).toEqual(["Cortisol", "Folate", "LDL-C", "Vitamin B12"]);
+  });
+
+  test("multi-row panel (08011C CBC) — LOINC_SHORT_TEXT does NOT override DR title because sub-rows are different LOINCs", () => {
+    // Defensive: 08011C is in DISPLAY_FIRST_CODES (multi-LOINC panel).
+    // Using LOINC_SHORT_TEXT for DR title would label the WHOLE panel
+    // with one sub-analyte's name — misleading. Multi-row + panel-code
+    // path must still use orderName.
+    const items = [
+      {
+        order_code: "08011C",
+        code: "08011C",
+        display: "WBC",
+        value: 7.2,
+        unit: "10*3/uL",
+        date: "2025-05-18",
+        order_name: "血液常規檢查",
+      },
+      {
+        order_code: "08011C",
+        code: "08011C",
+        display: "Hb",
+        value: 14,
+        unit: "g/dL",
+        date: "2025-05-18",
+        order_name: "血液常規檢查",
+      },
+    ];
+    const dr = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "DiagnosticReport",
+    ) as any;
+    // Should be "血液常規檢查" (orderName), not the LOINC short text of any sub-item
+    expect(dr.code.text).toBe("血液常規檢查");
   });
 });

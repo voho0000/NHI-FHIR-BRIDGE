@@ -2439,14 +2439,64 @@
     "63561-5": "APTT (ratio)",
     "5902-2": "PT",
     "6301-6": "INR",
-    "5894-1": "PT (ratio)"
+    "5894-1": "PT (ratio)",
     // v0.11.9: 5894-1 is PT actual/normal RATIO
     // (Property=RelTime), NOT PT Control as previously (incorrectly) labelled.
     // See LOINC_DISPLAY comment for full audit trail.
+    //
+    // ── Single-analyte panels (v0.11.10) ─────────────
+    // SMART app dev report 2026-05-29 Category B + C: bridge previously
+    // shipped DR title and obs.text from two different sources for
+    // these single-analyte panels — DR title from order_name (with NHI-
+    // catalog method suffix like 「免疫分析」), obs.text from row display
+    // (lab-shorthand or alternate Chinese). Unifying via LOINC_SHORT_TEXT
+    // means both DR title and obs.text resolve to the same clean
+    // clinical short name when the row's NHI code maps to one of these
+    // LOINCs (via NHI_TO_LOINC path A).
+    //
+    // Each LOINC below verified via WebFetch loinc.org 2026-05-29 —
+    // Component / Property / System / Method all confirmed appropriate
+    // for the Taiwan NHI billing context:
+    //   4548-4   Hemoglobin A1c/Hemoglobin.total, MFr, Blood (NGSP %; Taiwan default)
+    //   1975-2   Bilirubin total, MCnc, Ser/Plas
+    //   10839-9  Troponin I.cardiac, MCnc, Ser/Plas
+    //   13457-7  Cholesterol in LDL (calculated), MCnc, Ser/Plas
+    //   3016-3   Thyrotropin (TSH), ACnc, Ser/Plas
+    //   2143-6   Cortisol, MCnc, Ser/Plas
+    //   2132-9   Cobalamin (Vitamin B12), MCnc, Ser/Plas
+    //   2284-8   Folate, MCnc, Ser/Plas
+    //   83112-3  Prostate specific Ag, MCnc, Ser/Plas, IA (covers EIA/LIA both)
+    "4548-4": "HbA1c",
+    // NHI 09006C (was: DR "醣化血紅素" / obs "Hb-A1c")
+    "1975-2": "Total Bilirubin",
+    // NHI 09029C (was: DR "膽紅素總量" / obs "全膽紅素")
+    "10839-9": "Troponin I",
+    // NHI 09099C (was: DR "心肌旋轉蛋白Ｉ" fullwidth)
+    "13457-7": "LDL-C",
+    // NHI 09044C (was: DR "低密度脂蛋白－膽固醇" / obs "LDL-C(direct)")
+    "3016-3": "TSH",
+    // NHI 09112C (was: DR "甲狀腺刺激素免疫分析" / obs "甲狀腺刺激素")
+    "2143-6": "Cortisol",
+    // NHI 09113C (was: DR "皮質素免疫分析")
+    "2132-9": "Vitamin B12",
+    // NHI 09129C (was: DR "維生素B12免疫分析")
+    "2284-8": "Folate",
+    // NHI 09130C (was: DR "葉酸免疫分析")
+    "83112-3": "PSA"
+    // NHI 12081C (was: DR "攝護腺特異抗原(EIA/LIA法)")
   };
   var NHI_CODE_PANEL_NAME = {
-    "11001C": "ABO \u8840\u578B\u6E2C\u5B9A",
-    "11003C": "RH(D) \u578B\u6AA2\u9A57",
+    // v0.11.10 FHIR R4 compliance audit (2026-05-29): values must match
+    // the NHI catalog's authoritative panel name verbatim — this map is
+    // also consulted by `buildCodings` as the fallback for
+    // `Observation.code.coding[nhi].display` when `raw.order_name` is
+    // missing, and Coding.display per FHIR R4 must "follow the rules of
+    // the system". Treating my paraphrase ("ABO 血型測定") as the NHI
+    // catalog name would be wrong on both counts (FHIR semantic + faithful
+    // transport). NHI 健保 catalog formal names confirmed via the SMART
+    // app dev's bug report enumeration of observed DR titles.
+    "11001C": "ABO\u8840\u578B\u6E2C\u5B9A\u6AA2\u9A57",
+    "11003C": "RH\uFF08D\uFF09\u578B\u6AA2\u9A57",
     "11004C": "\u6297\u9AD4\u53CD\u61C9 (\u4E0D\u898F\u5247\u6297\u9AD4)"
   };
 
@@ -2804,6 +2854,13 @@
   function looksLikeQcControl(display) {
     if (!display) return false;
     return QC_CONTROL_PATTERNS.some((re) => re.test(display));
+  }
+  function normalizeFullwidth(s) {
+    if (!s) return "";
+    return String(s).replace(
+      /[！-～]/g,
+      (ch) => String.fromCharCode(ch.charCodeAt(0) - 65248)
+    );
   }
   var NHI_LAB_CODE_RE = /^\d{4,6}[A-Z]$/;
   function isAsciiOnly(s) {
@@ -3445,7 +3502,10 @@
           String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || void 0
         ),
         // v0.11.9: see panel-path buildObservation for full precedence.
-        text: loinc && LOINC_SHORT_TEXT[loinc] || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab"
+        // v0.11.10: normalize fullwidth ASCII.
+        text: normalizeFullwidth(
+          loinc && LOINC_SHORT_TEXT[loinc] || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab"
+        )
       },
       subject: { reference: `Patient/${patientId}` }
     };
@@ -3610,7 +3670,11 @@
         //      "ABO 血型測定" so SMART app can distinguish ABO/Rh/Antibody)
         //   3. Raw display (LIS-supplied analyte name)
         //   4. "Unknown Lab" sentinel
-        text: loinc && LOINC_SHORT_TEXT[loinc] || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab"
+        // v0.11.10: wrap in normalizeFullwidth so fullwidth ASCII chars
+        // (e.g. 09099C 「心肌旋轉蛋白Ｉ」) become halfwidth in our label.
+        text: normalizeFullwidth(
+          loinc && LOINC_SHORT_TEXT[loinc] || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab"
+        )
       },
       subject: { reference: `Patient/${patientId}` }
     };
@@ -3697,15 +3761,20 @@
         meta.hospital,
         String(meta.groupKeyCode)
       );
-      let panelTitle;
       const groupCodeStr = String(meta.groupKeyCode);
+      const panelLoinc = NHI_TO_LOINC[groupCodeStr];
+      const loincShortText = panelLoinc ? LOINC_SHORT_TEXT[panelLoinc] : void 0;
+      let panelTitle;
       if (deduped.length === 1) {
         const singleDisplay = deduped[0].display ?? "";
-        panelTitle = NHI_CODE_PANEL_NAME[groupCodeStr] || orderName || singleDisplay || groupCodeStr;
+        panelTitle = loincShortText || NHI_CODE_PANEL_NAME[groupCodeStr] || orderName || singleDisplay || groupCodeStr;
       } else {
-        panelTitle = orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || groupCodeStr;
+        const allSameAnalyte = !DISPLAY_FIRST_CODES.has(groupCodeStr);
+        panelTitle = allSameAnalyte && loincShortText || orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || groupCodeStr;
       }
       const drCodeSystem = NHI_LAB_CODE_RE.test(String(meta.groupKeyCode) ?? "") ? NHI_MEDICAL_ORDER_CODE : HIS_LOCAL_LAB_CODE;
+      const drCodingDisplay = orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || panelTitle;
+      const drText = normalizeFullwidth(panelTitle);
       const dr = {
         resourceType: "DiagnosticReport",
         id: drId,
@@ -3727,10 +3796,10 @@
             {
               system: drCodeSystem,
               code: String(meta.groupKeyCode) || "UNKNOWN",
-              display: panelTitle
+              display: drCodingDisplay
             }
           ],
-          text: panelTitle
+          text: drText
         },
         subject: { reference: `Patient/${patientId}` },
         result: obsResources.map((o) => ({ reference: `Observation/${o.id}` }))

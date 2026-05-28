@@ -102,6 +102,25 @@ function looksLikeQcControl(display: string): boolean {
   return QC_CONTROL_PATTERNS.some((re) => re.test(display));
 }
 
+// ── Fullwidth → halfwidth normalization ─────────────────────────────
+// v0.11.10 (SMART app dev report 2026-05-29 Category B): NHI catalog
+// 「心肌旋轉蛋白Ｉ」(09099C) uses a FULLWIDTH letter Ｉ (U+FF29) where
+// labs and downstream consumers use halfwidth I. Fullwidth ASCII chars
+// (U+FF01..U+FF5E) map 1:1 to halfwidth (U+0021..U+007E) via the
+// 0xFEE0 offset. Cleaning these in code.text and DR title only —
+// raw display is preserved verbatim in coding[nhi].display
+// (faithful-transport principle: NHI's choice of fullwidth is theirs;
+// our bridge-side label is ours to make consistent).
+//
+// Same class as v0.11.4 ㎡ → m2 cleanup (UCUM-side); this is the
+// display-text equivalent.
+function normalizeFullwidth(s: string | undefined | null): string {
+  if (!s) return "";
+  return String(s).replace(/[！-～]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) - 0xfee0),
+  );
+}
+
 // ── LOINC lookup ─────────────────────────────────────────────────────
 
 const NHI_LAB_CODE_RE = /^\d{4,6}[A-Z]$/;
@@ -970,11 +989,13 @@ export function mapObservation(
         String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || undefined,
       ),
       // v0.11.9: see panel-path buildObservation for full precedence.
-      text:
+      // v0.11.10: normalize fullwidth ASCII.
+      text: normalizeFullwidth(
         (loinc && LOINC_SHORT_TEXT[loinc]) ||
-        NHI_CODE_PANEL_NAME[code] ||
-        display ||
-        "Unknown Lab",
+          NHI_CODE_PANEL_NAME[code] ||
+          display ||
+          "Unknown Lab",
+      ),
     },
     subject: { reference: `Patient/${patientId}` },
   };
@@ -1203,11 +1224,14 @@ function buildObservation(
       //      "ABO 血型測定" so SMART app can distinguish ABO/Rh/Antibody)
       //   3. Raw display (LIS-supplied analyte name)
       //   4. "Unknown Lab" sentinel
-      text:
+      // v0.11.10: wrap in normalizeFullwidth so fullwidth ASCII chars
+      // (e.g. 09099C 「心肌旋轉蛋白Ｉ」) become halfwidth in our label.
+      text: normalizeFullwidth(
         (loinc && LOINC_SHORT_TEXT[loinc]) ||
-        NHI_CODE_PANEL_NAME[code] ||
-        display ||
-        "Unknown Lab",
+          NHI_CODE_PANEL_NAME[code] ||
+          display ||
+          "Unknown Lab",
+      ),
     },
     subject: { reference: `Patient/${patientId}` },
   };
@@ -1342,22 +1366,65 @@ function groupByOrderCode(
     // generic and downstream consumers can't tell ABO from RH visually
     // without joining via NHI code. Same reasoning as the obs.code.text
     // override above (single source of truth for panel-name selection).
-    let panelTitle: string;
+    //
+    // v0.11.10 (SMART app dev report 2026-05-29 Category B + C):
+    // adds LOINC_SHORT_TEXT at the TOP of precedence — when the panel's
+    // NHI code maps to a LOINC with a clean clinical short name (e.g.
+    // 09112C → 3016-3 → "TSH"), DR title uses it instead of order_name
+    // (which carries NHI-catalog method suffix like 「免疫分析」). This
+    // unifies DR.code.text with obs.code.text for single-analyte panels,
+    // resolving the dupKey false-positive flag downstream.
     const groupCodeStr = String(meta.groupKeyCode);
+    const panelLoinc = NHI_TO_LOINC[groupCodeStr];
+    const loincShortText = panelLoinc ? LOINC_SHORT_TEXT[panelLoinc] : undefined;
+    let panelTitle: string;
     if (deduped.length === 1) {
       const singleDisplay = deduped[0]!.display ?? "";
       panelTitle =
+        loincShortText ||
         NHI_CODE_PANEL_NAME[groupCodeStr] ||
         orderName ||
         singleDisplay ||
         groupCodeStr;
     } else {
-      panelTitle = orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || groupCodeStr;
+      // Multi-row panel: only let LOINC_SHORT_TEXT win when the panel
+      // is in DISPLAY_FIRST_CODES (= panel with multiple SAME-LOINC
+      // sub-rows, like CBC sub-items). For mixed-LOINC panels (08036C
+      // APTT time + ratio under one billing code), the umbrella label
+      // would be misleading — fall back to orderName so the DR
+      // identifies the billing code, individual analyte LOINCs live on
+      // each Observation.
+      const allSameAnalyte = !DISPLAY_FIRST_CODES.has(groupCodeStr);
+      panelTitle =
+        (allSameAnalyte && loincShortText) ||
+        orderName ||
+        NHI_CODE_PANEL_NAME[groupCodeStr] ||
+        groupCodeStr;
     }
 
     const drCodeSystem = NHI_LAB_CODE_RE.test(String(meta.groupKeyCode) ?? "")
       ? systems.NHI_MEDICAL_ORDER_CODE
       : systems.HIS_LOCAL_LAB_CODE;
+
+    // v0.11.10: separate DR.code.coding[0].display (Coding.display) from
+    // DR.code.text (free-form CodeableConcept.text).
+    //
+    // FHIR R4 compliance check: per the spec, `Coding.display` must
+    // "follow the rules of the system" — for the NHI medical order code
+    // system, that's the NHI-catalog-supplied name verbatim (orderName).
+    // We therefore do NOT apply normalizeFullwidth() to drCodingDisplay
+    // — if the NHI catalog uses a fullwidth Ｉ in "心肌旋轉蛋白Ｉ", that
+    // IS the canonical NHI display and the bridge must preserve it.
+    // Faithful-transport principle aligns with FHIR's "follow the rules
+    // of the system" wording.
+    //
+    // `CodeableConcept.text` is free-form ("the representation of the
+    // concept as entered or chosen by the user") so normalising for
+    // halfwidth + clean LOINC short text there is fine — that's where
+    // SMART apps surface the human label.
+    const drCodingDisplay =
+      orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || panelTitle;
+    const drText = normalizeFullwidth(panelTitle);
 
     const dr: Record<string, any> = {
       resourceType: "DiagnosticReport",
@@ -1380,10 +1447,10 @@ function groupByOrderCode(
           {
             system: drCodeSystem,
             code: String(meta.groupKeyCode) || "UNKNOWN",
-            display: panelTitle,
+            display: drCodingDisplay,
           },
         ],
-        text: panelTitle,
+        text: drText,
       },
       subject: { reference: `Patient/${patientId}` },
       result: obsResources.map((o) => ({ reference: `Observation/${o.id}` })),
