@@ -102,6 +102,55 @@ function looksLikeQcControl(display: string): boolean {
   return QC_CONTROL_PATTERNS.some((re) => re.test(display));
 }
 
+// v0.11.11 (SMART app dev bug 1 + 3b 2026-05-29): drop specimen
+// quality flags and report narrative rows that piggyback on real
+// analyte billing codes.
+//
+// Quality flags (溶血/脂血/icterus) describe the specimen condition,
+// NOT the patient's analyte value. Bridge previously emitted them as
+// Observations carrying valueQuantity={value:0, unit:"NIL"} AND
+// borrowing the host code's LOINC (e.g. 溶血 row under 09002C BUN
+// inherited LOINC 3094-0 BUN). SMART app reading per-LOINC trend
+// charts then saw spurious "BUN=0" data points.
+//
+// Narrative rows are sub-rows whose display is just a separator
+// (`:`, `;`) or a comment marker ("PEP-Comment", "Note:", "備註").
+// They have no analyte value and shouldn't become Observations.
+// If preserved at all they belong in DiagnosticReport.conclusion;
+// for now we drop (the underlying billing code's other rows carry
+// the real measurements).
+//
+// Patterns calibrated to v0.11.9 bundle audit. Add new variants here
+// when more LIS quirks surface — keep this conservative so we don't
+// accidentally drop real analytes that happen to contain these words.
+const QUALITY_FLAG_PATTERNS: RegExp[] = [
+  /^溶血\s*$/, // 溶血 (hemolysis)
+  /^脂血\s*$/, // 脂血 (lipemia)
+  /^黃疸\s*$/, // 黃疸 (icterus)
+  /^hemoly[sz]is\s*$/i,
+  /^lipemia\s*$/i,
+  /^icteric?\s*$/i,
+  /^icterus\s*$/i,
+];
+
+const NARRATIVE_ROW_PATTERNS: RegExp[] = [
+  /^[\s:：;；,，.。\-—－]+$/, // pure punctuation (incl. fullwidth)
+  /comment\b/i,
+  /\bnote\b/i,
+  /^備註/, // 備註 (note)
+  /^註\s*[:：]/,
+];
+
+function looksLikeQualityFlag(display: string): boolean {
+  if (!display) return false;
+  return QUALITY_FLAG_PATTERNS.some((re) => re.test(display));
+}
+
+function looksLikeNarrativeRow(display: string): boolean {
+  if (!display) return false;
+  return NARRATIVE_ROW_PATTERNS.some((re) => re.test(display));
+}
+
 // ── Fullwidth → halfwidth normalization ─────────────────────────────
 // v0.11.10 (SMART app dev report 2026-05-29 Category B): NHI catalog
 // 「心肌旋轉蛋白Ｉ」(09099C) uses a FULLWIDTH letter Ｉ (U+FF29) where
@@ -789,6 +838,16 @@ function filterLabRows(rawItems: any[]): Record<string, any>[] {
     // are lab-internal denominators for ratio calculations, NOT
     // patient measurements. See looksLikeQcControl() for patterns.
     if (looksLikeQcControl(String(display))) continue;
+    // v0.11.11: drop specimen quality flags (溶血/脂血/icterus) — they
+    // are NOT patient analyte values and previously borrowed the host
+    // billing code's LOINC, polluting SMART app trend charts with
+    // "BUN=0" / "Cholesterol=0" spurious data points.
+    if (looksLikeQualityFlag(String(display))) continue;
+    // v0.11.11: drop narrative / comment rows (`:`, `PEP-Comment`,
+    // `備註`) — they're report-text fragments piggybacking on an
+    // analyte billing code, not Observations. Underlying real analyte
+    // rows under the same billing code carry the patient measurement.
+    if (looksLikeNarrativeRow(String(display))) continue;
     const value = raw.value;
     const interp = (raw.interpretation ?? "").toString().toLowerCase();
     const hasValue = isMeaningfulValue(value);
@@ -1457,6 +1516,37 @@ function groupByOrderCode(
     };
     if (meta.date) dr.effectiveDateTime = `${meta.date}T00:00:00+08:00`;
     if (meta.hospital) dr.performer = [{ display: meta.hospital }];
+
+    // v0.11.11 (SMART app dev bug 8 2026-05-29): for single-obs DRs,
+    // propagate `DR.code.text` → `obs.code.text` so the two never
+    // disagree. Cumulative-report consumers that fall back to obs.text
+    // when only one obs exists used to see DR title "鉀" while the obs
+    // said "K" (NHI Chinese name vs LIS lab shorthand). 237 records
+    // across 83 patterns in user's v0.11.9 bundle had this disagreement.
+    //
+    // GUARD: only propagate when the obs's LOINC matches the panel's
+    // default LOINC (NHI_TO_LOINC[code]). When they differ, the obs has
+    // more specific routing (e.g. 08036C "APTT data/mean" row → 63561-5
+    // APTT ratio while the panel default 14979-9 is APTT time);
+    // overwriting obs.text with DR's panel-default label would lose
+    // the analyte distinction. In that case both DR and obs keep
+    // their independent labels (DR=panel-level, obs=specific analyte).
+    //
+    // FHIR R4 compliance: only mutates CodeableConcept.text (free-form);
+    // coding[*].display stays catalog-faithful. Multi-row panels (CBC,
+    // urinalysis sub-rows etc.) are intentionally NOT touched — each
+    // analyte under those panels keeps its own display.
+    if (obsResources.length === 1 && obsResources[0]?.code) {
+      const obs = obsResources[0];
+      const obsLoinc = (obs.code.coding as any[] | undefined)?.find(
+        (c) => c?.system === "http://loinc.org",
+      )?.code;
+      const panelLoinc = NHI_TO_LOINC[groupCodeStr];
+      // Propagate only when obs has no LOINC or shares the panel default
+      if (!obsLoinc || obsLoinc === panelLoinc) {
+        obs.code.text = drText;
+      }
+    }
 
     out.push(dr);
     out.push(...obsResources);

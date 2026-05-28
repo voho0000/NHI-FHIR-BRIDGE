@@ -194,8 +194,17 @@ export const NHI_TO_LOINC: Record<string, string> = {
   // See docs/LOINC_AUDIT_2026_05_19.md.
   "12079C": "24108-3", // CA 19-9 — Mass/vol S/P
   // ── Blood type ────────────────────────────────────
-  "11001C": "882-1", // 血型鑑定 — ABO + Rh group
-  "11003C": "882-1", // 血型鑑定 — ABO + Rh group
+  // v0.11.11 (SMART app dev bug 4 2026-05-29 + loinc.org audit):
+  // 882-1 is the COMBINED "ABO and Rh group [Type] in Blood" — its
+  // answer list is "O Pos / O Neg / A Pos…AB Neg", not appropriate
+  // for ABO-only OR Rh-only rows. Splitting per loinc.org audit:
+  //   883-9   ABO group [Type] in Blood              — 11001C ABO
+  //   10331-7 Rh [Type] in Blood                     — 11003C Rh(D)
+  //   890-4   Antibody screen [Presence] in Blood    — 11004C unchanged
+  // Each LOINC verified at loinc.org 2026-05-29 (Component / Property /
+  // System / Method confirmed appropriate for standalone analyte).
+  "11001C": "883-9", // ABO group [Type] in Blood (BLDBK)
+  "11003C": "10331-7", // Rh [Type] in Blood (BLDBK)
   "11004C": "890-4", // 抗體反應 — Antibody screen
   // ── Microbiology cultures ────────────────────────
   // 13007C 細菌培養 — previously mapped to LOINC 14219-0 which is
@@ -350,6 +359,14 @@ const CBC_COMPONENT_KEYS: Record<string, string> = {
   // prefix of "M.C.V." just fine).
   hematocrit: "4544-3",
   血球容積比: "4544-3",
+  // v0.11.11 (SMART app dev bug 2 + 5 2026-05-29): variants observed
+  // in user's v0.11.9 bundle. "血球容積比值測定" was previously
+  // matching the global LOINC_MAP fallback to a panel LOINC; "血球比容值"
+  // is a sibling phrasing.
+  血球容積比值: "4544-3",
+  血球容積比值測定: "4544-3",
+  血球比容值: "4544-3",
+  血球比容值測定: "4544-3",
   血球比容: "4544-3",
   血比容: "4544-3",
   紅血球容積: "4544-3", // alt phrasing — RBC volume = hematocrit
@@ -378,6 +395,33 @@ const CBC_COMPONENT_KEYS: Record<string, string> = {
   "m.c.v": "787-2",
   "m.c.h.c": "786-4",
   "m.c.h": "785-6",
+  // ── v0.11.11 (SMART app dev bug 5 2026-05-29): variants observed
+  // in user's v0.11.9 bundle that previously fell through to global
+  // LOINC_MAP "紅血球" → 789-8 (RBC count) — 5 distinct CBC indices
+  // all wrongly tagged as RBC count (48 records).
+  //
+  // 紅血球分**佈**變異數 (LIS variant of 紅血球分**布**寬度) → RDW.
+  //   LOINC 788-0 already verified v0.11.4.
+  // 紅血球**平均**容積 (word order variant of **平均**紅血球容積) → MCV.
+  //   LOINC 787-2 already verified.
+  // 紅血球色素 → MCH (mean corpuscular hemoglobin).
+  //   LOINC 785-6 already verified.
+  // 紅血球色素濃度 → MCHC. LOINC 786-4 already verified.
+  // Add 變異 + 體積 cross variants for robustness against future LIS
+  // quirks; longest-match semantics keep RBC ("紅血球") from winning
+  // over the longer compound keys.
+  紅血球分佈變異數: "788-0",
+  紅血球分布變異數: "788-0", // 布 variant
+  紅血球分布變異: "788-0",
+  紅血球分佈變異: "788-0",
+  紅血球體積分佈: "788-0",
+  紅血球體積分布: "788-0",
+  紅血球平均容積: "787-2",
+  紅血球平均體積: "787-2",
+  紅血球色素濃度: "786-4", // MCHC (must precede 紅血球色素 for longest-match clarity)
+  紅血球色素: "785-6", // MCH
+  紅血球平均血色素濃度: "786-4",
+  紅血球平均血色素: "785-6",
 };
 
 // ── CBC differential display keys (shared) ───────────────
@@ -442,6 +486,29 @@ const CBC_DIFF_KEYS: Record<string, string> = {
   basophils: "706-2",
   嗜鹼性白血球: "706-2",
   嗜鹼: "706-2",
+  // ── Maturation-stage neutrophils (v0.11.11) ────────────────────
+  // SMART app dev bug 2 + 6 2026-05-29: Metamyelocyte ("後骨髓球") and
+  // Band ("帶狀嗜中性白血球") rows were falling to the panel LOINC
+  // 57021-8 (CBC W Diff panel) or 770-8 (Segment neutrophils). Both
+  // are immature neutrophil maturation stages distinct from total /
+  // segmented neutrophils; each has its own LOINC verified at
+  // loinc.org 2026-05-29:
+  //   740-1  Metamyelocytes/Leukocytes in Blood by Manual count (NFr)
+  //   764-1  Band form neutrophils/Leukocytes in Blood by Manual count (NFr)
+  // Adding to CBC_DIFF_KEYS so they're available under every CBC
+  // sibling code (08002C/08003C/08004C/08006C/08011C/08013C).
+  metamyelocyte: "740-1",
+  metamyelocytes: "740-1",
+  "meta-myelocyte": "740-1",
+  "meta myelocyte": "740-1",
+  後骨髓球: "740-1",
+  band: "764-1",
+  bands: "764-1",
+  "band form": "764-1",
+  "band cell": "764-1",
+  帶狀嗜中性白血球: "764-1",
+  帶狀: "764-1",
+  桿狀核: "764-1", // alt name 桿狀核細胞
 };
 
 // ── Urine biochemistry display keys (shared) ─────────────
@@ -529,6 +596,15 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     leukocyte: "5799-2", // Leukocytes Urine
     leu: "5799-2",
     白血球酯酶: "5799-2",
+    // v0.11.11 (SMART app dev bug 7 2026-05-29): variant character 脢
+    // (not 酶) observed under 06013C in user's v0.11.9 bundle. Without
+    // this entry path-B missed and fell to global LOINC_MAP "白血球" →
+    // 6690-2 (blood WBC count) — wrong specimen + wrong analyte (4
+    // records affected).
+    白血球酯脢: "5799-2",
+    白血球脂酶: "5799-2", // also seen — 脂 vs 酯
+    白血球脂脢: "5799-2",
+    白血球酯類: "5799-2", // observed in some HIS as descriptive name
     blood: "5794-3", // Hemoglobin Urine Ql
     潛血: "5794-3",
     色: "5778-6", // Color of Urine (CJK substring)
@@ -674,6 +750,19 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     "a/g ratio": "1759-0", // Albumin/Globulin ratio
     "a/g": "1759-0",
     "alb/glb": "1759-0",
+    // v0.11.11 (SMART app dev bug 3a 2026-05-29): Total Protein (T.P)
+    // row was inheriting the SPE panel LOINC 90991-1. T.P is the total
+    // serum protein measurement, distinct LOINC.
+    // 2885-2 verified at loinc.org 2026-05-29:
+    //   Component=Protein, Property=MCnc, System=Ser/Plas (Class=CHEM)
+    "total protein": "2885-2",
+    "t.p": "2885-2",
+    "t. p": "2885-2",
+    "t p": "2885-2",
+    tp: "2885-2",
+    總蛋白: "2885-2",
+    血清總蛋白: "2885-2",
+    總蛋白質: "2885-2",
     albumin: "2865-7", // Albumin in SPE context (Sercon-MoMt/MS)
     白蛋白: "2865-7",
     alb: "2865-7",
@@ -892,6 +981,13 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     // "Segment" Part 4 fix + 淋巴白血球 / 單核白血球 / 嗜中性白血球
     // wider CJK variants added v0.9.10 Part 6 N3).
     ...CBC_DIFF_KEYS,
+    // v0.11.11 (SMART app dev bug 2 2026-05-29): basic CBC component
+    // displays (Hct, Hb, RBC indices) also appear under 08013C diff
+    // panel printout in some Taiwan LIS. Without these mappings, e.g.
+    // "Hct(血球容積比)" rows previously fell to panel LOINC 57021-8
+    // (CBC W Auto Diff panel). Adding the shared component keys here
+    // routes basic CBC entries to their canonical LOINCs.
+    ...CBC_COMPONENT_KEYS,
     // WBC absolute count can also appear on the diff panel printout.
     白血球: "6690-2",
     wbc: "6690-2",
@@ -1177,6 +1273,7 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "1975-2": "Bilirubin.total [Mass/volume] in Serum or Plasma",
   "1968-7": "Bilirubin.direct [Mass/volume] in Serum or Plasma",
   "1751-7": "Albumin [Mass/volume] in Serum or Plasma",
+  "2885-2": "Protein [Mass/volume] in Serum or Plasma", // v0.11.11 — Total Protein
   "2532-0":
     "Lactate dehydrogenase [Enzymatic activity/volume] in Serum or Plasma",
   "6768-6":
@@ -1213,6 +1310,10 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "7853-5": "Cytomegalovirus IgM Ab [Units/volume] in Serum or Plasma",
   // ── Tumor markers / proteins (audit 2026-05-19) ──
   "1952-1": "Beta-2-Microglobulin [Mass/volume] in Serum or Plasma",
+  // ── Blood type (v0.11.11 — ABO/Rh split from combined 882-1) ──
+  "883-9": "ABO group [Type] in Blood",
+  "10331-7": "Rh [Type] in Blood",
+  "890-4": "Blood group antibody screen [Presence] in Serum or Plasma",
   // ── Coagulation ──────────────────────────────────
   "5902-2":
     "Prothrombin time (PT) in Platelet poor plasma by Coagulation assay",

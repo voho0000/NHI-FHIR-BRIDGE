@@ -3,6 +3,79 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.11.11 重點 — 2026-05-29
+
+**🧹 SMART app dev v0.11.9 bundle audit 抓到 8 種 bug pattern — 一次清掉**
+
+SMART app dev 拿 v0.11.9 bundle（2610 entries / 1163 obs / 548 DRs）整體 audit，列出 8 個 bug category。逐項對照 user 之前確認過的 raw data 事實 + WebFetch 驗 LOINC，這版一次處理。
+
+### 對照 audit 結論
+
+| Bug | App dev 說法 | 我的判斷 | 修法 |
+|---|---|---|---|
+| 1 | 溶血/脂血 quality flags 借真 analyte LOINC | ✅ 對 | `looksLikeQualityFlag()` + `looksLikeNarrativeRow()` filter |
+| 2 | Meta-Myelocyte/Band/Hct 借 57021-8 panel LOINC | ✅ 對 | CBC_DIFF_KEYS 加 740-1 (Metamyelocyte) + 764-1 (Band); CBC_COMPONENT_KEYS 加 Hct variants; PANEL_LOINC_MAP["08013C"] 加 CBC_COMPONENT_KEYS spread |
+| 3a | T.P 借 90991-1 PEP panel LOINC | ✅ 對 | PANEL_LOINC_MAP["09065B"] 加 Total Protein → 2885-2 |
+| 3b | `:` / `PEP-Comment` 也借 90991-1 | ✅ 對 | narrative row filter（pure punctuation + comment keywords）|
+| 4 LOINC | ABO/Rh 都用 882-1（合併 code）| ✅ 對 | NHI_TO_LOINC split: 11001C → 883-9 (ABO Type); 11003C → 10331-7 (Rh Type) |
+| 4 multi-reading | 「應該 panel 只 emit 1 筆 obs」 | ❌ **錯** | User 之前 raw audit 已確認健保存摺**真的**每張 panel 2 筆 reading — App dev 沒看 raw。**保留 v0.11.9 G**，不動 |
+| 5 | RDW/MCV/MCH/MCHC 借 789-8 RBC count LOINC | ✅ 對 | CBC_COMPONENT_KEYS 加 紅血球分佈變異數 → 788-0 / 紅血球平均容積 → 787-2 / 紅血球色素 → 785-6 / 紅血球色素濃度 → 786-4 variants |
+| 6 | 帶狀嗜中性白血球借 770-8 segment LOINC | ✅ 對 | CBC_DIFF_KEYS 加 band → 764-1（跟 bug 2 同 entries）|
+| 7 | 白血球酯**脢**借 6690-2 blood WBC LOINC | ✅ 對 — 我之前寫 白血球酯**酶** 不同字 | PANEL_LOINC_MAP["06013C"] 加 脢 + 脂酶 + 脂脢 + 酯類 variants |
+| 8 | 237 筆 single-obs DR title vs obs.text 不一致 | ✅ 對 | post-process：single-obs DR 構造完後 `obs.code.text = drText`（前提 obs's LOINC 等同 panel default LOINC，否則 obs 有 specific routing 不蓋）|
+
+### LOINC 新增（per 新規矩全部 WebFetch loinc.org 驗過）
+
+| LOINC | Component | Property | System | Method | 用途 |
+|---|---|---|---|---|---|
+| 740-1 | Metamyelocytes/Leukocytes | NFr | Blood | Manual | Metamyelocyte/後骨髓球（bug 2）|
+| 764-1 | Neutrophils.band/Leukocytes | NFr | Blood | Manual | Band/帶狀嗜中性白血球（bug 2 + 6）|
+| 2885-2 | Protein | MCnc | Ser/Plas | — | T.P 總蛋白（bug 3a）|
+| 883-9 | ABO group | Type | Blood | — | NHI 11001C（bug 4 split）|
+| 10331-7 | Rh | Type | Blood | — | NHI 11003C（bug 4 split）|
+
+### Bug 8 propagation guard
+
+```ts
+if (obsResources.length === 1 && obsResources[0]?.code) {
+  const obs = obsResources[0];
+  const obsLoinc = obs.code.coding?.find(c => c.system === "http://loinc.org")?.code;
+  const panelLoinc = NHI_TO_LOINC[groupCodeStr];
+  // Only propagate when obs has no LOINC OR shares panel default LOINC
+  if (!obsLoinc || obsLoinc === panelLoinc) {
+    obs.code.text = drText;
+  }
+}
+```
+
+**為什麼要這個 guard：** 08036C single-row case，display "APTT data/mean" 透過 PANEL_LOINC_MAP 對到 63561-5（APTT ratio），但 panel default LOINC（NHI_TO_LOINC["08036C"]）是 14979-9（APTT time）。沒 guard 的話會把 obs.code.text 從 "APTT (ratio)" 蓋成 DR.text "APTT"，失去 ratio 跟 time 的區分。Guard 後：LOINC 不同就不蓋，DR 跟 obs 各自 keep（DR=panel-level "APTT"、obs=specific "APTT (ratio)"）。
+
+### Faithful transport check ✅
+
+- LOINC 改動全部 WebFetch verified（740-1/764-1/2885-2/883-9/10331-7）
+- 11001C/11003C 從 882-1 拉到 883-9/10331-7 — patient-safety improvement（882-1 合併 code 配 ABO-only 值是 semantic mismatch）
+- 溶血/脂血/narrative row filter — drop 的是 LIS 自己塞的 quality flag 跟 comment row，不是 patient analyte data
+- Bug 4 multi-reading：**preserve 全部 readings**，user 已確認 NHI raw 有 2 筆，bridge 不該幫忙判斷
+- code.text 變動只動 `CodeableConcept.text`（free-form per FHIR R4），coding[*].display 維持 catalog-faithful
+
+### CI 守門（13 個新 regression seeds）
+
+- Bug 1: 溶血/脂血/黃疸/Hemolysis 都 filter，真 BUN 留下
+- Bug 2: Meta-Myelocyte/後骨髓球→740-1; Band/帶狀嗜中性白血球→764-1; Hct(血球容積比)→4544-3
+- Bug 3: `:`/`PEP-Comment` filter, T.P→2885-2
+- Bug 4: 11001C→883-9; 11003C→10331-7; **v0.11.9 G 2-reading-per-panel still preserved**
+- Bug 5: RDW/MCV/MCH/MCHC 變體不再 fall through 到 789-8
+- Bug 7: 白血球酯脢 (脢)→5799-2
+- Bug 8: 09022C K — DR + obs 都「鉀」; 09112C TSH — 都「TSH」; 08036C APTT ratio — obs 保留 "APTT (ratio)" 不被蓋; multi-row CBC — propagation 不觸發
+
+### Files
+
+- `packages/mapper/src/loinc-tables.ts` — NHI_TO_LOINC ABO/Rh split + LOINC_DISPLAY 新 entries (883-9/10331-7/2885-2); CBC_COMPONENT_KEYS 跟 CBC_DIFF_KEYS 加大量 variants; PANEL_LOINC_MAP["09065B"] 加 Total Protein; PANEL_LOINC_MAP["06013C"] 加 白血球酯脢 variants; PANEL_LOINC_MAP["08013C"] 加 CBC_COMPONENT_KEYS spread
+- `packages/mapper/src/observation.ts` — `QUALITY_FLAG_PATTERNS` + `NARRATIVE_ROW_PATTERNS` + 兩個 helper functions; filterLabRows 加兩個 filter step; groupByOrderCode 加 single-obs DR text propagation（LOINC-equality guard）
+- `backend-ts/tests/unit/bundle-quality.test.ts` — v0.11.11 describe blocks (13 regressions)
+
+---
+
 ## 0.11.10 重點 — 2026-05-29
 
 **🏷️ Category B + C：DR title 跟 obs.text 對齊 — 9 個 single-analyte panel 名稱統一**

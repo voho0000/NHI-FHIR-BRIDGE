@@ -523,6 +523,14 @@
     // prefix of "M.C.V." just fine).
     hematocrit: "4544-3",
     \u8840\u7403\u5BB9\u7A4D\u6BD4: "4544-3",
+    // v0.11.11 (SMART app dev bug 2 + 5 2026-05-29): variants observed
+    // in user's v0.11.9 bundle. "血球容積比值測定" was previously
+    // matching the global LOINC_MAP fallback to a panel LOINC; "血球比容值"
+    // is a sibling phrasing.
+    \u8840\u7403\u5BB9\u7A4D\u6BD4\u503C: "4544-3",
+    \u8840\u7403\u5BB9\u7A4D\u6BD4\u503C\u6E2C\u5B9A: "4544-3",
+    \u8840\u7403\u6BD4\u5BB9\u503C: "4544-3",
+    \u8840\u7403\u6BD4\u5BB9\u503C\u6E2C\u5B9A: "4544-3",
     \u8840\u7403\u6BD4\u5BB9: "4544-3",
     \u8840\u6BD4\u5BB9: "4544-3",
     \u7D05\u8840\u7403\u5BB9\u7A4D: "4544-3",
@@ -551,7 +559,37 @@
     // readability only).
     "m.c.v": "787-2",
     "m.c.h.c": "786-4",
-    "m.c.h": "785-6"
+    "m.c.h": "785-6",
+    // ── v0.11.11 (SMART app dev bug 5 2026-05-29): variants observed
+    // in user's v0.11.9 bundle that previously fell through to global
+    // LOINC_MAP "紅血球" → 789-8 (RBC count) — 5 distinct CBC indices
+    // all wrongly tagged as RBC count (48 records).
+    //
+    // 紅血球分**佈**變異數 (LIS variant of 紅血球分**布**寬度) → RDW.
+    //   LOINC 788-0 already verified v0.11.4.
+    // 紅血球**平均**容積 (word order variant of **平均**紅血球容積) → MCV.
+    //   LOINC 787-2 already verified.
+    // 紅血球色素 → MCH (mean corpuscular hemoglobin).
+    //   LOINC 785-6 already verified.
+    // 紅血球色素濃度 → MCHC. LOINC 786-4 already verified.
+    // Add 變異 + 體積 cross variants for robustness against future LIS
+    // quirks; longest-match semantics keep RBC ("紅血球") from winning
+    // over the longer compound keys.
+    \u7D05\u8840\u7403\u5206\u4F48\u8B8A\u7570\u6578: "788-0",
+    \u7D05\u8840\u7403\u5206\u5E03\u8B8A\u7570\u6578: "788-0",
+    // 布 variant
+    \u7D05\u8840\u7403\u5206\u5E03\u8B8A\u7570: "788-0",
+    \u7D05\u8840\u7403\u5206\u4F48\u8B8A\u7570: "788-0",
+    \u7D05\u8840\u7403\u9AD4\u7A4D\u5206\u4F48: "788-0",
+    \u7D05\u8840\u7403\u9AD4\u7A4D\u5206\u5E03: "788-0",
+    \u7D05\u8840\u7403\u5E73\u5747\u5BB9\u7A4D: "787-2",
+    \u7D05\u8840\u7403\u5E73\u5747\u9AD4\u7A4D: "787-2",
+    \u7D05\u8840\u7403\u8272\u7D20\u6FC3\u5EA6: "786-4",
+    // MCHC (must precede 紅血球色素 for longest-match clarity)
+    \u7D05\u8840\u7403\u8272\u7D20: "785-6",
+    // MCH
+    \u7D05\u8840\u7403\u5E73\u5747\u8840\u8272\u7D20\u6FC3\u5EA6: "786-4",
+    \u7D05\u8840\u7403\u5E73\u5747\u8840\u8272\u7D20: "785-6"
   };
   var CBC_DIFF_KEYS = {
     // Neutrophil + Taiwan variants (incl. v0.9.10 Part 4 "Segment" fix
@@ -607,7 +645,31 @@
     basophil: "706-2",
     basophils: "706-2",
     \u55DC\u9E7C\u6027\u767D\u8840\u7403: "706-2",
-    \u55DC\u9E7C: "706-2"
+    \u55DC\u9E7C: "706-2",
+    // ── Maturation-stage neutrophils (v0.11.11) ────────────────────
+    // SMART app dev bug 2 + 6 2026-05-29: Metamyelocyte ("後骨髓球") and
+    // Band ("帶狀嗜中性白血球") rows were falling to the panel LOINC
+    // 57021-8 (CBC W Diff panel) or 770-8 (Segment neutrophils). Both
+    // are immature neutrophil maturation stages distinct from total /
+    // segmented neutrophils; each has its own LOINC verified at
+    // loinc.org 2026-05-29:
+    //   740-1  Metamyelocytes/Leukocytes in Blood by Manual count (NFr)
+    //   764-1  Band form neutrophils/Leukocytes in Blood by Manual count (NFr)
+    // Adding to CBC_DIFF_KEYS so they're available under every CBC
+    // sibling code (08002C/08003C/08004C/08006C/08011C/08013C).
+    metamyelocyte: "740-1",
+    metamyelocytes: "740-1",
+    "meta-myelocyte": "740-1",
+    "meta myelocyte": "740-1",
+    \u5F8C\u9AA8\u9AD3\u7403: "740-1",
+    band: "764-1",
+    bands: "764-1",
+    "band form": "764-1",
+    "band cell": "764-1",
+    \u5E36\u72C0\u55DC\u4E2D\u6027\u767D\u8840\u7403: "764-1",
+    \u5E36\u72C0: "764-1",
+    \u687F\u72C0\u6838: "764-1"
+    // alt name 桿狀核細胞
   };
   var URINE_BIOCHEM_KEYS = {
     // Microalbumin variants (specimen + analyte)
@@ -687,6 +749,17 @@
       // Leukocytes Urine
       leu: "5799-2",
       \u767D\u8840\u7403\u916F\u9176: "5799-2",
+      // v0.11.11 (SMART app dev bug 7 2026-05-29): variant character 脢
+      // (not 酶) observed under 06013C in user's v0.11.9 bundle. Without
+      // this entry path-B missed and fell to global LOINC_MAP "白血球" →
+      // 6690-2 (blood WBC count) — wrong specimen + wrong analyte (4
+      // records affected).
+      \u767D\u8840\u7403\u916F\u8122: "5799-2",
+      \u767D\u8840\u7403\u8102\u9176: "5799-2",
+      // also seen — 脂 vs 酯
+      \u767D\u8840\u7403\u8102\u8122: "5799-2",
+      \u767D\u8840\u7403\u916F\u985E: "5799-2",
+      // observed in some HIS as descriptive name
       blood: "5794-3",
       // Hemoglobin Urine Ql
       \u6F5B\u8840: "5794-3",
@@ -843,6 +916,19 @@
       // Albumin/Globulin ratio
       "a/g": "1759-0",
       "alb/glb": "1759-0",
+      // v0.11.11 (SMART app dev bug 3a 2026-05-29): Total Protein (T.P)
+      // row was inheriting the SPE panel LOINC 90991-1. T.P is the total
+      // serum protein measurement, distinct LOINC.
+      // 2885-2 verified at loinc.org 2026-05-29:
+      //   Component=Protein, Property=MCnc, System=Ser/Plas (Class=CHEM)
+      "total protein": "2885-2",
+      "t.p": "2885-2",
+      "t. p": "2885-2",
+      "t p": "2885-2",
+      tp: "2885-2",
+      \u7E3D\u86CB\u767D: "2885-2",
+      \u8840\u6E05\u7E3D\u86CB\u767D: "2885-2",
+      \u7E3D\u86CB\u767D\u8CEA: "2885-2",
       albumin: "2865-7",
       // Albumin in SPE context (Sercon-MoMt/MS)
       \u767D\u86CB\u767D: "2865-7",
@@ -1070,6 +1156,13 @@
       // "Segment" Part 4 fix + 淋巴白血球 / 單核白血球 / 嗜中性白血球
       // wider CJK variants added v0.9.10 Part 6 N3).
       ...CBC_DIFF_KEYS,
+      // v0.11.11 (SMART app dev bug 2 2026-05-29): basic CBC component
+      // displays (Hct, Hb, RBC indices) also appear under 08013C diff
+      // panel printout in some Taiwan LIS. Without these mappings, e.g.
+      // "Hct(血球容積比)" rows previously fell to panel LOINC 57021-8
+      // (CBC W Auto Diff panel). Adding the shared component keys here
+      // routes basic CBC entries to their canonical LOINCs.
+      ...CBC_COMPONENT_KEYS,
       // WBC absolute count can also appear on the diff panel printout.
       \u767D\u8840\u7403: "6690-2",
       wbc: "6690-2"

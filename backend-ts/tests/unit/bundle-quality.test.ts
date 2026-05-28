@@ -1783,3 +1783,270 @@ describe("CI v0.11.10 — Category B/C DR vs obs name unification via LOINC_SHOR
     expect(dr.code.text).toBe("血液常規檢查");
   });
 });
+
+// ── v0.11.11 — SMART app dev v0.11.9 bundle audit 2026-05-29 ────
+// 8 bug categories enumerated against the user's v0.11.9 bundle. Each
+// fix below has a regression seed so the underlying problem cannot
+// silently reappear.
+describe("CI v0.11.11 — Bug 1: specimen quality flags filtered", () => {
+  test("溶血 / 脂血 / 黃疸 quality-flag rows are dropped (not emitted as 0-value Observations)", () => {
+    const items = [
+      { code: "09002C", display: "溶血", value: 0, unit: "NIL", date: "2025-05-18" },
+      { code: "09002C", display: "脂血", value: 0, unit: "NIL", date: "2025-05-18" },
+      { code: "09001C", display: "黃疸", value: 0, unit: "NIL", date: "2025-05-18" },
+      { code: "09001C", display: "Hemolysis", value: 0, unit: "", date: "2025-05-18" },
+      { code: "09002C", display: "BUN", value: 14, unit: "mg/dL", date: "2025-05-18" }, // real
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(1);
+    expect(obs[0].code.coding.find((c: any) => c.system === "http://loinc.org")?.code).toBe(
+      "3094-0",
+    );
+  });
+});
+
+describe("CI v0.11.11 — Bug 2: CBC differential variants route to correct LOINCs", () => {
+  test("Meta-Myelocyte / 後骨髓球 → 740-1 (NOT 57021-8 panel LOINC)", () => {
+    const items = [
+      { code: "08013C", display: "Meta-Myelocyte", value: 0.5, unit: "%", date: "2025-05-18" },
+      { code: "08013C", display: "後骨髓球", value: 0.5, unit: "%", date: "2025-05-19" },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(2);
+    for (const o of obs) {
+      const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+      expect(loinc).toBe("740-1");
+    }
+  });
+
+  test("Band / 帶狀嗜中性白血球 → 764-1 (NOT 770-8 segment NOR 57021-8 panel)", () => {
+    const items = [
+      { code: "08013C", display: "Band", value: 2, unit: "%", date: "2025-05-18" },
+      { code: "08013C", display: "帶狀嗜中性白血球", value: 2, unit: "%", date: "2025-05-19" },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(2);
+    for (const o of obs) {
+      const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+      expect(loinc).toBe("764-1");
+    }
+  });
+
+  test("Hct(血球容積比) variant → 4544-3 (NOT panel LOINC)", () => {
+    const items = [
+      { code: "08013C", display: "Hct(血球容積比)", value: 42, unit: "%", date: "2025-05-18" },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+    expect(loinc).toBe("4544-3");
+  });
+});
+
+describe("CI v0.11.11 — Bug 3: PEP narrative + T.P routing", () => {
+  test("`:` and `PEP-Comment` rows filtered (not emitted)", () => {
+    const items = [
+      { code: "09065B", display: ":", value: "(see below)", unit: "", date: "2025-05-18" },
+      { code: "09065B", display: "PEP-Comment", value: "normal", unit: "", date: "2025-05-18" },
+      { code: "09065B", display: "T.P", value: 7.2, unit: "g/dL", date: "2025-05-18" },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(1);
+    const loinc = obs[0].code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+    expect(loinc).toBe("2885-2");
+  });
+});
+
+describe("CI v0.11.11 — Bug 4: ABO/Rh LOINC split (882-1 → 883-9 / 10331-7)", () => {
+  test("11001C ABO → 883-9 (NOT combined ABO+Rh 882-1)", () => {
+    const items = [
+      {
+        order_code: "11001C",
+        code: "11001C",
+        display: "血型鑑定",
+        value: "B",
+        unit: "N/A",
+        date: "2025-05-18",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+    expect(loinc).toBe("883-9");
+  });
+
+  test("11003C Rh → 10331-7 (NOT combined ABO+Rh 882-1)", () => {
+    const items = [
+      {
+        order_code: "11003C",
+        code: "11003C",
+        display: "血型鑑定",
+        value: "+",
+        unit: "N/A",
+        date: "2025-05-18",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+    expect(loinc).toBe("10331-7");
+  });
+
+  test("v0.11.9 G — 2 readings per ABO panel still preserved (faithful transport)", () => {
+    // User authoritative confirmation 2026-05-29: NHI 健保存摺 ships
+    // 2 readings per blood-type panel. App dev's "should be 1 obs"
+    // claim is incorrect — they didn't have raw access.
+    const items = [
+      {
+        order_code: "11001C",
+        code: "11001C",
+        display: "血型鑑定",
+        value: "B",
+        unit: "N/A",
+        date: "2025-05-18",
+      },
+      {
+        order_code: "11001C",
+        code: "11001C",
+        display: "血型鑑定",
+        value: "+",
+        unit: "N/A",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(2);
+  });
+});
+
+describe("CI v0.11.11 — Bug 5: CBC indices variants route to distinct LOINCs", () => {
+  test("紅血球分佈變異數 → 788-0 (RDW); 紅血球平均容積 → 787-2 (MCV); 紅血球色素 → 785-6 (MCH); 紅血球色素濃度 → 786-4 (MCHC)", () => {
+    const items = [
+      { code: "08011C", display: "紅血球分佈變異數", value: 13.2, unit: "%", date: "2025-05-18" },
+      { code: "08011C", display: "紅血球平均容積", value: 88, unit: "fL", date: "2025-05-18" },
+      { code: "08011C", display: "紅血球色素", value: 30, unit: "pg", date: "2025-05-18" },
+      { code: "08011C", display: "紅血球色素濃度", value: 33, unit: "g/dL", date: "2025-05-18" },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(4);
+    const loincMap = Object.fromEntries(
+      obs.map((o: any) => [
+        o.code.coding.find((c: any) => c.system?.endsWith("nhi-medical-order-code"))?.display,
+        o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code,
+      ]),
+    );
+    expect(loincMap.紅血球分佈變異數).toBe("788-0");
+    expect(loincMap.紅血球平均容積).toBe("787-2");
+    expect(loincMap.紅血球色素).toBe("785-6");
+    expect(loincMap.紅血球色素濃度).toBe("786-4");
+    // None should fall through to 789-8 (RBC count) — the pre-v0.11.11 bug
+    for (const o of obs) {
+      const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+      expect(loinc).not.toBe("789-8");
+    }
+  });
+});
+
+describe("CI v0.11.11 — Bug 7: urinalysis 白血球酯脢 (脢 variant) → 5799-2", () => {
+  test("06013C 白血球酯脢 → 5799-2 (urine LE), NOT global 白血球 → 6690-2 (blood WBC)", () => {
+    const items = [
+      { code: "06013C", display: "白血球酯脢", value: "Negative", unit: "", date: "2025-05-18" },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
+    expect(loinc).toBe("5799-2");
+  });
+});
+
+describe("CI v0.11.11 — Bug 8: single-obs DR ↔ obs text alignment", () => {
+  test("single-obs panel (09022C K) — DR.text and obs.text agree (Chinese catalog name)", () => {
+    // Without v0.11.11 fix: DR.text = "鉀" (orderName), obs.text = "K" (display)
+    // After: both end up the same.
+    const items = [
+      {
+        order_code: "09022C",
+        code: "09022C",
+        display: "K",
+        value: 4.0,
+        unit: "mmol/L",
+        date: "2025-05-18",
+        order_name: "鉀",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const dr = all.find((r) => r.resourceType === "DiagnosticReport") as any;
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    expect(dr.code.text).toBe(obs.code.text);
+    expect(obs.code.text).toBe("鉀"); // Chinese catalog name wins (no LOINC_SHORT_TEXT for 2823-3)
+  });
+
+  test("single-obs LOINC_SHORT_TEXT panel (09112C TSH) — both end up 'TSH' (English clinical short)", () => {
+    const items = [
+      {
+        order_code: "09112C",
+        code: "09112C",
+        display: "甲狀腺刺激素",
+        value: 1.5,
+        unit: "uIU/mL",
+        date: "2025-05-18",
+        order_name: "甲狀腺刺激素免疫分析",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const dr = all.find((r) => r.resourceType === "DiagnosticReport") as any;
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    expect(dr.code.text).toBe("TSH");
+    expect(obs.code.text).toBe("TSH");
+  });
+
+  test("single-obs APTT ratio (08036C → 63561-5, panel default 14979-9 differs) — obs KEEPS 'APTT (ratio)' (guard prevents overwrite)", () => {
+    // Defensive: when obs LOINC differs from panel default LOINC, the
+    // obs has more specific routing and propagation must NOT overwrite
+    // obs.text. (Pre-guard naive propagation would have set obs.text
+    // = "APTT" losing the ratio distinction.)
+    const items = [
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "APTT data/mean",
+        value: 1.08,
+        unit: "倍數",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(obs.code.text).toBe("APTT (ratio)");
+  });
+
+  test("multi-row CBC panel — single-obs propagation rule does NOT fire", () => {
+    const items = [
+      { code: "08011C", display: "WBC", value: 7, unit: "10*3/uL", date: "2025-05-18" },
+      { code: "08011C", display: "Hb", value: 14, unit: "g/dL", date: "2025-05-18" },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    // Each obs keeps its own display
+    const texts = obs.map((o: any) => o.code.text).sort();
+    expect(texts).toEqual(["Hb", "WBC"]);
+  });
+});
