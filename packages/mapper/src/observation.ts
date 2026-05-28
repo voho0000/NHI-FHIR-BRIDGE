@@ -883,6 +883,99 @@ function filterLabRows(rawItems: any[]): Record<string, any>[] {
   return out;
 }
 
+// ── NHI multi-channel structural-duplicate dedup (v0.12.4) ──────────
+// NHI 健保存摺 ships the same measurement under two upload channels —
+// A (特約醫事機構不定期上傳) and B (定期上傳). For chemistry rows like
+// 鈉/K/Ca/Mg, NHI's source EHR uploads the row via channel A early
+// (English display, numeric refRange) AND again via channel B later
+// (Chinese display, text-only refRange like "[無][無]"). The two API
+// rows represent THE SAME logical measurement — there's only one
+// blood draw, one analyte, one value — they're NHI's structural
+// duplicate from dual-channel upload, not separate measurements.
+//
+// User principle (v0.12.4 2026-05-29 clarification):
+// > "你要考量到這份 fhir json 可能給其他非我開發的 smart app 使用，如果把
+// > dedup 的責任都放在 app 端，會有大問題。你有忠實搬運，但不能明明 UI
+// > 顯示只有一筆你抓了兩筆。"
+//
+// Bridge must dedup A+B structural pairs so any downstream SMART app
+// sees one Observation per logical measurement. This is NOT bridge-
+// side clinical judgement; it's removing the structural artifact of
+// NHI's multi-channel upload design.
+//
+// Dedup criteria (must ALL match):
+//   - same NHI order code (ordeR_CODE)
+//   - same date (reaL_INSPECT_DATE / funC_DATE — already on raw.date)
+//   - same hospital
+//   - same value
+//   - same unit
+//   - one row has orI_TYPE=A AND another has orI_TYPE=B (different channels)
+//
+// When all match → keep A (numeric refRange, more clinically useful);
+// drop B.
+//
+// What's PRESERVED (not deduped — those are real distinct readings):
+//   - same-source double-upload (A+A or B+B): treated as true NHI upload
+//     duplicate per faithful-transport rule, both kept
+//   - different values: legitimate multi-reading (e.g. ICU same-day draws)
+//   - different code OR date OR hospital OR unit: different measurements
+//
+// Per CLAUDE.md memory rule (revised v0.12.4): "bridge does not judge
+// data validity with its own clinical reasoning, but must mirror NHI
+// 健康存摺 UI's per-measurement semantics — A+B same-measurement pairs
+// are NHI's structural duplicate and must be deduped at the bridge."
+function dedupNhiCrossChannelPairs(
+  items: Record<string, any>[],
+): Record<string, any>[] {
+  // Group by (code, date, hospital, value, unit) — value is in raw shape
+  // as a string already so direct comparison works for both numeric and
+  // qualitative values ("Negative" / "4+ (2000)" etc).
+  const groups = new Map<string, Record<string, any>[]>();
+  const order: string[] = []; // preserve first-seen order for the output
+  for (const item of items) {
+    const code = String(item.code ?? item.order_code ?? "").trim();
+    const date = String(item.date ?? "").trim();
+    const hospital = String(item.hospital ?? "").trim();
+    const value = String(item.value ?? "").trim();
+    const unit = String(item.unit ?? "").trim();
+    // Without a known NHI code we can't be sure it's a multi-channel
+    // dup candidate — group by `code` (or empty) anyway; only same-key
+    // groups will be inspected for the A+B pattern.
+    const key = `${code}|${date}|${hospital}|${value}|${unit}`;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+      order.push(key);
+    }
+    groups.get(key)!.push(item);
+  }
+
+  const out: Record<string, any>[] = [];
+  for (const key of order) {
+    const group = groups.get(key)!;
+    if (group.length < 2) {
+      out.push(...group);
+      continue;
+    }
+    // Inspect source channels in this group.
+    const aRows = group.filter(
+      (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "A",
+    );
+    const bRows = group.filter(
+      (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "B",
+    );
+    // Strict 1A + 1B pair → dedup, keep A. Any other multiplicity (2A+0B,
+    // 0A+2B, 3 rows etc) preserves all rows — those are NHI same-source
+    // double-uploads or higher-order dups that the faithful-transport
+    // rule explicitly protects.
+    if (aRows.length === 1 && bRows.length === 1) {
+      out.push(aRows[0]!);
+    } else {
+      out.push(...group);
+    }
+  }
+  return out;
+}
+
 function dedupeCrossFormat(items: Record<string, any>[]): Record<string, any>[] {
   const orderCode = (it: Record<string, any>): string =>
     ((it.order_code as string) ?? "").trim().toUpperCase();
@@ -1773,5 +1866,12 @@ function groupByOrderCode(
 
 export function mapObservationsGrouped(rawItems: any[], patientId: string): Record<string, any>[] {
   const cleaned = filterLabRows(rawItems);
-  return groupByOrderCode(cleaned, patientId);
+  // v0.12.4: collapse NHI multi-channel A+B structural duplicates
+  // BEFORE grouping/building observations. Bridge ships one obs per
+  // logical measurement so every downstream SMART app sees a clean
+  // bundle without having to implement source-channel dedup itself.
+  // See dedupNhiCrossChannelPairs() docstring for the principle and
+  // criteria.
+  const dedupedChannel = dedupNhiCrossChannelPairs(cleaned);
+  return groupByOrderCode(dedupedChannel, patientId);
 }

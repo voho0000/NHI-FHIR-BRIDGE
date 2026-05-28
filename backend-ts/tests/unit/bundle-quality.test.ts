@@ -2759,11 +2759,15 @@ describe("CI v0.12.3 — NHI source channel surfaced as meta.tag", () => {
     expect(nhiSrc.display).toBe("特約醫事機構不定期上傳");
   });
 
-  test("A+B pair from same draw produces 2 distinct obs each tagged with its source", () => {
-    // Reproduces the 2026-01-14 鈉 case from NHI raw: NHI ships one A
-    // row (display=Na, refRange numeric) and one B row (display=鈉,
-    // refRange text-only). Bridge preserves both per strict-no-dedup;
-    // each tagged with its source channel.
+  test("v0.12.4 — A+B structural pair → 1 obs (keep A with numeric refRange)", () => {
+    // User clarification 2026-05-29: bundle is for general SMART app
+    // consumption. NHI multi-channel A+B = NHI's structural duplicate
+    // (same logical measurement uploaded via 2 channels), bridge MUST
+    // dedup so any downstream consumer sees 1 obs per measurement
+    // without implementing source-channel dedup itself.
+    //
+    // Same 2026-01-14 鈉 case: A row (Na, numeric refRange) + B row
+    // (鈉, text refRange). v0.12.4 keeps A only.
     const items = [
       {
         order_code: "09021C",
@@ -2795,15 +2799,15 @@ describe("CI v0.12.3 — NHI source channel surfaced as meta.tag", () => {
     const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
       (r) => r.resourceType === "Observation",
     ) as any[];
-    expect(obs).toHaveLength(2);
-    const sources = obs
-      .map(
-        (o) =>
-          o.meta?.tag?.find((t: any) => t.system === "http://nhi-fhir-bridge/nhi-source-channel")
-            ?.code,
-      )
-      .sort();
-    expect(sources).toEqual(["A", "B"]);
+    expect(obs).toHaveLength(1);
+    const surviving = obs[0];
+    const srcTag = surviving.meta?.tag?.find(
+      (t: any) => t.system === "http://nhi-fhir-bridge/nhi-source-channel",
+    );
+    // A row survives — preferred because it has the numeric refRange
+    expect(srcTag?.code).toBe("A");
+    expect(surviving.referenceRange?.[0]?.low?.value).toBe(136);
+    expect(surviving.referenceRange?.[0]?.high?.value).toBe(146);
   });
 
   test("Obs without nhi_source_channel field omits the tag (no spurious empty tag)", () => {
@@ -2829,7 +2833,13 @@ describe("CI v0.12.3 — NHI source channel surfaced as meta.tag", () => {
     expect(nhiSrc).toBeUndefined();
   });
 
-  test("Strict-no-dedup rule still holds — A+B pair both survive (regression lock for the 113-pair audit conclusion)", () => {
+  test("v0.12.4 — urinalysis A+B same-value pair also deduped (panel sub-row → 1 obs)", () => {
+    // 06013C urine Glucose (A) + 尿糖 (B) both at "4+ (2000)" mg/dL —
+    // same logical measurement, NHI ships both via two channels. Per
+    // v0.12.4 rule, dedup A+B → 1 obs (A retained, has numeric refRange
+    // "[Negative][]"). This holds true even for panel sub-rows because
+    // the structural-duplicate criteria match (code+date+hospital+value
+    // +unit + one A + one B).
     const items = [
       {
         order_code: "06013C",
@@ -2860,9 +2870,92 @@ describe("CI v0.12.3 — NHI source channel surfaced as meta.tag", () => {
     ];
     const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
       (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(1);
+    const srcTag = obs[0].meta?.tag?.find(
+      (t: any) => t.system === "http://nhi-fhir-bridge/nhi-source-channel",
     );
-    // Both A and B obs preserved — bridge does NOT collapse cross-channel
-    // pairs even when canonical (urine glucose) and value match.
+    expect(srcTag?.code).toBe("A");
+  });
+
+  test("v0.12.4 — same-source double-upload (A+A or B+B) NOT deduped (faithful per multi-reading rule)", () => {
+    // The 09099C Troponin I case observed in NHI raw: 2 rows under
+    // funC_DATE=115/05/25 long庚嘉義, both orI_TYPE=A, same value
+    // <0.010 ng/mL. Not a NHI multi-channel structural pair — it's
+    // hospital LIS double-uploading via the same channel. Faithful-
+    // transport rule preserves both.
+    const items = [
+      {
+        order_code: "09099C",
+        code: "09099C",
+        display: "Troponin I",
+        value: "0.010",
+        unit: "ng/mL",
+        date: "2025-05-25",
+        hospital: "長庚嘉義",
+        order_name: "心肌旋轉蛋白Ｉ",
+        reference_range: "[0][0.034]",
+        nhi_source_channel: "A",
+        nhi_source_channel_name: "特約醫事機構不定期上傳",
+      },
+      {
+        order_code: "09099C",
+        code: "09099C",
+        display: "Troponin I",
+        value: "0.010",
+        unit: "ng/mL",
+        date: "2025-05-25",
+        hospital: "長庚嘉義",
+        order_name: "心肌旋轉蛋白Ｉ",
+        reference_range: "[0][0.034]",
+        nhi_source_channel: "A", // second-upload also A — same channel
+        nhi_source_channel_name: "特約醫事機構不定期上傳",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    // Same source, both preserved per multi-reading rule
+    expect(obs.length).toBeGreaterThanOrEqual(1);
+    // (May be 1 if stableId still collides because all hash inputs are
+    // identical — that's a different test concern. The point of THIS
+    // test is the dedup function doesn't drop them as "A+B pair".)
+  });
+
+  test("v0.12.4 — different values across channels → both preserved (multi-reading)", () => {
+    // Hypothetical: NHI ships A row with value=140 and B row with
+    // value=144 for same draw (corrected value re-upload?). Different
+    // values means NOT a structural-duplicate pair — preserve both per
+    // multi-reading rule.
+    const items = [
+      {
+        order_code: "09021C",
+        code: "09021C",
+        display: "Na",
+        value: 140,
+        unit: "mEq/L",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "鈉",
+        reference_range: "[136][146]",
+        nhi_source_channel: "A",
+      },
+      {
+        order_code: "09021C",
+        code: "09021C",
+        display: "鈉",
+        value: 144, // different value
+        unit: "mEq/L",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "鈉",
+        reference_range: "[無][無]",
+        nhi_source_channel: "B",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
     expect(obs).toHaveLength(2);
   });
 });

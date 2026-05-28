@@ -3,6 +3,90 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.12.4 重點 — 2026-05-29
+
+**🔧 BREAKING（語意上）— Bridge 現在 dedup NHI A+B structural pairs**
+
+User clarification 推翻 v0.12.3 的 strict-no-dedup 設計：
+
+> 你要考量到這份 fhir json 可能給其他非我開發的 smart app 使用，如果把 dedup 的責任都放在 app 端，會有大問題。你有忠實搬運，但不能明明 UI 顯示只有一筆你抓了兩筆。
+
+關鍵 insight：bundle 給**所有** SMART app 用（不只 MediPrisma）。如果 bridge ship 2 obs per A+B pair，每個 downstream consumer 都要自己實作 source-channel dedup — 違反 FHIR interoperability 本意。NHI multi-channel 是 NHI 設計上的 artifact，不是真實 multi-reading，bridge 該幫所有 consumer 處理掉。
+
+### 修訂 dedup rule
+
+從 **strict-no-dedup**（CLAUDE.md v0.12.1）改成 **targeted dedup**：
+
+| 重複類型 | v0.12.4 行為 | 理由 |
+|---|---|---|
+| **A+B structural pair**（同 code/date/hospital/value/unit）| **dedup → keep A** | NHI multi-channel artifact，邏輯上同一個 measurement |
+| Same-source double-upload（A+A or B+B）| 保留全部 | NHI 上傳 N 次 = N 個 upload event，真實多筆 |
+| 不同 value | 保留全部 | Legitimate multi-reading（ICU 同 day 兩抽等）|
+| 不同 code/date/hospital/unit | 保留全部 | 不同 measurement |
+
+Bridge 不會用 clinical judgement 判斷 dedup — 只消除 NHI 自己的 structural duplicate（A+B 上傳同一筆）。
+
+### Implementation
+
+新 helper `dedupNhiCrossChannelPairs()` 接在 `mapObservationsGrouped` 內，**`filterLabRows` 之後、`groupByOrderCode` 之前**：
+
+```ts
+// Group by (code, date, hospital, value, unit)
+// If group has exactly 1 A row + 1 B row → keep A
+// Otherwise preserve all
+```
+
+`stableId` 還是包 source channel — defensive for edge cases dedup 沒 fire 的 (e.g. 只有 A, 或 A+B 不同 value)。
+
+### `Observation.meta.tag` 還在但語意改變
+
+v0.12.3 加的 `meta.tag` (system `http://nhi-fhir-bridge/nhi-source-channel`, code A/B) 保留 — 但**不再是要求 app 自己 dedup 的 signal**，而是 informational metadata for consumers who want to know which channel sourced the surviving obs。
+
+### Bundle 變化（user 的鈉 case）
+
+v0.12.3 bundle:
+```jsonc
+[
+  { code: "Na", value: 142, refRange: "[136-146]", meta.tag: [{ code: "A" }] },
+  { code: "鈉", value: 142, refRange: "[無]",      meta.tag: [{ code: "B" }] }
+]
+```
+
+v0.12.4 bundle:
+```jsonc
+[
+  { code: "Na", value: 142, refRange: "[136-146]", meta.tag: [{ code: "A" }] }   // ← B dropped
+]
+```
+
+### CLAUDE.md 更新
+
+- Rule #7 從「strict no-dedup」改成「targeted dedup」
+- NHI multi-channel A/B section 更新：dedup 在 bridge 端完成
+- Audit 規則更新：先 check pair 是不是 cross-channel；如果是 → 該被 bridge dedup 掉，沒被 dedup 是 bug；如果同 source → faithful preservation 正確
+
+### FHIR R4 compliance audit ✅
+
+- Observation 數量變動跟 NHI 結構一致 — 不違反 FHIR R4 modelling principle
+- `Observation.meta.tag` 用法跟之前一致（spec-defined channel for source metadata）
+- A row 被選為 surviving 是因為 numeric refRange 更 clinically useful — 不影響 FHIR resource validity
+- `stableId` 維持 syntactic constraint
+
+### CI 守門（4 個 v0.12.4 + 修 v0.12.3 兩 test）
+
+- 翻 v0.12.3 "A+B pair → 2 obs" → v0.12.4 "A+B pair → 1 obs (keep A)"
+- 翻 v0.12.3 "Strict-no-dedup A+B both survive" → v0.12.4 urinalysis A+B → 1 obs (keep A)
+- 新：09099C Troponin I same-source A+A double-upload → 保留（NOT deduped）
+- 新：不同 value A+B → 保留兩 obs（multi-reading）
+
+### Files
+
+- `packages/mapper/src/observation.ts` — 新 `dedupNhiCrossChannelPairs()` helper；接到 `mapObservationsGrouped` 在 `filterLabRows` 之後
+- `CLAUDE.md` — rule #7 全面 revise；NHI multi-channel section 更新
+- `backend-ts/tests/unit/bundle-quality.test.ts` — v0.12.3 兩 test 翻邏輯；新 v0.12.4 same-source preservation + different-value preservation 兩 test
+
+---
+
 ## 0.12.3 重點 — 2026-05-29
 
 **🔎 直接打 NHI raw API 確認 — 113 對 duplicate 不是 bridge bug，是 NHI multi-channel design**

@@ -3746,6 +3746,43 @@
     }
     return out;
   }
+  function dedupNhiCrossChannelPairs(items) {
+    const groups = /* @__PURE__ */ new Map();
+    const order = [];
+    for (const item of items) {
+      const code = String(item.code ?? item.order_code ?? "").trim();
+      const date = String(item.date ?? "").trim();
+      const hospital = String(item.hospital ?? "").trim();
+      const value = String(item.value ?? "").trim();
+      const unit = String(item.unit ?? "").trim();
+      const key = `${code}|${date}|${hospital}|${value}|${unit}`;
+      if (!groups.has(key)) {
+        groups.set(key, []);
+        order.push(key);
+      }
+      groups.get(key).push(item);
+    }
+    const out = [];
+    for (const key of order) {
+      const group = groups.get(key);
+      if (group.length < 2) {
+        out.push(...group);
+        continue;
+      }
+      const aRows = group.filter(
+        (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "A"
+      );
+      const bRows = group.filter(
+        (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "B"
+      );
+      if (aRows.length === 1 && bRows.length === 1) {
+        out.push(aRows[0]);
+      } else {
+        out.push(...group);
+      }
+    }
+    return out;
+  }
   function dedupeCrossFormat(items) {
     const orderCode = (it) => (it.order_code ?? "").trim().toUpperCase();
     const byKey = /* @__PURE__ */ new Map();
@@ -4288,7 +4325,8 @@
   }
   function mapObservationsGrouped(rawItems, patientId) {
     const cleaned = filterLabRows(rawItems);
-    return groupByOrderCode(cleaned, patientId);
+    const dedupedChannel = dedupNhiCrossChannelPairs(cleaned);
+    return groupByOrderCode(dedupedChannel, patientId);
   }
 
   // ../packages/mapper/src/procedure.ts
