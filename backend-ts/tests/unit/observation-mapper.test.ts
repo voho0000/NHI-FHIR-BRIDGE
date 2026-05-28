@@ -673,12 +673,21 @@ describe("findLoinc", () => {
     expect(findLoinc("08026C", "凝血酶原時間")).toBe("5902-2");
   });
 
-  test("v0.9.10 — PT Control under 08026C → 5894-1 (NOT 5902-2 PT)", () => {
-    // PT Control row is the reagent-batch reference value most LIS
-    // ships alongside PT seconds. Distinct LOINC so trend views don't
-    // accidentally mix patient PT with control PT.
-    expect(findLoinc("08026C", "PT Control")).toBe("5894-1");
-    expect(findLoinc("08026C", "Prothrombin Time Control")).toBe("5894-1");
+  test("v0.11.9 — PT Control under 08026C must NOT map to 5894-1 (audit fix)", () => {
+    // v0.9.10 originally mapped "PT Control" / "對照" → 5894-1 on the
+    // premise that 5894-1 was "Prothrombin time (PT) Control". loinc.org
+    // audit (2026-05-29) found 5894-1 is actually "Prothrombin time (PT)
+    // actual/Normal" — Property=RelTime, a RATIO, not a control reading.
+    // Removed the wrong mapping in v0.11.9; PT Control displays now fall
+    // back to the panel's path-B match (bare "PT" → 5902-2) or fall
+    // through to NHI-coding-only when no display synonym matches.
+    // What matters for patient safety: 5894-1 (ratio LOINC) must NOT
+    // be emitted for a reading that's actually QC/control in seconds.
+    expect(findLoinc("08026C", "PT Control")).not.toBe("5894-1");
+    expect(findLoinc("08026C", "Prothrombin Time Control")).not.toBe("5894-1");
+    // Real Taiwan LIS "Control PT" rows are typically caught by the QC
+    // filter (looksLikeQcControl); this test asserts the fallback path
+    // for the edge cases that slip past.
   });
 
   test("v0.9.10 — PT and INR no longer collapse to the same LOINC under 08026C", () => {

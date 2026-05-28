@@ -20,6 +20,8 @@ import {
   DISPLAY_FIRST_CODES,
   LOINC_DISPLAY,
   LOINC_MAP,
+  LOINC_SHORT_TEXT,
+  NHI_CODE_PANEL_NAME,
   NHI_TO_LOINC,
   PANEL_LOINC_MAP,
 } from "./loinc-tables";
@@ -87,7 +89,12 @@ const QC_CONTROL_PATTERNS: RegExp[] = [
   /\bqc\s+(mean|control|plasma)\b/i,
   /對照血漿/,
   /控制血漿/,
-  /正常血漿平均/,
+  // v0.11.9 (SMART app dev report 2026-05-29): broaden from /正常血漿平均/
+  // → /正常血漿.*平均/ so we catch '正常血漿APTT平均值' / '正常血漿PT平均值'
+  // variants where the analyte name is wedged between '正常血漿' prefix
+  // and '平均' suffix. Original literal pattern only matched bare
+  // '正常血漿平均' (no analyte token in the middle).
+  /正常血漿.*平均/,
 ];
 
 function looksLikeQcControl(display: string): boolean {
@@ -187,11 +194,21 @@ export function findLoinc(code: string, display: string): string | null {
 /**
  * Build the Observation.code.coding[] list.
  * Priority: LOINC → NHI 醫令代碼 → local fallback.
+ *
+ * `nhiPanelName` (v0.11.9, SMART app dev report 2026-05-29 Category A):
+ * the NHI catalog name for this billing code (e.g. "ABO血型測定檢驗"
+ * for 11001C), typically sourced from raw.order_name. When provided
+ * it overrides the row-level LIS `display` for `coding[nhi].display`
+ * — the NHI medical order code system's `display` should be the NHI
+ * catalog name (panel-level), not a per-row LIS label like the
+ * generic "血型鑑定" that gets shipped under multiple distinct codes.
+ * Falls back to `display` when no panel name is available.
  */
 export function buildCodings(
   code: string | null | undefined,
   display: string,
   loinc: string | null,
+  nhiPanelName?: string,
 ): Record<string, string>[] {
   const codings: Record<string, string>[] = [];
   if (loinc) {
@@ -206,7 +223,7 @@ export function buildCodings(
     codings.push({
       system: systems.NHI_MEDICAL_ORDER_CODE,
       code: codeStr,
-      display,
+      display: nhiPanelName || display,
     });
   } else {
     codings.push({
@@ -316,8 +333,13 @@ const LAB_SYNONYMS: Record<string, string> = {
   紅血球: "RBC",
   RBC: "RBC",
   血紅素: "HEMOGLOBIN",
+  血色素: "HEMOGLOBIN",
   HEMOGLOBIN: "HEMOGLOBIN",
   HGB: "HEMOGLOBIN",
+  // v0.11.7 pre-existing gap (defensive): "Hb" was missing from
+  // LAB_SYNONYMS so Hb display canonical → "hb" (fallback), not
+  // HEMOGLOBIN → cross-language merge with "血紅素" never happened.
+  HB: "HEMOGLOBIN",
   血容積比: "HEMATOCRIT",
   HEMATOCRIT: "HEMATOCRIT",
   HCT: "HEMATOCRIT",
@@ -941,8 +963,18 @@ export function mapObservation(
       },
     ],
     code: {
-      coding: buildCodings(code, display, loinc),
-      text: display || "Unknown Lab",
+      coding: buildCodings(
+        code,
+        display,
+        loinc,
+        String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || undefined,
+      ),
+      // v0.11.9: see panel-path buildObservation for full precedence.
+      text:
+        (loinc && LOINC_SHORT_TEXT[loinc]) ||
+        NHI_CODE_PANEL_NAME[code] ||
+        display ||
+        "Unknown Lab",
     },
     subject: { reference: `Patient/${patientId}` },
   };
@@ -1081,7 +1113,41 @@ function buildObservation(
   // disambiguation (urinalysis "Glucose" → URINE_GLUCOSE so it dedups
   // with "尿糖" within the panel, while serum "Glucose" stays GLUCOSE).
   const canonical = canonicalLabKey(display, code) || display;
-  const obsId = stableId(patientId, "obs", canonical, raw.date ?? "", raw.hospital ?? "");
+  // v0.11.8: include NHI code in stableId. Bug 2026-05-28 (blood type):
+  // 11001C "ABO 血型測定" and 11003C "RH(D) 型檢驗" both ship display
+  // "血型鑑定" — same canonical → same ID → bundle-assembler dedup
+  // (by id) collapsed them to one row, dropping the other. Adding code
+  // to the hash disambiguates different NHI billing codes that share a
+  // common panel display ("血型鑑定", "Sugar", etc.). Same-code cross-
+  // language merges (Bilirubin/膽紅素 under 06013C) still work because
+  // they all share the same code in the hash.
+  //
+  // v0.11.9: ALSO include the row's value in stableId. SMART app dev
+  // 2026-05-29: 健保存摺 ships TWO distinct readings per ABO panel and
+  // per RH panel on 2025-05-18 (ABO has both "B" and "+", RH has both
+  // "+" and "B" — forward/reverse typing arms or dual-antisera reactions).
+  // Both readings share NHI code + display + canonical → same v0.11.8
+  // stableId → bundle keeps only ONE per panel, silently losing the
+  // second reading.
+  //
+  // Real duplicates (same value + same display) are still dropped at
+  // dedupeCrossFormat (step 1, value in key) and dedupePanelItems
+  // (step 3, value in key) BEFORE reaching stableId, so adding value
+  // here doesn't reintroduce true duplicates — it only preserves
+  // distinct readings within the same panel.
+  //
+  // Trade-off (same as v0.11.8): if a value is later corrected (typo
+  // fix in NHI source), the Observation resource ID changes. Acceptable
+  // for the data-integrity gain.
+  const obsId = stableId(
+    patientId,
+    "obs",
+    canonical,
+    raw.date ?? "",
+    raw.hospital ?? "",
+    code,
+    String(raw.value ?? ""),
+  );
   const loinc = findLoinc(code, display);
 
   const catCode = raw.category || "laboratory";
@@ -1116,8 +1182,32 @@ function buildObservation(
       },
     ],
     code: {
-      coding: buildCodings(code, display, loinc),
-      text: display || "Unknown Lab",
+      // v0.11.9 (Category A): pass the panel-level NHI catalog name to
+      // buildCodings so coding[nhi].display becomes the panel name (e.g.
+      // "ABO血型測定檢驗") instead of the row-level LIS display ("血型
+      // 鑑定"). Order: raw.order_name (scraper-provided NHI catalog
+      // value) → NHI_CODE_PANEL_NAME override → fall back to display
+      // via buildCodings.
+      coding: buildCodings(
+        code,
+        display,
+        loinc,
+        String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || undefined,
+      ),
+      // v0.11.9: code.text precedence (high → low):
+      //   1. LOINC_SHORT_TEXT override (clean clinical short name when
+      //      we have a LOINC, e.g. APTT ratio → "APTT (ratio)")
+      //   2. NHI_CODE_PANEL_NAME override (when LIS ships a generic
+      //      display under an NHI code that has a canonical specific
+      //      name in the NHI catalog, e.g. 11001C "血型鑑定" →
+      //      "ABO 血型測定" so SMART app can distinguish ABO/Rh/Antibody)
+      //   3. Raw display (LIS-supplied analyte name)
+      //   4. "Unknown Lab" sentinel
+      text:
+        (loinc && LOINC_SHORT_TEXT[loinc]) ||
+        NHI_CODE_PANEL_NAME[code] ||
+        display ||
+        "Unknown Lab",
     },
     subject: { reference: `Patient/${patientId}` },
   };
@@ -1216,17 +1306,53 @@ function groupByOrderCode(
 
     const orderName = deduped.find((it) => it.order_name)?.order_name ?? null;
     const memberKeys = Array.from(
-      new Set(deduped.filter((it) => it.display).map((it) => canonicalLabKey(it.display))),
+      new Set(
+        deduped
+          .filter((it) => it.display)
+          // v0.11.8: pass code so urinalysis polysemic displays
+          // (Glucose/Color/Blood) get URINE_X canonical, matching
+          // the per-Obs canonical and producing a consistent
+          // panelSignature across reruns.
+          .map((it) => canonicalLabKey(it.display, String(meta.groupKeyCode))),
+      ),
     ).sort();
     const panelSignature = memberKeys.join(",") || String(meta.groupKeyCode);
-    const drId = stableId(patientId, "DR", panelSignature, meta.date, meta.hospital);
+    // v0.11.8 bug fix: include groupKeyCode (NHI code) in DR stableId
+    // — same reason as the Observation stableId fix in this release.
+    // Without code, 11001C ABO and 11003C Rh both produce a DR with
+    // panelSignature="血型鑑定" → identical DR id → bundle-assembler
+    // dedup collapsed them → one DR survived with a broken Obs link
+    // (the other Obs became an orphan). Adding code makes each NHI
+    // billing produce its own DR, so the DR↔Obs reference graph stays
+    // intact.
+    const drId = stableId(
+      patientId,
+      "DR",
+      panelSignature,
+      meta.date,
+      meta.hospital,
+      String(meta.groupKeyCode),
+    );
 
+    // v0.11.9 (SMART app dev report 2026-05-29 Category A): for single-
+    // obs DRs where the LIS row display is the generic panel umbrella
+    // ("血型鑑定" under both 11001C ABO and 11003C RH), prefer the NHI
+    // catalog panel name (orderName) or the curated NHI_CODE_PANEL_NAME
+    // override over the generic display — otherwise the DR title stays
+    // generic and downstream consumers can't tell ABO from RH visually
+    // without joining via NHI code. Same reasoning as the obs.code.text
+    // override above (single source of truth for panel-name selection).
     let panelTitle: string;
+    const groupCodeStr = String(meta.groupKeyCode);
     if (deduped.length === 1) {
       const singleDisplay = deduped[0]!.display ?? "";
-      panelTitle = singleDisplay || orderName || String(meta.groupKeyCode);
+      panelTitle =
+        NHI_CODE_PANEL_NAME[groupCodeStr] ||
+        orderName ||
+        singleDisplay ||
+        groupCodeStr;
     } else {
-      panelTitle = orderName || String(meta.groupKeyCode);
+      panelTitle = orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || groupCodeStr;
     }
 
     const drCodeSystem = NHI_LAB_CODE_RE.test(String(meta.groupKeyCode) ?? "")

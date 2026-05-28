@@ -1448,6 +1448,16 @@
     // patient-safety-adjacent: a trend chart would plot PT seconds (~12)
     // and INR (~2.5) on the same series, or label a PT=12 row as "INR=12"
     // (instantly looks like critical anticoagulation overdose). v0.9.10.
+    "08036C",
+    // APTT — Taiwan labs bill BOTH "APTT" (seconds, normal ~25-35)
+    // AND "Heparin治療範圍參考倍數" / "APTT data/mean" (ratio, normal ~1.0)
+    // under the same 08036C code. Without panel-mode handling, both
+    // collapsed to LOINC 14979-9 (APTT time, seconds) — the ratio row's
+    // value of 1.08 displayed under an APTT-time trend column would read
+    // as a fatally low APTT, or scientifically nonsensical seconds unit
+    // for a ratio. SMART app dev report 2026-05-29. LOINC verified at
+    // loinc.org: 14979-9 Property=Time (seconds), 63561-5 Property=RelTime
+    // (actual/normal ratio). v0.11.9.
     // ── CBC component billing codes (v0.9.10, bug report Part 5) ─────
     // These are SINGLE-analyte billing codes (one analyte per code, NOT
     // panels). Why are they here? Hospital LIS labelling errors swap
@@ -1940,11 +1950,18 @@
     // longest-specific first.
     "08026C": {
       "international normalized ratio": "6301-6",
-      "prothrombin time control": "5894-1",
-      "pt control": "5894-1",
-      "control pt": "5894-1",
-      \u5C0D\u7167: "5894-1",
-      \u5C0D\u7167\u7D44: "5894-1",
+      // v0.11.9 (SMART app dev report 2026-05-29 + loinc.org audit):
+      // 5894-1's canonical name is "Prothrombin time (PT) actual/Normal"
+      // — Component=Prothrombin time actual/Normal, Property=RelTime
+      // (a RATIO, not a control reading). Earlier v0.9.10 mapping of
+      // "PT control" / "對照" / "對照組" / "prothrombin time control"
+      // → 5894-1 was based on the misread that 5894-1 was a "control"
+      // LOINC. It is NOT — these displays describe lab QC control plasma
+      // readings, which have no clinical LOINC fit and are already
+      // candidates for the QC filter (looksLikeQcControl). Removing the
+      // wrong LOINC mapping so any "Control PT" rows that slip past the
+      // QC filter fall back to NHI-coding-only, rather than being
+      // mis-labelled as a PT-ratio analyte.
       "prothrombin time": "5902-2",
       "pt (sec)": "5902-2",
       "pt sec": "5902-2",
@@ -1964,6 +1981,45 @@
       "p t": "5902-2",
       inr: "6301-6",
       pt: "5902-2"
+    },
+    // ── APTT panel (08036C) ──────────────────────────────
+    // Taiwan labs bill TWO sub-rows under 08036C:
+    //   1. "APTT" / "活化部份凝血活酶時間" — value in seconds (~25-35 sec
+    //      normal). LOINC 14979-9 (aPTT in PPP, Property=Time).
+    //   2. "Heparin治療範圍參考倍數" / "APTT data/mean" / "APTT actual/normal"
+    //      — ratio (patient APTT / lab normal mean), value ~1.0 ± dimensionless.
+    //      LOINC 63561-5 (aPTT actual/normal in PPP, Property=RelTime).
+    // Before v0.11.9 BOTH rows mapped to 14979-9 — a ratio value of 1.08
+    // displayed under APTT-time column would read as fatally low APTT
+    // (normal lower bound ~25 sec), or render seconds units on a unitless
+    // ratio. SMART app dev report 2026-05-29.
+    //
+    // LOINC verified at loinc.org (2026-05-29):
+    //   14979-9 Component=aPTT, Property=Time, System=PPP (seconds)
+    //   63561-5 Component=aPTT actual/normal, Property=RelTime, System=PPP (ratio)
+    //
+    // Longest-key-wins via _findLongestMatch — so the longer ratio
+    // synonyms get priority over the bare "APTT" → time fallback when
+    // a row's display contains both substrings.
+    "08036C": {
+      // Ratio variants — Taiwan LIS shows "Heparin治療範圍參考倍數"
+      // (Heparin therapeutic range reference multiplier) when reporting
+      // the APTT ratio for heparin monitoring. Also "APTT data/mean"
+      // (denominator-explicit form) and "actual/normal" verbiage.
+      heparin\u6CBB\u7642\u7BC4\u570D\u53C3\u8003\u500D\u6578: "63561-5",
+      heparin\u6CBB\u7642\u7BC4\u570D: "63561-5",
+      \u6CBB\u7642\u7BC4\u570D\u53C3\u8003\u500D\u6578: "63561-5",
+      \u53C3\u8003\u500D\u6578: "63561-5",
+      "aptt data/mean": "63561-5",
+      "aptt actual/normal": "63561-5",
+      "aptt ratio": "63561-5",
+      "aptt mean": "63561-5",
+      // Bare time variants — fall through to seconds LOINC.
+      aptt: "14979-9",
+      "a.p.t.t": "14979-9",
+      \u6D3B\u5316\u90E8\u4EFD\u51DD\u8840\u6D3B\u9176\u6642\u9593: "14979-9",
+      \u90E8\u4EFD\u51DD\u8840\u6D3B\u9176\u6642\u9593: "14979-9",
+      \u51DD\u8840\u6D3B\u9176\u6642\u9593: "14979-9"
     },
     // ── Synovial / body-fluid panel (16008C) ─────────────
     // 16008C bills the full body-fluid analysis: appearance / color /
@@ -2333,9 +2389,18 @@
     "1952-1": "Beta-2-Microglobulin [Mass/volume] in Serum or Plasma",
     // ── Coagulation ──────────────────────────────────
     "5902-2": "Prothrombin time (PT) in Platelet poor plasma by Coagulation assay",
-    "5894-1": "Prothrombin time (PT) Control in Platelet poor plasma by Coagulation assay",
+    // v0.11.9 audit: previously labelled "Prothrombin time (PT) Control...".
+    // loinc.org canonical is actually "Prothrombin time (PT) actual/Normal..."
+    // (Component=Prothrombin time actual/Normal, Property=RelTime — a RATIO,
+    // not a control reading). See PANEL_LOINC_MAP['08026C'] comment.
+    "5894-1": "Prothrombin time (PT) actual/Normal in Platelet poor plasma by Coagulation assay",
     "6301-6": "INR in Platelet poor plasma by Coagulation assay",
     "14979-9": "aPTT in Platelet poor plasma by Coagulation assay",
+    // v0.11.9 (SMART app dev report 2026-05-29): added APTT ratio LOINC.
+    // 08036C bills both APTT (seconds, 14979-9) AND APTT ratio (63561-5) as
+    // sub-rows; without per-LOINC display, the ratio row inherited APTT
+    // time's display and looked like a fatal coagulation reading.
+    "63561-5": "aPTT in Platelet poor plasma by Coagulation assay --actual/normal",
     "30240-6": "Fibrin D-dimer [Mass/volume] in Platelet poor plasma",
     // ── Body fluid (16008C panel members; v0.9.10) ───
     "26466-3": "Leukocytes [#/volume] in Body fluid by Manual count",
@@ -2367,6 +2432,22 @@
     "8480-6": "Systolic blood pressure",
     "8462-4": "Diastolic blood pressure",
     "85354-9": "Blood pressure panel with all children optional"
+  };
+  var LOINC_SHORT_TEXT = {
+    // ── Coagulation panel (08036C / 08026C) ──────────
+    "14979-9": "APTT",
+    "63561-5": "APTT (ratio)",
+    "5902-2": "PT",
+    "6301-6": "INR",
+    "5894-1": "PT (ratio)"
+    // v0.11.9: 5894-1 is PT actual/normal RATIO
+    // (Property=RelTime), NOT PT Control as previously (incorrectly) labelled.
+    // See LOINC_DISPLAY comment for full audit trail.
+  };
+  var NHI_CODE_PANEL_NAME = {
+    "11001C": "ABO \u8840\u578B\u6E2C\u5B9A",
+    "11003C": "RH(D) \u578B\u6AA2\u9A57",
+    "11004C": "\u6297\u9AD4\u53CD\u61C9 (\u4E0D\u898F\u5247\u6297\u9AD4)"
   };
 
   // ../packages/mapper/src/parsers.ts
@@ -2713,7 +2794,12 @@
     /\bqc\s+(mean|control|plasma)\b/i,
     /對照血漿/,
     /控制血漿/,
-    /正常血漿平均/
+    // v0.11.9 (SMART app dev report 2026-05-29): broaden from /正常血漿平均/
+    // → /正常血漿.*平均/ so we catch '正常血漿APTT平均值' / '正常血漿PT平均值'
+    // variants where the analyte name is wedged between '正常血漿' prefix
+    // and '平均' suffix. Original literal pattern only matched bare
+    // '正常血漿平均' (no analyte token in the middle).
+    /正常血漿.*平均/
   ];
   function looksLikeQcControl(display) {
     if (!display) return false;
@@ -2763,7 +2849,7 @@
     }
     return null;
   }
-  function buildCodings(code, display, loinc) {
+  function buildCodings(code, display, loinc, nhiPanelName) {
     const codings = [];
     if (loinc) {
       codings.push({
@@ -2777,7 +2863,7 @@
       codings.push({
         system: NHI_MEDICAL_ORDER_CODE,
         code: codeStr,
-        display
+        display: nhiPanelName || display
       });
     } else {
       codings.push({
@@ -2861,8 +2947,13 @@
     \u7D05\u8840\u7403: "RBC",
     RBC: "RBC",
     \u8840\u7D05\u7D20: "HEMOGLOBIN",
+    \u8840\u8272\u7D20: "HEMOGLOBIN",
     HEMOGLOBIN: "HEMOGLOBIN",
     HGB: "HEMOGLOBIN",
+    // v0.11.7 pre-existing gap (defensive): "Hb" was missing from
+    // LAB_SYNONYMS so Hb display canonical → "hb" (fallback), not
+    // HEMOGLOBIN → cross-language merge with "血紅素" never happened.
+    HB: "HEMOGLOBIN",
     \u8840\u5BB9\u7A4D\u6BD4: "HEMATOCRIT",
     HEMATOCRIT: "HEMATOCRIT",
     HCT: "HEMATOCRIT",
@@ -3347,8 +3438,14 @@
         }
       ],
       code: {
-        coding: buildCodings(code, display, loinc),
-        text: display || "Unknown Lab"
+        coding: buildCodings(
+          code,
+          display,
+          loinc,
+          String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || void 0
+        ),
+        // v0.11.9: see panel-path buildObservation for full precedence.
+        text: loinc && LOINC_SHORT_TEXT[loinc] || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab"
       },
       subject: { reference: `Patient/${patientId}` }
     };
@@ -3452,7 +3549,15 @@
     const value = raw.value;
     const interp = (raw.interpretation ?? "").toString().toLowerCase();
     const canonical = canonicalLabKey(display, code) || display;
-    const obsId = stableId(patientId, "obs", canonical, raw.date ?? "", raw.hospital ?? "");
+    const obsId = stableId(
+      patientId,
+      "obs",
+      canonical,
+      raw.date ?? "",
+      raw.hospital ?? "",
+      code,
+      String(raw.value ?? "")
+    );
     const loinc = findLoinc(code, display);
     const catCode = raw.category || "laboratory";
     const CAT_DISPLAY = {
@@ -3484,8 +3589,28 @@
         }
       ],
       code: {
-        coding: buildCodings(code, display, loinc),
-        text: display || "Unknown Lab"
+        // v0.11.9 (Category A): pass the panel-level NHI catalog name to
+        // buildCodings so coding[nhi].display becomes the panel name (e.g.
+        // "ABO血型測定檢驗") instead of the row-level LIS display ("血型
+        // 鑑定"). Order: raw.order_name (scraper-provided NHI catalog
+        // value) → NHI_CODE_PANEL_NAME override → fall back to display
+        // via buildCodings.
+        coding: buildCodings(
+          code,
+          display,
+          loinc,
+          String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || void 0
+        ),
+        // v0.11.9: code.text precedence (high → low):
+        //   1. LOINC_SHORT_TEXT override (clean clinical short name when
+        //      we have a LOINC, e.g. APTT ratio → "APTT (ratio)")
+        //   2. NHI_CODE_PANEL_NAME override (when LIS ships a generic
+        //      display under an NHI code that has a canonical specific
+        //      name in the NHI catalog, e.g. 11001C "血型鑑定" →
+        //      "ABO 血型測定" so SMART app can distinguish ABO/Rh/Antibody)
+        //   3. Raw display (LIS-supplied analyte name)
+        //   4. "Unknown Lab" sentinel
+        text: loinc && LOINC_SHORT_TEXT[loinc] || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab"
       },
       subject: { reference: `Patient/${patientId}` }
     };
@@ -3559,16 +3684,26 @@
       }
       const orderName = deduped.find((it) => it.order_name)?.order_name ?? null;
       const memberKeys = Array.from(
-        new Set(deduped.filter((it) => it.display).map((it) => canonicalLabKey(it.display)))
+        new Set(
+          deduped.filter((it) => it.display).map((it) => canonicalLabKey(it.display, String(meta.groupKeyCode)))
+        )
       ).sort();
       const panelSignature = memberKeys.join(",") || String(meta.groupKeyCode);
-      const drId = stableId(patientId, "DR", panelSignature, meta.date, meta.hospital);
+      const drId = stableId(
+        patientId,
+        "DR",
+        panelSignature,
+        meta.date,
+        meta.hospital,
+        String(meta.groupKeyCode)
+      );
       let panelTitle;
+      const groupCodeStr = String(meta.groupKeyCode);
       if (deduped.length === 1) {
         const singleDisplay = deduped[0].display ?? "";
-        panelTitle = singleDisplay || orderName || String(meta.groupKeyCode);
+        panelTitle = NHI_CODE_PANEL_NAME[groupCodeStr] || orderName || singleDisplay || groupCodeStr;
       } else {
-        panelTitle = orderName || String(meta.groupKeyCode);
+        panelTitle = orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || groupCodeStr;
       }
       const drCodeSystem = NHI_LAB_CODE_RE.test(String(meta.groupKeyCode) ?? "") ? NHI_MEDICAL_ORDER_CODE : HIS_LOCAL_LAB_CODE;
       const dr = {

@@ -952,11 +952,18 @@
     // longest-specific first.
     "08026C": {
       "international normalized ratio": "6301-6",
-      "prothrombin time control": "5894-1",
-      "pt control": "5894-1",
-      "control pt": "5894-1",
-      \u5C0D\u7167: "5894-1",
-      \u5C0D\u7167\u7D44: "5894-1",
+      // v0.11.9 (SMART app dev report 2026-05-29 + loinc.org audit):
+      // 5894-1's canonical name is "Prothrombin time (PT) actual/Normal"
+      // — Component=Prothrombin time actual/Normal, Property=RelTime
+      // (a RATIO, not a control reading). Earlier v0.9.10 mapping of
+      // "PT control" / "對照" / "對照組" / "prothrombin time control"
+      // → 5894-1 was based on the misread that 5894-1 was a "control"
+      // LOINC. It is NOT — these displays describe lab QC control plasma
+      // readings, which have no clinical LOINC fit and are already
+      // candidates for the QC filter (looksLikeQcControl). Removing the
+      // wrong LOINC mapping so any "Control PT" rows that slip past the
+      // QC filter fall back to NHI-coding-only, rather than being
+      // mis-labelled as a PT-ratio analyte.
       "prothrombin time": "5902-2",
       "pt (sec)": "5902-2",
       "pt sec": "5902-2",
@@ -976,6 +983,45 @@
       "p t": "5902-2",
       inr: "6301-6",
       pt: "5902-2"
+    },
+    // ── APTT panel (08036C) ──────────────────────────────
+    // Taiwan labs bill TWO sub-rows under 08036C:
+    //   1. "APTT" / "活化部份凝血活酶時間" — value in seconds (~25-35 sec
+    //      normal). LOINC 14979-9 (aPTT in PPP, Property=Time).
+    //   2. "Heparin治療範圍參考倍數" / "APTT data/mean" / "APTT actual/normal"
+    //      — ratio (patient APTT / lab normal mean), value ~1.0 ± dimensionless.
+    //      LOINC 63561-5 (aPTT actual/normal in PPP, Property=RelTime).
+    // Before v0.11.9 BOTH rows mapped to 14979-9 — a ratio value of 1.08
+    // displayed under APTT-time column would read as fatally low APTT
+    // (normal lower bound ~25 sec), or render seconds units on a unitless
+    // ratio. SMART app dev report 2026-05-29.
+    //
+    // LOINC verified at loinc.org (2026-05-29):
+    //   14979-9 Component=aPTT, Property=Time, System=PPP (seconds)
+    //   63561-5 Component=aPTT actual/normal, Property=RelTime, System=PPP (ratio)
+    //
+    // Longest-key-wins via _findLongestMatch — so the longer ratio
+    // synonyms get priority over the bare "APTT" → time fallback when
+    // a row's display contains both substrings.
+    "08036C": {
+      // Ratio variants — Taiwan LIS shows "Heparin治療範圍參考倍數"
+      // (Heparin therapeutic range reference multiplier) when reporting
+      // the APTT ratio for heparin monitoring. Also "APTT data/mean"
+      // (denominator-explicit form) and "actual/normal" verbiage.
+      heparin\u6CBB\u7642\u7BC4\u570D\u53C3\u8003\u500D\u6578: "63561-5",
+      heparin\u6CBB\u7642\u7BC4\u570D: "63561-5",
+      \u6CBB\u7642\u7BC4\u570D\u53C3\u8003\u500D\u6578: "63561-5",
+      \u53C3\u8003\u500D\u6578: "63561-5",
+      "aptt data/mean": "63561-5",
+      "aptt actual/normal": "63561-5",
+      "aptt ratio": "63561-5",
+      "aptt mean": "63561-5",
+      // Bare time variants — fall through to seconds LOINC.
+      aptt: "14979-9",
+      "a.p.t.t": "14979-9",
+      \u6D3B\u5316\u90E8\u4EFD\u51DD\u8840\u6D3B\u9176\u6642\u9593: "14979-9",
+      \u90E8\u4EFD\u51DD\u8840\u6D3B\u9176\u6642\u9593: "14979-9",
+      \u51DD\u8840\u6D3B\u9176\u6642\u9593: "14979-9"
     },
     // ── Synovial / body-fluid panel (16008C) ─────────────
     // 16008C bills the full body-fluid analysis: appearance / color /
@@ -1058,8 +1104,13 @@
     \u7D05\u8840\u7403: "RBC",
     RBC: "RBC",
     \u8840\u7D05\u7D20: "HEMOGLOBIN",
+    \u8840\u8272\u7D20: "HEMOGLOBIN",
     HEMOGLOBIN: "HEMOGLOBIN",
     HGB: "HEMOGLOBIN",
+    // v0.11.7 pre-existing gap (defensive): "Hb" was missing from
+    // LAB_SYNONYMS so Hb display canonical → "hb" (fallback), not
+    // HEMOGLOBIN → cross-language merge with "血紅素" never happened.
+    HB: "HEMOGLOBIN",
     \u8840\u5BB9\u7A4D\u6BD4: "HEMATOCRIT",
     HEMATOCRIT: "HEMATOCRIT",
     HCT: "HEMATOCRIT",

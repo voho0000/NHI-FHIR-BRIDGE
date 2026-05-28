@@ -621,7 +621,15 @@ describe("CI v0.11.1 — QC control rows must be filtered out", () => {
     );
     const texts = obs.map((o: any) => o.code?.text);
     expect(texts).not.toContain("Nor.plasma mean");
-    expect(texts).toContain("APTT data/mean"); // real patient row preserved
+    // v0.11.9: "APTT data/mean" now resolves to LOINC 63561-5 (APTT ratio)
+    // and code.text uses LOINC_SHORT_TEXT override "APTT (ratio)". Raw
+    // display is preserved in coding[nhi].display (faithful transport).
+    expect(texts).toContain("APTT (ratio)"); // real patient row preserved (under short-text label)
+    const apttRow = obs.find((o: any) => o.code?.text === "APTT (ratio)") as any;
+    const nhiCoding = apttRow.code?.coding?.find((c: any) =>
+      c.system?.includes("nhi-medical-order-code"),
+    );
+    expect(nhiCoding?.display).toBe("APTT data/mean");
   });
 
   test("QC control pattern variants all filtered", () => {
@@ -635,6 +643,312 @@ describe("CI v0.11.1 — QC control rows must be filtered out", () => {
       (r) => r.resourceType === "Observation",
     );
     expect(obs).toHaveLength(0);
+  });
+});
+
+// ── v0.11.8 — blood type panel stableId collision ──────────────
+// Bug 2026-05-28 part 3: user reported 11001C ABO + 11003C Rh both
+// display "血型鑑定" with code 11001C/11003C. Bridge produced bundle
+// with only 1 row (instead of 2-3). Root cause: stableId hash didn't
+// include NHI code, so different billing codes with shared display
+// canonical produced identical IDs → bundle-assembler dedup (by id)
+// collapsed them. Fix: include code in stableId hash.
+describe("CI v0.11.8 — different NHI codes with shared display must NOT collide at bundle level", () => {
+  test("ABO (11001C) + Rh (11003C) blood type both ship as separate rows", () => {
+    const items = [
+      // 5 raw rows reproducing user's 2025-05-18 長庚嘉義 case
+      {
+        order_code: "11004C",
+        code: "11004C",
+        display: "抗體反應",
+        value: "Negative",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+      {
+        order_code: "11001C",
+        code: "11001C",
+        display: "血型鑑定",
+        value: "B",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+      {
+        order_code: "11003C",
+        code: "11003C",
+        display: "血型鑑定",
+        value: "+",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+      // The 2 duplicate rows below are hospital-LIS quirks (same
+      // result uploaded under both codes). Bridge correctly dedups.
+      {
+        order_code: "11003C",
+        code: "11003C",
+        display: "血型鑑定",
+        value: "B",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+      {
+        order_code: "11001C",
+        code: "11001C",
+        display: "血型鑑定",
+        value: "+",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    // v0.11.9 (SMART app dev clarification 2026-05-29): 健保存摺 ships
+    // TWO distinct readings per blood-type panel — 11001C ABO has
+    // BOTH "B" AND "+" (forward/reverse typing arms or dual-antisera
+    // readings), and 11003C Rh similarly has "+" + "B". These are NOT
+    // LIS upload duplicates as the v0.11.8 test originally assumed —
+    // they're legitimately distinct analyte readings.
+    //
+    // Earlier the bridge's stableId hash didn't include value, so
+    // (11001C, "血型鑑定", date, hospital) collapsed B + + to one Obs
+    // per panel → 3 obs out (one per NHI code). v0.11.9 fix adds
+    // value to stableId, preserving distinct readings.
+    //
+    // Expected: 5 obs out (2 ABO + 2 Rh + 1 antibody screen).
+    expect(obs.length).toBe(5);
+    const byNhiCode = (code: string) =>
+      (obs as any[]).filter((o) =>
+        o.code.coding.find(
+          (c: any) => c.system?.endsWith("nhi-medical-order-code") && c.code === code,
+        ),
+      );
+    expect(byNhiCode("11001C")).toHaveLength(2);
+    expect(byNhiCode("11003C")).toHaveLength(2);
+    expect(byNhiCode("11004C")).toHaveLength(1);
+    // Each NHI code's two readings preserve both values
+    const abo = byNhiCode("11001C")
+      .map((o: any) => String(o.valueString ?? ""))
+      .sort();
+    expect(abo).toEqual(["+", "B"]);
+    const rh = byNhiCode("11003C")
+      .map((o: any) => String(o.valueString ?? ""))
+      .sort();
+    expect(rh).toEqual(["+", "B"]);
+  });
+
+  test("v0.11.9 — code.text uses NHI_CODE_PANEL_NAME override for generic '血型鑑定' display", () => {
+    // SMART app dev 2026-05-29: bridge correctly separates ABO/Rh DRs
+    // at the DR layer (v0.11.8 fix), but each Obs's code.text was the
+    // generic "血型鑑定" — downstream SMART apps that key off code.text
+    // (e.g. duplicate-detection by title+date+institution+value) saw
+    // ABO B and Rh B as identical-looking rows.
+    //
+    // Fix: NHI_CODE_PANEL_NAME override gives code.text the catalog-
+    // specific name. See the next test for coding[nhi].display (H fix)
+    // — this test deliberately omits order_name so we exercise the
+    // pure NHI_CODE_PANEL_NAME path (no order_name shortcut).
+    const items = [
+      {
+        order_code: "11001C",
+        code: "11001C",
+        display: "血型鑑定",
+        value: "B",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+      {
+        order_code: "11003C",
+        code: "11003C",
+        display: "血型鑑定",
+        value: "+",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+      {
+        order_code: "11004C",
+        code: "11004C",
+        display: "抗體反應",
+        value: "Negative",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    expect(obs).toHaveLength(3);
+    const byNhi = (code: string) =>
+      (obs as any[]).find((o) =>
+        o.code.coding.find(
+          (c: any) => c.system?.endsWith("nhi-medical-order-code") && c.code === code,
+        ),
+      );
+    const abo = byNhi("11001C");
+    const rh = byNhi("11003C");
+    const ab = byNhi("11004C");
+    expect(abo.code.text).toBe("ABO 血型測定");
+    expect(rh.code.text).toBe("RH(D) 型檢驗");
+    expect(ab.code.text).toBe("抗體反應 (不規則抗體)");
+    // Without order_name, coding[nhi].display falls back to
+    // NHI_CODE_PANEL_NAME override (v0.11.9 H precedence).
+    const aboNhi = abo.code.coding.find((c: any) => c.system?.endsWith("nhi-medical-order-code"));
+    expect(aboNhi.display).toBe("ABO 血型測定");
+  });
+
+  test("v0.11.9 H — coding[nhi].display = panel catalog name when order_name is set", () => {
+    // SMART app dev 2026-05-29 Category A: coding[nhi].display should be
+    // the NHI catalog panel name (e.g. "ABO血型測定檢驗"), not the
+    // row-level LIS display ("血型鑑定"). Scraper sets raw.order_name to
+    // the NHI catalog value; bridge now passes it through to
+    // buildCodings so coding[nhi].display surfaces the panel-specific
+    // name. Fallback to NHI_CODE_PANEL_NAME override when order_name
+    // missing, finally to display.
+    const items = [
+      {
+        order_code: "11001C",
+        code: "11001C",
+        display: "血型鑑定",
+        value: "B",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+        order_name: "ABO血型測定檢驗",
+      },
+      {
+        order_code: "11003C",
+        code: "11003C",
+        display: "血型鑑定",
+        value: "+",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+        order_name: "RH（D）型檢驗",
+      },
+      // No order_name → falls back to NHI_CODE_PANEL_NAME if mapped
+      {
+        order_code: "11004C",
+        code: "11004C",
+        display: "抗體反應",
+        value: "Negative",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const obs = all.filter((r) => r.resourceType === "Observation");
+    const drs = all.filter((r) => r.resourceType === "DiagnosticReport");
+
+    const obsByNhi = (code: string) =>
+      (obs as any[]).find((o) =>
+        o.code.coding.find(
+          (c: any) => c.system?.endsWith("nhi-medical-order-code") && c.code === code,
+        ),
+      );
+    const aboNhi = obsByNhi("11001C").code.coding.find((c: any) =>
+      c.system?.endsWith("nhi-medical-order-code"),
+    );
+    const rhNhi = obsByNhi("11003C").code.coding.find((c: any) =>
+      c.system?.endsWith("nhi-medical-order-code"),
+    );
+    const abNhi = obsByNhi("11004C").code.coding.find((c: any) =>
+      c.system?.endsWith("nhi-medical-order-code"),
+    );
+    // order_name path
+    expect(aboNhi.display).toBe("ABO血型測定檢驗");
+    expect(rhNhi.display).toBe("RH（D）型檢驗");
+    // NHI_CODE_PANEL_NAME fallback
+    expect(abNhi.display).toBe("抗體反應 (不規則抗體)");
+
+    // DR titles: orderName preferred for multi-obs (already true); for
+    // single-obs (11004C), NHI_CODE_PANEL_NAME override now wins so DR
+    // and obs.text stay aligned.
+    const drByNhi = (code: string) =>
+      (drs as any[]).find((d) => d.code.coding.find((c: any) => c.code === code));
+    expect(drByNhi("11004C").code.text).toBe("抗體反應 (不規則抗體)");
+  });
+
+  test("each NHI code gets own DiagnosticReport (DR id includes code)", () => {
+    // Bug 2026-05-28: DR stableId also missed NHI code in hash. With
+    // 11001C ABO + 11003C Rh both → panelSignature "血型鑑定" → same
+    // DR id → bundle-assembler collapsed them, leaving one DR with
+    // a broken result[] reference (the other Obs orphaned). Same root
+    // cause as the Obs stableId fix — applied to DR too.
+    const items = [
+      {
+        order_code: "11001C",
+        code: "11001C",
+        display: "血型鑑定",
+        value: "B",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+        order_name: "ABO血型測定檢驗",
+      },
+      {
+        order_code: "11003C",
+        code: "11003C",
+        display: "血型鑑定",
+        value: "+",
+        unit: "N/A",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+        order_name: "RH（D）型檢驗",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const drs = all.filter((r) => r.resourceType === "DiagnosticReport");
+    const obs = all.filter((r) => r.resourceType === "Observation");
+    expect(drs).toHaveLength(2);
+    expect(obs).toHaveLength(2);
+    // Each DR must have a distinct id (no collision)
+    const drIds = new Set(drs.map((d: any) => d.id));
+    expect(drIds.size).toBe(2);
+    // Each DR's result[] must reference an in-bundle Observation
+    const obsIds = new Set(obs.map((o: any) => `Observation/${o.id}`));
+    for (const dr of drs as any[]) {
+      for (const ref of dr.result || []) {
+        expect(obsIds.has(ref.reference)).toBe(true);
+      }
+    }
+  });
+
+  test("same code + same display + same value cross-language merge still works (Hb / 血紅素 under 08011C)", () => {
+    // Defensive: code-in-stableId must not break intended cross-
+    // language dedup within a single panel code.
+    const items = [
+      {
+        order_code: "08011C",
+        code: "08011C",
+        display: "Hb",
+        value: 14,
+        unit: "g/dL",
+        date: "2024-01-15",
+        hospital: "X",
+      },
+      {
+        order_code: "08011C",
+        code: "08011C",
+        display: "血紅素",
+        value: 14,
+        unit: "g/dL",
+        date: "2024-01-15",
+        hospital: "X",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    expect(obs.length).toBe(1);
   });
 });
 
@@ -1016,5 +1330,225 @@ describe("CI Layer 1.4 — valueString must not start with digit", () => {
     // Specifically: glucose row preserves "4+ (2000)" verbatim
     const glucose = dipstickObs.find((o: any) => o.code?.text === "Glucose") as any;
     expect(glucose?.valueString).toBe("4+ (2000)");
+  });
+});
+
+// ── v0.11.9 — APTT panel routing + QC broadening + LOINC short text ─
+// SMART app dev report 2026-05-29:
+//
+//   1. APTT 08036C reported two analytes under one billing code:
+//      "Heparin治療範圍參考倍數" (ratio, ~1.08) and "APTT" (seconds,
+//      ~30). Both mapped to LOINC 14979-9 (APTT time) before v0.11.9
+//      — fatal display of 1.08 seconds APTT or 30 ratio.
+//   2. "正常血漿APTT平均值" QC control row wasn't caught by the
+//      narrow /正常血漿平均/ pattern.
+//   3. code.text "Heparin治療範圍參考倍數" surfaces a settings-style
+//      label as analyte column header in SMART apps; LOINC_SHORT_TEXT
+//      override gives a clean "APTT (ratio)" header.
+//   4. Earlier v0.9.10 5894-1 mapping for "PT control"/"對照" was based
+//      on misread of 5894-1 semantics (actually PT actual/Normal ratio,
+//      not control).
+describe("CI v0.11.9 — APTT (08036C) panel routing", () => {
+  test("ratio sub-row (Heparin治療範圍參考倍數, val=1.08) → LOINC 63561-5, NOT 14979-9", () => {
+    const items = [
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "APTT",
+        value: 31.4,
+        unit: "sec",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "Heparin治療範圍參考倍數",
+        value: 1.08,
+        unit: "倍數",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    expect(obs).toHaveLength(2);
+
+    const ratio = obs.find((o: any) =>
+      String(
+        o.code?.coding?.find((c: any) => c.system?.includes("nhi-medical-order-code"))?.display ??
+          "",
+      ).includes("Heparin"),
+    ) as any;
+    expect(ratio).toBeDefined();
+    const ratioLoinc = ratio.code?.coding?.find((c: any) => c.system === "http://loinc.org");
+    expect(ratioLoinc?.code).toBe("63561-5");
+
+    const time = obs.find((o: any) => {
+      const nhiDisp = o.code?.coding?.find((c: any) =>
+        c.system?.includes("nhi-medical-order-code"),
+      )?.display;
+      return String(nhiDisp ?? "") === "APTT";
+    }) as any;
+    expect(time).toBeDefined();
+    const timeLoinc = time.code?.coding?.find((c: any) => c.system === "http://loinc.org");
+    expect(timeLoinc?.code).toBe("14979-9");
+  });
+
+  test("APTT data/mean and APTT actual/normal variants → 63561-5", () => {
+    const items = [
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "APTT data/mean",
+        value: 1.08,
+        unit: "倍數",
+        date: "2025-05-18",
+      },
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "APTT actual/normal",
+        value: 1.12,
+        unit: "倍數",
+        date: "2025-05-19",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    expect(obs).toHaveLength(2);
+    for (const o of obs as any[]) {
+      const loinc = o.code?.coding?.find((c: any) => c.system === "http://loinc.org");
+      expect(loinc?.code).toBe("63561-5");
+    }
+  });
+
+  test("code.text uses LOINC_SHORT_TEXT override (APTT / APTT (ratio) / PT / INR)", () => {
+    const items = [
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "APTT",
+        value: 31.4,
+        unit: "sec",
+        date: "2025-05-18",
+      },
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "Heparin治療範圍參考倍數",
+        value: 1.08,
+        unit: "倍數",
+        date: "2025-05-18",
+      },
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "PT",
+        value: 12.1,
+        unit: "sec",
+        date: "2025-05-18",
+      },
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "INR",
+        value: 1.0,
+        unit: "{ratio}",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    const texts = (obs as any[]).map((o) => o.code?.text).sort();
+    expect(texts).toEqual(["APTT", "APTT (ratio)", "INR", "PT"]);
+    // Raw NHI display preserved in coding[nhi].display (faithful transport)
+    const ratio = obs.find((o: any) => o.code?.text === "APTT (ratio)") as any;
+    const nhiCoding = ratio.code?.coding?.find((c: any) =>
+      c.system?.includes("nhi-medical-order-code"),
+    );
+    expect(nhiCoding?.display).toBe("Heparin治療範圍參考倍數");
+  });
+});
+
+describe("CI v0.11.9 — QC pattern broadening", () => {
+  test("正常血漿APTT平均值 + 正常血漿PT平均值 filtered out", () => {
+    const items = [
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "正常血漿APTT平均值",
+        value: 29.5,
+        unit: "sec",
+        date: "2025-05-18",
+      },
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "正常血漿PT平均值",
+        value: 12.0,
+        unit: "sec",
+        date: "2025-05-18",
+      },
+      // real patient APTT survives
+      {
+        order_code: "08036C",
+        code: "08036C",
+        display: "APTT",
+        value: 31.4,
+        unit: "sec",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    expect(obs).toHaveLength(1);
+    expect((obs[0] as any).code?.text).toBe("APTT");
+  });
+
+  test("legacy QC variants still filtered (Nor.plasma mean / 對照血漿 / Control mean)", () => {
+    const items = [
+      { code: "08036C", display: "Nor.plasma mean", value: 29, unit: "sec", date: "2025-05-18" },
+      { code: "08036C", display: "對照血漿", value: 30, unit: "sec", date: "2025-05-18" },
+      { code: "08036C", display: "Control mean", value: 28, unit: "sec", date: "2025-05-18" },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    expect(obs).toHaveLength(0);
+  });
+});
+
+describe("CI v0.11.9 — 5894-1 PT control mapping removed", () => {
+  test("PT Control display under 08026C falls back to NHI-only (no 5894-1)", () => {
+    // Note: "Control PT" / "PT control" displays in real Taiwan LIS
+    // bundles are typically lab QC and may be caught by QC patterns
+    // depending on exact phrasing. This test asserts the FALLBACK
+    // behaviour: if they slip past the QC filter (e.g. "PT Control"
+    // exact case with no "plasma" or "mean"), they MUST NOT be
+    // mis-mapped to 5894-1 (which is a ratio, not a control reading).
+    const items = [
+      {
+        order_code: "08026C",
+        code: "08026C",
+        display: "PT Control",
+        value: 12.5,
+        unit: "sec",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    if (obs.length > 0) {
+      const loinc = (obs[0] as any).code?.coding?.find((c: any) => c.system === "http://loinc.org");
+      // Either no LOINC (fallback to NHI only) OR PT time (5902-2), but
+      // NEVER 5894-1 (incorrect ratio mapping).
+      expect(loinc?.code).not.toBe("5894-1");
+    }
   });
 });

@@ -2,6 +2,291 @@
 
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
+
+## 0.11.9 重點 — 2026-05-29
+
+**🩸 APTT (08036C) panel routing 修正 — ratio 跟 time 用同一 LOINC、外加 QC pattern + display text 整理**
+
+SMART app dev 2026-05-29 回報：APTT 報告下有兩個 row 都是「APTT 相關」但意義不同：
+- `APTT` value=31.4 sec（patient APTT 時間）
+- `Heparin治療範圍參考倍數` value=1.08（patient APTT / 正常血漿 APTT 比值，heparin 監控用）
+
+Bridge 之前兩個 row 都掛 LOINC **14979-9**（aPTT in Platelet poor plasma）— SMART app 用 LOINC 分欄會把 1.08 跟 31.4 畫在「APTT 秒」同一條 trend，1.08 sec 看起來像致命凝血障礙。同時旁邊 `正常血漿APTT平均值` QC row 沒被現有 QC filter 攔下，混進 patient bundle。
+
+### Root cause — 3 個交織的 bug
+
+#### 1. LOINC mapping error
+`NHI_TO_LOINC["08036C"] = 14979-9`（APTT time, Property=Time, 單位秒）對「APTT 秒」這 row 是對的，但對「Heparin治療範圍參考倍數」是錯的 — 那是 ratio（Property=RelTime, 無單位）。loinc.org 線上 audit 確認正確的 ratio LOINC 是 **63561-5**（aPTT actual/normal in PPP, Property=RelTime）。
+
+#### 2. QC pattern 太窄
+`/正常血漿平均/` 字面只 match `正常血漿平均` — 沒辦法 catch `正常血漿APTT平均值`（中間夾分析物名）或 `正常血漿PT平均值`。
+
+#### 3. v0.9.10 5894-1 mapping 從一開始就標錯
+v0.9.10 把 08026C panel 的 `PT Control` / `對照` 映射到 LOINC **5894-1**，premise 是「5894-1 = PT Control plasma reading」— audit 2026-05-29 上 loinc.org 確認 5894-1 真正的 canonical 是 **"Prothrombin time (PT) actual/Normal"**（Property=RelTime, 一個 RATIO，不是 control reading）。映射根本就錯。
+
+#### 4. code.text 用 raw NHI display 對 SMART app 不友善
+`code.text` 直接吃 raw display string，導致 SMART app 出現 `Heparin治療範圍參考倍數` 這種 setting-style label 當欄位 header，跟旁邊 `APTT` 欄看起來不像同一族分析物。
+
+### Fix（A-E 一次到位）
+
+#### A. 08036C promoted 進 DISPLAY_FIRST_CODES + PANEL_LOINC_MAP 新增
+
+```ts
+// loinc-tables.ts
+DISPLAY_FIRST_CODES.add("08036C");
+
+PANEL_LOINC_MAP["08036C"] = {
+  // ratio variants → 63561-5
+  "heparin治療範圍參考倍數": "63561-5",
+  "aptt data/mean": "63561-5",
+  "aptt actual/normal": "63561-5",
+  "aptt ratio": "63561-5",
+  // bare time variants → 14979-9
+  "aptt": "14979-9",
+  "活化部份凝血活酶時間": "14979-9",
+  // ...
+};
+```
+
+#### B. QC pattern 廣播
+
+```ts
+// observation.ts
+- /正常血漿平均/,
++ /正常血漿.*平均/,   // 抓 正常血漿APTT平均值 / 正常血漿PT平均值
+```
+
+#### C. LOINC_SHORT_TEXT override for code.text
+
+新增 `LOINC_SHORT_TEXT` map，當 row resolved 到有 entry 的 LOINC 時，`code.text` 用 override（給 SMART app 一個乾淨的欄位 header）：
+
+```ts
+// loinc-tables.ts
+export const LOINC_SHORT_TEXT: Record<string, string> = {
+  "14979-9": "APTT",
+  "63561-5": "APTT (ratio)",
+  "5902-2": "PT",
+  "6301-6": "INR",
+  "5894-1": "PT (ratio)",
+};
+
+// observation.ts buildObservation + mapObservation
+text: (loinc && LOINC_SHORT_TEXT[loinc]) || display || "Unknown Lab",
+```
+
+Raw NHI display 仍然完整保留在 `code.coding[nhi].display`（faithful transport — 沒亂改健保存摺給的資料，只是另外提供 SMART app 一個乾淨 label）。
+
+#### D. v0.9.10 5894-1 mapping 移除
+
+`PANEL_LOINC_MAP["08026C"]` 移除 `"pt control"` / `"prothrombin time control"` / `"control pt"` / `"對照"` / `"對照組"` → 5894-1。這些 row 真要是 QC（依 looksLikeQcControl pattern）就被 filter，沒被 filter 就 fall back 到 panel "PT" → 5902-2 或 NHI-coding only — 都比錯標 5894-1 安全。
+
+#### E. LOINC_DISPLAY 修正 + 新增
+
+- `5894-1` display 修成 `"Prothrombin time (PT) actual/Normal in Platelet poor plasma by Coagulation assay"`（之前錯標成 "Control"）
+- 新增 `63561-5`: `"aPTT in Platelet poor plasma by Coagulation assay --actual/normal"`
+
+### CI 守門
+
+新增 4 個 standing CI tests（bundle-quality.test.ts）：
+
+1. **APTT ratio sub-row (val=1.08) → 63561-5, NOT 14979-9** — 鎖住 patient-safety bug
+2. **APTT data/mean + APTT actual/normal 變體 → 63561-5**
+3. **code.text 用 LOINC_SHORT_TEXT override（APTT / APTT (ratio) / PT / INR）** + 確認 raw NHI display 還在 `coding[nhi].display`
+4. **正常血漿APTT平均值 + 正常血漿PT平均值 被 QC filter 攔下；real patient APTT 不受影響**
+5. **PT Control 不再 mis-map 到 5894-1**（即使 slip past QC filter）
+
+舊 v0.9.10 的 "PT Control → 5894-1" 測試翻轉成 v0.11.9 audit assertion：`not.toBe("5894-1")`。
+
+### Faithful transport check
+
+「凡是健保存摺上沒有的不能亂加，沒給的不能造，loinc 對應可以」— 這次修法符合：
+- LOINC 對應改正（從錯標 14979-9 變正確 63561-5）— ok
+- QC filter 廣播（攔下健保存摺裡夾帶的 lab QC 資料，不是 patient data）— ok
+- code.text override（重新 label 我們自己 output 的欄位 header，raw display 還在 coding[nhi].display）— ok
+- 5894-1 移除（取消錯誤的 LOINC 標籤）— ok
+
+沒有任何 row 是新增、刪除、或值被改。
+
+---
+
+**🩸 接續：血型 panel 還有兩個沒修完的問題（同次 release 補上）**
+
+SMART app dev follow-up 2026-05-29：v0.11.8 修好「不同 NHI code 共用 display 撞 stableId」之後，user + app 端再對照 raw → bundle 發現還有兩層 bug 沒修：
+
+#### Bug F：obs.code.text 都是 generic「血型鑑定」
+
+11001C ABO / 11003C RH(D) / 11004C 抗體 三個 NHI code 都從 LIS 拿到 `display: "血型鑑定"`，bridge 直接拿來當 obs.code.text。Downstream SMART app 用 code.text key dupKey（title|date|institution|value）做 duplicate detection — ABO B-type 跟 RH B-positive 看起來 title 一樣、值都是 B → 被誤標「可能重複」。
+
+**Root cause**：NHI 目錄裡每個 code 都有具體的 panel name（ABO 血型測定 / RH(D) 型檢驗），但 LIS 上傳時統一塞 generic「血型鑑定」。Bridge 沒處理這層 LIS-vs-NHI-catalog 的落差。
+
+**Fix**：新增 `NHI_CODE_PANEL_NAME` map（loinc-tables.ts）：
+
+```ts
+export const NHI_CODE_PANEL_NAME: Record<string, string> = {
+  "11001C": "ABO 血型測定",
+  "11003C": "RH(D) 型檢驗",
+  "11004C": "抗體反應 (不規則抗體)",
+};
+```
+
+buildObservation + mapObservation 的 code.text precedence 變成：
+
+```ts
+text:
+  (loinc && LOINC_SHORT_TEXT[loinc]) ||
+  NHI_CODE_PANEL_NAME[code] ||       // ← NEW
+  display ||
+  "Unknown Lab";
+```
+
+只 fire 在 map 裡有 entry 的 NHI code（CBC 子項目沒 entry → display "WBC" 還是會贏，沒 regression）。Raw display「血型鑑定」全在 coding[nhi].display（faithful transport）。
+
+#### Bug G：每張 panel 兩筆 reading bundle 只剩一筆（silent data drop）
+
+健保存摺 5/18 raw 顯示 11001C ABO 有兩筆（B 跟 +）、11003C RH 也有兩筆（+ 跟 B）— forward/reverse typing arms 或 dual-antisera 反應，**legit 兩個獨立 readings**。v0.11.8 的 test seed 我誤判成「LIS 重複上傳」，bundle 確實只給每個 panel 1 筆 obs。
+
+**Root cause**：v0.11.8 stableId 加了 code disambiguation，但 **value 還是沒進 hash**。同 NHI code、同 display、不同 value 兩 row 算出 SAME stableId → groupByOrderCode 的 `seenObsIds.has(obs.id)` 把第二筆當 dup 丟掉。
+
+```ts
+// v0.11.8（不夠）
+stableId(patientId, "obs", canonical, date, hospital, code)
+// v0.11.9 加 value
+stableId(patientId, "obs", canonical, date, hospital, code, String(raw.value ?? ""))
+```
+
+真重複（同 value）還是會在更早的 dedupeCrossFormat（step 1, key 含 value）跟 dedupePanelItems（step 3, key 含 value）就 collapse，所以加 value 進 stableId 不會把真 dup 放回來，只是讓「同 panel 內不同 reading」存活。
+
+**Trade-off（跟 v0.11.8 一樣）**：之後 NHI 端 value 被修正 → resource ID 改變。可接受。
+
+#### Faithful transport check（F + G）✅
+
+- F：純粹給我們自己 output 的 code.text 加一個對 SMART app 友善的 label，raw display 一字不漏在 coding[nhi].display
+- G：「擋住健保存摺有但 bundle 沒輸出的 row」這正是 faithful transport 的核心 — 不能 silently 漏 reading
+
+#### CI 守門（新增 1 個 + 修 1 個）
+
+- **新增**：v0.11.9 code.text 用 NHI_CODE_PANEL_NAME 覆寫 + raw 顯示保留在 coding[nhi].display
+- **修改**：v0.11.8 五筆 raw → 三筆 obs 的 assertion 翻成 **五筆 raw → 五筆 obs**（per NHI 目錄每張 panel 兩筆 reading + 一筆 antibody screen）+ ABO 兩筆值 ["+", "B"] 跟 RH 兩筆值 ["+", "B"] 都檢查
+
+#### Files（F + G）
+
+- `packages/mapper/src/loinc-tables.ts` — 新增 `NHI_CODE_PANEL_NAME` map + export
+- `packages/mapper/src/observation.ts` — import 加 NHI_CODE_PANEL_NAME；buildObservation + mapObservation code.text precedence 加一層；stableId 加 value 參數
+- `backend-ts/tests/unit/bundle-quality.test.ts` — 翻 v0.11.8 blood-type 測試 3→5；新增 code.text override 測試
+
+---
+
+**🏷️ Category A 收尾：coding[nhi].display 用 NHI 目錄 panel 名（不是 LIS row display）**
+
+SMART app dev 第二輪 bug report 2026-05-29 指出：v0.11.8 修好 DR 分流 + F 修好 obs.code.text，但 `coding[nhi].display` **還是 row-level LIS display「血型鑑定」**，不是 NHI 目錄 panel name「ABO血型測定檢驗」。
+
+#### Bug H：coding[nhi].display 用錯來源
+
+```jsonc
+// 之前 (v0.11.8 / F 階段)
+{
+  "code": "11001C",
+  "display": "血型鑑定"     // ← row LIS display, 跟 11003C 撞名
+}
+
+// SMART app dev 期望
+{
+  "code": "11001C",
+  "display": "ABO血型測定檢驗"   // ← NHI 目錄 panel name (raw.order_name)
+}
+```
+
+NHI medical order code system 的 `display` 該是該 code 在 NHI 目錄裡的 canonical 名稱（panel-level），不是 LIS 上傳每 row 自己塞的 label。Bridge 之前直接吃 row display 是錯的設計。
+
+**Fix**：`buildCodings` 加 `nhiPanelName?` 參數；`coding[nhi].display = orderName || NHI_CODE_PANEL_NAME[code] || display`。同時把 DR title 單-row 路徑也對齊（之前 `singleDisplay || orderName || code`、現在 `NHI_CODE_PANEL_NAME[code] || orderName || singleDisplay || code`）— SMART app 看到的 DR title 跟 obs.code.text 都是同個 panel-specific 名字。
+
+#### Faithful transport check（H）✅
+
+`order_name` 是健保署 NHI 目錄裡每個 code 對應的正式名稱（scraper 已經抓下來了），用它當 `coding[nhi].display` 是用 NHI 自己給的資料、不是發明。NHI_CODE_PANEL_NAME override 只在 scraper 沒給 order_name 時 fallback。Patient 資料（value / date / hospital / unit）一個字沒動。
+
+#### Files（H）
+
+- `packages/mapper/src/observation.ts` — `buildCodings` 加 `nhiPanelName?` 參數；buildObservation + mapObservation 都傳 `raw.order_name || NHI_CODE_PANEL_NAME[code]`；DR title 單-row 路徑改用 NHI_CODE_PANEL_NAME 優先
+- `backend-ts/tests/unit/bundle-quality.test.ts` — 新 H regression test 用兩種 path（with order_name / without order_name）；翻 v0.11.8 blood-type 測試 assertion 從 raw display 改成 NHI_CODE_PANEL_NAME
+
+#### v0.11.10 預告 — Category B + C 延後處理
+
+SMART app dev 同份 bug report 還列了 9 個 single-analyte panel code 有 DR title vs obs.text 命名不一致（HbA1c / 全 vs 總膽紅素 / Troponin I 全形 / LDL / TSH 帶「免疫分析」字尾… ）。解法是擴 LOINC_SHORT_TEXT cover 4548-4 / 1975-2 / 10839-9 / 13457-7 / 3016-3 / 2143-6 / 2132-9 / 2284-8 / 83112-3，並把 LOINC_SHORT_TEXT 接到 DR title 構造路徑。
+
+按新規矩「**之後凡是關乎 LOINC 都要先上網搜尋過才能下判斷**」，這 9 個 LOINC 都要先 WebFetch loinc.org 確認 canonical short name + Property + Component，比較沉重 — 拉到 v0.11.10 專案處理，不擠進 v0.11.9。
+
+---
+
+## 0.11.8 重點 — 2026-05-28
+
+**🩸 修血型 panel silent-drop — 11001C ABO + 11003C Rh 共用 display 「血型鑑定」被 bundle-level dedup 撞死**
+
+User 從 2025-05-18 長庚嘉義 raw 看到 5 個血型 panel 相關 row（11001C ABO B / 11001C +（重複上傳）/ 11003C + / 11003C B（重複上傳）/ 11004C 抗體反應 Negative），但 v0.11.7 bundle 只有 2 個（11003C blood + 11004C antibody），11001C ABO 完全消失。
+
+### Root cause
+
+`stableId` for Observation **沒包含 NHI code**：
+```ts
+stableId(patientId, "obs", canonical, date, hospital)
+```
+
+11001C "血型鑑定" 跟 11003C "血型鑑定" canonical 都是「血型鑑定」（global synonym table 沒 entry 落到 lowercased fallback）→ 同 stable ID → bundle assembler 那層 `seen.has((resourceType, id))` 撞死 → 留 1 個。
+
+### Fix
+
+`buildObservation` 的 stableId 加 code：
+```ts
+stableId(patientId, "obs", canonical, date, hospital, code)
+```
+
+→ 11001C 跟 11003C 雖然 canonical 都是 "血型鑑定"，code 不同 → 不同 ID → 各自獨立。
+
+順便補 pre-existing gap：`LAB_SYNONYMS` 沒有 `Hb` / `血色素` entry（只有 HGB / HEMOGLOBIN / 血紅素），新增 `HB` + `血色素` → HEMOGLOBIN，讓 Hb / 血色素 跨語言 merge 正常 work。
+
+### 結果（user 5-row 血型 case）
+
+| 之前 | v0.11.8 |
+|------|---------|
+| 2 rows（11001C 完全 missing）| **3 rows** ✅（11001C ABO B + 11003C Rh + + 11004C 抗體 Negative）|
+
+### CI 守門
+
+`bundle-quality.test.ts` 加 v0.11.8 section — 鎖血型 panel + Hb cross-language regression。
+
+### DR id 也撞死了（同 root cause）— 一起修
+
+User 觀察 bundle 內 11001C ABO 和 11003C Rh 顯示為 2 個獨立 row。深入 trace 發現 DR stableId **也沒包含 NHI code**：
+
+```ts
+stableId(patientId, "DR", panelSignature, date, hospital)  // ← code missing
+```
+
+11001C 和 11003C 兩個 group 的 panelSignature 都是「血型鑑定」 → 同 DR id → bundle 那層 dedup 撞死 → 留 1 個 DR + 另一個 Observation 變孤兒（DR→Obs reference 斷掉）。
+
+修：DR stableId 加 `meta.groupKeyCode`：
+```ts
+stableId(patientId, "DR", panelSignature, date, hospital, code)
+```
+
+順便 memberKeys 也讓 `canonicalLabKey` 帶 code（這樣 urinalysis 等 code-scoped synonym 在 panelSignature 計算時一致）。
+
+### 結果
+
+| Resource | v0.11.7 | v0.11.8 |
+|----------|---------|---------|
+| Obs | 5→2（11001C 沒 emit）| 5→3 ✅ |
+| DR | 3 個 group → 1 個 DR + 1 個孤兒 Obs | **3 個獨立 DR**，DR↔Obs link 全 intact ✅ |
+
+CBC panel（多 item 共享同一 NHI code）行為不變 — 仍是 1 DR + N Obs。
+
+### Trade-off — backend resource ID 會變
+
+`stableId` 改動 → 所有 Observation **跟 DiagnosticReport** ID 重算 → 下次 sync backend mode 會 re-create 既有 resource（一次性 disruption）。Local mode 重下載即可。
+
+純 mapper 改動，無 UI。Reload extension。Backend mode 需要 `docker compose up -d --build`。
+
+---
+
 ## 0.11.7 重點 — 2026-05-28
 
 兩個 patient-safety bug 一次修：

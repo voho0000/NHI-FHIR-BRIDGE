@@ -276,6 +276,15 @@ export const DISPLAY_FIRST_CODES: ReadonlySet<string> = new Set([
   // patient-safety-adjacent: a trend chart would plot PT seconds (~12)
   // and INR (~2.5) on the same series, or label a PT=12 row as "INR=12"
   // (instantly looks like critical anticoagulation overdose). v0.9.10.
+  "08036C", // APTT — Taiwan labs bill BOTH "APTT" (seconds, normal ~25-35)
+  // AND "Heparin治療範圍參考倍數" / "APTT data/mean" (ratio, normal ~1.0)
+  // under the same 08036C code. Without panel-mode handling, both
+  // collapsed to LOINC 14979-9 (APTT time, seconds) — the ratio row's
+  // value of 1.08 displayed under an APTT-time trend column would read
+  // as a fatally low APTT, or scientifically nonsensical seconds unit
+  // for a ratio. SMART app dev report 2026-05-29. LOINC verified at
+  // loinc.org: 14979-9 Property=Time (seconds), 63561-5 Property=RelTime
+  // (actual/normal ratio). v0.11.9.
   // ── CBC component billing codes (v0.9.10, bug report Part 5) ─────
   // These are SINGLE-analyte billing codes (one analyte per code, NOT
   // panels). Why are they here? Hospital LIS labelling errors swap
@@ -762,11 +771,18 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
   // longest-specific first.
   "08026C": {
     "international normalized ratio": "6301-6",
-    "prothrombin time control": "5894-1",
-    "pt control": "5894-1",
-    "control pt": "5894-1",
-    對照: "5894-1",
-    對照組: "5894-1",
+    // v0.11.9 (SMART app dev report 2026-05-29 + loinc.org audit):
+    // 5894-1's canonical name is "Prothrombin time (PT) actual/Normal"
+    // — Component=Prothrombin time actual/Normal, Property=RelTime
+    // (a RATIO, not a control reading). Earlier v0.9.10 mapping of
+    // "PT control" / "對照" / "對照組" / "prothrombin time control"
+    // → 5894-1 was based on the misread that 5894-1 was a "control"
+    // LOINC. It is NOT — these displays describe lab QC control plasma
+    // readings, which have no clinical LOINC fit and are already
+    // candidates for the QC filter (looksLikeQcControl). Removing the
+    // wrong LOINC mapping so any "Control PT" rows that slip past the
+    // QC filter fall back to NHI-coding-only, rather than being
+    // mis-labelled as a PT-ratio analyte.
     "prothrombin time": "5902-2",
     "pt (sec)": "5902-2",
     "pt sec": "5902-2",
@@ -786,6 +802,46 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     "p t": "5902-2",
     inr: "6301-6",
     pt: "5902-2",
+  },
+
+  // ── APTT panel (08036C) ──────────────────────────────
+  // Taiwan labs bill TWO sub-rows under 08036C:
+  //   1. "APTT" / "活化部份凝血活酶時間" — value in seconds (~25-35 sec
+  //      normal). LOINC 14979-9 (aPTT in PPP, Property=Time).
+  //   2. "Heparin治療範圍參考倍數" / "APTT data/mean" / "APTT actual/normal"
+  //      — ratio (patient APTT / lab normal mean), value ~1.0 ± dimensionless.
+  //      LOINC 63561-5 (aPTT actual/normal in PPP, Property=RelTime).
+  // Before v0.11.9 BOTH rows mapped to 14979-9 — a ratio value of 1.08
+  // displayed under APTT-time column would read as fatally low APTT
+  // (normal lower bound ~25 sec), or render seconds units on a unitless
+  // ratio. SMART app dev report 2026-05-29.
+  //
+  // LOINC verified at loinc.org (2026-05-29):
+  //   14979-9 Component=aPTT, Property=Time, System=PPP (seconds)
+  //   63561-5 Component=aPTT actual/normal, Property=RelTime, System=PPP (ratio)
+  //
+  // Longest-key-wins via _findLongestMatch — so the longer ratio
+  // synonyms get priority over the bare "APTT" → time fallback when
+  // a row's display contains both substrings.
+  "08036C": {
+    // Ratio variants — Taiwan LIS shows "Heparin治療範圍參考倍數"
+    // (Heparin therapeutic range reference multiplier) when reporting
+    // the APTT ratio for heparin monitoring. Also "APTT data/mean"
+    // (denominator-explicit form) and "actual/normal" verbiage.
+    heparin治療範圍參考倍數: "63561-5",
+    heparin治療範圍: "63561-5",
+    治療範圍參考倍數: "63561-5",
+    參考倍數: "63561-5",
+    "aptt data/mean": "63561-5",
+    "aptt actual/normal": "63561-5",
+    "aptt ratio": "63561-5",
+    "aptt mean": "63561-5",
+    // Bare time variants — fall through to seconds LOINC.
+    aptt: "14979-9",
+    "a.p.t.t": "14979-9",
+    活化部份凝血活酶時間: "14979-9",
+    部份凝血活酶時間: "14979-9",
+    凝血活酶時間: "14979-9",
   },
 
   // ── Synovial / body-fluid panel (16008C) ─────────────
@@ -1160,10 +1216,20 @@ export const LOINC_DISPLAY: Record<string, string> = {
   // ── Coagulation ──────────────────────────────────
   "5902-2":
     "Prothrombin time (PT) in Platelet poor plasma by Coagulation assay",
+  // v0.11.9 audit: previously labelled "Prothrombin time (PT) Control...".
+  // loinc.org canonical is actually "Prothrombin time (PT) actual/Normal..."
+  // (Component=Prothrombin time actual/Normal, Property=RelTime — a RATIO,
+  // not a control reading). See PANEL_LOINC_MAP['08026C'] comment.
   "5894-1":
-    "Prothrombin time (PT) Control in Platelet poor plasma by Coagulation assay",
+    "Prothrombin time (PT) actual/Normal in Platelet poor plasma by Coagulation assay",
   "6301-6": "INR in Platelet poor plasma by Coagulation assay",
   "14979-9": "aPTT in Platelet poor plasma by Coagulation assay",
+  // v0.11.9 (SMART app dev report 2026-05-29): added APTT ratio LOINC.
+  // 08036C bills both APTT (seconds, 14979-9) AND APTT ratio (63561-5) as
+  // sub-rows; without per-LOINC display, the ratio row inherited APTT
+  // time's display and looked like a fatal coagulation reading.
+  "63561-5":
+    "aPTT in Platelet poor plasma by Coagulation assay --actual/normal",
   "30240-6": "Fibrin D-dimer [Mass/volume] in Platelet poor plasma",
   // ── Body fluid (16008C panel members; v0.9.10) ───
   "26466-3": "Leukocytes [#/volume] in Body fluid by Manual count",
@@ -1195,4 +1261,76 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "8480-6": "Systolic blood pressure",
   "8462-4": "Diastolic blood pressure",
   "85354-9": "Blood pressure panel with all children optional",
+};
+
+// ── _LOINC_SHORT_TEXT ─────────────────────────────────────
+// Short clean clinical names used as `Observation.code.text` (the
+// human-readable label most SMART apps surface in trend columns and
+// per-row tooltips). Distinct from LOINC_DISPLAY (which is the LONG
+// canonical name in `coding[loinc].display` for FHIR validator
+// compliance) — code.text is allowed to be friendlier.
+//
+// Rationale (v0.11.9, SMART app dev report 2026-05-29): the raw NHI
+// display for coag analytes is often clinically ambiguous —
+// "Heparin治療範圍參考倍數" looks like a settings label, not the
+// APTT-ratio analyte. Without an override, SMART app pivoted on
+// code.text and showed columns labelled "Heparin治療範圍參考倍數"
+// next to a sibling "APTT" column, even though both are the same
+// underlying APTT measurement (one in seconds, one as ratio).
+//
+// Behaviour:
+//   - If the row resolves to a LOINC AND that LOINC has a
+//     LOINC_SHORT_TEXT entry, `code.text` uses the override
+//   - The raw NHI display is ALWAYS preserved in
+//     `coding[nhi].display` (faithful-transport)
+//   - LOINCs without entries here fall back to raw display
+//     (current behaviour, no regression for the long tail)
+//
+// Faithful-transport check: this is NOT inventing data the
+// hospital didn't ship; it's relabelling our own output column
+// header with a clinical short name that matches the LOINC
+// already chosen.
+export const LOINC_SHORT_TEXT: Record<string, string> = {
+  // ── Coagulation panel (08036C / 08026C) ──────────
+  "14979-9": "APTT",
+  "63561-5": "APTT (ratio)",
+  "5902-2": "PT",
+  "6301-6": "INR",
+  "5894-1": "PT (ratio)", // v0.11.9: 5894-1 is PT actual/normal RATIO
+  // (Property=RelTime), NOT PT Control as previously (incorrectly) labelled.
+  // See LOINC_DISPLAY comment for full audit trail.
+};
+
+// ── _NHI_CODE_PANEL_NAME ─────────────────────────────────
+// Per-NHI-code override for Observation.code.text when the hospital
+// LIS reliably ships a generic panel-umbrella display string instead
+// of an analyte-specific one. The NHI catalog has the canonical
+// panel-specific name; without an override, downstream SMART apps
+// that key off `code.text` see indistinguishable "血型鑑定" labels
+// for ABO vs Rh vs antibody screen even though the NHI codes (and
+// therefore DR title) are different.
+//
+// Rationale (SMART app dev report 2026-05-29, v0.11.9):
+//   - 11001C ABO / 11003C RH(D) / 11004C antibody all ship from LIS
+//     with `display: "血型鑑定"` (generic blood-typing umbrella).
+//   - Bridge already separates them at the DR layer (NHI code wins,
+//     v0.11.8 fix), but downstream consumers that look only at
+//     `obs.code.text` see 3 identical "血型鑑定" rows.
+//   - SMART app cousins this trip up duplicate-detection (same title
+//     + same date + same hospital + same value → wrongly flagged
+//     "possible duplicate").
+//
+// Precedence in buildObservation: LOINC_SHORT_TEXT > NHI_CODE_PANEL_NAME
+// > raw display. Faithful-transport check ✅: this only relabels OUR
+// OWN code.text; raw display is preserved verbatim in
+// `coding[nhi].display` (set by buildCodings).
+//
+// Only add an entry here when the LIS reliably ships a GENERIC display
+// for ALL rows under that NHI code in practice. For CBC-style panels
+// where each sub-row has a unique analyte display, NO entry — display
+// (which is already specific) wins.
+export const NHI_CODE_PANEL_NAME: Record<string, string> = {
+  "11001C": "ABO 血型測定",
+  "11003C": "RH(D) 型檢驗",
+  "11004C": "抗體反應 (不規則抗體)",
 };
