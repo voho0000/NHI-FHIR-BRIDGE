@@ -2723,3 +2723,146 @@ describe("CI v0.12.2 — Urine protein scale routing (qualitative vs quantitativ
     expect(quantLoinc.display).toBe("Protein [Mass/volume] in Urine");
   });
 });
+
+// ── v0.12.3 — NHI source channel as Observation.meta.tag ─────────
+// Direct inspection of NHI 健保存摺 /api/ihke3000/ihke3409s01/page_load
+// on 2026-05-29 confirmed bridge correctly preserves 92 A+B pair rows
+// the app-dev's audit had attributed to bridge transformer. NHI ships
+// the same measurement under two upload channels and the bridge's
+// strict-no-dedup rule (CLAUDE.md) preserves both. To let SMART apps
+// dedup-by-source as a UI choice, the channel is surfaced on
+// Observation.meta.tag.
+describe("CI v0.12.3 — NHI source channel surfaced as meta.tag", () => {
+  test("Single obs from source A gets meta.tag with code 'A'", () => {
+    const items = [
+      {
+        order_code: "09021C",
+        code: "09021C",
+        display: "Na",
+        value: 144,
+        unit: "mEq/L",
+        date: "2026-05-25",
+        hospital: "長庚嘉義",
+        order_name: "鈉",
+        reference_range: "[136][146]",
+        nhi_source_channel: "A",
+        nhi_source_channel_name: "特約醫事機構不定期上傳",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const tags = o.meta?.tag ?? [];
+    const nhiSrc = tags.find((t: any) => t.system === "http://nhi-fhir-bridge/nhi-source-channel");
+    expect(nhiSrc).toBeDefined();
+    expect(nhiSrc.code).toBe("A");
+    expect(nhiSrc.display).toBe("特約醫事機構不定期上傳");
+  });
+
+  test("A+B pair from same draw produces 2 distinct obs each tagged with its source", () => {
+    // Reproduces the 2026-01-14 鈉 case from NHI raw: NHI ships one A
+    // row (display=Na, refRange numeric) and one B row (display=鈉,
+    // refRange text-only). Bridge preserves both per strict-no-dedup;
+    // each tagged with its source channel.
+    const items = [
+      {
+        order_code: "09021C",
+        code: "09021C",
+        display: "Na",
+        value: 142,
+        unit: "mEq/L",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "鈉",
+        reference_range: "[136][146]",
+        nhi_source_channel: "A",
+        nhi_source_channel_name: "特約醫事機構不定期上傳",
+      },
+      {
+        order_code: "09021C",
+        code: "09021C",
+        display: "鈉",
+        value: 142,
+        unit: "mEq/L",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "鈉",
+        reference_range: "[無][無]",
+        nhi_source_channel: "B",
+        nhi_source_channel_name: "特約醫事機構定期上傳",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(2);
+    const sources = obs
+      .map(
+        (o) =>
+          o.meta?.tag?.find((t: any) => t.system === "http://nhi-fhir-bridge/nhi-source-channel")
+            ?.code,
+      )
+      .sort();
+    expect(sources).toEqual(["A", "B"]);
+  });
+
+  test("Obs without nhi_source_channel field omits the tag (no spurious empty tag)", () => {
+    const items = [
+      {
+        order_code: "09021C",
+        code: "09021C",
+        display: "Na",
+        value: 144,
+        unit: "mEq/L",
+        date: "2026-05-25",
+        hospital: "長庚嘉義",
+        order_name: "鈉",
+        reference_range: "[136][146]",
+        // intentionally no nhi_source_channel
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const tags = o.meta?.tag ?? [];
+    const nhiSrc = tags.find((t: any) => t.system === "http://nhi-fhir-bridge/nhi-source-channel");
+    expect(nhiSrc).toBeUndefined();
+  });
+
+  test("Strict-no-dedup rule still holds — A+B pair both survive (regression lock for the 113-pair audit conclusion)", () => {
+    const items = [
+      {
+        order_code: "06013C",
+        code: "06013C",
+        display: "Glucose",
+        value: "4+ (2000)",
+        unit: "mg/dL",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "尿生化檢查",
+        reference_range: "[Negative][]",
+        nhi_source_channel: "A",
+        nhi_source_channel_name: "特約醫事機構不定期上傳",
+      },
+      {
+        order_code: "06013C",
+        code: "06013C",
+        display: "尿糖",
+        value: "4+ (2000)",
+        unit: "mg/dL",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "尿生化檢查",
+        reference_range: "[無][無]",
+        nhi_source_channel: "B",
+        nhi_source_channel_name: "特約醫事機構定期上傳",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    );
+    // Both A and B obs preserved — bridge does NOT collapse cross-channel
+    // pairs even when canonical (urine glucose) and value match.
+    expect(obs).toHaveLength(2);
+  });
+});

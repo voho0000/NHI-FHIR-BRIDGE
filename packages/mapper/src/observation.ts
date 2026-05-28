@@ -1106,6 +1106,43 @@ const URINE_PROTEIN_COMBINED_RE =
 const URINE_PROTEIN_NUMERIC_RE = /^[\d.]+$/;
 const URINE_PROTEIN_MASS_UNIT_RE = /^mg\s*\/\s*d\s*l$/i;
 
+// ── NHI source channel meta.tag (v0.12.3) ────────────────────────────
+// NHI 健保存摺 ships the same measurement under two upload channels —
+// A (特約醫事機構不定期上傳, real-time-ish) and B (定期上傳, batch
+// sync). Verified directly against /api/ihke3000/ihke3409s01/page_load
+// 2026-05-29: of 113 dup pairs in the user's v0.12.1 bundle, 92 were
+// NHI-side A+B pairs for the same draw, not bridge transformer
+// artifacts. NHI's own UI dedupes some pairs visually (urinalysis
+// shows both; chem panel often collapses to the most recently
+// uploaded row), but the underlying API returns all raw rows.
+//
+// Per the strict-no-dedup rule (CLAUDE.md), bridge preserves all raw
+// rows as distinct Observations. Surfacing the channel via meta.tag
+// lets SMART apps dedup-by-source as a clinician UI choice without
+// requiring the bridge to encode that judgement.
+//
+// Tag system URL is bridge-namespaced (not an official NHI URL) since
+// NHI doesn't publish a coded ValueSet for this; the codes "A" / "B"
+// match the upstream orI_TYPE values verbatim for trivial round-trip.
+const NHI_SOURCE_CHANNEL_SYSTEM = "http://nhi-fhir-bridge/nhi-source-channel";
+
+function appendNhiSourceChannelTag(
+  resource: Record<string, any>,
+  raw: Record<string, any>,
+): void {
+  const code = String(raw.nhi_source_channel ?? "").trim().toUpperCase();
+  if (!code) return;
+  const displayName = String(raw.nhi_source_channel_name ?? "").trim();
+  const tag: Record<string, string> = {
+    system: NHI_SOURCE_CHANNEL_SYSTEM,
+    code,
+  };
+  if (displayName) tag.display = displayName;
+  if (!resource.meta) resource.meta = { versionId: "1", source: "nhi-fhir-bridge/scraper" };
+  if (!Array.isArray(resource.meta.tag)) resource.meta.tag = [];
+  resource.meta.tag.push(tag);
+}
+
 function urineProteinLoincFix(
   loinc: string | null,
   rawValue: unknown,
@@ -1199,6 +1236,8 @@ export function mapObservation(
       },
     ];
   }
+  // v0.12.3: NHI source channel (A=不定期 / B=定期).
+  appendNhiSourceChannelTag(resource, raw);
 
   if (raw.date) {
     resource.effectiveDateTime = `${raw.date}T00:00:00+08:00`;
@@ -1356,6 +1395,13 @@ function buildObservation(
   // judgement; LIS uploads N rows, bridge emits N obs). Using the raw
   // unit keeps them distinct without affecting cleanup of
   // `Quantity.unit` which happens later in `_canonicalizeUnit`.
+  //
+  // v0.12.3: ALSO include the NHI source channel (A=不定期 / B=定期).
+  // NHI ships the same measurement under both channels for ~25% of
+  // rows (92 of 365 in user's 2026-05-29 audit). Without source in
+  // the hash, A and B rows for the same draw collapse to one obs at
+  // the seenObsIds step — bridge-side dedup that contradicts the
+  // strict-no-dedup rule. Including source preserves both per design.
   const obsId = stableId(
     patientId,
     "obs",
@@ -1365,6 +1411,7 @@ function buildObservation(
     code,
     String(raw.value ?? ""),
     String(raw.unit ?? ""),
+    String(raw.nhi_source_channel ?? ""),
   );
   let loinc = findLoinc(code, display);
   // v0.11.13 (SMART app dev bug 9a 2026-05-29): structural LOINC vs
@@ -1444,6 +1491,9 @@ function buildObservation(
   if (raw.hospital) resource.performer = [{ display: raw.hospital }];
   const specimen = inferSpecimen(raw.order_name, raw.display, raw.code);
   if (specimen) resource.specimen = { display: specimen };
+  // v0.12.3: surface NHI source channel (A=不定期 / B=定期) for SMART
+  // app dedup-by-source UI choice. See appendNhiSourceChannelTag().
+  appendNhiSourceChannelTag(resource, raw);
 
   const hasValue = isMeaningfulValue(value);
   if (hasValue) {

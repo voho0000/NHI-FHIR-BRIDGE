@@ -3886,6 +3886,20 @@
   var URINE_PROTEIN_COMBINED_RE = /^(?:[\d.]+\+|trace|positive|negative|\+|-)\s*[(（]/i;
   var URINE_PROTEIN_NUMERIC_RE = /^[\d.]+$/;
   var URINE_PROTEIN_MASS_UNIT_RE = /^mg\s*\/\s*d\s*l$/i;
+  var NHI_SOURCE_CHANNEL_SYSTEM = "http://nhi-fhir-bridge/nhi-source-channel";
+  function appendNhiSourceChannelTag(resource, raw) {
+    const code = String(raw.nhi_source_channel ?? "").trim().toUpperCase();
+    if (!code) return;
+    const displayName = String(raw.nhi_source_channel_name ?? "").trim();
+    const tag = {
+      system: NHI_SOURCE_CHANNEL_SYSTEM,
+      code
+    };
+    if (displayName) tag.display = displayName;
+    if (!resource.meta) resource.meta = { versionId: "1", source: "nhi-fhir-bridge/scraper" };
+    if (!Array.isArray(resource.meta.tag)) resource.meta.tag = [];
+    resource.meta.tag.push(tag);
+  }
   function urineProteinLoincFix(loinc, rawValue, rawUnit) {
     if (loinc !== URINE_PROTEIN_QUALITATIVE_LOINC) return loinc;
     const v = String(rawValue ?? "").trim();
@@ -3950,6 +3964,7 @@
         }
       ];
     }
+    appendNhiSourceChannelTag(resource, raw);
     if (raw.date) {
       resource.effectiveDateTime = `${raw.date}T00:00:00+08:00`;
     }
@@ -4050,7 +4065,8 @@
       raw.hospital ?? "",
       code,
       String(raw.value ?? ""),
-      String(raw.unit ?? "")
+      String(raw.unit ?? ""),
+      String(raw.nhi_source_channel ?? "")
     );
     let loinc = findLoinc(code, display);
     loinc = structuralLoincFix(loinc, raw.unit);
@@ -4118,6 +4134,7 @@
     if (raw.hospital) resource.performer = [{ display: raw.hospital }];
     const specimen = inferSpecimen(raw.order_name, raw.display, raw.code);
     if (specimen) resource.specimen = { display: specimen };
+    appendNhiSourceChannelTag(resource, raw);
     const hasValue = isMeaningfulValue(value);
     if (hasValue) {
       const unit = _canonicalizeUnit(display, code, raw.unit ?? "");
@@ -4573,7 +4590,18 @@
       value: String(value),
       unit: item.uniT_DATA || "",
       reference_range: item.consulT_VALUE || item.short_CONSULT_VALUE || "",
-      hospital: item.hosP_ABBR || ""
+      hospital: item.hosP_ABBR || "",
+      // v0.12.3: NHI ships the same measurement under two upload
+      // channels — orI_TYPE = "A" (特約醫事機構不定期上傳, real-time) or
+      // "B" (定期上傳, batch sync). Verified 2026-05-29 via direct
+      // /api/ihke3000/ihke3409s01/page_load inspection: 92 of 113 dup
+      // pairs in the user's v0.12.1 bundle are NHI-side A+B pairs for
+      // the same draw, not bridge transformer artifacts. Surfacing the
+      // channel here lets the downstream mapper emit it as
+      // Observation.meta.tag so SMART apps can dedupe-by-source as a UI
+      // choice without violating the bridge's strict-no-dedup rule.
+      nhi_source_channel: String(item.orI_TYPE || "").toUpperCase() || null,
+      nhi_source_channel_name: String(item.orI_TYPE_NAME || "") || null
     };
   }
   function adaptMedicationFromDetail(drug, visit, options) {

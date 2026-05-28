@@ -55,6 +55,28 @@ Checklist:
      - **Specimen quality flags** (`溶血` / `脂血` / icterus) are filtered because they are not patient measurements and would not be modelled as Observations under FHIR R4 regardless of LIS encoding.
      - **Unit string cleanup** in `_canonicalizeUnit` — placeholder strings are stripped from the emitted `Quantity.unit` field (FHIR R4 requires valid UCUM or absent), but this happens AFTER dedup so it never affects observation count.
 
+## NHI multi-channel upload — A vs B (added 2026-05-29, v0.12.3)
+
+**NHI 健保存摺 ships separate raw rows per upload channel for the same measurement.** Verified directly against `https://myhealthbank.nhi.gov.tw/api/ihke3000/ihke3409s01/page_load` 2026-05-29 — of 113 dup pairs in user's v0.12.1 bundle, 92 were NHI-side A+B pairs, not bridge transformer artifacts.
+
+Channels:
+- **A** = `特約醫事機構不定期上傳` (real-time-ish; typically carries English-shorthand display + numeric reference range)
+- **B** = `特約醫事機構定期上傳` (batch sync; typically carries Chinese display + text-only reference range like `[無][無]`)
+
+NHI's own UI dedupes some pairs visually but not consistently:
+- Urinalysis (06013C) rows: both A and B shown side-by-side in UI
+- Chem panel rows (Na/K/Ca/Cr): UI often collapses to a single row (most-recent upload), even when API ships both
+
+**Key consequence**: an app dev who audits a SMART app's bundle and "verifies against 健保存摺 UI" will sometimes see N rows in the UI but find N+M rows in the FHIR bundle. The bundle is correct; the UI dedups silently for some panel families.
+
+**Bridge handling**:
+1. Both A and B rows are preserved per strict no-dedup rule (rule #7 above)
+2. `stableId` for Observation includes the raw NHI source channel so A and B rows with otherwise-identical canonical/code/date/hospital/value/unit don't collide at the `seenObsIds` step
+3. The channel is surfaced as `Observation.meta.tag` with system `http://nhi-fhir-bridge/nhi-source-channel` and code `A` or `B`, so SMART apps can dedup-by-source as a UI choice without requiring the bridge to encode that judgement
+4. The extension adapter (`adaptLabItem` in `nhi-adapters.js`) reads `orI_TYPE` / `orI_TYPE_NAME` from the raw NHI JSON and passes them as `nhi_source_channel` / `nhi_source_channel_name`
+
+**Auditing future "bundle has duplicate" claims**: before investigating bridge transformer logic, check whether the duplicate pair has different `orI_TYPE` source channels. If yes, it's NHI multi-channel — not a bug.
+
 ## Release approval workflow (added 2026-05-28)
 
 **No release without explicit user OK.** Even for small fixes. The exact rule from user:

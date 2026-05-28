@@ -3,6 +3,114 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.12.3 重點 — 2026-05-29
+
+**🔎 直接打 NHI raw API 確認 — 113 對 duplicate 不是 bridge bug，是 NHI multi-channel design**
+
+App dev v0.12.1 報 113 對 "duplicate" 跟 user "verified 健保存摺 只有 1 row" 並列 — 我直接連到 NHI `/api/ihke3000/ihke3409s01/page_load` 看 raw JSON：
+
+| 統計 | 數字 |
+|---|---|
+| Raw row 總數 | 365 |
+| **A+B pair（不同 channel 同 measurement）** | **92** |
+| 同 source double-upload | 4 |
+| Mixed triples | 7 |
+| 2026-05-25 鈉（user 確認 UI 1 row）| raw 真的 1 row ✓ |
+
+NHI 真的把同 measurement 用兩個 channel ship：
+- **A** = `特約醫事機構不定期上傳` — 即時，常配英文 display + numeric refRange
+- **B** = `特約醫事機構定期上傳` — 批次，常配中文 display + `[無][無]` text refRange
+
+NHI UI 對某些 panel family（chem panel 鈉/K/Ca/Cr）會視覺上 dedup 顯示，user 看時只看到 1 row；其他 panel（06013C 尿生化）則並列顯示 2 row。**API 一律 ship 兩筆**，UI dedup 不一致。
+
+→ Bridge 完全 faithful，113 對 "duplicate" 是 NHI multi-channel 結構，per CLAUDE.md strict-no-dedup rule **不該** 合掉。
+
+### v0.12.3 修法
+
+**1. Scraper (`adaptLabItem`) pass `orI_TYPE` through**：
+```js
+return {
+  ...
+  nhi_source_channel: String(item.orI_TYPE || '').toUpperCase() || null,
+  nhi_source_channel_name: String(item.orI_TYPE_NAME || '') || null,
+};
+```
+
+**2. Mapper emit as `Observation.meta.tag`**：
+```ts
+const NHI_SOURCE_CHANNEL_SYSTEM = "http://nhi-fhir-bridge/nhi-source-channel";
+
+function appendNhiSourceChannelTag(resource, raw) {
+  const code = String(raw.nhi_source_channel ?? "").trim().toUpperCase();
+  if (!code) return;
+  if (!resource.meta.tag) resource.meta.tag = [];
+  resource.meta.tag.push({
+    system: NHI_SOURCE_CHANNEL_SYSTEM,
+    code,              // "A" or "B"
+    display: String(raw.nhi_source_channel_name ?? ""),
+  });
+}
+```
+
+接到 `buildObservation` 跟 `mapObservation` 兩 path。Bundle output 範例：
+
+```jsonc
+{
+  "resourceType": "Observation",
+  "meta": {
+    "versionId": "1",
+    "source": "nhi-fhir-bridge/scraper",
+    "tag": [
+      {
+        "system": "http://nhi-fhir-bridge/nhi-source-channel",
+        "code": "A",
+        "display": "特約醫事機構不定期上傳"
+      }
+    ]
+  },
+  ...
+}
+```
+
+**3. `stableId` 加入 NHI source channel**：A+B 同 canonical/code/date/hospital/value/unit 但不同 channel 之前會撞在 `seenObsIds` step → 合成 1 obs。加 source 進 hash → 兩 obs 都 survive，符合 strict-no-dedup。
+
+```ts
+const obsId = stableId(
+  patientId, "obs", canonical, raw.date ?? "", raw.hospital ?? "",
+  code, String(raw.value ?? ""), String(raw.unit ?? ""),
+  String(raw.nhi_source_channel ?? ""),   // v0.12.3 新增
+);
+```
+
+**4. CLAUDE.md 加 NHI multi-channel 章節**：未來 audit "bundle has duplicate" 先 check pair 的 `orI_TYPE` 是否不同 — 是的話 NHI multi-channel，bridge 正確。
+
+### App dev report 結論
+
+92 of 113 pair 是 NHI A+B pair（不是 bridge artifact）；4 是同 source double-upload（NHI 自己給 2 row）；7 是 triple；剩下 ~10 大概其他 hospital quirk。**SMART app 可以 pivot by `meta.tag` source channel 做 informed dedup**（例如「prefer A when both exist」）— bridge 提供結構，app 決定行為。
+
+### FHIR R4 compliance audit ✅（per CLAUDE.md）
+
+- `Observation.meta.tag` 是 FHIR R4 spec-defined 標準 metadata 欄位（[R4 reference](https://hl7.org/fhir/R4/resource.html#Meta)）
+- Tag system URL bridge-namespaced (`http://nhi-fhir-bridge/nhi-source-channel`)，code/display 來自 NHI raw verbatim — round-trip 不丟資訊
+- `stableId` 加新 hash input 不影響 Resource.id 結構（仍 SHA1 hex ≤64 chars）
+- No dedup / drop — strict-no-dedup rule 完整守住，stableId 加 source 是 **enable** 保留不是 dedup
+
+### CI 守門（4 個新 regression tests）
+
+1. Single obs from source A gets `meta.tag` with code "A"
+2. A+B pair from same draw → **2 distinct obs**，sources 排序 = ["A", "B"]
+3. Obs without `nhi_source_channel` field omits the tag（沒亂塞空 tag）
+4. **Lock**：strict-no-dedup — A+B Glucose/尿糖 同 value 4+ (2000) 同 date 同 hospital → 還是 2 obs（不會 dedup）
+
+### Files
+
+- `extension/src/nhi-adapters.js` — `adaptLabItem` pass `nhi_source_channel` + `nhi_source_channel_name`
+- `packages/mapper/src/observation.ts` — `appendNhiSourceChannelTag()` helper + `NHI_SOURCE_CHANNEL_SYSTEM` constant；hook into `buildObservation` + `mapObservation`；`stableId` 加 source 參數
+- `CLAUDE.md` — NHI multi-channel A/B 完整章節
+- `backend-ts/tests/unit/bundle-quality.test.ts` — v0.12.3 describe block (4 tests)
+
+---
+
 ## 0.12.2 重點 — 2026-05-29
 
 **🪞 v0.12.1 audit 後 mirror fix + 尿蛋白 Ord/Qn structural routing**

@@ -122,6 +122,17 @@ export function adaptLabItem(item) {
     unit: item.uniT_DATA || "",
     reference_range: item.consulT_VALUE || item.short_CONSULT_VALUE || "",
     hospital: item.hosP_ABBR || "",
+    // v0.12.3: NHI ships the same measurement under two upload
+    // channels — orI_TYPE = "A" (特約醫事機構不定期上傳, real-time) or
+    // "B" (定期上傳, batch sync). Verified 2026-05-29 via direct
+    // /api/ihke3000/ihke3409s01/page_load inspection: 92 of 113 dup
+    // pairs in the user's v0.12.1 bundle are NHI-side A+B pairs for
+    // the same draw, not bridge transformer artifacts. Surfacing the
+    // channel here lets the downstream mapper emit it as
+    // Observation.meta.tag so SMART apps can dedupe-by-source as a UI
+    // choice without violating the bridge's strict-no-dedup rule.
+    nhi_source_channel: String(item.orI_TYPE || "").toUpperCase() || null,
+    nhi_source_channel_name: String(item.orI_TYPE_NAME || "") || null,
   };
 }
 
