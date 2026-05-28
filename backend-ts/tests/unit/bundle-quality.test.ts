@@ -2050,3 +2050,91 @@ describe("CI v0.11.11 — Bug 8: single-obs DR ↔ obs text alignment", () => {
     expect(texts).toEqual(["Hb", "WBC"]);
   });
 });
+
+// ── v0.11.12 — FHIR R4 Coding.display compliance ────────────────
+// FHIR R4: Coding.display must "follow the rules of the system". For
+// LOINC, that's the Long Common Name from loinc.org. Without an entry
+// in LOINC_DISPLAY, buildCodings falls back to the raw row display
+// (e.g. "Meta-Myelocyte" / "紅血球分佈變異數") which is NOT the LOINC
+// canonical name. v0.11.12 audit caught 7 LOINCs introduced in v0.11.10
+// / v0.11.11 missing their LOINC_DISPLAY twins.
+describe("CI v0.11.12 — Coding.display uses LOINC Long Common Name (not raw display)", () => {
+  test("740-1 (Metamyelocyte) Coding.display = Long Common Name (not row display 'Meta-Myelocyte')", () => {
+    const items = [
+      { code: "08013C", display: "Meta-Myelocyte", value: 0.5, unit: "%", date: "2025-05-18" },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const loincCoding = o.code.coding.find((c: any) => c.system === "http://loinc.org");
+    expect(loincCoding.code).toBe("740-1");
+    expect(loincCoding.display).toBe("Metamyelocytes/Leukocytes in Blood by Manual count");
+  });
+
+  test("764-1 (Band) Coding.display = Long Common Name", () => {
+    const items = [{ code: "08013C", display: "Band", value: 2, unit: "%", date: "2025-05-18" }];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const loincCoding = o.code.coding.find((c: any) => c.system === "http://loinc.org");
+    expect(loincCoding.code).toBe("764-1");
+    expect(loincCoding.display).toBe("Band form neutrophils/Leukocytes in Blood by Manual count");
+  });
+
+  test("788-0 (RDW) Coding.display = Long Common Name (not 紅血球分佈變異數)", () => {
+    const items = [
+      { code: "08011C", display: "紅血球分佈變異數", value: 13.2, unit: "%", date: "2025-05-18" },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const loincCoding = o.code.coding.find((c: any) => c.system === "http://loinc.org");
+    expect(loincCoding.code).toBe("788-0");
+    expect(loincCoding.display).toBe("Erythrocyte [DistWidth] in Blood by Automated count");
+  });
+
+  test("v0.11.10 LOINC_SHORT_TEXT codes (Cortisol/B12/Folate/PSA) all have LOINC_DISPLAY twins", () => {
+    const items = [
+      {
+        code: "09113C",
+        display: "皮質素",
+        value: 12,
+        unit: "ug/dL",
+        date: "2025-05-18",
+        order_name: "皮質素免疫分析",
+      },
+      {
+        code: "09129C",
+        display: "維生素B12",
+        value: 450,
+        unit: "pg/mL",
+        date: "2025-05-18",
+      },
+      {
+        code: "09130C",
+        display: "葉酸",
+        value: 8.2,
+        unit: "ng/mL",
+        date: "2025-05-18",
+      },
+      {
+        code: "12081C",
+        display: "PSA",
+        value: 1.2,
+        unit: "ng/mL",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    const loincDisplays = obs.map((o) => {
+      const loincCoding = o.code.coding.find((c: any) => c.system === "http://loinc.org");
+      return loincCoding?.display;
+    });
+    // None should be a raw row display — all should look like a LOINC Long Common Name
+    for (const display of loincDisplays) {
+      expect(display).toMatch(/\[.+\]|in Serum|in Blood/i);
+    }
+  });
+});

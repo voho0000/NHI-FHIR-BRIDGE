@@ -3,6 +3,74 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.11.12 重點 — 2026-05-29
+
+**🔍 FHIR R4 audit follow-up — 補上 7 個漏掉的 LOINC_DISPLAY entries**
+
+User 要求 audit v0.11.11 改動是不是 FHIR R4 compliant。逐項對照 spec 抓到一個漏的 pattern：v0.11.10 + v0.11.11 加進 NHI_TO_LOINC / PANEL_LOINC_MAP / CBC_DIFF_KEYS / CBC_COMPONENT_KEYS 的 7 個 LOINC **沒**對應加 LOINC_DISPLAY entries。
+
+### 為什麼是 FHIR R4 違反
+
+FHIR R4 `Coding.display` 規格寫：
+> A representation of the meaning of the code in the system, **following the rules of the system.**
+
+LOINC system 的規則是用 Long Common Name 當 display。Bridge 的 buildCodings 路徑是：
+```ts
+codings.push({
+  system: "http://loinc.org",
+  code: loinc,                       // e.g. "740-1"
+  display: LOINC_DISPLAY[loinc] ?? display,  // ← LOINC_DISPLAY 沒 entry 就 fall back 到 row display
+});
+```
+
+LOINC_DISPLAY 沒 entry 就用 row display（e.g. "Meta-Myelocyte" / "紅血球分佈變異數"），那是 LIS 上傳的 row label，**不是** LOINC 規定的 Long Common Name → 違反 "following the rules of the system"。
+
+### 補的 7 個 LOINC_DISPLAY entries（全部 WebFetch loinc.org 驗過）
+
+| LOINC | 來源 release | Long Common Name |
+|---|---|---|
+| 740-1 | v0.11.11 (Metamyelocyte) | Metamyelocytes/Leukocytes in Blood by Manual count |
+| 764-1 | v0.11.11 (Band) | Band form neutrophils/Leukocytes in Blood by Manual count |
+| 786-4 | v0.11.11 (MCHC routing) | MCHC [Entitic Mass/volume] in Red Blood Cells by Automated count |
+| 787-2 | v0.11.11 (MCV routing) | MCV [Entitic mean volume] in Red Blood Cells by Automated count |
+| 788-0 | v0.11.11 (RDW routing) | Erythrocyte [DistWidth] in Blood by Automated count |
+| 2143-6 | v0.11.10 (Cortisol) | Cortisol [Mass/volume] in Serum or Plasma |
+| 2132-9 | v0.11.10 (Vit B12) | Cobalamin (Vitamin B12) [Mass/volume] in Serum or Plasma |
+| 2284-8 | v0.11.10 (Folate) | Folate [Mass/volume] in Serum or Plasma |
+| 83112-3 | v0.11.10 (PSA) | Prostate specific Ag [Mass/volume] in Serum or Plasma by Immunoassay |
+
+### 其餘 v0.11.10/v0.11.11 改動逐項 FHIR R4 verdict
+
+| 改動 | FHIR R4 field touched | Compliance |
+|---|---|---|
+| Bug 1 — drop 溶血/脂血 quality flags | Bundle.entry count↓ | ✅ specimen quality 不是 patient Observation 該成立的 instance |
+| Bug 2/5/6 — LOINC mapping additions | Coding.code | ✅ 全部 WebFetch verified |
+| Bug 3a — T.P → 2885-2 | Coding.code, Coding.display | ✅ verified |
+| Bug 3b — drop narrative rows | Bundle.entry count↓ | ⚠️ 理想是塞 DiagnosticReport.conclusion（v0.12 enhancement candidate），現在 drop 至少沒造成錯誤 patient Observation |
+| Bug 4 LOINC split — 882-1 → 883-9 / 10331-7 | Coding.code | ✅ verified |
+| Bug 4 multi-reading 保留 | 多個 Observation 同 code 同日 | ✅ FHIR R4 不限制每 (patient, code, date) 的 Obs 數量 |
+| Bug 7 — 白血球酯脢 variant | Coding.code | ✅ 5799-2 之前已 verified |
+| Bug 8 — single-obs DR.code.text propagation | CodeableConcept.text | ✅ text free-form，coding[*].display 不動 |
+
+### 已知 pre-existing gap（不在這次 release scope）
+
+LOINC_DISPLAY 還缺 52 個 entries（e.g. 706-2 Basophils、713-8 Eosinophils、736-9 Lymphocytes、770-8 Neutrophils、5905-5 Monocytes 等老 entries）— 這些是 v0.11.10 之前的 legacy。完整補齊需要每個 WebFetch 驗 Long Common Name（per 新規矩），規模較大 → 拉到 v0.12 sweep。本 release scope 只補 v0.11.10/v0.11.11 我自己加的。
+
+### CI 守門
+
+新增 4 個 v0.11.12 regression tests：
+1. 740-1 Coding.display 是 Long Common Name 不是 raw "Meta-Myelocyte"
+2. 764-1 Coding.display 是 Long Common Name
+3. 788-0 Coding.display 是 Long Common Name 不是 raw "紅血球分佈變異數"
+4. v0.11.10 Cortisol/B12/Folate/PSA 4 個 obs 的 LOINC display 都 match Long Common Name pattern (含 "[" 或 "in Serum/Blood")
+
+### Files
+
+- `packages/mapper/src/loinc-tables.ts` — LOINC_DISPLAY 加 7 個 entries
+- `backend-ts/tests/unit/bundle-quality.test.ts` — v0.11.12 describe block, 4 regressions
+
+---
+
 ## 0.11.11 重點 — 2026-05-29
 
 **🧹 SMART app dev v0.11.9 bundle audit 抓到 8 種 bug pattern — 一次清掉**

@@ -1254,6 +1254,25 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "789-8": "Erythrocytes [#/volume] in Blood by Automated count",
   "785-6": "MCH [Entitic mass] by Automated count",
   "711-2": "Eosinophils [#/volume] in Blood by Automated count",
+  // v0.11.12 FHIR R4 audit (2026-05-29): coverage sweep — LOINCs
+  // routed to by mapper but missing from LOINC_DISPLAY. Without
+  // entries here, Coding.display falls back to the raw row display
+  // ("Meta-Myelocyte" / "紅血球分佈變異數" / etc) which violates the
+  // FHIR R4 rule that Coding.display "follows the rules of the system"
+  // (= LOINC Long Common Name). All entries below are the Long Common
+  // Name fetched verbatim from loinc.org 2026-05-29.
+  "740-1": "Metamyelocytes/Leukocytes in Blood by Manual count",
+  "764-1": "Band form neutrophils/Leukocytes in Blood by Manual count",
+  // CBC indices (v0.11.11 expanded variant routing → these LOINCs)
+  "786-4": "MCHC [Entitic Mass/volume] in Red Blood Cells by Automated count",
+  "787-2": "MCV [Entitic mean volume] in Red Blood Cells by Automated count",
+  "788-0": "Erythrocyte [DistWidth] in Blood by Automated count",
+  // v0.11.10 LOINC_SHORT_TEXT entries that lacked LOINC_DISPLAY twins
+  "2143-6": "Cortisol [Mass/volume] in Serum or Plasma",
+  "2132-9": "Cobalamin (Vitamin B12) [Mass/volume] in Serum or Plasma",
+  "2284-8": "Folate [Mass/volume] in Serum or Plasma",
+  "83112-3":
+    "Prostate specific Ag [Mass/volume] in Serum or Plasma by Immunoassay",
   "4544-3": "Hematocrit [Volume Fraction] of Blood by Automated count",
   "57021-8": "CBC W Auto Differential panel - Blood",
   "24317-0": "Hemogram and platelets WO differential panel - Blood",
