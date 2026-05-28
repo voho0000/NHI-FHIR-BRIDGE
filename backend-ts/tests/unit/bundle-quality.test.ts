@@ -1061,22 +1061,31 @@ describe("CI v0.11.7 — urinalysis panel: no silent drop from dedup collision",
     const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
       (r) => r.resourceType === "Observation",
     );
-    // 20 raw - 5 cross-language merges (Bilirubin/膽紅素, CREA(U)/肌酸酐(尿液),
-    // Glucose/尿糖, Color/顏色, Blood/尿潛血) = 15 distinct analytes.
-    // Per-analyte: 1 row. English preferred when both languages present.
-    expect(obs.length).toBe(15);
+    // v0.12.1 — strict faithful transport: raw unit included in stableId.
+    // 20 raw rows minus 3 cross-language pairs that share BOTH canonical
+    // AND raw unit ([Bilirubin/膽紅素 mg/dL], [CREA(U)/肌酸酐(尿液) mg/dL],
+    // [Glucose/尿糖 mg/dL]) collapse to 1 obs each via canonical-based
+    // stableId; the other 2 pairs (Color "-"/顏色 "空白空白", Blood "-"/
+    // 尿潛血 "空白空白") differ in raw unit encoding and both survive
+    // under v0.12.1's strict no-dedup rule. 20 - 3 = 17 obs.
+    expect(obs.length).toBe(17);
     const texts = obs.map((o: any) => o.code?.text);
-    // Cross-language pairs must collapse to 1 row each (English wins)
+    // Cross-language pairs with IDENTICAL raw units collapse via
+    // canonical-based stableId (English wins via dedupePanelItems EN-
+    // preferred merge for same-canonical groups).
     expect(texts).toContain("Bilirubin");
     expect(texts).not.toContain("膽紅素");
     expect(texts).toContain("CREA(U)(半定量)");
     expect(texts).not.toContain("肌酸酐(尿液)(半定量)");
     expect(texts).toContain("Glucose");
     expect(texts).not.toContain("尿糖");
+    // v0.12.1 strict no-dedup: cross-language pairs with DIFFERENT raw
+    // unit encodings ("-" vs "空白空白") both survive — bridge does NOT
+    // judge "two placeholder units = same intent". Both texts present.
     expect(texts).toContain("Color");
-    expect(texts).not.toContain("顏色");
+    expect(texts).toContain("顏色");
     expect(texts).toContain("Blood");
-    expect(texts).not.toContain("尿潛血");
+    expect(texts).toContain("尿潛血");
     // Chinese-only analytes (no English equivalent in raw) must stay
     for (const must of [
       "亞硝酸鹽", // Nitrite — must NOT merge with Bilirubin / 膽紅素 by value
@@ -2259,8 +2268,19 @@ describe("CI v0.11.13 — Bug 9b: placeholder unit ('空白空白' / '-' / 'N/A'
   });
 });
 
-describe("CI v0.11.13 — Bug 9c: 2 placeholder-unit INR rows collapse to 1 obs", () => {
-  test("INR row with unit='空白空白' and unit='-' but same value/display → 1 obs after dedup", () => {
+describe("CI v0.12.1 — strict faithful transport: N LIS rows → N obs (no bridge-side dedup)", () => {
+  test("INR rows with unit='空白空白' and unit='-' both survive (no dedup on placeholder collapse)", () => {
+    // v0.11.13 used to collapse these via placeholder unit normalisation
+    // BEFORE dedupeCrossFormat keys were computed. v0.12.1 reverts that
+    // side-effect: dedupeCrossFormat uses raw unit strings, so 2 LIS-
+    // uploaded rows differing only in placeholder encoding both survive
+    // as 2 obs. Faithful transport principle: bridge doesn't judge
+    // "two placeholder units = same intent". Even ICU patients can have
+    // legitimate same-value draws — only the user/app decides.
+    //
+    // Unit cleanup (_canonicalizeUnit) still runs at the obs-construction
+    // stage, so the emitted Quantity has no placeholder unit field —
+    // FHIR R4 compliance preserved.
     const items = [
       {
         order_code: "08026C",
@@ -2283,16 +2303,30 @@ describe("CI v0.11.13 — Bug 9c: 2 placeholder-unit INR rows collapse to 1 obs"
     ];
     const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
       (r) => r.resourceType === "Observation",
-    );
-    expect(obs).toHaveLength(1);
+    ) as any[];
+    expect(obs).toHaveLength(2);
+    // Both obs should have CLEAN Quantity — neither carries the placeholder
+    // string in valueQuantity.unit (FHIR R4 cleanup still happens).
+    for (const o of obs) {
+      if (o.valueQuantity) {
+        expect(o.valueQuantity.unit).not.toBe("空白空白");
+        expect(o.valueQuantity.unit).not.toBe("-");
+      }
+    }
   });
 
-  test("End-to-end bug 9 scenario: 4-row raw → 2 obs (1 PT + 1 INR), not 4", () => {
-    // Reproduces user's v0.11.10 bundle: per draw raw had PT row +
-    // mistag (display=INR, val=11.9 sec) + 2 placeholder-unit INR rows.
-    // After v0.11.13: mistag rerouted to PT and collides with real PT
-    // (same canonical+value+code → same stableId); 2 placeholder-unit
-    // rows dedup. Net: 1 PT + 1 INR.
+  test("End-to-end bug 9 scenario: 4-row raw → 4 obs (faithful), with LOINC fixes still applied", () => {
+    // Reproduces user's v0.11.10 bundle pattern: per draw raw had PT row
+    // + mistag (display=INR, val=11.9 sec) + 2 placeholder-unit INR rows.
+    // v0.12.1 faithful behaviour:
+    //   - PT row stays under 5902-2 PT (correct)
+    //   - INR-sec mistag still rerouted via structuralLoincFix to 5902-2
+    //     PT (LOINC correction is allowed) — but since canonical key in
+    //     stableId differs (display "INR" vs "PT"), it does NOT collapse
+    //     with the legit PT row; both survive as separate obs
+    //   - 2 placeholder-unit INR rows both survive (no dedup on
+    //     placeholder collapse)
+    // Net: 4 obs total. Bundle faithful to LIS upload count.
     const items = [
       {
         order_code: "08026C",
@@ -2334,22 +2368,68 @@ describe("CI v0.11.13 — Bug 9c: 2 placeholder-unit INR rows collapse to 1 obs"
     const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
       (r) => r.resourceType === "Observation",
     ) as any[];
-    // Group by LOINC
-    const byLoinc: Record<string, number> = {};
+    // All 4 LIS rows preserved as distinct obs (faithful transport)
+    expect(obs).toHaveLength(4);
+    // Structural LOINC fix still applied: no obs with LOINC 6301-6 INR
+    // carries a "sec" unit (mistag rerouted to PT 5902-2).
     for (const o of obs) {
       const loinc = o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code;
-      byLoinc[loinc] = (byLoinc[loinc] ?? 0) + 1;
+      if (loinc === "6301-6") {
+        expect(o.valueQuantity?.unit).not.toBe("sec");
+        expect(o.valueQuantity?.code).not.toBe("sec");
+      }
     }
-    // After fixes: at most 2 obs under 5902-2 (PT) [original + rerouted mistag]
-    // — same value+date+canonical+code may collide → could be 1.
-    // And exactly 1 obs under 6301-6 INR (placeholder dedup).
-    expect(byLoinc["6301-6"]).toBe(1); // INR collapsed via placeholder normalisation
-    // No INR obs should carry a sec-valued reading
-    const inrObs = obs.find((o: any) =>
-      o.code.coding.find((c: any) => c.system === "http://loinc.org" && c.code === "6301-6"),
+  });
+
+  test("ABO/Rh cross-contamination: 4 raw rows → 4 obs (bridge does NOT judge value validity)", () => {
+    // App dev's bug 4' 2026-05-29: source EHR ships both ABO value (B)
+    // and Rh value (+) under each LOINC, producing 4 obs per draw with
+    // values shuffled. App dev suggested dropping structurally-impossible
+    // values ("+" is not valid ABO).
+    //
+    // Bridge declined per faithful-transport principle (codified in
+    // CLAUDE.md): even structurally-implausible values may be a forward/
+    // reverse typing arm, a LIS reagent entry, or a malformed source
+    // record the clinician should see. Bridge doesn't judge — app does.
+    const items = [
+      {
+        order_code: "11001C",
+        code: "11001C",
+        display: "血型鑑定",
+        value: "B",
+        unit: "N/A",
+        date: "2025-05-18",
+      },
+      {
+        order_code: "11001C",
+        code: "11001C",
+        display: "血型鑑定",
+        value: "+",
+        unit: "N/A",
+        date: "2025-05-18",
+      },
+      {
+        order_code: "11003C",
+        code: "11003C",
+        display: "血型鑑定",
+        value: "+",
+        unit: "N/A",
+        date: "2025-05-18",
+      },
+      {
+        order_code: "11003C",
+        code: "11003C",
+        display: "血型鑑定",
+        value: "B",
+        unit: "N/A",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
     );
-    expect(inrObs?.valueQuantity?.unit).not.toBe("sec");
-    expect(inrObs?.valueQuantity?.code).not.toBe("sec");
+    // All 4 raw rows preserved — bridge does not filter by value validity
+    expect(obs).toHaveLength(4);
   });
 });
 
@@ -2423,5 +2503,76 @@ describe("CI v0.12.0 — LOINC_DISPLAY coverage invariant", () => {
       if (!(loinc in LOINC_DISPLAY)) missing.add(loinc);
     }
     expect(Array.from(missing).sort()).toEqual([]);
+  });
+});
+
+// ── v0.12.1 — SMART app dev v0.11.13 bundle audit ────────────────
+// Three routing/labelling fixes for residual edge cases in the
+// v0.11.13 bundle. No bridge-side dedup or value validity judgement
+// (per CLAUDE.md memory rule, reinforced 2026-05-29).
+describe("CI v0.12.1 — Bug 5'/6'/7': CBC 'EN(中文)' parenthetical displays route correctly", () => {
+  test("CBC diff parenthetical variants all route to their analyte-specific LOINCs (not panel default)", () => {
+    const cases: Array<[string, string, string]> = [
+      ["08002C", "Basophils(嗜鹼性白血球)", "706-2"],
+      ["08002C", "Eosinophils(嗜酸性白血球)", "713-8"],
+      ["08002C", "Lymphocytes(淋巴白血球)", "736-9"],
+      ["08002C", "Monocytes(單核白血球)", "5905-5"],
+      ["08002C", "Neutrophilic Segment(嗜中性白血球)", "770-8"],
+    ];
+    for (const [code, display, expected] of cases) {
+      expect(findLoinc(code, display)).toBe(expected);
+    }
+  });
+
+  test("CBC indices parenthetical variants all route to their analyte-specific LOINCs (not RBC count fallback)", () => {
+    const cases: Array<[string, string, string]> = [
+      ["08011C", "MCV(平均紅血球容積)", "787-2"],
+      ["08011C", "MCH(平均紅血球血色素)", "785-6"],
+      ["08011C", "MCHC(平均紅血球濃度)", "786-4"],
+      ["08011C", "RDW(平均紅血球寬度)", "788-0"],
+    ];
+    for (const [code, display, expected] of cases) {
+      expect(findLoinc(code, display)).toBe(expected);
+    }
+  });
+});
+
+describe("CI v0.12.1 — Bug 10: urine creatinine variant routes to urine LOINC 2161-8", () => {
+  test("肌酸酐(尿液)(半定量) under 09015C → 2161-8 (NOT serum 2160-0)", () => {
+    expect(findLoinc("09015C", "肌酸酐(尿液)(半定量)")).toBe("2161-8");
+    expect(findLoinc("09015C", "肌酸酐(尿液)")).toBe("2161-8");
+    expect(findLoinc("09015C", "肌酸酐(尿)")).toBe("2161-8");
+  });
+
+  test("plain 肌酸酐 under 09015C still routes to serum 2160-0 (no regression)", () => {
+    expect(findLoinc("09015C", "肌酸酐")).toBe("2160-0");
+    expect(findLoinc("09015C", "Creatinine")).toBe("2160-0");
+  });
+});
+
+describe("CI v0.12.1 — Bug 8': single-obs urine-protein DR title uses 'Urine Protein' (not ambiguous '全蛋白')", () => {
+  test("09040C panel with one Urine Protein obs → DR title = 'Urine Protein' from LOINC_SHORT_TEXT", () => {
+    // 09040C has no NHI_TO_LOINC entry (specimen-ambiguous catalog name
+    // 全蛋白); the obs resolves to LOINC 20454-5 via LOINC_MAP global
+    // "urine protein" → 20454-5. v0.12.1 falls back to LOINC_SHORT_TEXT
+    // when all obs in panel share a single LOINC.
+    const items = [
+      {
+        order_code: "09040C",
+        code: "09040C",
+        display: "Urine Protein",
+        value: 25,
+        unit: "mg/dL",
+        date: "2023-11-24",
+        order_name: "全蛋白",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const dr = all.find((r) => r.resourceType === "DiagnosticReport") as any;
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    expect(dr.code.text).toBe("Urine Protein");
+    expect(obs.code.text).toBe("Urine Protein");
+    // Raw NHI catalog name preserved verbatim in coding[*].display
+    expect(dr.code.coding[0].display).toBe("全蛋白");
   });
 });

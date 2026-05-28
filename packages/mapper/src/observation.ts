@@ -891,12 +891,20 @@ function dedupeCrossFormat(items: Record<string, any>[]): Record<string, any>[] 
   let idxCounter = 0;
   for (const item of items) {
     const v = String(item.value ?? "").trim();
+    // v0.12.1 (Bug 9' / strict no-dedup principle): use the raw unit
+    // string in the dedup key. v0.11.13 normalised placeholder units
+    // ("空白空白" / "-") to empty BEFORE key construction, which had
+    // the side-effect of collapsing two LIS-uploaded rows that only
+    // differed in placeholder encoding. Per the bridge's faithful-
+    // transport principle (codified in CLAUDE.md), we don't dedup
+    // based on bridge-side judgement of "two placeholder units = same
+    // intent" — LIS uploaded N rows, the bundle emits N obs, full
+    // stop. `_canonicalizeUnit` still clears placeholders so the
+    // emitted Quantity.unit is FHIR-R4-valid (or absent), but that
+    // cleanup happens later in buildObservation and doesn't affect
+    // dedup keys here.
     const rawUnit = ((item.unit as string) ?? "").trim();
-    // v0.11.13: collapse placeholder unit strings before keying so two
-    // INR rows shipped under "空白空白" and "-" collide here and dedup
-    // to one (bug 9c — both rows survived previously because raw units
-    // differed).
-    const unit = PLACEHOLDER_UNIT_RE.test(rawUnit) ? "" : rawUnit;
+    const unit = rawUnit;
     if (!v) {
       byKey.set(`__no_dedup__|${idxCounter++}`, item);
       continue;
@@ -1287,6 +1295,16 @@ function buildObservation(
   // Trade-off (same as v0.11.8): if a value is later corrected (typo
   // fix in NHI source), the Observation resource ID changes. Acceptable
   // for the data-integrity gain.
+  //
+  // v0.12.1 (SMART app dev bug 9' 2026-05-29 — faithful transport):
+  // ALSO include the row's raw unit string in stableId. Two LIS-
+  // uploaded rows that differ only in placeholder unit encoding
+  // ("空白空白" vs "-") would otherwise collide here and collapse to
+  // one Observation — bridge-side dedup judgement that contradicts the
+  // user's explicit rule (CLAUDE.md: bridge does NOT dedup based on
+  // judgement; LIS uploads N rows, bridge emits N obs). Using the raw
+  // unit keeps them distinct without affecting cleanup of
+  // `Quantity.unit` which happens later in `_canonicalizeUnit`.
   const obsId = stableId(
     patientId,
     "obs",
@@ -1295,6 +1313,7 @@ function buildObservation(
     raw.hospital ?? "",
     code,
     String(raw.value ?? ""),
+    String(raw.unit ?? ""),
   );
   let loinc = findLoinc(code, display);
   // v0.11.13 (SMART app dev bug 9a 2026-05-29): structural LOINC vs
@@ -1505,7 +1524,28 @@ function groupByOrderCode(
     // unifies DR.code.text with obs.code.text for single-analyte panels,
     // resolving the dupKey false-positive flag downstream.
     const groupCodeStr = String(meta.groupKeyCode);
-    const panelLoinc = NHI_TO_LOINC[groupCodeStr];
+    // v0.12.1 (SMART app dev bug 8' 2026-05-29): when the NHI panel code
+    // has no mapping in NHI_TO_LOINC but ALL observations in the panel
+    // resolved to the same LOINC, use that LOINC for the panel-title
+    // LOINC_SHORT_TEXT lookup. This fixes the 09040C urine-protein case:
+    // NHI_TO_LOINC has no 09040C entry (panel-level ambiguous between
+    // serum and urine), but the obs ended up routed to 20454-5 via
+    // display "Urine Protein" → LOINC_MAP global. DR title should
+    // reflect the actually-resolved analyte ("Urine Protein") instead
+    // of the ambiguous orderName "全蛋白".
+    let panelLoinc: string | undefined = NHI_TO_LOINC[groupCodeStr];
+    if (!panelLoinc && obsResources.length > 0) {
+      const obsLoincs = new Set<string>();
+      for (const obs of obsResources) {
+        const loinc = (obs.code?.coding as any[] | undefined)?.find(
+          (c) => c?.system === "http://loinc.org",
+        )?.code;
+        if (loinc) obsLoincs.add(loinc);
+      }
+      if (obsLoincs.size === 1) {
+        panelLoinc = [...obsLoincs][0];
+      }
+    }
     const loincShortText = panelLoinc ? LOINC_SHORT_TEXT[panelLoinc] : undefined;
     let panelTitle: string;
     if (deduped.length === 1) {

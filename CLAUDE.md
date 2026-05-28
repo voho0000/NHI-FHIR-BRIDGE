@@ -42,10 +42,18 @@ Checklist:
    - Label normalization in `code.text`: allowed (free-form per FHIR R4)
    - Filtering non-patient rows (QC / quality / narrative): allowed and required
 
-7. **Multi-reading preservation.** User-defined (2026-05-29):
-   - 健保存摺 sometimes ships multiple legitimate readings per panel per day (ABO has 2 typing arms, etc.)
+7. **Multi-reading preservation + strict no-dedup.** User-defined (2026-05-29, reinforced 2026-05-29 v0.12.1):
+   - 健保存摺 sometimes ships multiple legitimate readings per panel per day (ABO has 2 typing arms, ICU patients can have multiple same-value draws/day, etc.)
    - `stableId` includes `value` so distinct readings under same NHI code+display+date don't collapse
-   - Do NOT add dedup logic that drops same-code-same-display rows with different values
+   - **Bridge does NOT judge data validity.** Even when LIS uploads look duplicate, identical-value, or structurally implausible by clinical standards, the bridge preserves them. The user (or the SMART app) decides what to do with such data.
+   - **Specifically forbidden:**
+     - Post-emission Observation dedup by `(LOINC, value, date, hospital)` — looks-the-same is not enough; ICU same-value draws happen
+     - Dropping Observations whose value pattern is "structurally impossible" for the LOINC's analyte (e.g. ABO obs with `+` value, Rh obs with `B` value) — bridge can't tell forward/reverse typing from cross-contamination
+     - Collapsing rows because their placeholder unit encodings ("空白空白" / "-") differ but both mean "no unit" — dedup keys must use the raw unit string
+   - **Exceptions (allowed):**
+     - **LOINC mapping corrections** — incorrect LOINCs may be rerouted to correct ones (v0.11.13 9a INR-sec → PT). The Observation still emits with the corrected LOINC; no data loss.
+     - **Specimen quality flags** (`溶血` / `脂血` / icterus) are filtered because they are not patient measurements and would not be modelled as Observations under FHIR R4 regardless of LIS encoding.
+     - **Unit string cleanup** in `_canonicalizeUnit` — placeholder strings are stripped from the emitted `Quantity.unit` field (FHIR R4 requires valid UCUM or absent), but this happens AFTER dedup so it never affects observation count.
 
 ## Release approval workflow (added 2026-05-28)
 

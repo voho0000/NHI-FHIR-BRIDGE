@@ -415,6 +415,27 @@ const CBC_COMPONENT_KEYS: Record<string, string> = {
   "m.c.v": "787-2",
   "m.c.h.c": "786-4",
   "m.c.h": "785-6",
+  // ── v0.12.1 (SMART app dev bug 5'/6'/7' 2026-05-29): explicit
+  // "EN(中文)" parenthetical variants from the 2024-01-22 hospital's
+  // CBC display format. Same rationale as the CBC_DIFF_KEYS additions
+  // above: guarantee longest-match wins over panel-default fallback.
+  "mcv(平均紅血球容積)": "787-2",
+  "mch(平均紅血球血色素)": "785-6",
+  "mchc(平均紅血球濃度)": "786-4",
+  "mchc(平均紅血球血色素濃度)": "786-4",
+  "rdw(紅血球分布寬度)": "788-0",
+  "rdw(平均紅血球寬度)": "788-0", // observed variant in user's bundle
+  "rdw(紅血球分佈寬度)": "788-0",
+  "wbc(白血球計數)": "6690-2",
+  "rbc(紅血球計數)": "789-8",
+  "hb(血紅素)": "718-7",
+  "hb(血色素)": "718-7",
+  "hgb(血紅素)": "718-7",
+  "hgb(血色素)": "718-7",
+  "hct(血球容積比)": "4544-3",
+  "ht(血球容積比)": "4544-3",
+  "platelet(血小板)": "777-3",
+  "plt(血小板)": "777-3",
   // ── v0.11.11 (SMART app dev bug 5 2026-05-29): variants observed
   // in user's v0.11.9 bundle that previously fell through to global
   // LOINC_MAP "紅血球" → 789-8 (RBC count) — 5 distinct CBC indices
@@ -506,6 +527,26 @@ const CBC_DIFF_KEYS: Record<string, string> = {
   basophils: "706-2",
   嗜鹼性白血球: "706-2",
   嗜鹼: "706-2",
+  // v0.12.1 (SMART app dev bug 5'/6'/7' 2026-05-29): one hospital
+  // (2024-01-22 records) ships CBC diff displays in the format
+  // "EN(中文)" — e.g. "Basophils(嗜鹼性白血球)". Existing keys
+  // SHOULD match via _findLongestMatch substring on the EN part,
+  // but the user's v0.11.13 bundle showed these rows routing to
+  // 6690-2 (panel-default WBC). Adding explicit parenthetical
+  // variants as the longest matching keys guarantees the right
+  // routing regardless of which code path the rows take.
+  "basophils(嗜鹼性白血球)": "706-2",
+  "basophil(嗜鹼性白血球)": "706-2",
+  "eosinophils(嗜酸性白血球)": "713-8",
+  "eosinophil(嗜酸性白血球)": "713-8",
+  "lymphocytes(淋巴白血球)": "736-9",
+  "lymphocyte(淋巴白血球)": "736-9",
+  "monocytes(單核白血球)": "5905-5",
+  "monocyte(單核白血球)": "5905-5",
+  "neutrophilic segment(嗜中性白血球)": "770-8",
+  "neutrophil(嗜中性白血球)": "770-8",
+  "neutrophils(嗜中性白血球)": "770-8",
+  "segment(嗜中性白血球)": "770-8",
   // ── Maturation-stage neutrophils (v0.11.11) ────────────────────
   // SMART app dev bug 2 + 6 2026-05-29: Metamyelocyte ("後骨髓球") and
   // Band ("帶狀嗜中性白血球") rows were falling to the panel LOINC
@@ -597,7 +638,26 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     "malb(u)": "14957-5",
     malb: "14957-5",
     微小白蛋白: "14957-5",
+    // v0.12.1 (caught during v0.11.7 test re-run after LOINC_SHORT_TEXT
+    // for 20454-5 was added — both 微白蛋白 displays were silently
+    // routing to bare "蛋白" → 20454-5 (urine protein) instead of
+    // their correct microalbumin/UACR LOINCs). Longer specific keys
+    // ensure correct routing via _findLongestMatch.
+    微白蛋白: "14957-5",
+    "微白蛋白(尿)": "14957-5",
+    "微白蛋白(尿)(半定量)": "14957-5",
+    "微白蛋白(尿液)": "14957-5",
+    尿微量白蛋白: "14957-5",
+    尿白蛋白: "14957-5",
+    "u-malb": "14957-5",
     uacr: "14959-1", // Microalbumin/Creatinine ratio Urine
+    "微白蛋白/肌酐酸比值": "14959-1",
+    "微白蛋白/肌酐酸比值(半定量)": "14959-1",
+    "肌酐酸比值": "14959-1",
+    "肌酸酐比值": "14959-1",
+    "alb/cre": "14959-1",
+    "albumin/creatinine": "14959-1",
+    "u-acr": "14959-1",
     "urine glucose": "5792-7",
     sugar: "5792-7", // NHI '尿糖' / 'Sugar' under 06013C
     尿糖: "5792-7",
@@ -861,6 +921,22 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     肌酸酐: "2160-0",
     肌酐酸: "2160-0",
     血中肌酸酐: "2160-0",
+    // v0.12.1 (SMART app dev bug 10 2026-05-29): some hospitals bill
+    // urine creatinine under serum-billing code 09015C with the
+    // display annotating "(尿液)". Without explicit urine variants
+    // here, longest-match returns the bare "肌酸酐" key → 2160-0
+    // serum LOINC even though the row is urine. Longer urine-
+    // annotated keys win. 2161-8 = "Creatinine [Mass/volume] in
+    // Urine" (verified at loinc.org/2161-8/ earlier).
+    "肌酸酐(尿液)(半定量)": "2161-8",
+    "肌酸酐(尿液)": "2161-8",
+    "肌酸酐(尿)": "2161-8",
+    "肌酸酐(u)": "2161-8",
+    "creatinine(u)": "2161-8",
+    "creatinine(urine)": "2161-8",
+    "u-creatinine": "2161-8",
+    "urine creatinine": "2161-8",
+    "creatinine, urine": "2161-8",
   },
 
   // ── PT/INR panel (08026C) ────────────────────────────
@@ -1559,6 +1635,15 @@ export const LOINC_SHORT_TEXT: Record<string, string> = {
   "2132-9": "Vitamin B12", // NHI 09129C (was: DR "維生素B12免疫分析")
   "2284-8": "Folate", // NHI 09130C (was: DR "葉酸免疫分析")
   "83112-3": "PSA", // NHI 12081C (was: DR "攝護腺特異抗原(EIA/LIA法)")
+  // v0.12.1 (SMART app dev bug 8' 2026-05-29): urine total protein
+  // observations had DR title "全蛋白" (ambiguous NHI catalog name —
+  // can mean serum or urine total protein) while the obs itself was
+  // correctly LOINC 20454-5 (Protein Mass/Vol in Urine). Clinicians
+  // reading the DR header assumed serum TP. Clean short text resolves
+  // both DR title and obs.code.text to "Urine Protein" — disambiguating
+  // the specimen explicitly. LOINC_DISPLAY[20454-5] already correctly
+  // reads "Protein Mass/Vol in Urine" (catalog-faithful, FHIR R4 OK).
+  "20454-5": "Urine Protein",
 };
 
 // ── _NHI_CODE_PANEL_NAME ─────────────────────────────────

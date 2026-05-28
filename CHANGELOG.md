@@ -3,6 +3,126 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.12.1 重點 — 2026-05-29
+
+**📐 SMART app dev v0.11.13 bundle audit 收尾 + 嚴格 no-dedup rule + 順手抓到 微白蛋白 routing bug**
+
+User 收到 app dev v0.11.13 audit report — ~280 bug records → ~26 records (90% reduction)，剩 5 個 narrow edge case。同時 user **明確重申 faithful transport rule**：bridge 不該判斷 LIS 重複，全由 user / app 判斷。v0.12.1 一次處理。
+
+### Bug 5'/6'/7' — CBC parenthetical EN(中文) 走錯路（routing fix）
+
+某醫院 2024-01-22 records 用 `"Basophils(嗜鹼性白血球)"` / `"MCV(平均紅血球容積)"` 這種 EN(CJK) 格式 ship，user 的 v0.11.13 bundle 看到這 9 row 都掛 panel-default LOINC (6690-2/4544-3/718-7/789-8) 而不是 analyte 對的 (706-2/787-2 等)。雖然理論上現有 keyword routing 該抓到，但 defensive 加 9 個明確的 parenthetical EN(中文) keys 到 `CBC_DIFF_KEYS` + `CBC_COMPONENT_KEYS`，longest-match 保證走對路。CI test 把每 9 個 display 鎖住。
+
+### Bug 10 — `肌酸酐(尿液)(半定量)` 走到 serum LOINC（routing fix）
+
+`PANEL_LOINC_MAP["09015C"]` 之前只有 `肌酸酐: "2160-0"` (serum)。Hospital ship `"肌酸酐(尿液)(半定量)"` 時 longest-match 仍然只抓到 3-char `肌酸酐`，落到 serum LOINC。加 urine annotation variants:
+
+```ts
+"09015C": {
+  ...
+  "肌酸酐(尿液)(半定量)": "2161-8",  // urine creatinine
+  "肌酸酐(尿液)": "2161-8",
+  "肌酸酐(尿)": "2161-8",
+  "肌酸酐(u)": "2161-8",
+  // ... + creatinine(u), creatinine(urine), urine creatinine, etc
+  肌酸酐: "2160-0",  // 保留 generic serum default
+}
+```
+
+7-char `肌酸酐(尿液)(半定量)` 比 3-char `肌酸酐` 長 → 走 urine LOINC 2161-8 ✓
+
+### Bug 8' — `全蛋白` DR title 套到 urine protein（label fix）
+
+09040C panel 沒 `NHI_TO_LOINC` mapping（specimen-ambiguous catalog name 全蛋白可指 serum 或 urine TP）。Single-obs urine 案例 obs 正確路到 LOINC 20454-5 但 DR title 是 ambiguous `全蛋白`。
+
+**Fix 2 件事：**
+1. `LOINC_SHORT_TEXT["20454-5"] = "Urine Protein"` — 用 clean 英文 specimen-explicit label
+2. `groupByOrderCode` panelLoinc 解析改成：先看 `NHI_TO_LOINC[code]`，若沒有但 **所有 obs 共用同一 LOINC**，用該 LOINC 當 panelLoinc → 走 `LOINC_SHORT_TEXT` 路徑 → DR title = `"Urine Protein"`
+
+09040C 單 row urine TP → DR.code.text = `"Urine Protein"`，obs.code.text = `"Urine Protein"`，DR coding[nhi].display 還是 catalog-faithful `"全蛋白"`。
+
+### Bug 4' + 9' — App dev 提的 LIS dup 兩 case 一概 **不修**（嚴格 no-dedup）
+
+App dev 想我們 drop "structurally impossible" 跨污染 (Rh value 跑到 ABO LOINC) 跟 same-value INR duplicate。我們**不修**：
+
+- ICU patient 一天可能同 value 抽兩次
+- 健保存摺真的看到 N row → bundle 必須 emit N obs
+- Bridge 不該判斷 LIS 是不是真的重複或結構錯，**user / app 判**
+
+CLAUDE.md memory rule 補強三條明確禁止：
+1. Post-emission Observation dedup by `(LOINC, value, date, hospital)` ❌
+2. Drop "structurally impossible" value (例 ABO obs value=`+`) ❌
+3. Collapse placeholder unit-differing rows ("空白空白" vs "-") ❌
+
+只兩個 exception 允許：LOINC 對應修正 + specimen quality flag 過濾。
+
+### 9c partial revert — `dedupeCrossFormat` key 用 raw unit
+
+v0.11.13 9c 把 placeholder unit "空白空白" / "-" normalize 成 empty **before** dedup key — 副作用：兩 LIS row 差只 placeholder encoding → 合成 1 obs。這違反新嚴格 rule（bridge 判斷 "兩 placeholder = 同義"）。
+
+```ts
+// v0.11.13 (revoked v0.12.1)
+const unit = PLACEHOLDER_UNIT_RE.test(rawUnit) ? "" : rawUnit;
+
+// v0.12.1 (current)
+const unit = rawUnit;  // 用 raw 字串
+```
+
+unit cleanup (`_canonicalizeUnit`) 還是做（FHIR R4 Quantity.unit 該 valid UCUM 或缺省），但在 obs 構造階段才動 — 不影響 dedup。
+
+**附帶：stableId 也加 raw unit**。兩 row 同 canonical/code/date/hospital/value 但 raw unit 不同 → 不同 stableId → 都 survive，不被 `seenObsIds` 合掉。
+
+### 順手抓到：微白蛋白 routing 一直走錯（pre-existing bug）
+
+跑 v0.11.7 urinalysis 20-row 測試時被 `LOINC_SHORT_TEXT["20454-5"]` 新增曝光：`微白蛋白(尿)(半定量)` 跟 `微白蛋白/肌酐酸比值(半定量)` 兩 row **一直**透過 PANEL_LOINC_MAP["06013C"] 的 bare `蛋白` key 路到 20454-5 (urine TP)。其實該是：
+
+- `微白蛋白(尿)` → 14957-5 (Microalbumin)
+- `微白蛋白/肌酐酸比值` → 14959-1 (UACR — Microalbumin/Creatinine ratio)
+
+Pre-existing bug：obs.code.text 之前 fall back 到 display 所以 "微白蛋白(尿)(半定量)" 看起來對，但 LOINC 其實錯。v0.11.7 test 沒 assert LOINC 所以沒抓到。LOINC_SHORT_TEXT 觸發 → text 變 "Urine Protein" → test 失敗 → bug 曝光。
+
+加 7 個 longer specific keys 到 `PANEL_LOINC_MAP["06013C"]`：
+
+```ts
+微白蛋白: "14957-5",
+"微白蛋白(尿)": "14957-5",
+"微白蛋白(尿)(半定量)": "14957-5",
+"微白蛋白/肌酐酸比值": "14959-1",
+"微白蛋白/肌酐酸比值(半定量)": "14959-1",
+"肌酐酸比值": "14959-1",
+// ... 等
+```
+
+Longest-match 蓋過 bare `蛋白` (2 char)。
+
+### FHIR R4 compliance audit ✅（per CLAUDE.md）
+
+- `Coding.display` 全部還是 verified LOINC Long Common Name（rules of system）
+- `Quantity.unit` 仍清掉 placeholder string（FHIR R4 要求 UCUM-valid 或 absent）
+- `CodeableConcept.text` free-form 改寫 OK
+- Bridge **沒** dedup based on judgement（嚴格 no-dedup rule）
+
+### CI 守門（新增 9 個 + 翻 v0.11.13 兩 dedup test）
+
+**翻測試**：v0.11.13 `9c → 1 obs` 跟 `4-row → 2 obs` 兩 test 都翻成 v0.12.1 `→ 2/4 obs（faithful）`。
+新增：
+1. ABO/Rh cross-contamination 4 raw → 4 obs（bridge 不判斷 value validity）
+2. 9 CBC parenthetical displays 路到正確 LOINC
+3. 肌酸酐(尿液)(半定量) → 2161-8（urine）
+4. 普通肌酸酐 → 2160-0 serum 沒 regression
+5. 09040C single-obs urine protein DR.code.text = "Urine Protein"
+
+更新 v0.11.7 urinalysis test：20 raw → 17 obs（2 個 placeholder-unit cross-language pair 都 survive）+ `texts` 同時含 Color/顏色、Blood/尿潛血。
+
+### Files
+
+- `packages/mapper/src/loinc-tables.ts` — `CBC_DIFF_KEYS` + `CBC_COMPONENT_KEYS` 加 9 個 parenthetical EN(CJK)；`PANEL_LOINC_MAP["09015C"]` 加 urine creatinine variants；`PANEL_LOINC_MAP["06013C"]` 加 7 個微白蛋白/UACR longer keys；`LOINC_SHORT_TEXT["20454-5"] = "Urine Protein"`
+- `packages/mapper/src/observation.ts` — `dedupeCrossFormat` key 改用 raw unit；`stableId` for obs 加 raw unit；`groupByOrderCode` panelLoinc 解析加 "all-obs-share-one-LOINC" fallback
+- `CLAUDE.md` — strict no-dedup rule 補三條明確禁止 + 兩 exception
+- `backend-ts/tests/unit/bundle-quality.test.ts` — 翻 v0.11.13 9c 兩 test；新 v0.12.1 describe blocks (9 tests)；更新 v0.11.7 urinalysis test
+
+---
+
 ## 0.12.0 重點 — 2026-05-29
 
 **🔍 Legacy LOINC_DISPLAY sweep — 補 46 entries + audit 抓到 7 個錯 / 失效 LOINC mappings**

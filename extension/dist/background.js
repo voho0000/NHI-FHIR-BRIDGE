@@ -1581,6 +1581,28 @@
     "m.c.v": "787-2",
     "m.c.h.c": "786-4",
     "m.c.h": "785-6",
+    // ── v0.12.1 (SMART app dev bug 5'/6'/7' 2026-05-29): explicit
+    // "EN(中文)" parenthetical variants from the 2024-01-22 hospital's
+    // CBC display format. Same rationale as the CBC_DIFF_KEYS additions
+    // above: guarantee longest-match wins over panel-default fallback.
+    "mcv(\u5E73\u5747\u7D05\u8840\u7403\u5BB9\u7A4D)": "787-2",
+    "mch(\u5E73\u5747\u7D05\u8840\u7403\u8840\u8272\u7D20)": "785-6",
+    "mchc(\u5E73\u5747\u7D05\u8840\u7403\u6FC3\u5EA6)": "786-4",
+    "mchc(\u5E73\u5747\u7D05\u8840\u7403\u8840\u8272\u7D20\u6FC3\u5EA6)": "786-4",
+    "rdw(\u7D05\u8840\u7403\u5206\u5E03\u5BEC\u5EA6)": "788-0",
+    "rdw(\u5E73\u5747\u7D05\u8840\u7403\u5BEC\u5EA6)": "788-0",
+    // observed variant in user's bundle
+    "rdw(\u7D05\u8840\u7403\u5206\u4F48\u5BEC\u5EA6)": "788-0",
+    "wbc(\u767D\u8840\u7403\u8A08\u6578)": "6690-2",
+    "rbc(\u7D05\u8840\u7403\u8A08\u6578)": "789-8",
+    "hb(\u8840\u7D05\u7D20)": "718-7",
+    "hb(\u8840\u8272\u7D20)": "718-7",
+    "hgb(\u8840\u7D05\u7D20)": "718-7",
+    "hgb(\u8840\u8272\u7D20)": "718-7",
+    "hct(\u8840\u7403\u5BB9\u7A4D\u6BD4)": "4544-3",
+    "ht(\u8840\u7403\u5BB9\u7A4D\u6BD4)": "4544-3",
+    "platelet(\u8840\u5C0F\u677F)": "777-3",
+    "plt(\u8840\u5C0F\u677F)": "777-3",
     // ── v0.11.11 (SMART app dev bug 5 2026-05-29): variants observed
     // in user's v0.11.9 bundle that previously fell through to global
     // LOINC_MAP "紅血球" → 789-8 (RBC count) — 5 distinct CBC indices
@@ -1667,6 +1689,26 @@
     basophils: "706-2",
     \u55DC\u9E7C\u6027\u767D\u8840\u7403: "706-2",
     \u55DC\u9E7C: "706-2",
+    // v0.12.1 (SMART app dev bug 5'/6'/7' 2026-05-29): one hospital
+    // (2024-01-22 records) ships CBC diff displays in the format
+    // "EN(中文)" — e.g. "Basophils(嗜鹼性白血球)". Existing keys
+    // SHOULD match via _findLongestMatch substring on the EN part,
+    // but the user's v0.11.13 bundle showed these rows routing to
+    // 6690-2 (panel-default WBC). Adding explicit parenthetical
+    // variants as the longest matching keys guarantees the right
+    // routing regardless of which code path the rows take.
+    "basophils(\u55DC\u9E7C\u6027\u767D\u8840\u7403)": "706-2",
+    "basophil(\u55DC\u9E7C\u6027\u767D\u8840\u7403)": "706-2",
+    "eosinophils(\u55DC\u9178\u6027\u767D\u8840\u7403)": "713-8",
+    "eosinophil(\u55DC\u9178\u6027\u767D\u8840\u7403)": "713-8",
+    "lymphocytes(\u6DCB\u5DF4\u767D\u8840\u7403)": "736-9",
+    "lymphocyte(\u6DCB\u5DF4\u767D\u8840\u7403)": "736-9",
+    "monocytes(\u55AE\u6838\u767D\u8840\u7403)": "5905-5",
+    "monocyte(\u55AE\u6838\u767D\u8840\u7403)": "5905-5",
+    "neutrophilic segment(\u55DC\u4E2D\u6027\u767D\u8840\u7403)": "770-8",
+    "neutrophil(\u55DC\u4E2D\u6027\u767D\u8840\u7403)": "770-8",
+    "neutrophils(\u55DC\u4E2D\u6027\u767D\u8840\u7403)": "770-8",
+    "segment(\u55DC\u4E2D\u6027\u767D\u8840\u7403)": "770-8",
     // ── Maturation-stage neutrophils (v0.11.11) ────────────────────
     // SMART app dev bug 2 + 6 2026-05-29: Metamyelocyte ("後骨髓球") and
     // Band ("帶狀嗜中性白血球") rows were falling to the panel LOINC
@@ -1743,8 +1785,27 @@
       "malb(u)": "14957-5",
       malb: "14957-5",
       \u5FAE\u5C0F\u767D\u86CB\u767D: "14957-5",
+      // v0.12.1 (caught during v0.11.7 test re-run after LOINC_SHORT_TEXT
+      // for 20454-5 was added — both 微白蛋白 displays were silently
+      // routing to bare "蛋白" → 20454-5 (urine protein) instead of
+      // their correct microalbumin/UACR LOINCs). Longer specific keys
+      // ensure correct routing via _findLongestMatch.
+      \u5FAE\u767D\u86CB\u767D: "14957-5",
+      "\u5FAE\u767D\u86CB\u767D(\u5C3F)": "14957-5",
+      "\u5FAE\u767D\u86CB\u767D(\u5C3F)(\u534A\u5B9A\u91CF)": "14957-5",
+      "\u5FAE\u767D\u86CB\u767D(\u5C3F\u6DB2)": "14957-5",
+      \u5C3F\u5FAE\u91CF\u767D\u86CB\u767D: "14957-5",
+      \u5C3F\u767D\u86CB\u767D: "14957-5",
+      "u-malb": "14957-5",
       uacr: "14959-1",
       // Microalbumin/Creatinine ratio Urine
+      "\u5FAE\u767D\u86CB\u767D/\u808C\u9150\u9178\u6BD4\u503C": "14959-1",
+      "\u5FAE\u767D\u86CB\u767D/\u808C\u9150\u9178\u6BD4\u503C(\u534A\u5B9A\u91CF)": "14959-1",
+      "\u808C\u9150\u9178\u6BD4\u503C": "14959-1",
+      "\u808C\u9178\u9150\u6BD4\u503C": "14959-1",
+      "alb/cre": "14959-1",
+      "albumin/creatinine": "14959-1",
+      "u-acr": "14959-1",
       "urine glucose": "5792-7",
       sugar: "5792-7",
       // NHI '尿糖' / 'Sugar' under 06013C
@@ -2040,7 +2101,23 @@
       crea: "2160-0",
       \u808C\u9178\u9150: "2160-0",
       \u808C\u9150\u9178: "2160-0",
-      \u8840\u4E2D\u808C\u9178\u9150: "2160-0"
+      \u8840\u4E2D\u808C\u9178\u9150: "2160-0",
+      // v0.12.1 (SMART app dev bug 10 2026-05-29): some hospitals bill
+      // urine creatinine under serum-billing code 09015C with the
+      // display annotating "(尿液)". Without explicit urine variants
+      // here, longest-match returns the bare "肌酸酐" key → 2160-0
+      // serum LOINC even though the row is urine. Longer urine-
+      // annotated keys win. 2161-8 = "Creatinine [Mass/volume] in
+      // Urine" (verified at loinc.org/2161-8/ earlier).
+      "\u808C\u9178\u9150(\u5C3F\u6DB2)(\u534A\u5B9A\u91CF)": "2161-8",
+      "\u808C\u9178\u9150(\u5C3F\u6DB2)": "2161-8",
+      "\u808C\u9178\u9150(\u5C3F)": "2161-8",
+      "\u808C\u9178\u9150(u)": "2161-8",
+      "creatinine(u)": "2161-8",
+      "creatinine(urine)": "2161-8",
+      "u-creatinine": "2161-8",
+      "urine creatinine": "2161-8",
+      "creatinine, urine": "2161-8"
     },
     // ── PT/INR panel (08026C) ────────────────────────────
     // Taiwan labs bill PT (seconds) and INR (ratio) under the SAME 08026C
@@ -2702,8 +2779,17 @@
     // NHI 09129C (was: DR "維生素B12免疫分析")
     "2284-8": "Folate",
     // NHI 09130C (was: DR "葉酸免疫分析")
-    "83112-3": "PSA"
+    "83112-3": "PSA",
     // NHI 12081C (was: DR "攝護腺特異抗原(EIA/LIA法)")
+    // v0.12.1 (SMART app dev bug 8' 2026-05-29): urine total protein
+    // observations had DR title "全蛋白" (ambiguous NHI catalog name —
+    // can mean serum or urine total protein) while the obs itself was
+    // correctly LOINC 20454-5 (Protein Mass/Vol in Urine). Clinicians
+    // reading the DR header assumed serum TP. Clean short text resolves
+    // both DR title and obs.code.text to "Urine Protein" — disambiguating
+    // the specimen explicitly. LOINC_DISPLAY[20454-5] already correctly
+    // reads "Protein Mass/Vol in Urine" (catalog-faithful, FHIR R4 OK).
+    "20454-5": "Urine Protein"
   };
   var NHI_CODE_PANEL_NAME = {
     // v0.11.10 FHIR R4 compliance audit (2026-05-29): values must match
@@ -3614,7 +3700,7 @@
     for (const item of items) {
       const v = String(item.value ?? "").trim();
       const rawUnit = (item.unit ?? "").trim();
-      const unit = PLACEHOLDER_UNIT_RE.test(rawUnit) ? "" : rawUnit;
+      const unit = rawUnit;
       if (!v) {
         byKey.set(`__no_dedup__|${idxCounter++}`, item);
         continue;
@@ -3892,7 +3978,8 @@
       raw.date ?? "",
       raw.hospital ?? "",
       code,
-      String(raw.value ?? "")
+      String(raw.value ?? ""),
+      String(raw.unit ?? "")
     );
     let loinc = findLoinc(code, display);
     loinc = structuralLoincFix(loinc, raw.unit);
@@ -4039,7 +4126,19 @@
         String(meta.groupKeyCode)
       );
       const groupCodeStr = String(meta.groupKeyCode);
-      const panelLoinc = NHI_TO_LOINC[groupCodeStr];
+      let panelLoinc = NHI_TO_LOINC[groupCodeStr];
+      if (!panelLoinc && obsResources.length > 0) {
+        const obsLoincs = /* @__PURE__ */ new Set();
+        for (const obs of obsResources) {
+          const loinc = obs.code?.coding?.find(
+            (c) => c?.system === "http://loinc.org"
+          )?.code;
+          if (loinc) obsLoincs.add(loinc);
+        }
+        if (obsLoincs.size === 1) {
+          panelLoinc = [...obsLoincs][0];
+        }
+      }
       const loincShortText = panelLoinc ? LOINC_SHORT_TEXT[panelLoinc] : void 0;
       let panelTitle;
       if (deduped.length === 1) {
