@@ -481,9 +481,16 @@ describe("CI Layer 1.1 — no panel LOINC on routable Observation", () => {
   });
 
   test("regression seed — Segment (singular) under 08013C must NOT carry 57021-8 panel", () => {
+    // v0.13: obs.code.text now canonicalized to "Neutrophils %" for
+    // clean LOINC 770-8 matches (CBC_CANONICAL_TEXT_LOINCS gate). Canary
+    // by raw text "segment" stops working — look up by LOINC instead.
+    // Original test purpose unchanged: Segment row must NOT carry panel
+    // default 57021-8.
     const bundle = buildSampleBundle();
-    const segs = walkObservations(bundle).filter(
-      (o) => (o.code?.text ?? "").toLowerCase() === "segment",
+    const segs = walkObservations(bundle).filter((o) =>
+      (o.code.coding ?? []).some(
+        (c: any) => c.system === "http://loinc.org" && c.code === "770-8",
+      ),
     );
     expect(segs.length).toBeGreaterThan(0);
     for (const seg of segs) {
@@ -491,14 +498,20 @@ describe("CI Layer 1.1 — no panel LOINC on routable Observation", () => {
         .filter((c: any) => c.system === "http://loinc.org")
         .map((c: any) => c.code);
       expect(loincCodes).not.toContain("57021-8");
-      expect(loincCodes).toContain("770-8"); // Neutrophils/100 leukocytes
+      expect(loincCodes).toContain("770-8");
     }
   });
 
   test("regression seed — HGB billed as 08004C HCT must route to 718-7 (display wins)", () => {
+    // v0.13: obs.code.text now canonicalized to "Hb" for clean LOINC
+    // 718-7 matches. Canary by raw text "hgb" stops working — look up
+    // by LOINC instead. Original test purpose unchanged: HGB row billed
+    // under 08004C must route to 718-7, NOT panel default 4544-3.
     const bundle = buildSampleBundle();
-    const hgb = walkObservations(bundle).filter(
-      (o) => (o.code?.text ?? "").toLowerCase() === "hgb",
+    const hgb = walkObservations(bundle).filter((o) =>
+      (o.code.coding ?? []).some(
+        (c: any) => c.system === "http://loinc.org" && c.code === "718-7",
+      ),
     );
     expect(hgb.length).toBeGreaterThan(0);
     for (const o of hgb) {
@@ -1194,8 +1207,11 @@ describe("CI v0.11.6 — silent-drop audit (filter must not eat valid labs)", ()
     // dropped-as-QC = 6 expected.
     expect(obs).toHaveLength(6);
     const texts = obs.map((o: any) => o.code?.text);
-    // Must include all 6 valid rows
-    for (const expected of ["HCT", "HGB", "WBC", "Direct", "Color", "eGFR"]) {
+    // Must include all 6 valid rows. v0.13: CBC LOINCs in
+    // CBC_CANONICAL_TEXT_LOINCS get canonical short text on clean match
+    // — "HGB" → "Hb". Others (WBC=6690-2, Direct=panel-fallback, Color,
+    // eGFR — none in CBC set) keep raw display.
+    for (const expected of ["HCT", "Hb", "WBC", "Direct", "Color", "eGFR"]) {
       expect(texts).toContain(expected);
     }
     // Must NOT include the legitimately-dropped rows
@@ -3183,5 +3199,629 @@ describe("CI v0.12.3 — NHI source channel surfaced as meta.tag", () => {
       (r) => r.resourceType === "Observation",
     );
     expect(obs).toHaveLength(1);
+  });
+});
+
+// ── CI v0.13 — CBC LOINC obs.code.text canonicalization (clean-match gate) ──
+//
+// App dev (MediPrisma) soft request 2026-05-30: 12 CBC LOINCs get
+// canonical clinical short text (Hb / HCT / Platelet / MCV / ...) on
+// obs.code.text so cross-hospital "Hb / 血色素 / Hemoglobin / HGB" rows
+// collapse to one column header without app-side alias tables.
+//
+// Safety: only fires when findLoincDetailed reports cleanMatch=true.
+// Mis-tag canary (v0.11.9 Bug 6 lesson): a panel-fallback path-C
+// fallback (display didn't match any PANEL_LOINC_MAP key, silently
+// routed to panel default LOINC) MUST keep the raw display so the
+// label/code mismatch stays visible to downstream auditors.
+describe("CI v0.13 — CBC obs.code.text canonicalization", () => {
+  test("Clean PANEL_LOINC_MAP match (HGB → 718-7) → text canonicalized to 'Hb'", () => {
+    const items = [
+      {
+        order_code: "08011C",
+        code: "08011C",
+        display: "HGB",
+        value: 13.1,
+        unit: "g/dL",
+        date: "2026-05-25",
+        hospital: "嘉基醫院",
+        order_name: "全套血液檢查Ｉ（八項）",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.code.text).toBe("Hb");
+    const loinc = (o.code.coding ?? []).find(
+      (c: any) => c.system === "http://loinc.org",
+    )?.code;
+    expect(loinc).toBe("718-7");
+  });
+
+  test("Clean PANEL_LOINC_MAP match (Hb → 718-7) → text canonicalized to 'Hb'", () => {
+    const items = [
+      {
+        order_code: "08011C",
+        code: "08011C",
+        display: "Hb",
+        value: 13.1,
+        unit: "g/dL",
+        date: "2026-05-25",
+        hospital: "嘉基醫院",
+        order_name: "全套血液檢查Ｉ（八項）",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.code.text).toBe("Hb");
+  });
+
+  test("Clean PANEL_LOINC_MAP match (Segment → 770-8) → text canonicalized to 'Neutrophils %'", () => {
+    const items = [
+      {
+        order_code: "08013C",
+        code: "08013C",
+        display: "Segment",
+        value: 65.3,
+        unit: "%",
+        date: "2026-05-25",
+        hospital: "嘉基醫院",
+        order_name: "白血球分類計數",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.code.text).toBe("Neutrophils %");
+  });
+
+  test("CANARY: 帶狀嗜中性白血球 (v0.11.9 Bug 6) — display key found → clean match → canonical 'Neutrophils %'", () => {
+    // v0.12.1 added 帶狀嗜中性白血球 to PANEL_LOINC_MAP["08011C"], so
+    // this is now a clean PANEL match → cleanMatch=true → canonical.
+    // Test documents that v0.13 canonicalization fires for variants
+    // that have been EXPLICITLY added to PANEL_LOINC_MAP.
+    const items = [
+      {
+        order_code: "08011C",
+        code: "08011C",
+        display: "帶狀嗜中性白血球",
+        value: 2.5,
+        unit: "%",
+        date: "2026-05-25",
+        hospital: "嘉基醫院",
+        order_name: "全套血液檢查Ｉ（八項）",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    // Display routes to a Band LOINC, not panel default — clean.
+    const loinc = (o.code.coding ?? []).find(
+      (c: any) => c.system === "http://loinc.org",
+    )?.code;
+    // Verify NOT panel default 6690-2 (WBC count = 08011C umbrella).
+    expect(loinc).not.toBe("6690-2");
+    // Whatever band LOINC it routes to, if it happens to be in
+    // CBC_CANONICAL_TEXT_LOINCS the text is canonical; otherwise raw.
+    // Either outcome is acceptable — what we LOCK DOWN below is the
+    // path-C fallback canary.
+  });
+
+  test("CANARY (path-C fallback in multi-row panel) — unknown CBC display → RAW text preserved", () => {
+    // Mis-tag canary — the v0.13 gate's reason to exist. Setup:
+    //   • Multi-row 08011C panel (avoids v0.11.11 #8 single-obs DR
+    //     text propagation which can paper over text resolution).
+    //   • One row's display matches PANEL_LOINC_MAP["08011C"] cleanly
+    //     ("Hb" → 718-7, cleanMatch=true). Verifies canonical fires.
+    //   • Other row has an unrecognised display, falls through to
+    //     path C (panel default 24317-0). The panel-default LOINC
+    //     itself is NOT in CBC_CANONICAL_TEXT_LOINCS so the gate is a
+    //     no-op for this row; what we lock down here is that the raw
+    //     display survives all the way to obs.code.text — that's the
+    //     mis-tag canary signal (a panel-default LOINC paired with a
+    //     non-canonical text shows up as anomaly to bundle auditors,
+    //     exactly like v0.11.9 Bug 6's 帶狀嗜中性白血球 case before
+    //     PANEL_LOINC_MAP coverage was added).
+    const unknownDisplay = "尚未編碼的分類項目";
+    const items = [
+      {
+        order_code: "08011C",
+        code: "08011C",
+        display: "Hb",
+        value: 13.1,
+        unit: "g/dL",
+        date: "2026-05-25",
+        hospital: "嘉基醫院",
+        order_name: "全套血液檢查Ｉ（八項）",
+      },
+      {
+        order_code: "08011C",
+        code: "08011C",
+        display: unknownDisplay,
+        value: 42,
+        unit: "%",
+        date: "2026-05-25",
+        hospital: "嘉基醫院",
+        order_name: "全套血液檢查Ｉ（八項）",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    // Clean-matched row: canonical text "Hb".
+    const hb = obs.find(
+      (o) =>
+        (o.code.coding ?? []).some(
+          (c: any) => c.system === "http://loinc.org" && c.code === "718-7",
+        ),
+    );
+    expect(hb).toBeDefined();
+    expect(hb.code.text).toBe("Hb");
+    // Path-C row: raw display survives (mis-tag canary).
+    const unknown = obs.find((o) => o.code.text === unknownDisplay);
+    expect(unknown).toBeDefined();
+    const unknownLoinc = (unknown.code.coding ?? []).find(
+      (c: any) => c.system === "http://loinc.org",
+    )?.code;
+    // Routes to panel default for 08011C, NOT a leaf CBC LOINC.
+    expect(unknownLoinc).toBe("24317-0");
+  });
+
+  test("Non-CBC LOINC (4548-4 HbA1c) keeps v0.11.10 'always canonicalize' behavior", () => {
+    // HbA1c LOINC 4548-4 is NOT in CBC_CANONICAL_TEXT_LOINCS — it's
+    // single-analyte NHI code 09006C, path A, cleanMatch always true.
+    // Adding the gate must not change this: text should stay "HbA1c"
+    // exactly like v0.11.10 → v0.12.6.
+    const items = [
+      {
+        order_code: "09006C",
+        code: "09006C",
+        display: "醣化血紅素",
+        value: 6.7,
+        unit: "%",
+        date: "2026-05-25",
+        hospital: "嘉基醫院",
+        order_name: "醣化血紅素",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.code.text).toBe("HbA1c");
+  });
+
+  test("CBC LOINC outside our 12-LOINC set (e.g. 6690-2 WBC count) keeps raw text", () => {
+    // 6690-2 (Leukocytes #/vol Blood) is NOT in
+    // CBC_CANONICAL_TEXT_LOINCS — app dev's request scope didn't
+    // include it. "WBC count" → 08011C panel map → 6690-2 → no
+    // canonical text override → raw "WBC count" preserved.
+    const items = [
+      {
+        order_code: "08011C",
+        code: "08011C",
+        display: "WBC count",
+        value: 6.8,
+        unit: "x10^3/uL",
+        date: "2026-05-25",
+        hospital: "嘉基醫院",
+        order_name: "全套血液檢查Ｉ（八項）",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.code.text).toBe("WBC count");
+  });
+});
+
+// ── CI v0.13 — specimen.display fix (app dev follow-up 2026-05-29) ──
+//
+// Pre-v0.13 bug: SPECIMEN_RULES led with `/尿|urine|urinaly/` which
+// substring-matched bare 尿 inside BLOOD analyte names (尿酸 / 尿素氮)
+// → 35+ blood-analyte Observations silently mis-tagged
+// specimen.display='Urine' → routed to urinalysis tab in SMART app →
+// disappeared from chemistry tab without visible warning.
+//
+// v0.13.0 fix: tighten URINE regex (specific markers only, no bare 尿)
+// + add BLOOD detection precedence + display URINE marker overrides
+// order_name. Lock down all 4 bug cases + edge cases.
+describe("CI v0.13 — specimen.display fix (尿酸 / BUN / urine creatinine)", () => {
+  test("09013C 尿酸 (Uric Acid blood) — specimen should NOT be Urine", () => {
+    const items = [
+      {
+        order_code: "09013C",
+        code: "09013C",
+        display: "Uric Acid (B)",
+        value: 4.6,
+        unit: "mg/dL",
+        date: "2025-12-09",
+        hospital: "長庚嘉義",
+        order_name: "尿酸",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.specimen?.display).not.toBe("Urine");
+    // Display "(B)" parenthetical → BLOOD detection fires.
+    expect(o.specimen?.display).toBe("Blood");
+  });
+
+  test("09002C 血中尿素氮 (BUN) — specimen should be Blood (not Urine)", () => {
+    const items = [
+      {
+        order_code: "09002C",
+        code: "09002C",
+        display: "BUN",
+        value: 27.3,
+        unit: "mg/dL",
+        date: "2025-09-16",
+        hospital: "長庚嘉義",
+        order_name: "血中尿素氮",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    // 血中 in order_name → BLOOD match (bare 血 is unambiguous).
+    expect(o.specimen?.display).toBe("Blood");
+  });
+
+  test("09015C 肌酸酐(尿液) variant — display URINE wins over order_name 血", () => {
+    // 09015C is blood-default per NHI catalog (order_name "肌酸酐、血"),
+    // but the LIS-shipped display says "肌酸酐(尿液)" → it's actually a
+    // urine creatinine row mis-billed under the blood code. Bridge
+    // honors the LIS display because it's authoritative for the actual
+    // measurement; specimen reflects what was tested.
+    const items = [
+      {
+        order_code: "09015C",
+        code: "09015C",
+        display: "肌酸酐(尿液)",
+        value: 87.5,
+        unit: "mg/dL",
+        date: "2025-12-09",
+        hospital: "長庚嘉義",
+        order_name: "肌酸酐、血",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.specimen?.display).toBe("Urine");
+  });
+
+  test("09015C blood creatinine — specimen Blood (order_name 血 detection)", () => {
+    // Default 09015C path: order_name says blood, display ambiguous.
+    const items = [
+      {
+        order_code: "09015C",
+        code: "09015C",
+        display: "Crea",
+        value: 1.82,
+        unit: "mg/dL",
+        date: "2025-12-09",
+        hospital: "長庚嘉義",
+        order_name: "肌酸酐、血",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.specimen?.display).toBe("Blood");
+  });
+
+  test("Real urine row (06013C urinalysis 尿糖) — specimen Urine ✓", () => {
+    const items = [
+      {
+        order_code: "06013C",
+        code: "06013C",
+        display: "尿糖",
+        value: "Negative",
+        unit: "",
+        date: "2025-12-09",
+        hospital: "長庚嘉義",
+        order_name: "尿生化檢查",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.specimen?.display).toBe("Urine");
+  });
+
+  test("NHI code authoritative — 09013C (尿酸) with bare order_name '尿酸' → Blood", () => {
+    // Lockdown for user-raised architectural correction 2026-05-30:
+    // 09013C is the NHI code for 尿酸(血液) — it should ALWAYS be Blood
+    // specimen regardless of how the LIS formats the display string.
+    // Pre-v0.13 bug: display="尿酸" with no English marker fell into
+    // the bare-尿 regex and got Urine. Post-v0.13: NHI code 09xxx prefix
+    // default = Blood. Even if display has zero specimen hint, the code
+    // alone resolves it (same architecture as NHI_TO_LOINC).
+    const items = [
+      {
+        order_code: "09013C",
+        code: "09013C",
+        display: "尿酸",
+        value: 6.3,
+        unit: "mg/dL",
+        date: "2025-07-15",
+        hospital: "長庚嘉義",
+        order_name: "尿酸",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.specimen?.display).toBe("Blood");
+  });
+
+  test("NHI code authoritative — 06013C urinalysis with ambiguous display 'Color' → Urine", () => {
+    // Symmetric lockdown: 06013C is urinalysis. Even when the row's
+    // display is a generic word that contains no urine marker (e.g.
+    // "Color" / "pH" / "Spec. Gravity"), NHI prefix 06 default = Urine.
+    // Without this, only rows with explicit urine markers in display
+    // would get tagged correctly.
+    const items = [
+      {
+        order_code: "06013C",
+        code: "06013C",
+        display: "Color",
+        value: "Yellow",
+        unit: "",
+        date: "2025-12-09",
+        hospital: "長庚嘉義",
+        order_name: "尿生化檢查",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.specimen?.display).toBe("Urine");
+  });
+
+  test("NHI 09016C — explicit URINE override of 09xxx blood-default prefix", () => {
+    // Lockdown for NHI_CODE_SPECIMEN_OVERRIDE["09016C"]. 09016C is the
+    // official NHI code for urine creatinine — 肌酐、尿. Even though it
+    // shares the 09xxx prefix (blood default), the override map flips
+    // it to Urine. Lock this so future audit doesn't accidentally drop
+    // the override entry.
+    const items = [
+      {
+        order_code: "09016C",
+        code: "09016C",
+        display: "Urine Crea",
+        value: 87.5,
+        unit: "mg/dL",
+        date: "2025-12-09",
+        hospital: "長庚嘉義",
+        order_name: "肌酐、尿",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.specimen?.display).toBe("Urine");
+  });
+
+  test("CI invariant — specimen.display vs NHI 醫令碼 consistency (silent-bug gate)", () => {
+    // Proactive defense against future silent specimen mis-tag bugs (v0.13
+    // bug 2026-05-29: 39 blood-analyte obs silently tagged Urine in
+    // v0.12.6, only caught when app dev manually audited the bundle —
+    // bridge had no CI test that verified specimen matched the NHI code's
+    // panel context).
+    //
+    // This table enumerates real-world (code, display) → expected
+    // specimen pairs. Every Observation that comes out of bridge MUST
+    // match the expectation. Adding entries here is the standard way
+    // to lock down newly-discovered NHI codes / variants.
+    //
+    // When adding a new entry:
+    //   - For straightforward (NHI catalogue → blood) codes, pick a
+    //     plausible display and assert "Blood".
+    //   - For codes where the display is the OVERRIDE signal (LIS
+    //     ships urine measurement under a blood-default NHI code),
+    //     add the override case explicitly.
+    //   - When in doubt, check the NHI catalog's panel name + LOINC
+    //     System axis (loinc.org) — they should agree.
+    type Case = { code: string; display: string; expectSpec: string | null; note?: string };
+    const expectations: Case[] = [
+      // ── 06xxx — Urinalysis ──────────────────────────
+      { code: "06013C", display: "Color",        expectSpec: "Urine", note: "ambiguous display, NHI prefix wins" },
+      { code: "06013C", display: "pH",           expectSpec: "Urine", note: "ambiguous display, NHI prefix wins" },
+      { code: "06013C", display: "尿糖",         expectSpec: "Urine", note: "display URINE marker agrees" },
+      { code: "06013C", display: "蛋白",         expectSpec: "Urine", note: "bare 蛋白 no marker, NHI prefix wins" },
+
+      // ── 08xxx — CBC / hematology ────────────────────
+      { code: "08003C", display: "Hb",           expectSpec: "Blood" },
+      { code: "08004C", display: "HCT",          expectSpec: "Blood" },
+      { code: "08011C", display: "Hb",           expectSpec: "Blood" },
+      { code: "08011C", display: "WBC",          expectSpec: "Blood" },
+      { code: "08013C", display: "Segment",      expectSpec: "Blood" },
+      { code: "08036C", display: "APTT",         expectSpec: "Blood" },
+
+      // ── 09xxx — Chemistry (mostly blood) ────────────
+      { code: "09001C", display: "Cholesterol",  expectSpec: "Blood" },
+      { code: "09002C", display: "BUN",          expectSpec: "Blood", note: "v0.12.6 silent bug — order_name 血中尿素氮" },
+      { code: "09005C", display: "Glucose AC",   expectSpec: "Blood" },
+      { code: "09013C", display: "Uric Acid",    expectSpec: "Blood", note: "v0.12.6 silent bug — order_name 尿酸" },
+      { code: "09013C", display: "尿酸",         expectSpec: "Blood", note: "bare 尿 substring must NOT trigger Urine" },
+      { code: "09013C", display: "Uric Acid (B)", expectSpec: "Blood" },
+      { code: "09015C", display: "Crea",         expectSpec: "Blood", note: "serum creatinine default" },
+      { code: "09015C", display: "肌酸酐(尿液)", expectSpec: "Urine", note: "LIS-shipped urine override on blood-default code" },
+      { code: "09016C", display: "Urine Crea",   expectSpec: "Urine", note: "NHI explicit-override code for urine creatinine" },
+      { code: "09021C", display: "Na",           expectSpec: "Blood" },
+      { code: "09140C", display: "Sugar",        expectSpec: "Blood" },
+
+      // ── 11xxx — Blood typing ───────────────────────
+      { code: "11001C", display: "ABO",          expectSpec: "Blood" },
+      { code: "11003C", display: "Rh(D)",        expectSpec: "Blood" },
+
+      // ── 12xxx — Immunology / tumor markers ────────
+      { code: "12007C", display: "AFP",          expectSpec: "Blood" },
+      { code: "12021C", display: "CEA",          expectSpec: "Blood" },
+      { code: "12053C", display: "ANA",          expectSpec: "Blood" },
+      { code: "12081C", display: "PSA",          expectSpec: "Blood" },
+    ];
+
+    const violations: string[] = [];
+    for (const c of expectations) {
+      const items = [{
+        order_code: c.code,
+        code: c.code,
+        display: c.display,
+        value: 1,
+        unit: "",
+        date: "2026-05-30",
+        hospital: "Test Hospital",
+        order_name: c.display,
+      }];
+      const obs = mapObservationsGrouped(items, PATIENT_ID).find(
+        (r) => r.resourceType === "Observation",
+      ) as any;
+      if (!obs) {
+        // Some test inputs may be filtered (e.g. empty display match QC
+        // patterns). Skip rather than fail — this invariant only checks
+        // specimen ON OBSERVATIONS THAT WERE EMITTED.
+        continue;
+      }
+      const actual = obs.specimen?.display ?? null;
+      if (actual !== c.expectSpec) {
+        const noteSfx = c.note ? ` — ${c.note}` : "";
+        violations.push(
+          `${c.code} "${c.display}" → expected specimen=${c.expectSpec ?? "null"}, got ${actual ?? "null"}${noteSfx}`,
+        );
+      }
+    }
+
+    if (violations.length > 0) {
+      // Single aggregated failure so all violations show in one CI run,
+      // not a flurry of fail/pass cycles.
+      throw new Error(
+        `Silent-bug specimen invariant FAILED — ${violations.length} mismatches:\n` +
+          violations.map((v) => `  • ${v}`).join("\n"),
+      );
+    }
+  });
+
+  test("Stool occult-blood row — 'occult blood' must NOT trigger BLOOD specimen", () => {
+    // Defensive: BLOOD_MARKERS_RE has `\bblood\b` which could spuriously
+    // match "occult blood" (stool test). Other-specimen rules run first
+    // and intercept it.
+    const items = [
+      {
+        order_code: "07020C",
+        code: "07020C",
+        display: "Occult blood",
+        value: "Negative",
+        unit: "",
+        date: "2025-12-09",
+        hospital: "長庚嘉義",
+        order_name: "糞便潛血",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.specimen?.display).toBe("Stool");
+  });
+});
+
+// ── CI v0.13 — NHI 就醫日期 (funC_DATE) surfaced as meta.tag ──
+//
+// User-verified anomaly 2026-05-30: 長庚嘉義 09006C HbA1c row in NHI
+// raw shows reaL_INSPECT_DATE=2025-12-09 but funC_DATE=2025-09-16 —
+// ~3 months apart. Bridge cannot judge which is "correct" per the
+// faithful-transport rule, but it can carry BOTH dates so SMART apps
+// can detect the gap and surface a warning. meta.tag pattern mirrors
+// v0.12.3 nhi-source-channel: bridge-namespaced system URI, code is
+// the ISO 8601 date string.
+describe("CI v0.13 — NHI 就醫日期 (funC_DATE) surfaced as meta.tag", () => {
+  test("Lab obs with nhi_visit_date != inspect date → both dates surface", () => {
+    // The 長庚嘉義 HbA1c case: inspect 2025-12-09, visit 2025-09-16.
+    const items = [
+      {
+        order_code: "09006C",
+        code: "09006C",
+        display: "Hb-A1c",
+        value: 6.7,
+        unit: "%",
+        date: "2025-12-09", // reaL_INSPECT_DATE → effectiveDateTime
+        hospital: "長庚嘉義",
+        order_name: "醣化血紅素",
+        reference_range: "[0.1][5.699]",
+        nhi_source_channel: "A",
+        nhi_visit_date: "2025-09-16", // funC_DATE — surface via meta.tag
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    // effectiveDateTime stays on inspect date (FHIR "physiologically
+    // relevant time" for a lab).
+    expect(o.effectiveDateTime).toBe("2025-12-09T00:00:00+08:00");
+    // Visit date rides in meta.tag.
+    const visitTag = (o.meta?.tag ?? []).find(
+      (t: any) => t.system === "http://nhi-fhir-bridge/nhi-visit-date",
+    );
+    expect(visitTag).toBeDefined();
+    expect(visitTag.code).toBe("2025-09-16");
+  });
+
+  test("Lab obs without nhi_visit_date → no spurious meta.tag", () => {
+    // Defensive: rows missing funC_DATE (older endpoints / edge cases)
+    // must NOT emit an empty-code visit-date tag — that would violate
+    // FHIR Meta.tag.code "no whitespace" semantics and pollute the
+    // tag list.
+    const items = [
+      {
+        order_code: "09021C",
+        code: "09021C",
+        display: "Na",
+        value: 142,
+        unit: "mEq/L",
+        date: "2026-05-25",
+        hospital: "長庚嘉義",
+        order_name: "鈉",
+        reference_range: "[136][146]",
+        // nhi_visit_date NOT set
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const visitTag = (o.meta?.tag ?? []).find(
+      (t: any) => t.system === "http://nhi-fhir-bridge/nhi-visit-date",
+    );
+    expect(visitTag).toBeUndefined();
+  });
+
+  test("Lab obs where nhi_visit_date === date → tag still surfaces (no smart suppression)", () => {
+    // Faithful transport: bridge must NOT decide "they match, no point
+    // surfacing visit_date". App might want to display both dates
+    // even when equal (audit trail / data provenance). Surface always
+    // when present.
+    const items = [
+      {
+        order_code: "08011C",
+        code: "08011C",
+        display: "Hb",
+        value: 13.1,
+        unit: "g/dL",
+        date: "2026-05-25",
+        hospital: "嘉基醫院",
+        order_name: "全套血液檢查Ｉ（八項）",
+        nhi_visit_date: "2026-05-25",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const visitTag = (o.meta?.tag ?? []).find(
+      (t: any) => t.system === "http://nhi-fhir-bridge/nhi-visit-date",
+    );
+    expect(visitTag).toBeDefined();
+    expect(visitTag.code).toBe("2026-05-25");
   });
 });

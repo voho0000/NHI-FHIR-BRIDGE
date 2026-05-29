@@ -1697,7 +1697,71 @@ export const LOINC_SHORT_TEXT: Record<string, string> = {
   // the same column header "Urine Protein"; the LOINC code itself
   // disambiguates which scale (Ord vs Qn) downstream consumers see.
   "2888-6": "Urine Protein",
+  // v0.13 — CBC sub-analytes (08011C / 08013C) ─────────
+  // App dev (MediPrisma) soft request 2026-05-30: bridge ships these
+  // 12 CBC LOINCs but `obs.code.text` varies (Hb / 血色素 / Hemoglobin /
+  // HGB depending on hospital LIS). SMART apps doing cross-hospital
+  // trend display need to maintain an alias table to merge them. With
+  // SHORT_TEXT entries here PLUS the clean-match gate in
+  // mapObservation / buildObservation (CBC_CANONICAL_TEXT_LOINCS check
+  // → only canonicalize when findLoincDetailed.cleanMatch === true),
+  // app-side alias table can retire.
+  //
+  // Mis-tag canary preservation: when a CBC panel sub-row's display
+  // doesn't match any PANEL_LOINC_MAP["08011C"] key explicitly, the
+  // row falls to the panel-default LOINC via findLoinc path C
+  // (cleanMatch=false). In that case the raw display is preserved as
+  // obs.code.text — letting downstream reviewers spot the mis-tag.
+  // This is the lesson from v0.11.9 Bug 6 (帶狀嗜中性白血球 silently
+  // routed to 770-8 panel default before the variant key was added).
+  //
+  // Short labels chosen to match clinical convention (Taiwan EHR
+  // standard column headers). NOT LOINC's verbose long name — that
+  // already lives in coding[loinc].display per LOINC_DISPLAY.
+  "770-8":  "Neutrophils %",
+  "736-9":  "Lymphocytes %",
+  "5905-5": "Monocytes %",
+  "713-8":  "Eosinophils %",
+  "706-2":  "Basophils %",
+  "4544-3": "HCT",
+  "718-7":  "Hb",
+  "777-3":  "Platelet",
+  "787-2":  "MCV",
+  "786-4":  "MCHC",
+  "788-0":  "RDW",
+  "789-8":  "RBC",
 };
+
+// v0.13 (app dev MediPrisma soft request 2026-05-30) — LOINCs eligible
+// for obs.code.text canonicalization ONLY when findLoincDetailed reports
+// cleanMatch === true (explicit PANEL_LOINC_MAP / NHI_TO_LOINC hit, not
+// fallback-to-panel-default).
+//
+// Why this set is restricted (not just "every LOINC in LOINC_SHORT_TEXT"):
+//   - Pre-v0.13 LOINC_SHORT_TEXT entries (TSH / Hb-A1c / 4544-3 etc) were
+//     added for SINGLE-ANALYTE NHI codes where path A in findLoinc
+//     (NHI_TO_LOINC direct hit) is the only routing path → cleanMatch
+//     is always true → no canary needed. Those keep current "always
+//     canonicalize" behaviour.
+//   - The 12 CBC LOINCs here live under MULTI-ANALYTE panel codes
+//     (08011C / 08013C in DISPLAY_FIRST_CODES). Routing goes through
+//     PANEL_LOINC_MAP path B1; misses fall back to panel default via
+//     path C, which is exactly the v0.11.9 Bug 6 surface area. So we
+//     need the gate to preserve mis-tag canary.
+export const CBC_CANONICAL_TEXT_LOINCS: ReadonlySet<string> = new Set([
+  "770-8",
+  "736-9",
+  "5905-5",
+  "713-8",
+  "706-2",
+  "4544-3",
+  "718-7",
+  "777-3",
+  "787-2",
+  "786-4",
+  "788-0",
+  "789-8",
+]);
 
 // ── _NHI_CODE_PANEL_NAME ─────────────────────────────────
 // Per-NHI-code override for Observation.code.text when the hospital

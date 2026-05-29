@@ -18,6 +18,7 @@ Checklist:
    - `normalizeFullwidth()` for halfwidth ASCII (e.g. Ｉ → I)
    - NHI_CODE_PANEL_NAME fallback when LIS display is generic
    - Single-obs DR text propagation (with LOINC-equality guard)
+   - **v0.13 — CBC LOINC clean-match gate**: 12 CBC LOINCs in `CBC_CANONICAL_TEXT_LOINCS` (770-8 / 736-9 / 5905-5 / 713-8 / 706-2 / 4544-3 / 718-7 / 777-3 / 787-2 / 786-4 / 788-0 / 789-8) only get LOINC_SHORT_TEXT canonicalization when `findLoincDetailed.cleanMatch === true` (path A/B1/B). Path-C panel-default fallbacks keep raw display so mis-tag canary (v0.11.9 Bug 6 lesson) stays visible. Other LOINCs in LOINC_SHORT_TEXT keep the v0.11.10 "always canonicalize" behavior (single-analyte panels, path A only → no canary needed).
 
 3. **`Resource.id` syntactic constraints.** Per FHIR R4 spec:
    - `[A-Za-z0-9\-\.]{1,64}` — SHA1 hex output qualifies
@@ -42,7 +43,37 @@ Checklist:
    - Label normalization in `code.text`: allowed (free-form per FHIR R4)
    - Filtering non-patient rows (QC / quality / narrative): allowed and required
 
-7. **Multi-reading preservation + targeted dedup (revised 2026-05-29 v0.12.4).** User-defined principle:
+7. **(NHI 醫令碼, display) is a dual-source signal — never trust only one. (added 2026-05-30 v0.13.0)** User-articulated after specimen mis-tag bug post-mortem:
+
+   > 只靠 name 會有錯誤，只靠 NHI 碼會有錯誤 — 要同時看兩個。
+
+   The bug history confirms this from both sides:
+   - **Display-only pitfalls**: substring matches (`尿酸` triggers bare `尿` → wrong specimen Urine in v0.12.6); sub-analyte alias misses (`帶狀嗜中性白血球` not in PANEL_LOINC_MAP keys → falls back to wrong panel default LOINC in v0.11.9 Bug 6)
+   - **NHI-code-only pitfalls**: LIS mis-billing (urine creatinine shipped under 09015C blood-default code → row is actually urine despite catalog default); panel-default LOINC can't distinguish sub-analytes (every CBC row under 08011C would collapse to 24317-0 if display ignored)
+
+   The right architectural pattern (now applied consistently to LOINC + specimen):
+   - **NHI 醫令碼 → provides panel context** (which family the code belongs to: 06=urinalysis, 08=hematology, 09=chemistry; LOINC default for single-analyte codes via NHI_TO_LOINC; specimen default via NHI_CODE_PREFIX_SPECIMEN)
+   - **Display → provides analyte specificity + override** (sub-analyte routing via PANEL_LOINC_MAP keys; specimen override when LIS-shipped display contradicts NHI catalog default, e.g. `肌酸酐(尿液)` under 09015C)
+   - **Cross-reference order**: explicit display marker / panel-key alias → other-specimen rules → NHI code default → display/order_name regex fallback for unknown codes
+   - **Disagreement is informative**: when display URINE-marker contradicts the code's BLOOD default, that's the mis-billing signal we honor (display wins for actual measurement). When display contains no specimen marker, NHI code default fills in (06013C "Color" still gets Urine specimen).
+
+8. **Silent-bug CI gate practice (added 2026-05-30 v0.13.0).** User-driven after the specimen mis-tag was found only by app dev's manual audit, not by CI:
+
+   > Specimen mis-tag 是 silent bug — 這個要怎麼在 test 被加入測到？
+
+   Silent bugs are characterised by: no FHIR validator catch, no runtime error, just wrong downstream routing in consuming apps. They're invisible until someone audits a real bundle by hand. To proactively gate them:
+
+   - **Enumerate (input, expected output) tables** for the invariant being checked. Example: `bundle-quality.test.ts > "CI invariant — specimen.display vs NHI 醫令碼 consistency"` lists ~25 (NHI code, display) pairs → expected specimen.
+   - **Run the bridge** for each row, assert specimen matches expectation. Failures aggregate into a single error message (so all violations show in one CI run, not a flurry of fail/pass cycles).
+   - **Add a row to the table** every time a new silent-bug case is discovered (whether from app dev audit, NHI catalog audit, or proactive guess). The table grows monotonically as bridge coverage expands.
+
+   This pattern applies to any LIS / NHI signal that's silent on failure:
+   - specimen.display vs NHI 醫令碼 (v0.13)
+   - LOINC routing vs NHI_TO_LOINC entry (informally covered by bug-9a structural tests)
+   - obs.code.text vs LOINC scale (e.g. Qn value should not pair with Ord LOINC — future)
+   - meta.tag presence / absence (v0.12.3 source-channel, v0.13 visit-date)
+
+9. **Multi-reading preservation + targeted dedup (revised 2026-05-29 v0.12.4).** User-defined principle:
 
    The bundle is for general SMART app consumption — **the dedup responsibility cannot be pushed to consumers** or downstream apps would break. Bridge produces one Observation per *logical measurement* in 健保存摺.
 
@@ -123,16 +154,38 @@ Steps before any commit-and-push that creates a release:
 
 UI-affecting changes get a preview screenshot or live demo before approval (separate longstanding rule from earlier sessions).
 
-## LOINC → preferred code.text canonicalization (deferred, soft request 2026-05-29)
+## CBC LOINC code.text canonicalization (shipped v0.13.0, 2026-05-30)
 
-App dev (MediPrisma) noted that for CBC analytes the bridge attaches one canonical LOINC but obs.code.text varies (mixed Chinese/English from different Taiwan EHRs). Their request: bridge could canonicalize LOINC → preferred text for CBC LOINCs (770-8 / 736-9 / 5905-5 / 713-8 / 706-2 / 4544-3 / 718-7 / 777-3 / 787-2 / 786-4 / 788-0 / 789-8) so app-side TEST_ALIASES table could retire.
+App dev (MediPrisma) soft request 2026-05-29 → user accepted 2026-05-30 → shipped v0.13.0.
 
-**Critical caveat from app dev:** DO NOT normalize text when EHR sent a genuinely-different analyte label (e.g. v0.11.9 Bug 6 where 帶狀嗜中性白血球 was mis-routed to 770-8 panel-default). App today uses display text as mis-tag canary.
+12 CBC LOINCs (770-8 / 736-9 / 5905-5 / 713-8 / 706-2 / 4544-3 / 718-7 / 777-3 / 787-2 / 786-4 / 788-0 / 789-8) live in `CBC_CANONICAL_TEXT_LOINCS` and get LOINC_SHORT_TEXT canonical text on `obs.code.text` — but **only when `findLoincDetailed.cleanMatch === true`** (path A NHI_TO_LOINC / path B1 PANEL_LOINC_MAP / path B LOINC_MAP). Path-C panel-default fallbacks keep raw NHI display so mis-tag canary remains.
 
-**Status: deferred.** Implementing requires a "clean match" detector in `findLoinc` so normalization fires only for unambiguous canonical-alias matches and stays a no-op for fuzzy substring routings. Non-trivial. App dev explicitly said it's not urgent (their alias table works).
+Mechanism (`packages/mapper/src/observation.ts`):
+- `findLoincDetailed(code, display) → { loinc, cleanMatch }` — wraps existing routing logic, reports HOW the LOINC was found
+- `resolveObsCodeText(loinc, code, display, cleanMatch)` — applies SHORT_TEXT only if (LOINC NOT in CBC_CANONICAL_TEXT_LOINCS) OR cleanMatch=true
+- `findLoinc()` preserved as thin wrapper for backward compat / external tests
 
-If revisited:
-- Add CBC LOINC entries to `LOINC_SHORT_TEXT` (each WebFetch-verified)
-- Add a `displayMatchedCleanly` signal threading from `findLoinc` → `buildObservation`
-- Apply LOINC_SHORT_TEXT to obs.code.text ONLY when matched cleanly; preserve raw display otherwise
-- Add CI regressions for both directions (clean match → canonical; fuzzy match → raw preserved)
+Caveat: v0.11.11 #8 single-obs DR text propagation can still overwrite the gate's "keep raw" choice when an unknown-display row falls under a single-leaf NHI code (08003C / 08004C / 08006C — NHI_TO_LOINC values 718-7 / 4544-3 / 777-3 all in CBC set). In those single-row cases the DR title (= canonical short text) propagates regardless. Considered acceptable: the NHI billing code itself unambiguously identifies the analyte for these single-leaf codes, so the canonical label IS correct even when display is malformed. Multi-row 08011C / 08013C cases (where the gate's mis-tag canary matters most) are unaffected.
+
+CI invariants (`backend-ts/tests/unit/bundle-quality.test.ts` "CI v0.13 — CBC obs.code.text canonicalization"):
+- Clean match → canonical text ("HGB"/"Hb"/"Segment" → "Hb"/"Hb"/"Neutrophils %")
+- Non-CBC LOINC (4548-4 HbA1c) keeps v0.11.10 always-canonicalize behavior
+- Non-CBC LOINC outside our 12 set (6690-2 WBC count) keeps raw text
+- Multi-row 08011C with mixed clean / unknown rows → clean canonical + unknown raw preserved (canary)
+
+## NHI funC_DATE (就醫日期) surfaced via meta.tag (shipped v0.13.0, 2026-05-30)
+
+User-verified anomaly 2026-05-30: 長庚嘉義 09006C HbA1c row has reaL_INSPECT_DATE=2025-12-09 but funC_DATE=2025-09-16 — ~3 months apart. Cause indeterminate from NHI data alone (hospital late report vs roving outpatient lab order vs system bug); bridge cannot judge per the faithful-transport rule.
+
+v0.13.0 surfaces funC_DATE separately from effectiveDateTime:
+- `Observation.effectiveDateTime` stays on `reaL_INSPECT_DATE` (FHIR R4 "physiologically relevant time" for a lab; preserves v0.6.1 fix)
+- `Observation.meta.tag` carries funC_DATE under system `http://nhi-fhir-bridge/nhi-visit-date` (ISO 8601 date as `code`)
+- Mechanism mirrors v0.12.3 nhi-source-channel pattern — bridge-namespaced URI, non-breaking for apps that don't know it (FHIR R4 Meta.tag spec: "applications are not required to consider the tags")
+- Bridge does NOT decide which date is "correct" — both are NHI-supplied facts; downstream apps can detect gaps and surface UI warnings
+
+Adapter (`extension/src/nhi-adapters.js`): `adaptLabItem` adds `nhi_visit_date: rocToISO(item.funC_DATE)` alongside existing `date` field.
+
+CI invariants ("CI v0.13 — NHI 就醫日期 (funC_DATE) surfaced as meta.tag"):
+- Gap case (inspect 12/9, visit 9/16) → both surface, effectiveDateTime unchanged
+- No funC_DATE → no spurious empty meta.tag
+- funC_DATE === date → tag still emitted (no smart suppression)

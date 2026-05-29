@@ -3,6 +3,148 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.13.0 重點 — 2026-05-30
+
+**🩺 三項 metadata 修補：specimen mis-tag 修掉 + CBC LOINC code.text 統一 + NHI 就醫日期 (funC_DATE) 保留**
+
+第 1 項是 **bug fix**（v0.6.x 就有的潛在問題、app dev 2026-05-29 follow-up 報告抓到）。第 2、3 項是新增 metadata signal — 都用 **FHIR 標準欄位** 帶 extra info 給下游 SMART app，**沒動現有任何欄位語義**、**Coding 完全不動**、**effectiveDateTime 完全不動**。
+
+### 🔴 ① Specimen mis-tag fix — `inferSpecimen` 改成跟 LOINC 同 architecture (NHI 醫令碼 authoritative)
+
+**Bug**：SMART app dev follow-up 2026-05-29 audit 在 v0.12.6 bundle 發現 39 筆 blood-analyte Observation 被 silently 標 `specimen.display='Urine'`，導致 SMART app 把那些 obs 路由到 urinalysis tab、從化學常規 cumulative report 消失 — 而且**沒有任何視覺警示**，臨床端只看到空欄位。
+
+**Root cause (architectural gap)**：bridge 早就有 `NHI_TO_LOINC["09013C"] = "3084-1"` 這張表幫 LOINC routing（用 NHI 醫令碼當 authoritative source），但 `inferSpecimen` 從來沒沿用這套架構 — 它**從頭到尾只看 display / order_name 字串**，靠 `SPECIMEN_RULES[0] = [/尿|urine|urinaly/i, "Urine"]` 這條 bare-substring 規則。結果：
+
+| NHI 醫令碼 | NHI 名稱 | LOINC | 修前 specimen | 受影響 records |
+|---|---|---|---|---|
+| 09013C | 尿酸 (UA blood) | 3084-1 (Urate Ser/Plas) | `Urine` ❌ | 13 |
+| 09002C | 血中尿素氮 (BUN) | 3094-0 (BUN Ser/Plas) | `Urine` ❌ | 22 |
+| 09015C | 肌酸酐(尿液) variant | 2160-0 | `Urine` ✓（巧合對） | 4 |
+
+bare `尿` 撞 `尿酸` / `尿素`：bridge 在隔壁 LOINC 表就知道 09013C 是血液 urate，但 specimen pipeline 沒問就直接用 substring 猜。**LOINC 路徑跟 specimen 路徑當年沒做一致性審查 — 這是 design-time gap**。
+
+**Fix — 把 specimen pipeline 對齊 LOINC 架構**（`packages/mapper/src/observation.ts`）：
+
+1. **新加 `NHI_CODE_PREFIX_SPECIMEN`** — NHI 醫令碼 2-char prefix → default specimen：
+   - `06` → Urine（urinalysis 系列：06013C 尿生化 / 06014C 尿沉渣 ...）
+   - `08` → Blood（CBC / hematology：08003C / 08004C / 08011C / 08013C ...）
+   - `09` → Blood（chemistry — 絕大多數血液 / serum）
+   - `11` → Blood（blood typing：ABO / RH / antibody）
+   - `12` → Blood（immunology / serology / tumor markers）
+   - `13` / `14` / `24` / `27` → Blood（specialty serum）
+2. **新加 `NHI_CODE_SPECIMEN_OVERRIDE`** — 特定 code 例外（目前只有 `09016C: Urine` 對應「肌酐、尿」NHI 官方 urine-creatinine code）
+3. **新加 `URINE_MARKERS_RE`** — 拿掉 bare `尿`，只 match 具體 markers：`尿液 / 尿道 / 尿沉渣 / 尿生化 / 尿常規 / 尿糖 / 尿蛋白 / 尿微量白蛋白 / 小便 / (尿) / (尿液) / urinaly / urinal / urine（word boundary） / u-malb / u-acr / u-cre / u-mab / u-pcr`
+4. **新 priority order**：
+   1. Display URINE marker → Urine（LIS-shipped display 知道實際 measured specimen，override NHI catalog 預設 — 處理 09015C 血液-default code 但 display 寫 `(尿液)` 的 mis-billed 情境）
+   2. Other specimens（stool / sputum / CSF / pleural / 骨髓 / synovial / amniotic / cervical）— 比 NHI code default 先跑，例外處理（不在主要 NHI prefix 系列裡）
+   3. **NHI 醫令碼 default** — authoritative，這是 architectural fix 的核心
+   4. Order_name URINE marker — unknown NHI code 才走的 fallback
+
+**為什麼新邏輯也安全保留 `display URINE override`**：09015C 是 NHI 血液-default code，但有些醫院 LIS 會把尿液 creatinine 申報在這個 code 下，display 寫 `肌酸酐(尿液)`。LIS-shipped display 是實際 measurement 的 ground truth，所以 display URINE marker 排在 NHI code default 前面。
+
+**驗證 — 9 個 CI regression locks**：
+| Case | 修前 | 修後 |
+|---|---|---|
+| 09013C 尿酸 "Uric Acid (B)" | Urine ✗ | Blood ✓ |
+| 09002C BUN "血中尿素氮" | Urine ✗ | Blood ✓ |
+| 09015C "肌酸酐(尿液)" | Urine ✓ | Urine ✓ |
+| 09015C "Crea" + order_name "肌酸酐、血" | Blood ✓（靠 bare 血 regex） | Blood ✓（靠 NHI prefix） |
+| 06013C 尿糖 (urinalysis sub-row) | Urine ✓ | Urine ✓ |
+| **09013C `display="尿酸"` 無 English marker** | **Urine ✗** | **Blood ✓**（純 NHI code authoritative）|
+| **06013C `display="Color"` 無 urine marker** | 失敗（沒命中 urine markers） | **Urine ✓**（純 NHI code authoritative）|
+| **09016C 尿液 creatinine** | Urine ✓ | Urine ✓（explicit override）|
+| Stool occult blood "Occult blood" | Stool ✓ | Stool ✓ |
+
+**FHIR R4 + faithful transport check**：`Specimen.display` 是 free-form 文字欄位（bridge 不另發 Specimen resource），labelling 我們自己的輸出。Patient values / NHI codes / LOINC mappings 全沒動。是 labelling correction，不是 data mutation。
+
+### ② CBC LOINC obs.code.text canonicalization（clean-match guard）
+
+### ① CBC LOINC obs.code.text canonicalization（clean-match guard）
+
+**Why**: App dev (MediPrisma) 2026-05-29 軟需求。3 家醫院送 Hb 的 `obs.code.text` 可能是 "Hb" / "血色素" / "Hemoglobin" / "HGB"，跨醫院 group-by-text 需要 app 端 alias table 才能合併。User 2026-05-30 評估後決定做。
+
+**What**: 12 個 CBC LOINCs（770-8 Neutrophils % / 736-9 Lymphocytes % / 5905-5 Monocytes % / 713-8 Eosinophils % / 706-2 Basophils % / 4544-3 HCT / 718-7 Hb / 777-3 Platelet / 787-2 MCV / 786-4 MCHC / 788-0 RDW / 789-8 RBC）放進新的 `CBC_CANONICAL_TEXT_LOINCS` set。`obs.code.text` 走 LOINC_SHORT_TEXT canonical 短名 — **但只在 `findLoincDetailed.cleanMatch === true` 時觸發**。
+
+**Mis-tag canary 保留**：findLoinc path C（panel-default fallback，display 沒命中任何 alias）→ cleanMatch=false → SHORT_TEXT 不套 → 保留 raw display。這是 v0.11.9 Bug 6 的教訓（帶狀嗜中性白血球 silently routed to 770-8 panel default 時，app dev 是靠 obs.code.text 跟 LOINC 不一致發現的）。
+
+**Mechanism**：
+- `findLoinc(code, display)` 保留向後相容（thin wrapper）
+- 新加 `findLoincDetailed(code, display) → { loinc, cleanMatch }`
+  - path A (NHI_TO_LOINC single-analyte) → cleanMatch=true
+  - path B1 (PANEL_LOINC_MAP explicit alias hit) → cleanMatch=true
+  - path B (LOINC_MAP global alias hit) → cleanMatch=true
+  - path C (panel-default fallback) → cleanMatch=false ⚠️
+- 新加 `resolveObsCodeText(loinc, code, display, cleanMatch)` 集中 text 解析邏輯 + clean-match gate
+
+**已知 edge case**：v0.11.11 #8 single-obs DR text propagation 在「single-leaf NHI code + 未知 display」case 還是會把 canonical 短名灌回 obs.code.text（08003C/04C/06C single-row 案例）。這是 v0.11.11 自己的 behaviour、不是 v0.13 引入，且該情境下 NHI 醫令碼本身已唯一指定 analyte，canonical 標籤其實仍正確。Multi-row 08011C / 08013C panel 不受此影響 — canary 對主要 surface area 還在。
+
+### ② NHI 就醫日期 (funC_DATE) → Observation.meta.tag
+
+**Why**: User-verified anomaly 2026-05-30。長庚嘉義 09006C HbA1c 在健保存摺 raw 上：
+- `reaL_INSPECT_DATE` = 2025-12-09（檢查日期）
+- `funC_DATE` = 2025-09-16（就醫日期）
+
+兩者差 ~3 個月。可能成因：醫院晚報、roving outpatient lab order、或 NHI 上傳系統 bug。Bridge **不能自己判斷哪個對**（CLAUDE.md faithful transport rule），但有義務把這個 signal 保留下來讓 app 能 detect 異常。
+
+**What**: 加 `Observation.meta.tag` 攜帶 funC_DATE：
+```json
+{
+  "system": "http://nhi-fhir-bridge/nhi-visit-date",
+  "code": "2025-09-16"
+}
+```
+
+**Why meta.tag (not extension / not Encounter ref)**：
+- 跟 v0.12.3 `nhi-source-channel` 用同一個 pattern，maintenance 連貫
+- FHIR R4 `Resource.meta.tag` 是標準欄位（type Coding, 0..\*）
+- Spec 原文：「applications are not required to consider the tags」→ 不認識這個 system URI 的 app 自動忽略 → **non-breaking for any SMART app**
+
+**Backward-compat 保證**：
+- `Observation.effectiveDateTime` 維持 reaL_INSPECT_DATE（不變）
+- `Coding.display` / `Coding.code` 全部不動
+- 12 個 CBC LOINCs 的 `obs.code.text` 在 clean match 時變 canonical，但只是更乾淨的 free-form 字串，無 schema 改動
+
+### 改了什麼
+
+| 檔案 | 內容 |
+|---|---|
+| `packages/mapper/src/loinc-tables.ts` | +12 個 CBC LOINC_SHORT_TEXT 條目 + 新 export `CBC_CANONICAL_TEXT_LOINCS` Set |
+| `packages/mapper/src/observation.ts` | 新 `findLoincDetailed()` + `resolveObsCodeText()` + `NHI_VISIT_DATE_SYSTEM` + `appendNhiVisitDateTag()`；`mapObservation` + `buildObservation` 改用 detailed lookup + visit-date tag emission |
+| `extension/src/nhi-adapters.js` | `adaptLabItem` 加 `nhi_visit_date: rocToISO(item.funC_DATE)` |
+| `extension/tests/adapters.test.js` + `__snapshots__` | 加 `nhi_visit_date` 期望 |
+| `backend-ts/tests/unit/bundle-quality.test.ts` | +10 個 v0.13 lockdown regression tests（CBC clean-match × 5 + canary × 1 + non-CBC × 2 + visit-date × 3） |
+| `CLAUDE.md` | rule #2 加 CBC clean-match gate 條目；新章節「CBC LOINC code.text canonicalization」+「NHI funC_DATE surfaced via meta.tag」 |
+| 4 個 version files | `extension/src/manifest.json` + `extension/package.json` + `backend-ts/package.json` + `extension/dist/manifest.json` → `0.13.0` |
+
+### 驗證
+
+- ✅ Extension test: **142/142 passed**
+- ✅ Backend-ts test: **442/442 passed**（v0.12.6 baseline 422 + 20 個 v0.13 新加 regression：6 CBC clean-match + 1 mis-tag canary + 9 specimen lockdown + 1 silent-bug invariant + 3 visit-date）
+- ✅ FHIR R4 compliance check：兩個新 feature 都用 spec-internal 欄位（meta.tag、CodeableConcept.text），沒引入 non-standard extension；Coding.display 全部不動
+
+### 順手加：silent-bug CI gate + dual-source architectural rule（CLAUDE.md rule #7 / #8）
+
+User 反問「specimen mis-tag 是 silent bug、怎麼在 test 抓到」+ 「只靠 name / 只靠 NHI 碼都會錯、要同時看兩個」— 加：
+
+1. **新 invariant test** `CI invariant — specimen.display vs NHI 醫令碼 consistency`：25 個 (NHI code, display) → expected specimen 對照表，bridge 跑出任何違反 → CI red + 一次列所有 violations。未來有人改 inferSpecimen 邏輯不小心倒回 substring bug、或 NHI code mapping 改錯，這 gate 立刻擋。同 pattern 可延伸到其他 silent invariant（LOINC routing / scale-type / meta.tag presence）。
+
+2. **CLAUDE.md rule #7「(NHI 醫令碼, display) is a dual-source signal — never trust only one」**：明確記錄 architectural lesson — bridge 從 LOINC routing 一路到 specimen 都遵守「NHI code 提供 panel context、display 提供 specificity 跟 mis-billing override」。display-only bug（substring 撞、alias miss）跟 code-only bug（mis-billing 蓋過、panel default 收掉 sub-analyte）兩種都有 historical case，未來改碼要同時 cross-reference。
+
+3. **CLAUDE.md rule #8「silent-bug CI gate practice」**：把 invariant table 模式記錄成方法論。任何 silent failure pattern（沒 FHIR validator catch、沒 runtime error、只有錯 routing）都該對應一張 expectation table + 一個 invariant test。
+
+### 不影響其他 SMART app（含非我們開發的）
+
+| 假設 app 行為 | v0.13.0 影響 |
+|---|---|
+| 用 LOINC code 做 analyte 分組 | 無影響（Coding.code 完全不變） |
+| 用 LOINC display 做顯示 | 無影響（Coding.display 完全不變） |
+| 用 effectiveDateTime 排時間軸 | 無影響（仍用 reaL_INSPECT_DATE） |
+| 用 obs.code.text 做 UI label | 12 CBC LOINCs 在 clean match 時更乾淨（"Hb" 統一）；其他 LOINC 完全不變 |
+| 用 obs.code.text 做 alias 比對 | 12 CBC LOINCs 在 clean match 時可省 alias 表；canary case 還是看到 raw display |
+| 不認識 nhi-visit-date / nhi-source-channel tag | 自動忽略，無 side effect |
+
+---
+
 ## 0.12.6 重點 — 2026-05-29
 
 **🧹 Pre-submission housekeeping — Chrome Web Store 上架前小整理**

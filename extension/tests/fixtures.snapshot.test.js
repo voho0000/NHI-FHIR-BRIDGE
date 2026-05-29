@@ -43,6 +43,7 @@ describe("adapter fixture snapshots", () => {
         "hospital": "長庚嘉義",
         "nhi_source_channel": "A",
         "nhi_source_channel_name": "特約醫事機構不定期上傳",
+        "nhi_visit_date": "2025-05-18",
         "order_code": "09140C",
         "order_name": "血液及體液葡萄糖-餐後",
         "reference_range": "[70][140]",

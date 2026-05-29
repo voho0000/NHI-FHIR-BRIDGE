@@ -233,6 +233,11 @@ describe("adaptLabItem", () => {
       // duplicates per NHI multi-channel upload behavior.
       nhi_source_channel: "A",
       nhi_source_channel_name: "特約醫事機構不定期上傳",
+      // v0.13+: NHI 就醫日期 (funC_DATE) carried separately from `date`
+      // (which uses reaL_INSPECT_DATE). 4-day visit-vs-inspect gap in
+      // this fixture (5/18 visit, 5/22 inspect) — a normal inpatient
+      // admission window pattern.
+      nhi_visit_date: "2025-05-18",
     });
   });
 

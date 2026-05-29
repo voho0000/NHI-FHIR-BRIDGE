@@ -133,6 +133,16 @@ export function adaptLabItem(item) {
     // choice without violating the bridge's strict-no-dedup rule.
     nhi_source_channel: String(item.orI_TYPE || "").toUpperCase() || null,
     nhi_source_channel_name: String(item.orI_TYPE_NAME || "") || null,
+    // v0.13: surface NHI 就醫日期 (funC_DATE) separately from `date`
+    // (which prefers reaL_INSPECT_DATE per the v0.6.1 fix). Downstream
+    // mapper emits via Observation.meta.tag so SMART apps can detect
+    // visit-vs-inspect-date gaps — verified real-world case 2026-05-30:
+    // 長庚嘉義 09006C HbA1c row has reaL_INSPECT_DATE=2025-12-09 but
+    // funC_DATE=2025-09-16, ~3 months apart, likely hospital late report
+    // or roving outpatient order. effectiveDateTime stays 12/9 per
+    // FHIR "physiologically relevant time"; visit date rides in meta.tag.
+    // Faithful-transport: bridge does NOT pick which is "correct".
+    nhi_visit_date: rocToISO(item.funC_DATE || item.func_DATE) || null,
   };
 }
 

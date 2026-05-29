@@ -19,6 +19,7 @@ import { stableId } from "./helpers";
 import {
   DISPLAY_FIRST_CODES,
   LOINC_DISPLAY,
+  CBC_CANONICAL_TEXT_LOINCS,
   LOINC_MAP,
   LOINC_SHORT_TEXT,
   NHI_CODE_PANEL_NAME,
@@ -235,28 +236,66 @@ function _findLongestMatch(
  *   C. Fallback: panel-level LOINC from NHI_TO_LOINC if available.
  */
 export function findLoinc(code: string, display: string): string | null {
-  // A. Single-test NHI code wins outright.
+  return findLoincDetailed(code, display).loinc;
+}
+
+/**
+ * Same as findLoinc, but also reports HOW the match was found via the
+ * `cleanMatch` flag. v0.13 — needed by mapObservation / buildObservation
+ * to decide whether to canonicalize obs.code.text for CBC LOINCs (only
+ * when matched via an explicit path A/B1/B alias, never the path-C
+ * panel-default fallback that v0.11.9 Bug 6 exposed).
+ *
+ * cleanMatch semantics:
+ *   - true  = matched via path A (NHI_TO_LOINC, code is single-analyte),
+ *             B1 (PANEL_LOINC_MAP explicit display alias hit), or B
+ *             (global LOINC_MAP display alias hit). The mapping is
+ *             unambiguous; canonicalizing obs.code.text is safe.
+ *   - false = matched via path C (panel-default fallback) OR no LOINC
+ *             at all. Path C fires when row display didn't match any
+ *             registered alias, so the panel code's umbrella LOINC was
+ *             used as a guess. Keep raw display in obs.code.text so a
+ *             mis-tag is visible as a label/code mismatch.
+ *
+ * Path A always returns cleanMatch=true regardless of display content
+ * because for single-analyte NHI codes (e.g. 09006C HbA1c, 09112C TSH)
+ * the code IS the analyte identifier — display is irrelevant.
+ */
+export function findLoincDetailed(
+  code: string,
+  display: string,
+): { loinc: string | null; cleanMatch: boolean } {
+  // A. Single-test NHI code wins outright. Clean by definition — the
+  // NHI billing code uniquely identifies the analyte for these codes.
   if (code && code in NHI_TO_LOINC && !DISPLAY_FIRST_CODES.has(code)) {
-    return NHI_TO_LOINC[code] ?? null;
+    return { loinc: NHI_TO_LOINC[code] ?? null, cleanMatch: true };
   }
 
   const combined = `${code} ${display}`.toLowerCase();
 
-  // B1. Panel-specific keyword map runs BEFORE the global one.
+  // B1. Panel-specific keyword map runs BEFORE the global one. Hit here
+  // means the row's display explicitly matched a panel sub-analyte
+  // alias — clean match.
   if (code in PANEL_LOINC_MAP) {
     const hit = _findLongestMatch(combined, PANEL_LOINC_MAP[code]!);
-    if (hit) return hit;
+    if (hit) return { loinc: hit, cleanMatch: true };
   }
 
-  // B. Display-keyword search.
+  // B. Global display-keyword search. Hit means display matched a
+  // cross-panel canonical alias — clean match.
   const hit = _findLongestMatch(combined, LOINC_MAP);
-  if (hit) return hit;
+  if (hit) return { loinc: hit, cleanMatch: true };
 
-  // C. Panel code with no recognised item display → fall back.
+  // C. Panel code with no recognised item display → fall back to panel
+  // default LOINC. NOT clean — display was unrecognised, the panel
+  // default is a best-effort guess. The v0.11.9 Bug 6 case (帶狀嗜中性
+  // 白血球 silently routed to 770-8 panel default for 08011C) lives
+  // here. Callers that canonicalize text MUST gate on cleanMatch=true
+  // so a mis-tag canary remains.
   if (code && code in NHI_TO_LOINC) {
-    return NHI_TO_LOINC[code] ?? null;
+    return { loinc: NHI_TO_LOINC[code] ?? null, cleanMatch: false };
   }
-  return null;
+  return { loinc: null, cleanMatch: false };
 }
 
 /**
@@ -1128,9 +1167,62 @@ function combineBpItems(items: Record<string, any>[]): Record<string, any>[] {
 }
 
 // ── Specimen inference ────────────────────────────────────────────────
+//
+// v0.13.0 (SMART app dev follow-up bug report 2026-05-29 + user
+// architectural correction 2026-05-30): the pre-v0.13 rule list led
+// with `/尿|urine|urinaly/` which substring-matched bare 尿 inside
+// BLOOD analyte names: 尿酸 (UA blood, NHI 09013C), 尿素氮 (BUN blood,
+// NHI 09002C). The bridge was emitting `specimen.display='Urine'` on
+// 35+ blood-analyte Observations across the user's bundle, making the
+// obs route to the urinalysis tab in clinicians' SMART app and silently
+// disappear from the serum chemistry tab. App dev called this the
+// highest-priority bug because the disappearance is invisible.
+//
+// User correction (the right architecture): **NHI 醫令碼 is the
+// authoritative signal for specimen**, same way it's authoritative for
+// LOINC routing (NHI_TO_LOINC + PANEL_LOINC_MAP). The NHI catalog
+// organises codes by prefix series:
+//   06xxxC = urinalysis (urine)
+//   08xxxC = CBC / hematology (blood)
+//   09xxxC = chemistry (mostly blood; specific urine subcodes like
+//            09016C 肌酐、尿 are exceptions)
+//   11xxxC = blood typing (blood)
+//   12xxxC = immunology / serology / tumor markers (blood)
+//   13/14/24/27xxxC = specialty serum (blood)
+// So inferSpecimen consults NHI_CODE_PREFIX_SPECIMEN + override map
+// BEFORE falling back to display/order_name regex. The display can
+// still override when it explicitly says urine — handles the 09015C
+// blood-default code with a urine sub-row (NHI catalog default is
+// 肌酸酐、血 but some hospitals mis-bill urine creatinine under it).
+//
+// Priority order:
+//   1. Display URINE marker (specific terms only, no bare 尿) — LIS-
+//      shipped display knows actual measured specimen, overrides NHI
+//      code default. Handles 09015C 肌酸酐(尿液) row case.
+//   2. Other-specimen rules (Stool / Sputum / CSF / Pleural / etc.) —
+//      run BEFORE the BLOOD code rule so "occult blood" stool test
+//      doesn't pick up BLOOD. These specimens have no dedicated NHI
+//      prefix series so display/order_name is the only signal.
+//   3. NHI 醫令碼 default — authoritative for known codes.
+//   4. Regex fallback on display + order_name — for unknown codes only.
+//
+// FHIR R4 / faithful-transport check: `Specimen.display` is free-form
+// text on a `Reference` element (we don't emit a separate Specimen
+// resource), labelling our own output. Patient values / NHI codes /
+// LOINC mappings untouched. Labelling correction, not value mutation.
 
-const SPECIMEN_RULES: ReadonlyArray<[RegExp, string]> = [
-  [/尿|urine|urinaly/i, "Urine"],
+// URINE — explicit Chinese markers (no bare 尿), English specifics.
+// Used as DISPLAY URINE detector (highest precedence) — must be quite
+// specific so 尿酸 / 尿素 (blood analytes whose names contain 尿) don't
+// trigger.
+const URINE_MARKERS_RE =
+  /尿液|尿道|尿沉渣|尿沈渣|尿生化|尿常規|尿液檢查|尿糖|尿蛋白|尿細胞|尿酮體?|尿膽紅素|尿膽素原|尿微量白蛋白|尿白蛋白|尿微白蛋白|小便|\(尿(?:液)?\)|urinaly|urinal|\burine\b|u-malb|u-acr|u-cre|u-mab|u-pcr/i;
+
+// Specimen markers that aren't URINE/BLOOD. Checked BEFORE the NHI
+// code default so e.g. a synovial-fluid test (16008C panel) labelled
+// with "synovial" / "關節液" gets the more specific specimen rather
+// than the prefix-default Blood.
+const OTHER_SPECIMEN_RULES: ReadonlyArray<[RegExp, string]> = [
   [/糞|便潛血|stool|fecal|faecal|occult\s*blood/i, "Stool"],
   [/痰|sputum/i, "Sputum"],
   [/腦脊液|csf|cerebrospinal/i, "Cerebrospinal fluid"],
@@ -1142,15 +1234,75 @@ const SPECIMEN_RULES: ReadonlyArray<[RegExp, string]> = [
   [/骨髓|bone\s*marrow/i, "Bone marrow"],
 ];
 
-function inferSpecimen(...hints: Array<string | null | undefined>): string | null {
-  const blob = hints
-    .filter((h): h is string => Boolean(h))
-    .join(" ")
-    .toLowerCase();
-  if (!blob) return null;
-  for (const [pattern, label] of SPECIMEN_RULES) {
+// NHI 醫令碼 prefix → default specimen. Per NHI catalog structure.
+// Two-character prefix lookup; subcodes can override via the explicit
+// NHI_CODE_SPECIMEN_OVERRIDE map below.
+const NHI_CODE_PREFIX_SPECIMEN: Readonly<Record<string, string>> = {
+  "06": "Urine", // 06013C 尿生化檢查 / 06014C 尿沉渣 / urinalysis family
+  "08": "Blood", // 08003C 血色素 / 08004C HCT / 08011C CBC / 08013C diff
+  "09": "Blood", // Chemistry — vast majority blood/serum (exceptions in override)
+  "11": "Blood", // 11001C ABO / 11003C RH / 11004C antibody — blood typing
+  "12": "Blood", // 12007C AFP / 12021C CEA / 12025B Ig-G / 12053C ANA …
+  "13": "Blood", // Specialty serum (less common)
+  "14": "Blood", // Specialty serum (e.g. coagulation panels)
+  "24": "Blood", // e.g. 24007B 血漿游離鈣
+  "27": "Blood", // Specialty serum / RIA hormones (e.g. 27021B testosterone free)
+};
+
+// Specific overrides for codes where the prefix-default is wrong.
+// Add entries as NHI catalog audit / SMART app dev reports reveal them.
+const NHI_CODE_SPECIMEN_OVERRIDE: Readonly<Record<string, string>> = {
+  "09016C": "Urine", // 肌酐、尿 — Urine creatinine (the official urine-crea code)
+};
+
+function nhiCodeSpecimen(code: string | null | undefined): string | null {
+  const c = String(code ?? "").trim().toUpperCase();
+  if (!c) return null;
+  if (c in NHI_CODE_SPECIMEN_OVERRIDE) return NHI_CODE_SPECIMEN_OVERRIDE[c] ?? null;
+  const prefix = c.slice(0, 2);
+  return NHI_CODE_PREFIX_SPECIMEN[prefix] ?? null;
+}
+
+function inferSpecimen(
+  orderName: string | null | undefined,
+  display: string | null | undefined,
+  code: string | null | undefined,
+): string | null {
+  const displayStr = String(display ?? "");
+  const orderStr = String(orderName ?? "");
+
+  // 1. Display URINE marker — highest precedence. The LIS-shipped
+  //    display tells us what was ACTUALLY measured, overriding any
+  //    NHI catalog default. Handles 09015C blood-default code where
+  //    the row's display is "肌酸酐(尿液)" (urine creatinine mis-billed
+  //    under blood code by some hospital LIS).
+  if (URINE_MARKERS_RE.test(displayStr)) return "Urine";
+
+  // 2. Other specimens (Stool / Sputum / CSF / Pleural / Bone marrow /
+  //    Synovial / Amniotic / Cervical). These don't have dedicated NHI
+  //    prefix series; display/order_name is the only signal. Stool
+  //    rule runs before any BLOOD detection so "occult blood" stool
+  //    test isn't mis-tagged.
+  const blob = `${orderStr} ${displayStr}`.toLowerCase();
+  for (const [pattern, label] of OTHER_SPECIMEN_RULES) {
     if (pattern.test(blob)) return label;
   }
+
+  // 3. NHI 醫令碼 default — authoritative for known codes (see
+  //    NHI_CODE_PREFIX_SPECIMEN + NHI_CODE_SPECIMEN_OVERRIDE). This is
+  //    the structural fix that eliminates the bare-尿 substring bug:
+  //    09013C 尿酸 → prefix 09 → Blood; 09002C 血中尿素氮 → prefix 09 →
+  //    Blood; 06013C urinalysis sub-rows → prefix 06 → Urine (even when
+  //    the row's display is something ambiguous like "Color").
+  const codeDefault = nhiCodeSpecimen(code);
+  if (codeDefault) return codeDefault;
+
+  // 4. Unknown NHI code — fall back to order_name URINE marker check.
+  //    No bare-BLOOD regex on display/order_name here: in the absence
+  //    of a recognised NHI code AND no explicit URINE marker, returning
+  //    null is safer than guessing Blood from a stray 血 substring.
+  if (URINE_MARKERS_RE.test(orderStr)) return "Urine";
+
   return null;
 }
 
@@ -1255,6 +1407,82 @@ function appendNhiSourceChannelTag(
   resource.meta.tag.push(tag);
 }
 
+// v0.13 — NHI 就醫日期 (funC_DATE) surfaced via meta.tag.
+//
+// NHI lab rows carry two date-ish fields: funC_DATE (visit registration /
+// admission date) and reaL_INSPECT_DATE (actual sample-collection date).
+// Bridge uses reaL_INSPECT_DATE as Observation.effectiveDateTime per the
+// v0.6.1 fix — that's the FHIR "physiologically relevant time" for a lab.
+// But funC_DATE carries independently-useful provenance: it lets a
+// downstream SMART app spot anomalies where a lab inspect date is months
+// after the visit date (suggesting late hospital reporting, or roving
+// outpatient lab orders that were finally drawn weeks later — verified
+// real-world case 2026-05-30: 長庚嘉義 09006C HbA1c shows
+// reaL_INSPECT_DATE=2025-12-09 but funC_DATE=2025-09-16, ~3 months gap).
+//
+// Per CLAUDE.md faithful-transport principle, bridge does NOT pick which
+// date is "correct" — both are NHI-supplied facts. effectiveDateTime
+// stays on inspect date (clinically the right anchor for trending);
+// visit date rides along in meta.tag so apps that want to detect /
+// display the discrepancy can.
+//
+// Format: meta.tag code is the funC_DATE in ISO 8601 (YYYY-MM-DD), same
+// shape as raw.nhi_visit_date pushed by the extension adapter.
+//
+// Apps that don't know this tag system URI ignore it per the FHIR R4
+// Meta.tag spec — non-breaking by design (same precedent as v0.12.3
+// nhi-source-channel tag).
+const NHI_VISIT_DATE_SYSTEM = "http://nhi-fhir-bridge/nhi-visit-date";
+
+function appendNhiVisitDateTag(
+  resource: Record<string, any>,
+  raw: Record<string, any>,
+): void {
+  const visitDate = String(raw.nhi_visit_date ?? "").trim();
+  if (!visitDate) return;
+  if (!resource.meta) resource.meta = { versionId: "1", source: "nhi-fhir-bridge/scraper" };
+  if (!Array.isArray(resource.meta.tag)) resource.meta.tag = [];
+  resource.meta.tag.push({
+    system: NHI_VISIT_DATE_SYSTEM,
+    code: visitDate,
+  });
+}
+
+/**
+ * v0.13 — Resolve obs.code.text using clean-match guard.
+ *
+ * Existing behaviour (v0.11.9 → v0.12.6): when row resolves to a LOINC
+ * with a LOINC_SHORT_TEXT entry, use the short text as `code.text`. This
+ * was added for single-analyte panels (TSH, HbA1c, etc.) where path A
+ * in findLoinc is the only routing → match is always clean → no canary
+ * needed.
+ *
+ * v0.13 extends LOINC_SHORT_TEXT to 12 CBC LOINCs whose NHI codes live
+ * in multi-analyte panels (08011C / 08013C). For those, canonicalizing
+ * text on a path-C fallback would hide mis-tags (v0.11.9 Bug 6 lesson).
+ * So when the LOINC is in CBC_CANONICAL_TEXT_LOINCS, only use the short
+ * text override when cleanMatch === true. Otherwise raw display wins so
+ * a mis-tag is visible as a label/code mismatch.
+ *
+ * Other LOINCs (non-CBC) keep the v0.11.10 "always use SHORT_TEXT when
+ * present" behaviour — no change.
+ */
+function resolveObsCodeText(
+  loinc: string | null,
+  code: string,
+  display: string,
+  cleanMatch: boolean,
+): string {
+  const shortTextAllowed =
+    !!loinc &&
+    !!LOINC_SHORT_TEXT[loinc] &&
+    (!CBC_CANONICAL_TEXT_LOINCS.has(loinc) || cleanMatch);
+  const shortText = shortTextAllowed && loinc ? LOINC_SHORT_TEXT[loinc] : undefined;
+  return normalizeFullwidth(
+    shortText || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab",
+  );
+}
+
 function urineProteinLoincFix(
   loinc: string | null,
   rawValue: unknown,
@@ -1294,7 +1522,16 @@ export function mapObservation(
   if (!hasValue && !hasMeaningfulInterp) return null;
 
   const obsId = stableId(patientId, code, raw.date ?? "");
-  let loinc = findLoinc(code, display);
+  // v0.13: switch to detailed lookup so we can gate code.text canonical-
+  // ization on cleanMatch (CBC LOINCs route through path B1/C — without
+  // the gate, panel-default fallbacks would silently get canonical text
+  // and hide mis-tags). For non-CBC LOINCs the gate is a no-op (see
+  // resolveObsCodeText). structuralLoincFix / urineProteinLoincFix may
+  // reroute the LOINC after this point; reroutes preserve the cleanMatch
+  // signal because the reroute itself is a structural cleanup, not a
+  // display-keyword guess.
+  const lookup = findLoincDetailed(code, display);
+  let loinc = lookup.loinc;
   // v0.11.13 bug 9a: structural reroute if LOINC vs unit mismatch
   loinc = structuralLoincFix(loinc, raw.unit);
   // v0.12.2: urine protein scale routing — see urineProteinLoincFix() docstring
@@ -1323,14 +1560,9 @@ export function mapObservation(
         loinc,
         String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || undefined,
       ),
-      // v0.11.9: see panel-path buildObservation for full precedence.
-      // v0.11.10: normalize fullwidth ASCII.
-      text: normalizeFullwidth(
-        (loinc && LOINC_SHORT_TEXT[loinc]) ||
-          NHI_CODE_PANEL_NAME[code] ||
-          display ||
-          "Unknown Lab",
-      ),
+      // v0.11.9 / v0.11.10 / v0.13: see resolveObsCodeText() — CBC LOINCs
+      // gate on cleanMatch, others keep "always SHORT_TEXT" behaviour.
+      text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch),
     },
     subject: { reference: `Patient/${patientId}` },
   };
@@ -1350,6 +1582,9 @@ export function mapObservation(
   }
   // v0.12.3: NHI source channel (A=不定期 / B=定期).
   appendNhiSourceChannelTag(resource, raw);
+  // v0.13: NHI 就醫日期 (funC_DATE) carried separately from
+  // effectiveDateTime so SMART apps can detect inspect-vs-visit gaps.
+  appendNhiVisitDateTag(resource, raw);
 
   if (raw.date) {
     resource.effectiveDateTime = `${raw.date}T00:00:00+08:00`;
@@ -1525,7 +1760,10 @@ function buildObservation(
     String(raw.unit ?? ""),
     String(raw.nhi_source_channel ?? ""),
   );
-  let loinc = findLoinc(code, display);
+  // v0.13: detailed lookup so we can gate code.text canonicalization on
+  // cleanMatch. See findLoincDetailed() docstring + resolveObsCodeText().
+  const lookup = findLoincDetailed(code, display);
+  let loinc = lookup.loinc;
   // v0.11.13 (SMART app dev bug 9a 2026-05-29): structural LOINC vs
   // unit consistency check — see structuralLoincFix() docstring.
   loinc = structuralLoincFix(loinc, raw.unit);
@@ -1578,23 +1816,21 @@ function buildObservation(
         loinc,
         String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || undefined,
       ),
-      // v0.11.9: code.text precedence (high → low):
-      //   1. LOINC_SHORT_TEXT override (clean clinical short name when
-      //      we have a LOINC, e.g. APTT ratio → "APTT (ratio)")
+      // v0.11.9 / v0.11.10 / v0.13: precedence (high → low):
+      //   1. LOINC_SHORT_TEXT override — gated on cleanMatch for CBC
+      //      LOINCs (CBC_CANONICAL_TEXT_LOINCS), always-on otherwise.
+      //      See resolveObsCodeText() + findLoincDetailed() docstrings.
       //   2. NHI_CODE_PANEL_NAME override (when LIS ships a generic
       //      display under an NHI code that has a canonical specific
       //      name in the NHI catalog, e.g. 11001C "血型鑑定" →
       //      "ABO 血型測定" so SMART app can distinguish ABO/Rh/Antibody)
-      //   3. Raw display (LIS-supplied analyte name)
+      //   3. Raw display (LIS-supplied analyte name) — also the
+      //      fallback that preserves the v0.11.9 Bug 6 mis-tag canary
+      //      when CBC LOINC is reached via path-C panel default.
       //   4. "Unknown Lab" sentinel
-      // v0.11.10: wrap in normalizeFullwidth so fullwidth ASCII chars
+      // v0.11.10: normalizeFullwidth() applied so fullwidth ASCII chars
       // (e.g. 09099C 「心肌旋轉蛋白Ｉ」) become halfwidth in our label.
-      text: normalizeFullwidth(
-        (loinc && LOINC_SHORT_TEXT[loinc]) ||
-          NHI_CODE_PANEL_NAME[code] ||
-          display ||
-          "Unknown Lab",
-      ),
+      text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch),
     },
     subject: { reference: `Patient/${patientId}` },
   };
@@ -1606,6 +1842,9 @@ function buildObservation(
   // v0.12.3: surface NHI source channel (A=不定期 / B=定期) for SMART
   // app dedup-by-source UI choice. See appendNhiSourceChannelTag().
   appendNhiSourceChannelTag(resource, raw);
+  // v0.13: surface NHI 就醫日期 (funC_DATE) for visit-vs-inspect-gap
+  // detection. See appendNhiVisitDateTag() docstring.
+  appendNhiVisitDateTag(resource, raw);
 
   const hasValue = isMeaningfulValue(value);
   if (hasValue) {

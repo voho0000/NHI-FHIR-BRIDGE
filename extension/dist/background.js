@@ -2842,8 +2842,55 @@
     // qualitative twin so SMART app per-LOINC pivot shows both under
     // the same column header "Urine Protein"; the LOINC code itself
     // disambiguates which scale (Ord vs Qn) downstream consumers see.
-    "2888-6": "Urine Protein"
+    "2888-6": "Urine Protein",
+    // v0.13 — CBC sub-analytes (08011C / 08013C) ─────────
+    // App dev (MediPrisma) soft request 2026-05-30: bridge ships these
+    // 12 CBC LOINCs but `obs.code.text` varies (Hb / 血色素 / Hemoglobin /
+    // HGB depending on hospital LIS). SMART apps doing cross-hospital
+    // trend display need to maintain an alias table to merge them. With
+    // SHORT_TEXT entries here PLUS the clean-match gate in
+    // mapObservation / buildObservation (CBC_CANONICAL_TEXT_LOINCS check
+    // → only canonicalize when findLoincDetailed.cleanMatch === true),
+    // app-side alias table can retire.
+    //
+    // Mis-tag canary preservation: when a CBC panel sub-row's display
+    // doesn't match any PANEL_LOINC_MAP["08011C"] key explicitly, the
+    // row falls to the panel-default LOINC via findLoinc path C
+    // (cleanMatch=false). In that case the raw display is preserved as
+    // obs.code.text — letting downstream reviewers spot the mis-tag.
+    // This is the lesson from v0.11.9 Bug 6 (帶狀嗜中性白血球 silently
+    // routed to 770-8 panel default before the variant key was added).
+    //
+    // Short labels chosen to match clinical convention (Taiwan EHR
+    // standard column headers). NOT LOINC's verbose long name — that
+    // already lives in coding[loinc].display per LOINC_DISPLAY.
+    "770-8": "Neutrophils %",
+    "736-9": "Lymphocytes %",
+    "5905-5": "Monocytes %",
+    "713-8": "Eosinophils %",
+    "706-2": "Basophils %",
+    "4544-3": "HCT",
+    "718-7": "Hb",
+    "777-3": "Platelet",
+    "787-2": "MCV",
+    "786-4": "MCHC",
+    "788-0": "RDW",
+    "789-8": "RBC"
   };
+  var CBC_CANONICAL_TEXT_LOINCS = /* @__PURE__ */ new Set([
+    "770-8",
+    "736-9",
+    "5905-5",
+    "713-8",
+    "706-2",
+    "4544-3",
+    "718-7",
+    "777-3",
+    "787-2",
+    "786-4",
+    "788-0",
+    "789-8"
+  ]);
   var NHI_CODE_PANEL_NAME = {
     // v0.11.10 FHIR R4 compliance audit (2026-05-29): values must match
     // the NHI catalog's authoritative panel name verbatim — this map is
@@ -3278,21 +3325,21 @@
     }
     return bestLoinc;
   }
-  function findLoinc(code, display) {
+  function findLoincDetailed(code, display) {
     if (code && code in NHI_TO_LOINC && !DISPLAY_FIRST_CODES.has(code)) {
-      return NHI_TO_LOINC[code] ?? null;
+      return { loinc: NHI_TO_LOINC[code] ?? null, cleanMatch: true };
     }
     const combined = `${code} ${display}`.toLowerCase();
     if (code in PANEL_LOINC_MAP) {
       const hit2 = _findLongestMatch(combined, PANEL_LOINC_MAP[code]);
-      if (hit2) return hit2;
+      if (hit2) return { loinc: hit2, cleanMatch: true };
     }
     const hit = _findLongestMatch(combined, LOINC_MAP);
-    if (hit) return hit;
+    if (hit) return { loinc: hit, cleanMatch: true };
     if (code && code in NHI_TO_LOINC) {
-      return NHI_TO_LOINC[code] ?? null;
+      return { loinc: NHI_TO_LOINC[code] ?? null, cleanMatch: false };
     }
-    return null;
+    return { loinc: null, cleanMatch: false };
   }
   function buildCodings(code, display, loinc, nhiPanelName) {
     const codings = [];
@@ -3882,8 +3929,8 @@
     }
     return passThrough;
   }
-  var SPECIMEN_RULES = [
-    [/尿|urine|urinaly/i, "Urine"],
+  var URINE_MARKERS_RE = /尿液|尿道|尿沉渣|尿沈渣|尿生化|尿常規|尿液檢查|尿糖|尿蛋白|尿細胞|尿酮體?|尿膽紅素|尿膽素原|尿微量白蛋白|尿白蛋白|尿微白蛋白|小便|\(尿(?:液)?\)|urinaly|urinal|\burine\b|u-malb|u-acr|u-cre|u-mab|u-pcr/i;
+  var OTHER_SPECIMEN_RULES = [
     [/糞|便潛血|stool|fecal|faecal|occult\s*blood/i, "Stool"],
     [/痰|sputum/i, "Sputum"],
     [/腦脊液|csf|cerebrospinal/i, "Cerebrospinal fluid"],
@@ -3894,12 +3941,48 @@
     [/羊水|amniotic/i, "Amniotic fluid"],
     [/骨髓|bone\s*marrow/i, "Bone marrow"]
   ];
-  function inferSpecimen(...hints) {
-    const blob = hints.filter((h) => Boolean(h)).join(" ").toLowerCase();
-    if (!blob) return null;
-    for (const [pattern, label] of SPECIMEN_RULES) {
+  var NHI_CODE_PREFIX_SPECIMEN = {
+    "06": "Urine",
+    // 06013C 尿生化檢查 / 06014C 尿沉渣 / urinalysis family
+    "08": "Blood",
+    // 08003C 血色素 / 08004C HCT / 08011C CBC / 08013C diff
+    "09": "Blood",
+    // Chemistry — vast majority blood/serum (exceptions in override)
+    "11": "Blood",
+    // 11001C ABO / 11003C RH / 11004C antibody — blood typing
+    "12": "Blood",
+    // 12007C AFP / 12021C CEA / 12025B Ig-G / 12053C ANA …
+    "13": "Blood",
+    // Specialty serum (less common)
+    "14": "Blood",
+    // Specialty serum (e.g. coagulation panels)
+    "24": "Blood",
+    // e.g. 24007B 血漿游離鈣
+    "27": "Blood"
+    // Specialty serum / RIA hormones (e.g. 27021B testosterone free)
+  };
+  var NHI_CODE_SPECIMEN_OVERRIDE = {
+    "09016C": "Urine"
+    // 肌酐、尿 — Urine creatinine (the official urine-crea code)
+  };
+  function nhiCodeSpecimen(code) {
+    const c = String(code ?? "").trim().toUpperCase();
+    if (!c) return null;
+    if (c in NHI_CODE_SPECIMEN_OVERRIDE) return NHI_CODE_SPECIMEN_OVERRIDE[c] ?? null;
+    const prefix = c.slice(0, 2);
+    return NHI_CODE_PREFIX_SPECIMEN[prefix] ?? null;
+  }
+  function inferSpecimen(orderName, display, code) {
+    const displayStr = String(display ?? "");
+    const orderStr = String(orderName ?? "");
+    if (URINE_MARKERS_RE.test(displayStr)) return "Urine";
+    const blob = `${orderStr} ${displayStr}`.toLowerCase();
+    for (const [pattern, label] of OTHER_SPECIMEN_RULES) {
       if (pattern.test(blob)) return label;
     }
+    const codeDefault = nhiCodeSpecimen(code);
+    if (codeDefault) return codeDefault;
+    if (URINE_MARKERS_RE.test(orderStr)) return "Urine";
     return null;
   }
   var RATIO_TO_TIME_LOINC = {
@@ -3940,6 +4023,24 @@
     if (!Array.isArray(resource.meta.tag)) resource.meta.tag = [];
     resource.meta.tag.push(tag);
   }
+  var NHI_VISIT_DATE_SYSTEM = "http://nhi-fhir-bridge/nhi-visit-date";
+  function appendNhiVisitDateTag(resource, raw) {
+    const visitDate = String(raw.nhi_visit_date ?? "").trim();
+    if (!visitDate) return;
+    if (!resource.meta) resource.meta = { versionId: "1", source: "nhi-fhir-bridge/scraper" };
+    if (!Array.isArray(resource.meta.tag)) resource.meta.tag = [];
+    resource.meta.tag.push({
+      system: NHI_VISIT_DATE_SYSTEM,
+      code: visitDate
+    });
+  }
+  function resolveObsCodeText(loinc, code, display, cleanMatch) {
+    const shortTextAllowed = !!loinc && !!LOINC_SHORT_TEXT[loinc] && (!CBC_CANONICAL_TEXT_LOINCS.has(loinc) || cleanMatch);
+    const shortText = shortTextAllowed && loinc ? LOINC_SHORT_TEXT[loinc] : void 0;
+    return normalizeFullwidth(
+      shortText || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab"
+    );
+  }
   function urineProteinLoincFix(loinc, rawValue, rawUnit) {
     if (loinc !== URINE_PROTEIN_QUALITATIVE_LOINC) return loinc;
     const v = String(rawValue ?? "").trim();
@@ -3962,7 +4063,8 @@
     const hasMeaningfulInterp = MEANINGFUL_INTERPS.has(interp);
     if (!hasValue && !hasMeaningfulInterp) return null;
     const obsId = stableId(patientId, code, raw.date ?? "");
-    let loinc = findLoinc(code, display);
+    const lookup = findLoincDetailed(code, display);
+    let loinc = lookup.loinc;
     loinc = structuralLoincFix(loinc, raw.unit);
     loinc = urineProteinLoincFix(loinc, value, raw.unit);
     const resource = {
@@ -3988,11 +4090,9 @@
           loinc,
           String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || void 0
         ),
-        // v0.11.9: see panel-path buildObservation for full precedence.
-        // v0.11.10: normalize fullwidth ASCII.
-        text: normalizeFullwidth(
-          loinc && LOINC_SHORT_TEXT[loinc] || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab"
-        )
+        // v0.11.9 / v0.11.10 / v0.13: see resolveObsCodeText() — CBC LOINCs
+        // gate on cleanMatch, others keep "always SHORT_TEXT" behaviour.
+        text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch)
       },
       subject: { reference: `Patient/${patientId}` }
     };
@@ -4005,6 +4105,7 @@
       ];
     }
     appendNhiSourceChannelTag(resource, raw);
+    appendNhiVisitDateTag(resource, raw);
     if (raw.date) {
       resource.effectiveDateTime = `${raw.date}T00:00:00+08:00`;
     }
@@ -4108,7 +4209,8 @@
       String(raw.unit ?? ""),
       String(raw.nhi_source_channel ?? "")
     );
-    let loinc = findLoinc(code, display);
+    const lookup = findLoincDetailed(code, display);
+    let loinc = lookup.loinc;
     loinc = structuralLoincFix(loinc, raw.unit);
     loinc = urineProteinLoincFix(loinc, value, raw.unit);
     const catCode = raw.category || "laboratory";
@@ -4153,20 +4255,21 @@
           loinc,
           String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || void 0
         ),
-        // v0.11.9: code.text precedence (high → low):
-        //   1. LOINC_SHORT_TEXT override (clean clinical short name when
-        //      we have a LOINC, e.g. APTT ratio → "APTT (ratio)")
+        // v0.11.9 / v0.11.10 / v0.13: precedence (high → low):
+        //   1. LOINC_SHORT_TEXT override — gated on cleanMatch for CBC
+        //      LOINCs (CBC_CANONICAL_TEXT_LOINCS), always-on otherwise.
+        //      See resolveObsCodeText() + findLoincDetailed() docstrings.
         //   2. NHI_CODE_PANEL_NAME override (when LIS ships a generic
         //      display under an NHI code that has a canonical specific
         //      name in the NHI catalog, e.g. 11001C "血型鑑定" →
         //      "ABO 血型測定" so SMART app can distinguish ABO/Rh/Antibody)
-        //   3. Raw display (LIS-supplied analyte name)
+        //   3. Raw display (LIS-supplied analyte name) — also the
+        //      fallback that preserves the v0.11.9 Bug 6 mis-tag canary
+        //      when CBC LOINC is reached via path-C panel default.
         //   4. "Unknown Lab" sentinel
-        // v0.11.10: wrap in normalizeFullwidth so fullwidth ASCII chars
+        // v0.11.10: normalizeFullwidth() applied so fullwidth ASCII chars
         // (e.g. 09099C 「心肌旋轉蛋白Ｉ」) become halfwidth in our label.
-        text: normalizeFullwidth(
-          loinc && LOINC_SHORT_TEXT[loinc] || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab"
-        )
+        text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch)
       },
       subject: { reference: `Patient/${patientId}` }
     };
@@ -4175,6 +4278,7 @@
     const specimen = inferSpecimen(raw.order_name, raw.display, raw.code);
     if (specimen) resource.specimen = { display: specimen };
     appendNhiSourceChannelTag(resource, raw);
+    appendNhiVisitDateTag(resource, raw);
     const hasValue = isMeaningfulValue(value);
     if (hasValue) {
       const unit = _canonicalizeUnit(display, code, raw.unit ?? "");
@@ -4642,7 +4746,17 @@
       // Observation.meta.tag so SMART apps can dedupe-by-source as a UI
       // choice without violating the bridge's strict-no-dedup rule.
       nhi_source_channel: String(item.orI_TYPE || "").toUpperCase() || null,
-      nhi_source_channel_name: String(item.orI_TYPE_NAME || "") || null
+      nhi_source_channel_name: String(item.orI_TYPE_NAME || "") || null,
+      // v0.13: surface NHI 就醫日期 (funC_DATE) separately from `date`
+      // (which prefers reaL_INSPECT_DATE per the v0.6.1 fix). Downstream
+      // mapper emits via Observation.meta.tag so SMART apps can detect
+      // visit-vs-inspect-date gaps — verified real-world case 2026-05-30:
+      // 長庚嘉義 09006C HbA1c row has reaL_INSPECT_DATE=2025-12-09 but
+      // funC_DATE=2025-09-16, ~3 months apart, likely hospital late report
+      // or roving outpatient order. effectiveDateTime stays 12/9 per
+      // FHIR "physiologically relevant time"; visit date rides in meta.tag.
+      // Faithful-transport: bridge does NOT pick which is "correct".
+      nhi_visit_date: rocToISO(item.funC_DATE || item.func_DATE) || null
     };
   }
   function adaptMedicationFromDetail(drug, visit, options) {
