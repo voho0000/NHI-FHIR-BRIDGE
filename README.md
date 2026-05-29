@@ -12,7 +12,7 @@
 
 > 🔒 **對安全性有疑慮？** 請先看 [**給民眾的安全說明 (SECURITY_FOR_USERS.md)**](docs/SECURITY_FOR_USERS.md) — 不講工程術語、解釋資料路徑、Bridge 不會做的事、內建的保護機制、常見 Q&A。
 
-> 🛒 **Chrome Web Store**：審查中（拿到 Unlisted listing URL 後會在此補上連結）。在那之前可以從 [GitHub Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets) 下載最新版 zip、用「載入未封裝項目」安裝。
+> 🛒 **Chrome Web Store**：審查中（拿到 Unlisted listing URL 後會在此補上連結）。在那之前可以從 <a href="https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets" target="_blank" rel="noopener noreferrer">GitHub Releases</a> 下載最新版 zip、用「載入未封裝項目」安裝。
 
 
 ## 它幫你做什麼？
@@ -68,7 +68,7 @@ flowchart LR
 
 **1. 下載 Extension**
 
-到 [Releases 頁面](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets)下載最新的
+到 <a href="https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets" target="_blank" rel="noopener noreferrer">Releases 頁面</a>下載最新的
 `nhi-fhir-bridge-extension-vX.Y.Z.zip`，解壓到任意位置（例如 `~/nhi-fhir-bridge/`）。
 
 **2. 載入到 Chrome**
