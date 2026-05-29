@@ -41,6 +41,8 @@ describe("adapter fixture snapshots", () => {
         "date": "2025-05-22",
         "display": "FINGER SUGAR",
         "hospital": "長庚嘉義",
+        "nhi_source_channel": "A",
+        "nhi_source_channel_name": "特約醫事機構不定期上傳",
         "order_code": "09140C",
         "order_name": "血液及體液葡萄糖-餐後",
         "reference_range": "[70][140]",

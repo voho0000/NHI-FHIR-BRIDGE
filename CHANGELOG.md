@@ -3,6 +3,57 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.12.6 重點 — 2026-05-29
+
+**🧹 Pre-submission housekeeping — Chrome Web Store 上架前小整理**
+
+純 doc / test / release infra polish，**沒有任何 mapper 或 extension runtime 行為改動**。為了送 Chrome Web Store 把幾個「之前沒同步到」的版本標籤、快照、跟 listing 文件對齊到當前版本，順手把 v0.6.6 開始就 stale 的 GitHub release notes 治根修掉。
+
+### 🩹 治根 — release.yml 不再 ship v0.6.6 時代的 stale notes
+
+**問題**：v0.6.6 → v0.12.5 一路 13 個 release 的 release page body 都是同一坨「v0.6.6 → v0.5.0」的 hardcoded 古早 release notes，加上 GitHub 自動產的 commit list。CHANGELOG.md 寫的內容根本沒上 release page。
+
+**Root cause**：v0.6.4 / v0.6.6 那年 inline `body: |` rich-markdown 把 GitHub Actions YAML parser 整壞兩次（release 不會 publish、workflow 名稱顯示成 file path 等等）。當時的對策是把 body 寫死成「minimal placeholder + post-release 手動 `gh release edit -F notes.md` 補真實 notes」。問題是 `body: |` 並沒有真的 minimal——是當時 v0.6.6 寫滿了 8 個版本的 release notes 直接 commit，然後從此沒人執行那個 "post-release 手動補" step。每次 tag push 就忠實地把 v0.6.6 時凍結的快照重貼到當版 release。
+
+**修法**：
+- `body: |`（300+ 行 hardcoded）→ `body_path: /tmp/release-notes.md`
+- 新增 step「Extract CHANGELOG entry for this version」— awk 從 CHANGELOG.md 切出當前版本段（heading `## X.Y.Z 重點` 到下一個 `## X.Y.Z` 為止，自動 trim 尾端 `---` + 空行）
+- 用 `body_path:` 餵 file 給 `softprops/action-gh-release@v2`，bypass YAML parser，原本怕的 parser 問題自動消失
+- 同時 `generate_release_notes: false`（CHANGELOG entry 已是 curated notes，auto commit list 只是重複）
+
+**Backfill**：v0.10.0 → v0.12.5 的 20 個 release 同時用 `gh release edit --notes-file` 補回真正的當版 CHANGELOG content。CHANGELOG.md 本來就完整、release page 只是 cosmetic 落後。
+
+### 改了什麼
+
+| 檔案 | 內容 |
+|---|---|
+| `.github/workflows/release.yml` | `body: \|`（300+ 行 hardcoded v0.6.6 era notes）→ `body_path: /tmp/release-notes.md` + awk-extract step 從 CHANGELOG.md 切當前版本段 |
+| `docs/SECURITY_FOR_USERS.md` | 版本字串從 `v0.11.4` (2026-05-27) → `v0.12.6` (2026-05-29) — 落後 4 個 minor 沒同步 |
+| `docs/CHROME_STORE_LISTING.md` | 上架 zip 檔名 / checklist 從 `v0.12.5` → `v0.12.6` |
+| `extension/tests/adapters.test.js` | `toEqual` 期望加入 `nhi_source_channel: "A"` + `nhi_source_channel_name: "特約醫事機構不定期上傳"`（v0.12.3 加 NHI 通道後快照沒更新） |
+| `extension/tests/__snapshots__/...` | 同上，inline snapshot 自動更新 |
+| `README.md` | 加 🛒 Chrome Web Store 上架佔位連結（拿到 Unlisted URL 後覆蓋） |
+| 4 個 version files | `extension/src/manifest.json` + `extension/package.json` + `backend-ts/package.json` + `extension/dist/manifest.json`（auto by build）→ `0.12.6` |
+
+並 backfill GitHub release pages v0.10.0 → v0.12.5 — 20 個 release 用 `gh release edit --notes-file` 一次補回當版 CHANGELOG content。
+
+### 驗證
+
+- ✅ Extension test: **142/142 passed**
+- ✅ Backend-ts test: **422/422 passed**（修了 better-sqlite3 ABI 不匹配，比原本 406 多出 16 個之前載入失敗的 integration tests）
+- ✅ Mapper test: covered via backend-ts bundle-quality regression suite
+- ✅ 沒動 `packages/mapper/src/`、`extension/src/popup.js`、`background.js`、`nhi-adapters.js` 任何 runtime 邏輯
+- ✅ release.yml local YAML lint: pass
+
+### 不在這版
+
+- `console.warn` 留存（3 處，Manifest V3 reviewer 看不到 service worker console，無風險）
+- Step 4 popup.html inline style 抽 CSS class（純 hygiene，延到 v0.13）
+- GitHub Pages 啟用 + Privacy / Security URL 驗證（user 手動步驟，不需 release）
+- CBC LOINC → preferred code.text canonicalization（Task #41 deferred，不影響上架）
+
+---
+
 ## 0.12.5 重點 — 2026-05-29
 
 **🔧 Refine v0.12.4 dedup — broaden trigger + canonical-aware grouping**

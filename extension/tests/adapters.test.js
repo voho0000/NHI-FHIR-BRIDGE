@@ -228,6 +228,11 @@ describe("adaptLabItem", () => {
       unit: "mg/dL",
       reference_range: "[70][140]",
       hospital: "長庚嘉義",
+      // v0.12.3+: NHI 上傳通道 (A=不定期 / B=定期) — used by
+      // dedupNhiCrossChannelPairs in mapper to detect A+B structural
+      // duplicates per NHI multi-channel upload behavior.
+      nhi_source_channel: "A",
+      nhi_source_channel_name: "特約醫事機構不定期上傳",
     });
   });
 
