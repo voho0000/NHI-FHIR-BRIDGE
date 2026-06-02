@@ -795,6 +795,16 @@
       bilirubin: "5770-3",
       // Bilirubin Urine Ql
       \u5C3F\u81BD\u7D05\u7D20: "5770-3",
+      // v0.13.1 (LOINC-based dedup migration audit 2026-05-30): bare
+      // "膽紅素" was missing — only the 尿- prefixed form was registered.
+      // PANEL_LOINC_MAP is code-scoped to 06013C urinalysis context, so
+      // adding the bare term here doesn't cross-pollute serum 膽紅素 (which
+      // routes via 09029C → NHI_TO_LOINC = 1975-2).
+      // WebFetch loinc.org/5770-3 verified 2026-06-02: Long Common Name
+      // "Bilirubin.total [Presence] in Urine by Test strip" — Component
+      // Bilirubin / Property PrThr / System Urine / Scale Ord / Method
+      // Test strip → correct urine-dipstick context for 06013C. ✅
+      \u81BD\u7D05\u7D20: "5770-3",
       nitrite: "5802-4",
       // Nitrite Urine
       \u4E9E\u785D\u9178: "5802-4",
@@ -831,11 +841,27 @@
       // Appearance of Urine
       appearance: "5767-9",
       \u5916\u89C0: "5767-9",
+      // v0.13.1 (app dev urinalysis A/B audit 2026-06-02): NHI B-channel
+      // ships "濁度" where A-channel ships "Turbidity". Without this key
+      // 濁度 fell to path-C panel default 24356-8 (Urinalysis complete
+      // panel) → diverged from Turbidity's 5767-9 → looked like a dup pair
+      // AND carried the wrong LOINC. WebFetch loinc.org/5767-9 verified
+      // 2026-06-02: Long Common Name "Appearance of Urine" — System Urine,
+      // Property Aper, Scale Nom. Taiwan urinalysis 濁度/Turbidity is the
+      // standard urine appearance/clarity test. ✅
+      \u6FC1\u5EA6: "5767-9",
       ph: "5803-2",
       // pH of Urine (urine-specific, NOT
       // the arterial 11558-4 that the
       // global map points to)
       \u9178\u9E7C\u5EA6: "5803-2",
+      // v0.13.1 (same audit): B-channel "酸鹼值" vs A-channel "pH". Note
+      // 酸鹼值 (值) ≠ 酸鹼度 (度) — only the latter was registered, so 酸鹼值
+      // fell to panel default 24356-8. Code-scoped to 06013C so no clash
+      // with 09041B ABG's "酸鹼值" → 11558-4 (arterial pH). WebFetch
+      // loinc.org/5803-2 verified 2026-06-02: "pH of Urine by Test strip"
+      // — Component pH, System Urine. ✅
+      \u9178\u9E7C\u503C: "5803-2",
       glucose: "5792-7",
       // Last in this block so 'urine
       // ── v0.11.4 audit — Taiwan dipstick abbrev variants ──
@@ -878,6 +904,16 @@
       // "creatinine(u)" with \b after "u".
       "creatinine(u": "2161-8",
       "creatinine(urine": "2161-8",
+      // v0.13.1 (app dev urinalysis A/B audit 2026-06-02): A-channel ships
+      // the abbreviation "CREA(U)(半定量)" — "creatinine(u" did NOT match
+      // (no "creatinine" substring in "crea(u)"), so it fell to global
+      // LOINC_MAP "crea" → 2160-0 SERUM creatinine while the B-channel
+      // "肌酸酐(尿液)" correctly got urine 2161-8. Add the abbreviated
+      // opening-paren form. Same verified LOINC 2161-8 "Creatinine
+      // [Mass/volume] in Urine" — WebFetch loinc.org/2161-8 confirmed
+      // 2026-06-02 (System Urine). ✅
+      "crea(u": "2161-8",
+      "crea(urine": "2161-8",
       "u-creatinine": "2161-8",
       "urine creatinine": "2161-8",
       "creatinine, urine": "2161-8"
@@ -1132,6 +1168,16 @@
       // "creatinine(u)" with \b after "u".
       "creatinine(u": "2161-8",
       "creatinine(urine": "2161-8",
+      // v0.13.1 (app dev urinalysis A/B audit 2026-06-02): A-channel ships
+      // the abbreviation "CREA(U)(半定量)" — "creatinine(u" did NOT match
+      // (no "creatinine" substring in "crea(u)"), so it fell to global
+      // LOINC_MAP "crea" → 2160-0 SERUM creatinine while the B-channel
+      // "肌酸酐(尿液)" correctly got urine 2161-8. Add the abbreviated
+      // opening-paren form. Same verified LOINC 2161-8 "Creatinine
+      // [Mass/volume] in Urine" — WebFetch loinc.org/2161-8 confirmed
+      // 2026-06-02 (System Urine). ✅
+      "crea(u": "2161-8",
+      "crea(urine": "2161-8",
       "u-creatinine": "2161-8",
       "urine creatinine": "2161-8",
       "creatinine, urine": "2161-8"

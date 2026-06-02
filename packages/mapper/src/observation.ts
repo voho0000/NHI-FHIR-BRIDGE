@@ -966,25 +966,44 @@ function filterLabRows(rawItems: any[]): Record<string, any>[] {
 function dedupNhiCrossChannelPairs(
   items: Record<string, any>[],
 ): Record<string, any>[] {
-  // v0.12.5 (NHI raw audit 2026-05-29): refine v0.12.4 logic which
-  // only fired for exactly 1A+1B. NHI raw also has higher-multiplicity
-  // mixed cases — 2A+2B (hospital uploaded same analyte twice via each
-  // channel) and 3A+3B (urinalysis Negative-valued rows across 3
-  // distinct sub-analytes). Need:
-  //   1. Wider trigger: ANY A AND ANY B in same group → cross-channel
-  //      pair detected, keep A's drop B's.
-  //   2. Canonical-aware grouping for multi-analyte panels: under
-  //      06013C three different sub-analytes (Bilirubin/Ketone/Nitrite)
-  //      all carry value="Negative" — without canonical-split they'd
-  //      collapse into one group and the B Chinese sub-analytes might
-  //      drop against the wrong A English sub-analyte. Use
-  //      canonicalLabKey() (which has code-scoped synonyms) to ensure
-  //      Bilirubin/膽紅素 group separately from Nitrite/亞硝酸鹽.
+  // v0.13.1 (app dev follow-up 2026-05-30): replace canonical-based
+  // grouping with LOINC-based grouping. Root cause analysis:
   //
-  // For single-analyte codes (NOT in DISPLAY_FIRST_CODES), the canonical
-  // is intentionally NOT used in the grouping key — under 09021C every
-  // row IS sodium regardless of whether display is "Na" or "鈉", and we
-  // want them to collapse in one group.
+  // v0.12.4/.5 used `canonicalLabKey(display, code)` as the sub-analyte
+  // discriminator inside the dedup group key. That worked for 06013C
+  // urinalysis (CODE_SCOPED_SYNONYMS has urinalysis EN+CJK aliases) but
+  // SILENTLY MISSED all CBC panels — `CODE_SCOPED_SYNONYMS` only had a
+  // 06013C entry, no 08011C / 08013C. So a 長庚嘉義 CBC pair where
+  //   A row display = "MCV"
+  //   B row display = "平均紅血球容積"
+  // got different canonicalLabKey values ("mcv" vs "平均紅血球容積") →
+  // different dedup keys → never grouped → A+B detection didn't fire.
+  // App dev's 2026-05-30 audit found 98 such pairs in one patient bundle.
+  //
+  // Root architectural issue: bridge had TWO parallel alias tables —
+  //   • findLoinc()        uses PANEL_LOINC_MAP (has CBC EN+CJK aliases)
+  //   • canonicalLabKey()  uses CODE_SCOPED_SYNONYMS (only urinalysis)
+  // Evolving them independently was guaranteed to drift. See CLAUDE.md
+  // rule #7 (dual-source signal) — same architectural pattern lesson.
+  //
+  // v0.13.1 fix: dedup uses `findLoincDetailed(code, display).loinc` as
+  // the discriminator. Same source-of-truth as buildObservation. New
+  // group key: (code, loinc, date, hospital, value, unit). Same A+B
+  // detection + keep-A logic as before.
+  //
+  // Why LOINC is the right discriminator:
+  //   • Panel codes (CBC, urinalysis): LOINC per row tells which sub-
+  //     analyte (787-2 MCV ≠ 786-4 MCHC ≠ 4544-3 HCT), so A+B for the
+  //     SAME analyte get the same LOINC → same group → dedup fires.
+  //   • Single-analyte codes (09021C 鈉, 09013C 尿酸): LOINC same for
+  //     all rows under the code (path A in findLoinc) → all collapse
+  //     into one group keyed by that LOINC, identical to v0.12.5 behavior.
+  //   • Unknown / path-C fallback: both A and B get same panel-default
+  //     LOINC → same key → dedup fires (correct, they're the same
+  //     unresolved analyte).
+  //   • LOINC routing inconsistency (A+B route to different LOINCs):
+  //     different keys → NO dedup. This is correct — the inconsistency
+  //     is a routing bug worth surfacing, not papering over.
   const groups = new Map<string, Record<string, any>[]>();
   const order: string[] = [];
   for (const item of items) {
@@ -992,14 +1011,41 @@ function dedupNhiCrossChannelPairs(
     const date = String(item.date ?? "").trim();
     const hospital = String(item.hospital ?? "").trim();
     const value = String(item.value ?? "").trim();
-    const unit = String(item.unit ?? "").trim();
-    // Multi-analyte panels carry per-row sub-analyte identity — use
-    // canonical to split. Single-analyte codes don't need it (the panel
-    // billing code itself identifies the analyte).
     const display = String(item.display ?? "").trim();
-    const isPanel = DISPLAY_FIRST_CODES.has(code);
-    const canonical = isPanel ? canonicalLabKey(display, code) || display.toLowerCase() : "";
-    const key = `${code}|${date}|${hospital}|${value}|${unit}|${canonical}`;
+    // v0.13.1: use LOINC from the same routing pipeline as
+    // buildObservation. Drop the previous `canonical` term entirely.
+    const { loinc } = findLoincDetailed(code, display);
+    // v0.13.1 fix (user decision 2026-06-02): DROP `unit` from the
+    // cross-channel grouping key. Use (code, loinc, date, hospital, value).
+    //
+    // Why unit must go: an NHI A+B pair is the SAME logical measurement
+    // shipped on two upload channels, and the unit field is exactly where
+    // per-channel encoding noise lives — channel A ships unit="" for
+    // qualitative urinalysis (Color / SP.Gravity / pH / LE / OCCULT) while
+    // channel B ships placeholder encodings ("空白空白" / "無" / "-"); other
+    // pairs differ only in casing / UCUM formatting ("mg/dl" vs "mg/dL",
+    // "10^3/uL" vs "10*3/uL"). Keeping unit in the key splits these A+B
+    // pairs into separate groups → cross-channel dedup never fires →
+    // duplicate obs survive (user reports 2026-06-02).
+    //
+    // value + LOINC already pin the measurement identity: same LOINC = same
+    // analyte (LOINC fixes the property/unit dimension), and within one
+    // (code, loinc, date, hospital) any two genuinely different readings
+    // carry different `value` strings. So `value` alone discriminates real
+    // measurements; `unit` adds only channel noise here.
+    //
+    // CLAUDE.md rule #9 (raw-unit string for SAME-SOURCE dedup) is NOT
+    // violated — that rule is scoped to same-source comparisons, which this
+    // function is not:
+    //   • pure-A / pure-B groups always fall to the `else` branch below and
+    //     are preserved regardless of how they were grouped (no same-source
+    //     dedup); only a genuine cross-channel A+B match drops a B row.
+    //   • `stableId` (buildObservation) STILL includes the raw unit string,
+    //     so same-source A+A / B+B rows that differ only in placeholder
+    //     encoding stay distinct downstream.
+    // When a cross-channel A+B does collapse, the surviving A row keeps its
+    // own (cleaner) unit + numeric refRange.
+    const key = `${code}|${loinc ?? "_"}|${date}|${hospital}|${value}`;
     if (!groups.has(key)) {
       groups.set(key, []);
       order.push(key);

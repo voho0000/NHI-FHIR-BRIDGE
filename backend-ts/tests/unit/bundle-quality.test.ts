@@ -3202,6 +3202,328 @@ describe("CI v0.12.3 — NHI source channel surfaced as meta.tag", () => {
   });
 });
 
+// ── CI v0.13.1 — LOINC-based A+B dedup key (app dev follow-up 2026-05-30) ──
+//
+// v0.12.4 / v0.12.5 dedup grouped rows by (code, date, hospital, value,
+// unit, canonicalLabKey). That canonical helper used CODE_SCOPED_SYNONYMS
+// which only had urinalysis entries — CBC panels had no EN+CJK alias
+// table for canonical. So A row "MCV" and B row "平均紅血球容積" got
+// different canonical → different dedup keys → not grouped → 98 CBC
+// A+B pairs in one patient's bundle escaped dedup despite both routing
+// to the same LOINC (787-2) via findLoinc + PANEL_LOINC_MAP.
+//
+// v0.13.1 replaces canonical with LOINC (from findLoincDetailed, same
+// pipeline as buildObservation) in the dedup key. Single source of
+// truth across LOINC routing AND dedup grouping. CLAUDE.md rule #7
+// dual-source structural lesson applied.
+describe("CI v0.13.1 — LOINC-based dedup key", () => {
+  test("CBC MCV A+B (EN 'MCV' vs CJK '平均紅血球容積') → 1 obs (was 2 in v0.13.0)", () => {
+    const items = [
+      {
+        order_code: "08011C", code: "08011C", display: "MCV",
+        value: 92.2, unit: "fL", date: "2026-01-14",
+        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        reference_range: "[80][100]",
+        nhi_source_channel: "A",
+      },
+      {
+        order_code: "08011C", code: "08011C", display: "平均紅血球容積",
+        value: 92.2, unit: "fL", date: "2026-01-14",
+        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        reference_range: "[無][無]",
+        nhi_source_channel: "B",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(1);
+    const surviving = obs[0];
+    // A row survives (numeric refRange).
+    expect(
+      surviving.meta?.tag?.find(
+        (t: any) => t.system === "http://nhi-fhir-bridge/nhi-source-channel",
+      )?.code,
+    ).toBe("A");
+    expect(surviving.referenceRange?.[0]?.low?.value).toBe(80);
+    expect(surviving.referenceRange?.[0]?.high?.value).toBe(100);
+  });
+
+  test("CBC MCH A+B ('MCH' vs '紅血球色素') → 1 obs — display variants route via PANEL_LOINC_MAP to same LOINC", () => {
+    const items = [
+      {
+        order_code: "08011C", code: "08011C", display: "MCH",
+        value: 29.7, unit: "pg/Cell", date: "2026-01-14",
+        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        nhi_source_channel: "A",
+      },
+      {
+        order_code: "08011C", code: "08011C", display: "紅血球色素",
+        value: 29.7, unit: "pg/Cell", date: "2026-01-14",
+        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        nhi_source_channel: "B",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    // Both rows route to PANEL_LOINC_MAP[08011C][...] → 785-6, same group.
+    // If the CJK variant 紅血球色素 isn't in PANEL_LOINC_MAP, this test
+    // would fail and signal the gap.
+    expect(obs).toHaveLength(1);
+  });
+
+  test("Different LOINCs (A and B route differently) → NOT deduped (regression guard)", () => {
+    // If display variants route to different LOINCs, that's a routing
+    // inconsistency — bridge does NOT silently collapse them. Both
+    // obs survive so the inconsistency stays visible to auditors.
+    // Synthesize: A "Hb" (→ 718-7) + B "WBC" (→ 6690-2) — same code,
+    // same value, same date, same hospital, same unit, but different
+    // analyte. MUST keep both.
+    const items = [
+      {
+        order_code: "08011C", code: "08011C", display: "Hb",
+        value: 13.1, unit: "g/dL", date: "2026-01-14",
+        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        nhi_source_channel: "A",
+      },
+      {
+        order_code: "08011C", code: "08011C", display: "WBC",
+        value: 13.1, unit: "g/dL", date: "2026-01-14",  // contrived shared value/unit
+        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        nhi_source_channel: "B",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    // Different LOINC → different group → no dedup.
+    expect(obs).toHaveLength(2);
+  });
+
+  test("Single-analyte code (09013C 尿酸) A+B with different display strings → 1 obs", () => {
+    // For single-analyte NHI codes the LOINC comes from path A
+    // (NHI_TO_LOINC, code-only). Both A and B always get same LOINC
+    // regardless of display, same as v0.12.5 behavior.
+    const items = [
+      {
+        order_code: "09013C", code: "09013C", display: "Uric Acid (B)",
+        value: 6.3, unit: "mg/dL", date: "2025-07-15",
+        hospital: "長庚嘉義", order_name: "尿酸",
+        reference_range: "[2.3][7.0]",
+        nhi_source_channel: "A",
+      },
+      {
+        order_code: "09013C", code: "09013C", display: "尿酸",
+        value: 6.3, unit: "mg/dL", date: "2025-07-15",
+        hospital: "長庚嘉義", order_name: "尿酸",
+        reference_range: "[無][無]",
+        nhi_source_channel: "B",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(1);
+  });
+
+  test("Both A and B unknown LOINC (path-C fallback) → still grouped + deduped", () => {
+    // When the display doesn't match any alias, both rows fall to
+    // panel-default LOINC (path C). Same panel-default → same key →
+    // deduped. Correct because they're the same unresolved analyte.
+    const items = [
+      {
+        order_code: "08011C", code: "08011C", display: "Unknown EN Display",
+        value: 42, unit: "%", date: "2026-01-14",
+        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        nhi_source_channel: "A",
+      },
+      {
+        order_code: "08011C", code: "08011C", display: "未知中文項目",
+        value: 42, unit: "%", date: "2026-01-14",
+        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        nhi_source_channel: "B",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    // Both → path C → panel default 24317-0 → same group → 1 obs.
+    expect(obs).toHaveLength(1);
+  });
+});
+
+// ── CI v0.13.1 — urinalysis EN/CJK alias parity (app dev audit 2026-06-02) ──
+//
+// Silent-bug class (CLAUDE.md rule #8): an NHI A/B pair only deduped in
+// v0.13.1 if BOTH channels route to the SAME LOINC. The 2026-06-02 audit
+// of a 長庚嘉義 06013C (尿生化) report found 3 EN/CJK pairs where one side
+// was missing from PANEL_LOINC_MAP["06013C"] and silently fell to a wrong
+// LOINC — so the pair survived as 2 obs AND carried mismatched codes:
+//   • 濁度 → path-C panel default 24356-8  ✗ (Turbidity → 5767-9)
+//   • 酸鹼值 → path-C panel default 24356-8 ✗ (pH → 5803-2); note 酸鹼值≠酸鹼度
+//   • CREA(U)(半定量) → global "crea" → 2160-0 SERUM ✗ (肌酸酐(尿液) → 2161-8)
+// All three target LOINCs WebFetch-verified at loinc.org 2026-06-02
+// (5767-9 Appearance of Urine / 5803-2 pH of Urine / 2161-8 Creatinine in
+// Urine). These tests lock the parity: each EN/CJK pair → same LOINC → 1 obs.
+describe("CI v0.13.1 — urinalysis EN/CJK alias parity (06013C)", () => {
+  const mkUrine = (display: string, value: string, chan: string, rr: string) => ({
+    order_code: "06013C", code: "06013C", display, value, unit: "",
+    date: "2026-01-14", hospital: "長庚嘉義",
+    order_name: "尿生化檢查", reference_range: rr, nhi_source_channel: chan,
+  });
+
+  const routeLoinc = (display: string): string | undefined => {
+    const obs = mapObservationsGrouped(
+      [mkUrine(display, "X", "A", "[Negative]")],
+      PATIENT_ID,
+    ).filter((r) => r.resourceType === "Observation") as any[];
+    return obs[0]?.code?.coding?.find((c: any) => /loinc\.org/.test(c.system))
+      ?.code;
+  };
+
+  test("濁度 routes to 5767-9 (same as Turbidity), not panel default 24356-8", () => {
+    expect(routeLoinc("Turbidity")).toBe("5767-9");
+    expect(routeLoinc("濁度")).toBe("5767-9");
+  });
+
+  test("酸鹼值 routes to urine pH 5803-2 (same as pH), not panel default", () => {
+    expect(routeLoinc("pH")).toBe("5803-2");
+    expect(routeLoinc("酸鹼值")).toBe("5803-2");
+    // 酸鹼度 was already registered — guard it didn't regress.
+    expect(routeLoinc("酸鹼度")).toBe("5803-2");
+  });
+
+  test("CREA(U)(半定量) routes to urine creatinine 2161-8, not serum 2160-0", () => {
+    expect(routeLoinc("CREA(U)(半定量)")).toBe("2161-8");
+    expect(routeLoinc("肌酸酐(尿液)(半定量)")).toBe("2161-8");
+  });
+
+  test("each EN/CJK pair collapses to 1 obs (A+B cross-channel dedup)", () => {
+    const pairs: [string, string, string][] = [
+      ["Turbidity", "濁度", "Clear"],
+      ["pH", "酸鹼值", "6.5"],
+      ["CREA(U)(半定量)", "肌酸酐(尿液)(半定量)", "100"],
+    ];
+    for (const [en, cjk, val] of pairs) {
+      const items = [
+        mkUrine(en, val, "A", "[ref]"),
+        mkUrine(cjk, val, "B", "[無]"),
+      ];
+      const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+        (r) => r.resourceType === "Observation",
+      ) as any[];
+      expect(obs, `${en} / ${cjk} should collapse to 1`).toHaveLength(1);
+    }
+  });
+});
+
+// ── CI v0.13.1 — unit-agnostic cross-channel dedup (user decision 2026-06-02) ──
+//
+// Silent-bug class (CLAUDE.md rule #8). The 2026-06-02 user report: after the
+// LOINC-routing fix landed, qualitative urinalysis analytes (Color / SP.Gravity
+// / pH / LE / OCCULT …) STILL appeared as English-English A+B duplicates. Root
+// cause: dedupNhiCrossChannelPairs included the RAW unit string in its grouping
+// key. NHI channel A ships unit="" for these analytes while channel B ships a
+// placeholder encoding ("空白空白" / "無" / "-"); other pairs differ only in
+// casing / UCUM formatting. Different unit strings → A+B in separate groups →
+// cross-channel detection never fired → duplicate obs survived.
+//
+// Fix (user decision): DROP unit from the cross-channel grouping key entirely.
+// Key = (code, loinc, date, hospital, value). value + LOINC already pin the
+// measurement identity, and the unit field is pure per-channel encoding noise
+// for an A+B pair. CLAUDE.md rule #9 (raw-unit for SAME-SOURCE dedup) is NOT
+// violated — that rule is scoped to same-source comparisons; here pure-A/pure-B
+// groups always hit the preserve branch, and stableId still uses the raw unit
+// so same-source A+A / B+B rows stay distinct downstream.
+describe("CI v0.13.1 — unit-agnostic cross-channel dedup", () => {
+  const mkRow = (
+    display: string,
+    value: string,
+    unit: string,
+    chan: string,
+    rr: string,
+  ) => ({
+    order_code: "06013C",
+    code: "06013C",
+    display,
+    value,
+    unit,
+    date: "2026-01-14",
+    hospital: "長庚嘉義",
+    order_name: "尿生化檢查",
+    reference_range: rr,
+    nhi_source_channel: chan,
+  });
+
+  test("A unit='' + B placeholder unit ('空白空白'/'無'/'-') → 1 obs", () => {
+    const cases: [string, string, string, string][] = [
+      // [EN display, CJK display, value, B's placeholder unit]
+      ["Color", "顏色", "Yellow", "-"],
+      ["SP.Gravity", "比重", "1.020", "空白空白"],
+      ["pH", "酸鹼值", "6.5", "無"],
+    ];
+    for (const [en, cjk, val, bUnit] of cases) {
+      const items = [
+        mkRow(en, val, "", "A", "[ref]"),
+        mkRow(cjk, val, bUnit, "B", "[無]"),
+      ];
+      const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+        (r) => r.resourceType === "Observation",
+      ) as any[];
+      expect(
+        obs,
+        `${en}/${cjk} (A unit='' vs B unit='${bUnit}') should collapse to 1`,
+      ).toHaveLength(1);
+    }
+  });
+
+  test("real unit (mg/dL) on both channels still dedups (regression)", () => {
+    const items = [
+      mkRow("CREA(U)(半定量)", "100", "mg/dL", "A", "[ref]"),
+      mkRow("肌酸酐(尿液)(半定量)", "100", "mg/dL", "B", "[無]"),
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(1);
+  });
+
+  test("A real unit + B placeholder → collapse, surviving A keeps its unit", () => {
+    // A+B is the SAME measurement; unit is per-channel noise. With unit
+    // dropped from the key the pair collapses, and the kept A row carries
+    // its own real unit (the cleaner of the two).
+    const items = [
+      mkRow("CREA(U)(半定量)", "100", "mg/dL", "A", "[ref]"),
+      mkRow("肌酸酐(尿液)(半定量)", "100", "空白空白", "B", "[無]"),
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(1);
+    expect(obs[0].valueQuantity?.unit).toBe("mg/dL");
+    expect(
+      obs[0].meta?.tag?.find(
+        (t: any) => t.system === "http://nhi-fhir-bridge/nhi-source-channel",
+      )?.code,
+    ).toBe("A");
+  });
+
+  test("same-source pure-B placeholder rows preserved (rule #9 not violated)", () => {
+    // Two B rows, same LOINC/value, differing placeholder encodings. No A
+    // present → pure-B group → preserve ALL (no same-source dedup). stableId
+    // uses the raw unit so the two rows stay distinct downstream.
+    const items = [
+      mkRow("顏色", "Yellow", "空白空白", "B", "[無]"),
+      mkRow("Color", "Yellow", "-", "B", "[無]"),
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(2);
+  });
+});
+
 // ── CI v0.13 — CBC LOINC obs.code.text canonicalization (clean-match gate) ──
 //
 // App dev (MediPrisma) soft request 2026-05-30: 12 CBC LOINCs get

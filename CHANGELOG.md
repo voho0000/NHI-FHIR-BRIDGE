@@ -3,6 +3,88 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.13.1 重點 — 2026-06-02
+
+**🔧 修 v0.12.4 / v0.12.5 dedup architectural 漏洞 — 改用 LOINC 當 dedup key**
+
+App dev 2026-05-30 follow-up audit 在 v0.13.0 bundle 找到 **98 個 A+B 結構性 pair** 在長庚嘉義沒被 dedup（CBC + 部分 chemistry / urinalysis）。Pre-fix 範例：MCV 787-2 @ 長庚嘉義 2026-01-14 有兩筆 obs（A row display "MCV"、B row display "平均紅血球容積"），value/unit/code/date/hospital 全相同、唯一不同是 refRange 編碼（A=numeric `[80][100]`、B=`[無]`）。
+
+**Root cause (architectural gap)**：bridge 有**兩張 parallel 的 alias 表**：
+
+| 用途 | 函式 | 用的表 | CBC EN+CJK alias |
+|---|---|---|---|
+| LOINC routing | `findLoinc` | `PANEL_LOINC_MAP["08011C"]` | ✅ 有 |
+| Dedup key | `canonicalLabKey` | `CODE_SCOPED_SYNONYMS` | ❌ 只有 06013C，沒 08011C / 08013C |
+
+兩張表 evolve 過程沒同步 → `findLoinc("08011C", "MCV")` 跟 `findLoinc("08011C", "平均紅血球容積")` 都對到 787-2（dedup 該抓），但 `canonicalLabKey` 給不同字串（`"mcv"` vs `"平均紅血球容積"`）→ dedup key 不同 → 永遠不同 group → 整個 CBC family 系統性 miss。這是 v0.13.0 CLAUDE.md rule #7 dual-source 原則的另一個 instance — 一個 helper 用 source A、另一個用 source B，drift 是時間問題。
+
+**Fix**：`dedupNhiCrossChannelPairs` 直接用 `findLoincDetailed(code, display).loinc` 當 key 的一部分，跟 buildObservation 用同一個 source of truth。新 key：`(code, loinc, date, hospital, value, unit)`，不再用 canonical。
+
+```
+v0.12.5 key: code | date | hospital | value | unit | canonical
+v0.13.1 key: code | loinc | date | hospital | value
+```
+（`unit` 也拿掉 — 見下方第 2 個 silent bug。）
+
+**Why LOINC 是對的 discriminator**：
+- Panel codes（CBC、urinalysis）：每 row 對到具體 sub-analyte 的 LOINC（787-2 MCV ≠ 786-4 MCHC ≠ 4544-3 HCT），同 sub-analyte 的 A+B 一定同 LOINC → 同 group → dedup ✓
+- Single-analyte codes（09021C 鈉、09013C 尿酸）：path A 從 NHI_TO_LOINC 拿，所有 row 同 LOINC → 跟 v0.12.5 行為一致
+- Path-C fallback（display 認不得）：A、B 都掉到 panel default LOINC → 同 group → dedup（correct）
+- A、B 路由到不同 LOINC（routing 不一致 bug）：不同 group → 不 dedup（correct，inconsistency 該保留可見）
+
+**順手 bug fix（尿生化 06013C EN/CJK alias parity，2026-06-02 app dev audit）**：新 LOINC-based dedup 暴露了 routing 不一致 — A channel 英文 display 跟 B channel 中文 display 對到**不同** LOINC，所以該 collapse 的 pair 反而留兩筆、還帶錯碼。修了 4 個缺漏 alias（全部 WebFetch loinc.org 查證過）：
+
+| 缺的 key | 之前錯誤路由 | 修正後 | LOINC 驗證（loinc.org 2026-06-02）|
+|---|---|---|---|
+| `濁度`（B，A 是 `Turbidity`）| path-C panel default `24356-8` ✗ | `5767-9` ✓ | Appearance of Urine（System Urine）|
+| `酸鹼值`（B，A 是 `pH`；注意 ≠ 已登錄的 `酸鹼度`）| path-C panel default `24356-8` ✗ | `5803-2` ✓ | pH of Urine by Test strip |
+| `CREA(U)(半定量)`（A，B 是 `肌酸酐(尿液)`）| global `crea` → `2160-0` **血清** ✗ | `2161-8` ✓ | Creatinine [Mass/volume] in Urine |
+| bare `膽紅素`（之前只有帶 prefix 的 `尿膽紅素`）| fallback | `5770-3` ✓ | Bilirubin.total [Presence] in Urine by Test strip |
+
+> ⚠️ 這幾個是 **silent bug**（CLAUDE.md rule #8）：FHIR validator 不會抓、runtime 不報錯，只有人工對 bundle 才看得到。只有 A、B 兩 channel 都路由到**同一** LOINC 時 v0.13.1 的 A+B dedup 才會 fire，所以 alias parity 是 dedup 正確性的前提。
+
+**第 2 個 silent bug（unit 編碼差異擋住 cross-channel dedup，user report 2026-06-02）**：LOINC routing 修好後，定性尿液項目（Color / Turbidity / SP.Gravity / pH / LE / OCCULT）還是出現英文重複兩筆。Root cause：`dedupNhiCrossChannelPairs` 的 group key 含**原始 unit 字串**。NHI channel A 這些定性項目 ship `unit=""`，但 channel B ship placeholder 編碼（`空白空白` / `無` / `-`）；其他 pair 則差在大小寫 / UCUM 格式（`mg/dl` vs `mg/dL`、`10^3/uL` vs `10*3/uL`）— 兩邊 key 不同 → A+B 落不同 group → cross-channel dedup 永遠不 fire。
+
+| 項目 | A unit | B unit | pre-fix | post-fix |
+|---|---|---|---|---|
+| Color / 顏色 | `""` | `-` | ❌ 2 obs | ✅ 1 obs |
+| SP.Gravity / 比重 | `""` | `空白空白` | ❌ 2 obs | ✅ 1 obs |
+| pH / 酸鹼值 | `""` | `無` | ❌ 2 obs | ✅ 1 obs |
+
+**Fix（user decision 2026-06-02）**：cross-channel grouping key **直接拿掉 unit**，改成 `(code, loinc, date, hospital, value)`。A+B 是同一筆 logical measurement 走兩個上傳 channel，unit 欄位正是 per-channel 編碼雜訊；`value` + `LOINC` 已經唯一 pin 住 measurement identity（同 LOINC = 同 analyte = 同 unit dimension，同組內真的不同 reading 會帶不同 `value`）。拿掉 unit 一次處理掉**所有** unit 編碼變異（placeholder / 大小寫 / UCUM 格式 / 全形），不用枚舉。
+
+**不違反 CLAUDE.md rule #9**（rule #9 的 raw-unit 要求 scope 在 **same-source** 比較，這個 function 不是）：
+
+- 純 A / 純 B group 一律走 `else` 分支保留全部 row，跟 grouping 無關 — 只有真的偵測到 cross-channel A+B 才 drop B
+- `stableId`（buildObservation）仍用 raw unit 字串 → 同源 A+A / B+B 只差 placeholder 編碼的 row 下游維持 distinct
+- A+B collapse 時保留的 A row 帶自己（較乾淨）的 unit + numeric refRange
+
+### 改了什麼
+
+| 檔案 | 內容 |
+|---|---|
+| `packages/mapper/src/observation.ts` | `dedupNhiCrossChannelPairs` 改用 `findLoincDetailed` 算 LOINC、key 從 `(code, date, hospital, value, unit, canonical)` 改成 `(code, loinc, date, hospital, value)`；移除 `isPanel` + `canonical` + **`unit`**（unit 是 cross-channel 編碼雜訊，value+LOINC 已 pin 住 measurement）|
+| `packages/mapper/src/loinc-tables.ts` | `PANEL_LOINC_MAP["06013C"]` 補 `濁度`→5767-9、`酸鹼值`→5803-2、`crea(u`/`crea(urine`→2161-8、bare `膽紅素`→5770-3（4 個 LOINC 全 WebFetch 查證，inline comment 記錄）；`crea(u` 同步補進 `09015C` block |
+| `backend-ts/tests/unit/bundle-quality.test.ts` | 加 5 個 dedup-key lockdown + 4 個尿生化 EN/CJK parity lockdown + 4 個 unit-agnostic dedup lockdown（A `""`+B placeholder → 1 obs、real unit 仍 dedup、A real+B placeholder collapse 且保留 A 的 unit、同源純 B 保留）|
+| 4 個 version files | `0.13.0` → `0.13.1` |
+
+### 驗證
+
+- ✅ Extension test: **142/142 passed**
+- ✅ Backend-ts test: **455/455 passed**（v0.13.0 baseline 442 + 5 dedup-key + 4 EN/CJK parity + 4 placeholder-unit dedup 新 lockdown）
+- ✅ App dev 98-pair case：MCV / MCHC / RDW / HCT / Platelet / RBC / 等 CBC analytes 在長庚嘉義 A+B 自動 collapse 到 1 obs each
+- ✅ User 2026-06-02 定性尿液重複 case：Color / Turbidity / SP.Gravity / pH / LE / OCCULT（A `unit=""` + B placeholder）A+B 自動 collapse 到 1 obs each
+- ✅ FHIR R4 compliance：純內部 grouping logic 改動，沒動任何 spec 欄位 / Coding / value / unit
+- ✅ Backward compat：所有 v0.12.5 dedup 行為 case（單分析 code、06013C 3A+3B sub-analytes）保持一樣
+
+### Architectural lesson (CLAUDE.md rule #7 加強)
+
+> **Two parallel alias tables = structural problem**：若一個 helper 用 PANEL_LOINC_MAP、另一個用 CODE_SCOPED_SYNONYMS、第三個 hard-code 自己的 list — 三方 evolve 過程一定有 drift。任何 cross-reference 的下游 logic 應該 reuse 唯一 source-of-truth function（例：findLoincDetailed 同時供 dedup 跟 build 使用）。
+
+不影響其他 SMART app — dedup 只 collapse「同 LOINC + 同 value + 同 unit + 同 date + 同 hospital + 1A+1B」的結構性重複，不違反 v0.12.4 strict-faithful 原則。
+
+---
+
 ## 0.13.0 重點 — 2026-05-30
 
 **🩺 三項 metadata 修補：specimen mis-tag 修掉 + CBC LOINC code.text 統一 + NHI 就醫日期 (funC_DATE) 保留**
