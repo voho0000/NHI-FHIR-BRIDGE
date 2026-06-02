@@ -9,10 +9,24 @@
 //   - Names are unique.
 
 import { describe, expect, test } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NHI_API_ENDPOINTS, ENDPOINT_LABEL_ZH } from "../src/nhi-endpoints.js";
+
+// After the v0.13.x background.js split, SW logic lives across
+// src/background.js + src/background/*.js. The text-scanning tests below
+// (detail-URL param style, LOCAL_PAGE_TYPE_ORDER coverage) must glob all
+// of them — the constants / fetch URLs they assert on moved into modules.
+const SRC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
+const BG_DIR = resolve(SRC_DIR, "background");
+const SW_FILES = [
+  resolve(SRC_DIR, "background.js"),
+  ...readdirSync(BG_DIR)
+    .filter((f) => f.endsWith(".js"))
+    .map((f) => resolve(BG_DIR, f)),
+];
+const SW_SOURCE = SW_FILES.map((p) => readFileSync(p, "utf8")).join("\n");
 
 // Page types currently understood by the mapper / sync pipeline. If
 // the mapper grows new groups, extend this set. Keeping it narrow
@@ -33,11 +47,10 @@ const KNOWN_PAGE_TYPES = new Set([
 // downloaded Bundle silently drops those resources (root cause of the
 // "popup says 2 vaccines but bundle has 0" bug in v0.8.1).
 const LOCAL_BUNDLE_PAGE_TYPES = (() => {
-  const src = readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), "../src/background.js"),
-    "utf8",
-  );
-  const m = src.match(/const\s+_LOCAL_PAGE_TYPE_ORDER\s*=\s*\[([\s\S]*?)\]/);
+  // LOCAL_PAGE_TYPE_ORDER moved to src/background/constants.js in the
+  // v0.13.x split (and lost its `_` prefix). Scan the combined SW source
+  // so the test follows the constant wherever it lives.
+  const m = SW_SOURCE.match(/const\s+LOCAL_PAGE_TYPE_ORDER\s*=\s*\[([\s\S]*?)\]/);
   if (!m) return new Set();
   return new Set(
     [...m[1].matchAll(/"([^"]+)"/g)].map((mm) => mm[1]),
@@ -60,12 +73,13 @@ describe("NHI endpoint registry", () => {
     // All `/api/ihke3000/IHKE<N>S02/page_load?...` URLs must use crid +
     // ctype params. Same for any `/page_load?` URL that needs a row
     // identifier — never `rid` (UI-route param, not API).
-    const src = readFileSync(
-      resolve(dirname(fileURLToPath(import.meta.url)), "../src/background.js"),
-      "utf8",
-    );
+    // (The detail-fetch URLs moved into src/background/nhi-detail-fetchers.js
+    // in the v0.13.x split; scan the whole SW source so we still catch them.)
+    // Path segment is `[^/]+` (not `[A-Za-z0-9]+`) so it also matches the
+    // templatized `${cfg.path}` interpolation in nhi-detail-fetchers.js,
+    // not just a hardcoded endpoint name.
     const detailUrls = [
-      ...src.matchAll(/\/api\/ihke3000\/[A-Za-z0-9]+\/page_load\?[^`'"\s]+/g),
+      ...SW_SOURCE.matchAll(/\/api\/ihke3000\/[^/]+\/page_load\?[^`'"\s]+/g),
     ].map((m) => m[0]);
     expect(detailUrls.length).toBeGreaterThan(0);
     const offenders = detailUrls.filter(

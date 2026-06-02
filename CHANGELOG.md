@@ -3,6 +3,33 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.13.2 重點 — 2026-06-02
+
+**🧹 內部重構 — 拆分 `background.js`（零行為變更）**
+
+Clean-code 初始化的第一階段（PR1）：service worker 的單一 2007 行 `background.js` 拆成 11 個聚焦模組，**不改任何行為、不動 mapper、FHIR 輸出完全一致**。
+
+拆分後結構（`extension/src/background/`）：
+
+| 模組 | 內容 |
+|---|---|
+| `constants.js` | 共用常數（STORAGE_KEY / NHI_HOST / *_ERROR / page-type order 等）|
+| `sync-state.js` | `_cancelled` / `_activeSyncCtx` 單一持有者（bundle 後共用同一份狀態）|
+| `sync-orchestrator.js` | `runNhiApiSync` 主流程（依序 phase 呼叫）|
+| `nhi-list-fetch.js` | 並行 list 抓取（CONC=3、in-tab executeScript）|
+| `nhi-detail-fetchers.js` | 6 個近乎相同的 `_fetch*DetailsInTab` 收斂成單一 config-driven `fetchDetailsInTab` + 6 份 serializable spec |
+| `s02-detail.js` | S02 明細純函式（可單元測試）|
+| `bundle.js` / `backend-upload.js` / `auth.js` / `patient-override.js` / `storage-migration.js` | local bundle 組裝、backend HTTP、登入探測、病人覆寫、storage 遷移 |
+
+**安全網**：
+- `tests/background-imports.test.js` 泛化成掃描每個 `background/*.js` 模組（per-file 檢查 adapter/endpoint 呼叫 ⊆ import；守住 v0.6.3 「呼叫了但沒 import」那類 silent bug）
+- `tests/endpoints.test.js` 兩個 text-scan 測試改讀合併後的 SW source（detail URL 移到 `nhi-detail-fetchers.js`、`LOCAL_PAGE_TYPE_ORDER` 移到 `constants.js`）
+- 驗證：`node build.mjs` 綠、extension 153 tests 綠、backend-ts 455 tests 綠、手動 golden-bundle 比對無異常
+
+esbuild 仍打包成單一 `dist/background.js` IIFE，`manifest.json` / `build.mjs` entry 不變。
+
+---
+
 ## 0.13.1 重點 — 2026-06-02
 
 **🔧 修 v0.12.4 / v0.12.5 dedup architectural 漏洞 — 改用 LOINC 當 dedup key**

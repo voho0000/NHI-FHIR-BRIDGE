@@ -469,6 +469,138 @@
     }
   });
 
+  // src/background/constants.js
+  var STORAGE_KEY = "syncStatus";
+  var NHI_HOST = "myhealthbank.nhi.gov.tw";
+  var CANCEL_ERROR = "__SYNC_CANCELLED__";
+  var SESSION_EXPIRED_ERROR = "__SESSION_EXPIRED__";
+  var PENDING_BUNDLE_KEY = "pendingFhirBundle";
+  var PENDING_BUNDLE_TTL_MS = 60 * 60 * 1e3;
+  var PENDING_BUNDLE_SWEEP_ALARM = "pending-bundle-sweep";
+  var DEBUG_STASH_BODY_SAMPLES = false;
+  var LOCAL_PAGE_TYPE_ORDER = [
+    "encounters",
+    "observations",
+    "medications",
+    "conditions",
+    "allergies",
+    "diagnostic_reports",
+    "procedures",
+    "immunizations"
+  ];
+  var SYNC_KEYS_TO_MIGRATE = [
+    "backendUrl",
+    "syncApiKey",
+    "smartAppLaunchUrl",
+    "patientOverride",
+    "syncMode",
+    "maskNameEnabled"
+  ];
+
+  // src/background/sync-state.js
+  var _cancelled = false;
+  var _activeSyncCtx = null;
+  function isCancelled() {
+    return _cancelled;
+  }
+  function resetCancelled() {
+    _cancelled = false;
+  }
+  function requestCancel() {
+    _cancelled = true;
+  }
+  function getActiveSyncCtx() {
+    return _activeSyncCtx;
+  }
+  function setActiveSyncCtx(ctx) {
+    _activeSyncCtx = ctx;
+  }
+  async function setStatus(partial) {
+    if (_cancelled) return;
+    const prev = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] || {};
+    const next = { ...prev, ...partial, ts: Date.now() };
+    await chrome.storage.local.set({ [STORAGE_KEY]: next });
+    chrome.runtime.sendMessage({ type: "syncProgress", status: next }).catch(() => {
+    });
+  }
+  async function withProgressTimer(makeLabel, fn) {
+    const start = Date.now();
+    await setStatus({ progress: makeLabel(0) });
+    const interval = setInterval(() => {
+      const elapsed = Math.round((Date.now() - start) / 1e3);
+      setStatus({ progress: makeLabel(elapsed) }).catch(() => {
+      });
+    }, 3e3);
+    try {
+      return await fn();
+    } finally {
+      clearInterval(interval);
+    }
+  }
+
+  // src/background/auth.js
+  async function checkNhiLoginState(tabId) {
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: async () => {
+          const t = sessionStorage.getItem("token");
+          if (!t) return false;
+          try {
+            const r = await fetch("/api/ihke3000/ihke3410s01/page_load", {
+              credentials: "same-origin",
+              headers: { Accept: "application/json", Authorization: `Bearer ${t}` }
+            });
+            return r.ok;
+          } catch {
+            return false;
+          }
+        }
+      });
+      return typeof result === "boolean" ? result : null;
+    } catch {
+      return null;
+    }
+  }
+  async function maybeFetchPatientIdFromNhi(tabId, patientOverride) {
+    const current = patientOverride.id_no || "";
+    let cid = null;
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: async () => {
+          const t = sessionStorage.getItem("token");
+          if (!t) return null;
+          try {
+            const r = await fetch("/api/ihke3000/ihke3410s01/page_load", {
+              credentials: "same-origin",
+              headers: { Accept: "application/json", Authorization: `Bearer ${t}` }
+            });
+            if (!r.ok) return null;
+            const body = await r.json();
+            return body?.cid || null;
+          } catch {
+            return null;
+          }
+        }
+      });
+      if (result && /^[A-Z][12]\d{8}$/.test(result)) cid = result;
+    } catch (e) {
+      console.warn("[NHI sync] IHKE3410 cid fetch failed:", e?.message ?? e);
+    }
+    if (cid && cid !== current) {
+      patientOverride = { ...patientOverride, id_no: cid };
+      await chrome.storage.local.set({ patientOverride }).catch(() => {
+      });
+      const switchedRealPatients = current && !current.startsWith("auto-") && current !== cid;
+      if (switchedRealPatients) {
+        await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {
+        });
+      }
+    }
+    return patientOverride;
+  }
+
   // ../packages/mapper/src/systems.ts
   var NHI_MEDICAL_ORDER_CODE = "https://twcore.mohw.gov.tw/CodeSystem/nhi-medical-order-code";
   var NHI_DRUG_CODE = "https://twcore.mohw.gov.tw/CodeSystem/nhi-drug-code";
@@ -4727,6 +4859,51 @@
     return "unknown";
   }
 
+  // src/background/backend-upload.js
+  async function postStructured(backend, page_type, items, syncApiKey, patientOverride) {
+    const r = await fetch(`${backend}/sync/upload-structured`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {}
+      },
+      body: JSON.stringify({
+        page_type,
+        host: NHI_HOST,
+        items,
+        patient_override: patientOverride || null
+      })
+    });
+    if (!r.ok) throw new Error(`POST upload-structured ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    return await r.json();
+  }
+  async function exportPatientBundle(backend, syncApiKey, patientId) {
+    const fhirPid = derivePatientId(patientId);
+    const expUrl = `${backend}/fhir/export?patient=${encodeURIComponent(fhirPid)}`;
+    const r = await fetch(expUrl, {
+      headers: syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {}
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  }
+  async function deletePartialPatientData(backend, syncApiKey, patientId) {
+    const fhirPid = derivePatientId(patientId);
+    await fetch(`${backend}/sync/patient/${encodeURIComponent(fhirPid)}`, {
+      method: "DELETE",
+      headers: syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {}
+    });
+  }
+  async function postSyncLog(backend, syncApiKey, logBody) {
+    await fetch(`${backend}/sync/log`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {}
+      },
+      body: JSON.stringify(logBody)
+    });
+  }
+
   // src/nhi-adapters.js
   function rocToISO(rocDate) {
     if (!rocDate) return "";
@@ -5295,35 +5472,7 @@
     }
   ];
 
-  // src/background.js
-  var STORAGE_KEY = "syncStatus";
-  var _cancelled = false;
-  var _activeSyncCtx = null;
-  var CANCEL_ERROR = "__SYNC_CANCELLED__";
-  var SESSION_EXPIRED_ERROR = "__SESSION_EXPIRED__";
-  async function setStatus(partial) {
-    if (_cancelled) return;
-    const prev = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] || {};
-    const next = { ...prev, ...partial, ts: Date.now() };
-    await chrome.storage.local.set({ [STORAGE_KEY]: next });
-    chrome.runtime.sendMessage({ type: "syncProgress", status: next }).catch(() => {
-    });
-  }
-  async function _withProgressTimer(makeLabel, fn) {
-    const start = Date.now();
-    await setStatus({ progress: makeLabel(0) });
-    const interval = setInterval(() => {
-      const elapsed = Math.round((Date.now() - start) / 1e3);
-      setStatus({ progress: makeLabel(elapsed) }).catch(() => {
-      });
-    }, 3e3);
-    try {
-      return await fn();
-    } finally {
-      clearInterval(interval);
-    }
-  }
-  var NHI_HOST = "myhealthbank.nhi.gov.tw";
+  // src/background/patient-override.js
   function applyDateRangeToPath(path, dateRange) {
     if (!dateRange || !dateRange.start && !dateRange.end) return path;
     const s = (dateRange.start || "").slice(0, 10);
@@ -5341,608 +5490,7 @@
     }
     return p;
   }
-  async function _fetchMedicationDetailsInTab({ tabId, baseUrl, visits, skipRowIds }) {
-    const skip = skipRowIds instanceof Set ? skipRowIds : new Set(skipRowIds || []);
-    const reqs = visits.map((v) => ({
-      row_ID: v.row_ID || v.rowid || v.rowID || "",
-      // Keep parent fields needed by adaptMedicationFromDetail.
-      parent: {
-        func_DATE: v.func_DATE || v.func_date || "",
-        icd9cm_CODE: v.icd9cm_CODE || v.icd9cm_code || "",
-        icd9cm_CODE_CNAME: v.icd9cm_CODE_CNAME || v.icd9cm_name || "",
-        hosp_ABBR: v.hosp_ABBR || v.hosp_abbr || ""
-      }
-    })).filter((r) => r.row_ID && !skip.has(r.row_ID));
-    if (reqs.length === 0) return [];
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: async (base, items) => {
-        const token = sessionStorage.getItem("token");
-        if (!token) return { error: "SESSION_EXPIRED" };
-        if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
-          return { error: "SESSION_EXPIRED" };
-        }
-        const auth = `Bearer ${token}`;
-        async function fetchOne(rowId, ctype) {
-          const url = `${base}/api/ihke3000/IHKE3306S02/page_load?crid=${encodeURIComponent(rowId)}&ctype=${ctype}`;
-          const ac = new AbortController();
-          const t = setTimeout(() => ac.abort(), 3e4);
-          try {
-            const r = await fetch(url, {
-              method: "GET",
-              credentials: "same-origin",
-              signal: ac.signal,
-              headers: { "Accept": "application/json", "Authorization": auth }
-            });
-            clearTimeout(t);
-            if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
-            if (!r.ok) return { error: `HTTP ${r.status}` };
-            return { body: await r.json() };
-          } catch (e) {
-            clearTimeout(t);
-            return { error: e.name === "AbortError" ? "timeout 30s" : String(e?.message || e) };
-          }
-        }
-        async function one(rowId) {
-          for (const ct of [2, 1, 3, 4]) {
-            const r = await fetchOne(rowId, ct);
-            if (r.error === "SESSION_EXPIRED") return r;
-            if (r.error) continue;
-            const main = Array.isArray(r.body?.ihke3306S02_main_data) ? r.body.ihke3306S02_main_data : [];
-            const hasDrugs = main.some(
-              (v) => Array.isArray(v?.sp_IHKE3306S03_data_list) && v.sp_IHKE3306S03_data_list.length > 0
-            );
-            if (hasDrugs) return r;
-          }
-          return await fetchOne(rowId, 2);
-        }
-        const out = new Array(items.length);
-        let next = 0;
-        const CONC = 3;
-        async function worker() {
-          while (next < items.length) {
-            const i = next++;
-            await new Promise((r) => setTimeout(r, Math.random() * 50));
-            out[i] = await one(items[i].row_ID);
-          }
-        }
-        const ws = [];
-        for (let w = 0; w < CONC && w < items.length; w++) ws.push(worker());
-        await Promise.all(ws);
-        return { results: out };
-      },
-      args: [baseUrl, reqs]
-    });
-    if (result?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
-    const drugs = [];
-    const results = result?.results || [];
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (!r || r.error || !r.body) continue;
-      const main = Array.isArray(r.body.ihke3306S02_main_data) ? r.body.ihke3306S02_main_data : [];
-      for (const visit of main) {
-        const drugList = Array.isArray(visit.sp_IHKE3306S03_data_list) ? visit.sp_IHKE3306S03_data_list : [];
-        for (const d of drugList) {
-          const adapted = adaptMedicationFromDetail(d, visit);
-          if (adapted) drugs.push(adapted);
-        }
-      }
-    }
-    return drugs;
-  }
-  async function _fetchChronicMedicationDetailsInTab({ tabId, baseUrl, visits }) {
-    const reqs = visits.map((v) => ({
-      row_ID: v.row_ID || v.rowid || v.rowID || "",
-      // Chronic list rows always have ori_TYPE; fall back to brute-
-      // force only if NHI ever ships a row without it.
-      ctype: String(v.ori_TYPE || v.ori_type || "")
-    })).filter((r) => r.row_ID);
-    if (reqs.length === 0) return [];
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: async (base, items) => {
-        const token = sessionStorage.getItem("token");
-        if (!token) return { error: "SESSION_EXPIRED" };
-        if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
-          return { error: "SESSION_EXPIRED" };
-        }
-        const auth = `Bearer ${token}`;
-        async function fetchOne(rowId, ctype) {
-          const url = `${base}/api/ihke3000/IHKE3306S02/page_load?crid=${encodeURIComponent(rowId)}&ctype=${encodeURIComponent(ctype)}`;
-          const ac = new AbortController();
-          const t = setTimeout(() => ac.abort(), 3e4);
-          try {
-            const r = await fetch(url, {
-              method: "GET",
-              credentials: "same-origin",
-              signal: ac.signal,
-              headers: { "Accept": "application/json", "Authorization": auth }
-            });
-            clearTimeout(t);
-            if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
-            if (!r.ok) return { error: `HTTP ${r.status}` };
-            return { body: await r.json() };
-          } catch (e) {
-            clearTimeout(t);
-            return { error: e.name === "AbortError" ? "timeout 30s" : String(e?.message || e) };
-          }
-        }
-        async function one(rowId, declaredCtype) {
-          const seq = declaredCtype ? [declaredCtype, ...[1, 2, 8, 3, 4].filter((c) => String(c) !== String(declaredCtype))] : [1, 2, 8, 3, 4];
-          for (const ct of seq) {
-            const r = await fetchOne(rowId, ct);
-            if (r.error === "SESSION_EXPIRED") return r;
-            if (r.error) continue;
-            const main = Array.isArray(r.body?.ihke3306S02_main_data) ? r.body.ihke3306S02_main_data : [];
-            const hasDrugs = main.some(
-              (v) => Array.isArray(v?.sp_IHKE3306S03_data_list) && v.sp_IHKE3306S03_data_list.length > 0
-            );
-            if (hasDrugs) return r;
-          }
-          return null;
-        }
-        const out = new Array(items.length);
-        let next = 0;
-        const CONC = 3;
-        async function worker() {
-          while (next < items.length) {
-            const i = next++;
-            await new Promise((r) => setTimeout(r, Math.random() * 50));
-            out[i] = await one(items[i].row_ID, items[i].ctype);
-          }
-        }
-        const ws = [];
-        for (let w = 0; w < CONC && w < items.length; w++) ws.push(worker());
-        await Promise.all(ws);
-        return { results: out };
-      },
-      args: [baseUrl, reqs]
-    });
-    if (result?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
-    const drugs = [];
-    const results = result?.results || [];
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (!r || r.error || !r.body) continue;
-      const main = Array.isArray(r.body.ihke3306S02_main_data) ? r.body.ihke3306S02_main_data : [];
-      for (const visit of main) {
-        const drugList = Array.isArray(visit.sp_IHKE3306S03_data_list) ? visit.sp_IHKE3306S03_data_list : [];
-        for (const d of drugList) {
-          const adapted = adaptMedicationFromDetail(d, visit, { is_chronic: true });
-          if (adapted) drugs.push(adapted);
-        }
-      }
-    }
-    return drugs;
-  }
-  async function _fetchImagingDetailsInTab({ tabId, baseUrl, visits }) {
-    const reqs = visits.map((v) => ({
-      row_ID: v.row_ID || v.rowid || v.rowID || "",
-      ctype: v.ori_TYPE || v.ori_type || "A"
-    })).filter((r) => r.row_ID);
-    if (reqs.length === 0) return [];
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: async (base, items) => {
-        const token = sessionStorage.getItem("token");
-        if (!token) return { error: "SESSION_EXPIRED" };
-        if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
-          return { error: "SESSION_EXPIRED" };
-        }
-        const auth = `Bearer ${token}`;
-        async function one(rowId, ctype) {
-          const url = `${base}/api/ihke3000/IHKE3408S02/page_load?crid=${encodeURIComponent(rowId)}&ctype=${encodeURIComponent(ctype)}`;
-          const ac = new AbortController();
-          const t = setTimeout(() => ac.abort(), 3e4);
-          try {
-            const r = await fetch(url, {
-              method: "GET",
-              credentials: "same-origin",
-              signal: ac.signal,
-              headers: { "Accept": "application/json", "Authorization": auth }
-            });
-            clearTimeout(t);
-            if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
-            if (!r.ok) return { error: `HTTP ${r.status}` };
-            return { body: await r.json() };
-          } catch (e) {
-            clearTimeout(t);
-            return { error: e.name === "AbortError" ? "timeout 30s" : String(e?.message || e) };
-          }
-        }
-        const out = new Array(items.length);
-        let next = 0;
-        const CONC = 3;
-        async function worker() {
-          while (next < items.length) {
-            const i = next++;
-            await new Promise((r) => setTimeout(r, Math.random() * 50));
-            out[i] = await one(items[i].row_ID, items[i].ctype);
-          }
-        }
-        const ws = [];
-        for (let w = 0; w < CONC && w < items.length; w++) ws.push(worker());
-        await Promise.all(ws);
-        return { results: out };
-      },
-      args: [baseUrl, reqs]
-    });
-    if (result?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
-    const reports = [];
-    const results = result?.results || [];
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (!r || r.error || !r.body) continue;
-      const main = Array.isArray(r.body.ihke3408S02_main_data) ? r.body.ihke3408S02_main_data : [];
-      for (const visit of main) {
-        const adapted = adaptImagingReportFromDetail(visit);
-        if (adapted) reports.push(adapted);
-      }
-    }
-    return reports;
-  }
-  async function _fetchProcedureDetailsInTab({ tabId, baseUrl, visits }) {
-    const reqs = visits.map((v) => ({
-      row_ID: v.row_ID || v.row_id || v.rowid || v.rowID || "",
-      ctype: v.ori_type || v.ori_TYPE || ""
-    })).filter((r) => r.row_ID);
-    if (reqs.length === 0) return [];
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: async (base, items) => {
-        const token = sessionStorage.getItem("token");
-        if (!token) return { error: "SESSION_EXPIRED" };
-        if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
-          return { error: "SESSION_EXPIRED" };
-        }
-        const auth = `Bearer ${token}`;
-        async function fetchOne(rowId, ctype) {
-          const url = `${base}/api/ihke3000/IHKE3308S02/page_load?crid=${encodeURIComponent(rowId)}&ctype=${encodeURIComponent(ctype)}`;
-          const ac = new AbortController();
-          const t = setTimeout(() => ac.abort(), 3e4);
-          try {
-            const r = await fetch(url, {
-              method: "GET",
-              credentials: "same-origin",
-              signal: ac.signal,
-              headers: { "Accept": "application/json", "Authorization": auth }
-            });
-            clearTimeout(t);
-            if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
-            if (!r.ok) return { error: `HTTP ${r.status}` };
-            return { body: await r.json() };
-          } catch (e) {
-            clearTimeout(t);
-            return { error: e.name === "AbortError" ? "timeout 30s" : String(e?.message || e) };
-          }
-        }
-        async function one(rowId, preferred) {
-          const candidates = [];
-          if (preferred) candidates.push(preferred);
-          for (const ct of ["3", "5", "1", "2", "4"]) {
-            if (!candidates.includes(ct)) candidates.push(ct);
-          }
-          let lastOk = null;
-          for (const ct of candidates) {
-            const r = await fetchOne(rowId, ct);
-            if (r.error === "SESSION_EXPIRED") return r;
-            if (r.error) continue;
-            const main = Array.isArray(r.body?.ihke3308S02_main_data) ? r.body.ihke3308S02_main_data : [];
-            if (main.length > 0) return r;
-            lastOk = r;
-          }
-          return lastOk || { error: "no detail body" };
-        }
-        const out = new Array(items.length);
-        let next = 0;
-        const CONC = 3;
-        async function worker() {
-          while (next < items.length) {
-            const i = next++;
-            await new Promise((r) => setTimeout(r, Math.random() * 50));
-            out[i] = await one(items[i].row_ID, items[i].ctype);
-          }
-        }
-        const ws = [];
-        for (let w = 0; w < CONC && w < items.length; w++) ws.push(worker());
-        await Promise.all(ws);
-        return { results: out };
-      },
-      args: [baseUrl, reqs]
-    });
-    if (result?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
-    const procedures = [];
-    const results = result?.results || [];
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (!r || r.error || !r.body) continue;
-      const main = Array.isArray(r.body.ihke3308S02_main_data) ? r.body.ihke3308S02_main_data : [];
-      for (const row of main) {
-        const adapted = adaptProcedureFromDetail(row);
-        if (adapted) procedures.push(adapted);
-      }
-    }
-    return procedures;
-  }
-  async function _fetchEncounterDetailsInTab({ tabId, baseUrl, visits }) {
-    const reqs = visits.map((v, idx) => ({ idx, row_ID: v.roW_ID || v.row_ID || "" })).filter((r) => r.row_ID);
-    if (reqs.length === 0) return [];
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: async (base, items) => {
-        const token = sessionStorage.getItem("token");
-        if (!token) return { error: "SESSION_EXPIRED" };
-        if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
-          return { error: "SESSION_EXPIRED" };
-        }
-        const auth = `Bearer ${token}`;
-        async function fetchOne(rowId, ctype) {
-          const url = `${base}/api/ihke3000/IHKE3303S02/page_load?crid=${encodeURIComponent(rowId)}&ctype=${ctype}`;
-          const ac = new AbortController();
-          const tm = setTimeout(() => ac.abort(), 3e4);
-          try {
-            const r = await fetch(url, {
-              method: "GET",
-              credentials: "same-origin",
-              signal: ac.signal,
-              headers: { "Accept": "application/json", "Authorization": auth }
-            });
-            clearTimeout(tm);
-            if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
-            if (!r.ok) return { error: `HTTP ${r.status}` };
-            return { body: await r.json() };
-          } catch (e) {
-            clearTimeout(tm);
-            return { error: e.name === "AbortError" ? "timeout 30s" : String(e?.message || e) };
-          }
-        }
-        async function one(rowId) {
-          for (const ct of [2, 1, 3, 4, 5]) {
-            const r = await fetchOne(rowId, ct);
-            if (r.error === "SESSION_EXPIRED") return r;
-            if (r.error) continue;
-            const main = r.body?.ihke3303S02_main_data || [];
-            if (main.length > 0) return { body: r.body, ctype: ct };
-          }
-          return { body: null };
-        }
-        const out = new Array(items.length);
-        let next = 0;
-        const CONC = 3;
-        async function worker() {
-          while (next < items.length) {
-            const i = next++;
-            await new Promise((r) => setTimeout(r, Math.random() * 50));
-            out[i] = await one(items[i].row_ID);
-          }
-        }
-        const ws = [];
-        for (let w = 0; w < CONC && w < items.length; w++) ws.push(worker());
-        await Promise.all(ws);
-        return { results: out };
-      },
-      args: [baseUrl, reqs]
-    });
-    if (result?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
-    const byIdx = /* @__PURE__ */ new Map();
-    const results = result?.results || [];
-    for (let i = 0; i < reqs.length; i++) {
-      byIdx.set(reqs[i].idx, results[i]?.body || null);
-    }
-    return byIdx;
-  }
-  async function _fetchInpatientDetailsInTab({ tabId, baseUrl, visits }) {
-    const reqs = visits.map((v, idx) => ({ idx, row_ID: v.row_ID || v.row_id || v.roW_ID || "" })).filter((r) => r.row_ID);
-    if (reqs.length === 0) return /* @__PURE__ */ new Map();
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: async (base, items) => {
-        const token = sessionStorage.getItem("token");
-        if (!token) return { error: "SESSION_EXPIRED" };
-        if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
-          return { error: "SESSION_EXPIRED" };
-        }
-        const auth = `Bearer ${token}`;
-        async function fetchOne(rowId) {
-          for (const ct of [3, 2, 1]) {
-            const url = `${base}/api/ihke3000/IHKE3309S02/page_load?crid=${encodeURIComponent(rowId)}&ctype=${ct}`;
-            const ac = new AbortController();
-            const tm = setTimeout(() => ac.abort(), 3e4);
-            try {
-              const r = await fetch(url, {
-                method: "GET",
-                credentials: "same-origin",
-                signal: ac.signal,
-                headers: { "Accept": "application/json", "Authorization": auth }
-              });
-              clearTimeout(tm);
-              if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
-              if (!r.ok) continue;
-              const body = await r.json();
-              const main = body?.ihke3309S02_main_data || [];
-              if (main.length > 0) return { body };
-            } catch (e) {
-              clearTimeout(tm);
-              if (e?.name !== "AbortError") continue;
-              return { error: "timeout 30s" };
-            }
-          }
-          return { body: null };
-        }
-        const out = new Array(items.length);
-        let next = 0;
-        const CONC = 3;
-        async function worker() {
-          while (next < items.length) {
-            const i = next++;
-            await new Promise((r) => setTimeout(r, Math.random() * 50));
-            out[i] = await fetchOne(items[i].row_ID);
-          }
-        }
-        const ws = [];
-        for (let w = 0; w < CONC && w < items.length; w++) ws.push(worker());
-        await Promise.all(ws);
-        return { results: out };
-      },
-      args: [baseUrl, reqs]
-    });
-    if (result?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
-    const byIdx = /* @__PURE__ */ new Map();
-    const results = result?.results || [];
-    for (let i = 0; i < reqs.length; i++) {
-      byIdx.set(reqs[i].idx, results[i]?.body || null);
-    }
-    return byIdx;
-  }
-  function _pickS02MainRow(body) {
-    if (!body || typeof body !== "object") return null;
-    for (const k of Object.keys(body)) {
-      if (/^ihke\d+S02_main_data$/i.test(k) && Array.isArray(body[k]) && body[k].length > 0) {
-        return body[k][0];
-      }
-    }
-    return null;
-  }
-  function _classFromS02Detail(body) {
-    const main = _pickS02MainRow(body);
-    if (!main) return null;
-    const tn = String(main.hosp_DATA_TYPE_NAME || "");
-    if (tn.includes("\u6025")) return "EMER";
-    if (tn.includes("\u4F4F\u9662")) return "IMP";
-    return "AMB";
-  }
-  function _primaryIcdFromS02Detail(body) {
-    const main = _pickS02MainRow(body);
-    if (!main) return null;
-    const codeName = main.icd9cm_CODE_CNAME || main.icd9cm_code_cname || "";
-    if (!codeName) return null;
-    const code = main.icd9cm_CODE || main.icd9cm_code || "";
-    const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
-    const pickHalf = (s, half) => {
-      const str = String(s || "");
-      const idx = str.indexOf("||");
-      if (idx === -1) return str.trim();
-      if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
-      return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
-    };
-    const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
-    const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
-    if (!code && !name_en && !name_zh) return null;
-    return { code, name_en, name_zh };
-  }
-  function _secondaryIcdsFromS02Detail(body) {
-    const main = _pickS02MainRow(body);
-    if (!main) return [];
-    const list = Array.isArray(main.icdcode_data) ? main.icdcode_data : [];
-    const out = [];
-    const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
-    const pickHalf = (s, half) => {
-      const str = String(s || "");
-      const idx = str.indexOf("||");
-      if (idx === -1) return str.trim();
-      if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
-      return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
-    };
-    for (const item of list) {
-      const codeName = item?.icd_code_name || item?.icd_CODE_NAME || "";
-      const codeMatch = String(codeName).match(/^([A-Z0-9.]+)\//);
-      const code = codeMatch ? codeMatch[1] : "";
-      const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
-      const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
-      if (!code && !name_en && !name_zh) continue;
-      out.push({ code, name_en, name_zh });
-    }
-    return out;
-  }
-  async function _postStructured(backend, page_type, items, syncApiKey, patientOverride) {
-    const r = await fetch(`${backend}/sync/upload-structured`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {}
-      },
-      body: JSON.stringify({
-        page_type,
-        host: NHI_HOST,
-        items,
-        patient_override: patientOverride || null
-      })
-    });
-    if (!r.ok) throw new Error(`POST upload-structured ${r.status}: ${(await r.text()).slice(0, 200)}`);
-    return await r.json();
-  }
-  var _LOCAL_PAGE_TYPE_ORDER = [
-    "encounters",
-    "observations",
-    "medications",
-    "conditions",
-    "allergies",
-    "diagnostic_reports",
-    "procedures",
-    "immunizations"
-  ];
-  async function _checkNhiLoginState(tabId) {
-    try {
-      const [{ result }] = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: async () => {
-          const t = sessionStorage.getItem("token");
-          if (!t) return false;
-          try {
-            const r = await fetch("/api/ihke3000/ihke3410s01/page_load", {
-              credentials: "same-origin",
-              headers: { Accept: "application/json", Authorization: `Bearer ${t}` }
-            });
-            return r.ok;
-          } catch {
-            return false;
-          }
-        }
-      });
-      return typeof result === "boolean" ? result : null;
-    } catch {
-      return null;
-    }
-  }
-  async function _maybeFetchPatientIdFromNhi(tabId, patientOverride) {
-    const current = patientOverride.id_no || "";
-    let cid = null;
-    try {
-      const [{ result }] = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: async () => {
-          const t = sessionStorage.getItem("token");
-          if (!t) return null;
-          try {
-            const r = await fetch("/api/ihke3000/ihke3410s01/page_load", {
-              credentials: "same-origin",
-              headers: { Accept: "application/json", Authorization: `Bearer ${t}` }
-            });
-            if (!r.ok) return null;
-            const body = await r.json();
-            return body?.cid || null;
-          } catch {
-            return null;
-          }
-        }
-      });
-      if (result && /^[A-Z][12]\d{8}$/.test(result)) cid = result;
-    } catch (e) {
-      console.warn("[NHI sync] IHKE3410 cid fetch failed:", e?.message ?? e);
-    }
-    if (cid && cid !== current) {
-      patientOverride = { ...patientOverride, id_no: cid };
-      await chrome.storage.local.set({ patientOverride }).catch(() => {
-      });
-      const switchedRealPatients = current && !current.startsWith("auto-") && current !== cid;
-      if (switchedRealPatients) {
-        await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {
-        });
-      }
-    }
-    return patientOverride;
-  }
-  async function _isMaskEnabled() {
+  async function isMaskEnabled() {
     try {
       const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
       return maskNameEnabled === true;
@@ -5950,7 +5498,7 @@
       return false;
     }
   }
-  function _buildOverridePatient(ov, maskEnabled) {
+  function buildOverridePatient(ov, maskEnabled) {
     const displayName = maskEnabled ? maskName(ov.name || "") : ov.name || "";
     const raw = {
       id: ov.id_no,
@@ -5961,142 +5509,20 @@
     if (ov.gender) raw.gender = ov.gender;
     return mapPatient(raw);
   }
-  function _replaceNameDeep(value, needle, replacement) {
+  function replaceNameDeep(value, needle, replacement) {
     if (!needle || needle === replacement) return value;
     if (typeof value === "string") return value.split(needle).join(replacement);
-    if (Array.isArray(value)) return value.map((v) => _replaceNameDeep(v, needle, replacement));
+    if (Array.isArray(value)) return value.map((v) => replaceNameDeep(v, needle, replacement));
     if (value && typeof value === "object") {
       const out = {};
-      for (const k in value) out[k] = _replaceNameDeep(value[k], needle, replacement);
+      for (const k in value) out[k] = replaceNameDeep(value[k], needle, replacement);
       return out;
     }
     return value;
   }
-  function _assembleLocalBundle(byType, patientOverride, maskEnabled) {
-    const patient = _buildOverridePatient(patientOverride, maskEnabled);
-    const pid = patient.id;
-    const all = [patient];
-    for (const pt of _LOCAL_PAGE_TYPE_ORDER) {
-      const items = byType[pt];
-      if (!items || items.length === 0) continue;
-      let mapped;
-      if (GROUP_HANDLERS[pt]) {
-        mapped = GROUP_HANDLERS[pt](items, pid);
-      } else if (LIST_HANDLERS[pt]) {
-        const [fn] = LIST_HANDLERS[pt];
-        mapped = items.filter((it) => it && typeof it === "object").map((it) => fn(it, pid)).filter((r) => r !== null);
-      } else {
-        continue;
-      }
-      if (pt === "encounters") mapped = dedupAdmissionDayAmb(mapped);
-      all.push(...mapped);
-    }
-    const seen = /* @__PURE__ */ new Set();
-    const unique = [];
-    for (const r of all) {
-      const key = `${r.resourceType}/${r.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(r);
-    }
-    linkEncountersInResources(unique, unique);
-    resolveSexStratifiedRanges(patient, unique);
-    const bridgeVersion = chrome.runtime.getManifest()?.version || "unknown";
-    return {
-      resourceType: "Bundle",
-      type: "collection",
-      timestamp: (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d+Z$/, "Z"),
-      meta: {
-        tag: [
-          {
-            system: "https://github.com/voho0000/NHI-FHIR-BRIDGE/bridge-version",
-            code: bridgeVersion,
-            display: `NHI-FHIR-Bridge v${bridgeVersion}`
-          }
-        ]
-      },
-      entry: unique.map((r) => ({
-        fullUrl: `${r.resourceType}/${r.id}`,
-        resource: r
-      }))
-    };
-  }
-  var PENDING_BUNDLE_KEY = "pendingFhirBundle";
-  var PENDING_BUNDLE_TTL_MS = 60 * 60 * 1e3;
-  var PENDING_BUNDLE_SWEEP_ALARM = "pending-bundle-sweep";
-  var DEBUG_STASH_BODY_SAMPLES = false;
-  async function _stashFhirBundle(bundle, patientId, dateRange) {
-    const now = /* @__PURE__ */ new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    const fmt = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
-    const maskedPid = maskId(patientId || "unknown", "X");
-    const safePid = maskedPid.replace(/[^A-Za-z0-9_-]/g, "_");
-    const compact = (d) => (d || "").slice(0, 10).replace(/-/g, "");
-    let s, e;
-    if (dateRange && (dateRange.start || dateRange.end)) {
-      s = compact(dateRange.start) || fmt(now);
-      e = compact(dateRange.end) || fmt(now);
-    } else {
-      const oneYearAgo = new Date(now);
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-      s = fmt(oneYearAgo);
-      e = fmt(now);
-    }
-    const version = chrome.runtime.getManifest()?.version || "unknown";
-    const filename = `nhi-${safePid}-${s}-${e}-v${version}.json`;
-    const json = JSON.stringify(bundle, null, 2);
-    await chrome.storage.session.set({
-      [PENDING_BUNDLE_KEY]: {
-        filename,
-        json,
-        bytes: json.length,
-        generatedAt: Date.now(),
-        patientId: patientId || null
-      }
-    });
-    return { filename, bytes: json.length };
-  }
-  async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patientOverride, dateRange, dateRangeLabel }) {
-    _cancelled = false;
-    const BASE = nhiBase || `https://${NHI_HOST}`;
-    if (!patientOverride) {
-      await chrome.storage.local.set({
-        syncStatus: {
-          running: false,
-          progress: "\u26D4 \u8ACB\u5148\u5230\u300C\u2461 \u60A8\u7684\u8CC7\u6599\u300D\u586B\u5BEB\u8CC7\u6599\u5F8C\u518D\u8A66",
-          phase: "error",
-          ts: Date.now(),
-          completed: Date.now()
-        }
-      });
-      return;
-    }
-    if (!tabId) {
-      throw new Error("API sync requires NHI tab id (cookies are first-party)");
-    }
-    patientOverride = await _maybeFetchPatientIdFromNhi(tabId, patientOverride);
-    _activeSyncCtx = { backend, syncApiKey, patientId: patientOverride.id_no };
-    const _t0 = Date.now();
-    const _phases = [];
-    let _phaseStart = _t0;
-    const _markPhase = (name) => {
-      const now = Date.now();
-      _phases.push({ name, ms: now - _phaseStart });
-      _phaseStart = now;
-    };
-    await setStatus({
-      running: true,
-      progress: "\u{1F680} \u958B\u59CB\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u2026",
-      phase: "init",
-      started: _t0,
-      totalResources: 0,
-      host: NHI_HOST,
-      errors: []
-    });
-    const fetchSpec = NHI_API_ENDPOINTS.map((ep) => {
-      const path = ep.supportsDateRange ? applyDateRangeToPath(ep.path, dateRange) : ep.path;
-      return { name: ep.name, url: BASE + path, method: "GET" };
-    });
+
+  // src/background/nhi-list-fetch.js
+  async function fetchNhiListsInTab(tabId, fetchSpec) {
     let settledRaw;
     try {
       [{ result: settledRaw }] = await chrome.scripting.executeScript({
@@ -6166,31 +5592,33 @@
     if (settledRaw.some((r) => r.error === "SESSION_EXPIRED")) {
       throw new Error(SESSION_EXPIRED_ERROR);
     }
-    const errors = [];
-    function extractList(body) {
-      if (Array.isArray(body)) return body;
-      if (!body || typeof body !== "object") return [];
-      let arrayKeys = Object.entries(body).filter(([_, v]) => Array.isArray(v));
-      if (arrayKeys.length === 0) return [];
-      if (arrayKeys.length === 1) return arrayKeys[0][1];
-      const HELPER_RE = /select|option|dropdown|filter|sort|lookup/i;
-      const dataKeys = arrayKeys.filter(([k]) => !HELPER_RE.test(k));
-      if (dataKeys.length === 1) return dataKeys[0][1];
-      if (dataKeys.length === 0) return arrayKeys[0][1];
-      arrayKeys = dataKeys;
-      const merged = [];
-      for (const [k, v] of arrayKeys) {
-        for (const item of v) {
-          if (item && typeof item === "object") {
-            merged.push({ ...item, __section: k });
-          } else {
-            merged.push(item);
-          }
+    return settledRaw;
+  }
+  function extractList(body) {
+    if (Array.isArray(body)) return body;
+    if (!body || typeof body !== "object") return [];
+    let arrayKeys = Object.entries(body).filter(([_, v]) => Array.isArray(v));
+    if (arrayKeys.length === 0) return [];
+    if (arrayKeys.length === 1) return arrayKeys[0][1];
+    const HELPER_RE = /select|option|dropdown|filter|sort|lookup/i;
+    const dataKeys = arrayKeys.filter(([k]) => !HELPER_RE.test(k));
+    if (dataKeys.length === 1) return dataKeys[0][1];
+    if (dataKeys.length === 0) return arrayKeys[0][1];
+    arrayKeys = dataKeys;
+    const merged = [];
+    for (const [k, v] of arrayKeys) {
+      for (const item of v) {
+        if (item && typeof item === "object") {
+          merged.push({ ...item, __section: k });
+        } else {
+          merged.push(item);
         }
       }
-      return merged;
     }
-    const settled = settledRaw.map((r, i) => {
+    return merged;
+  }
+  function adaptSettledLists(settledRaw) {
+    return settledRaw.map((r, i) => {
       const ep = NHI_API_ENDPOINTS[i];
       if (r.error) {
         return { status: "rejected", reason: { message: `${ep.name}: ${r.error}` } };
@@ -6217,6 +5645,412 @@
       }
       return { status: "fulfilled", value: { ep, items, raw_count: list.length, bodySample, rawList: list } };
     });
+  }
+
+  // src/background/nhi-detail-fetchers.js
+  async function fetchDetailsInTab(tabId, baseUrl, items, spec) {
+    if (items.length === 0) return [];
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async (base, reqs, cfg) => {
+        const token = sessionStorage.getItem("token");
+        if (!token) return { error: "SESSION_EXPIRED" };
+        if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
+          return { error: "SESSION_EXPIRED" };
+        }
+        const auth = `Bearer ${token}`;
+        async function fetchOne(rowId2, ctype) {
+          const url = `${base}/api/ihke3000/${cfg.path}/page_load?crid=${encodeURIComponent(rowId2)}&ctype=${encodeURIComponent(ctype)}`;
+          const ac = new AbortController();
+          const t = setTimeout(() => ac.abort(), 3e4);
+          try {
+            const r = await fetch(url, {
+              method: "GET",
+              credentials: "same-origin",
+              signal: ac.signal,
+              headers: { "Accept": "application/json", "Authorization": auth }
+            });
+            clearTimeout(t);
+            if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
+            if (!r.ok) return { error: `HTTP ${r.status}` };
+            return { body: await r.json() };
+          } catch (e) {
+            clearTimeout(t);
+            return { error: e.name === "AbortError" ? "timeout 30s" : String(e?.message || e) };
+          }
+        }
+        function hasData(body) {
+          const main = Array.isArray(body?.[cfg.mainDataKey]) ? body[cfg.mainDataKey] : [];
+          if (cfg.presence === "drugs") {
+            return main.some(
+              (v) => Array.isArray(v?.[cfg.drugListKey]) && v[cfg.drugListKey].length > 0
+            );
+          }
+          return main.length > 0;
+        }
+        function ctypeSeq(rowCtype) {
+          const seq = [];
+          if (cfg.useRowCtype && rowCtype) seq.push(rowCtype);
+          for (const ct of cfg.ctypes) {
+            if (!seq.map(String).includes(String(ct))) seq.push(ct);
+          }
+          return seq;
+        }
+        async function one(rowId2, rowCtype) {
+          const seq = ctypeSeq(rowCtype);
+          if (cfg.presence === "none") return await fetchOne(rowId2, seq[0]);
+          let lastOk = null;
+          for (const ct of seq) {
+            const r = await fetchOne(rowId2, ct);
+            if (r.error === "SESSION_EXPIRED") return r;
+            if (r.error) continue;
+            if (hasData(r.body)) return r;
+            lastOk = r;
+          }
+          if (cfg.fallback === "fetch") return await fetchOne(rowId2, cfg.fallbackCtype);
+          if (cfg.fallback === "last-ok") return lastOk || { error: "no detail body" };
+          if (cfg.fallback === "null") return null;
+          return { body: null };
+        }
+        const out = new Array(reqs.length);
+        let next = 0;
+        const CONC = 3;
+        async function worker() {
+          while (next < reqs.length) {
+            const i = next++;
+            await new Promise((r) => setTimeout(r, Math.random() * 50));
+            out[i] = await one(reqs[i].row_ID, reqs[i].ctype);
+          }
+        }
+        const ws = [];
+        for (let w = 0; w < CONC && w < reqs.length; w++) ws.push(worker());
+        await Promise.all(ws);
+        return { results: out };
+      },
+      args: [baseUrl, items, spec]
+    });
+    if (result?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
+    return result?.results || [];
+  }
+  var MEDICATION_SPEC = {
+    path: "IHKE3306S02",
+    mainDataKey: "ihke3306S02_main_data",
+    drugListKey: "sp_IHKE3306S03_data_list",
+    ctypes: [2, 1, 3, 4],
+    useRowCtype: false,
+    presence: "drugs",
+    fallback: "fetch",
+    fallbackCtype: 2
+  };
+  var CHRONIC_MEDICATION_SPEC = {
+    path: "IHKE3306S02",
+    mainDataKey: "ihke3306S02_main_data",
+    drugListKey: "sp_IHKE3306S03_data_list",
+    ctypes: [1, 2, 8, 3, 4],
+    useRowCtype: true,
+    presence: "drugs",
+    fallback: "null"
+  };
+  var IMAGING_SPEC = {
+    path: "IHKE3408S02",
+    mainDataKey: "ihke3408S02_main_data",
+    ctypes: [],
+    useRowCtype: true,
+    presence: "none"
+  };
+  var PROCEDURE_SPEC = {
+    path: "IHKE3308S02",
+    mainDataKey: "ihke3308S02_main_data",
+    ctypes: ["3", "5", "1", "2", "4"],
+    useRowCtype: true,
+    presence: "main",
+    fallback: "last-ok"
+  };
+  var ENCOUNTER_SPEC = {
+    path: "IHKE3303S02",
+    mainDataKey: "ihke3303S02_main_data",
+    ctypes: [2, 1, 3, 4, 5],
+    useRowCtype: false,
+    presence: "main",
+    fallback: "empty-body"
+  };
+  var INPATIENT_SPEC = {
+    path: "IHKE3309S02",
+    mainDataKey: "ihke3309S02_main_data",
+    ctypes: [3, 2, 1],
+    useRowCtype: false,
+    presence: "main",
+    fallback: "empty-body"
+  };
+  function rowId(v) {
+    return v.row_ID || v.rowid || v.rowID || "";
+  }
+  function collectDrugs(results, spec, adaptOpts) {
+    const drugs = [];
+    for (const r of results) {
+      if (!r || r.error || !r.body) continue;
+      const main = Array.isArray(r.body[spec.mainDataKey]) ? r.body[spec.mainDataKey] : [];
+      for (const visit of main) {
+        const drugList = Array.isArray(visit[spec.drugListKey]) ? visit[spec.drugListKey] : [];
+        for (const d of drugList) {
+          const adapted = adaptMedicationFromDetail(d, visit, adaptOpts);
+          if (adapted) drugs.push(adapted);
+        }
+      }
+    }
+    return drugs;
+  }
+  function byVisitIndex(reqs, results) {
+    const byIdx = /* @__PURE__ */ new Map();
+    for (let i = 0; i < reqs.length; i++) {
+      byIdx.set(reqs[i].idx, results[i]?.body || null);
+    }
+    return byIdx;
+  }
+  async function fetchMedicationDetails({ tabId, baseUrl, visits, skipRowIds }) {
+    const skip = skipRowIds instanceof Set ? skipRowIds : new Set(skipRowIds || []);
+    const reqs = visits.map((v) => ({ row_ID: rowId(v) })).filter((r) => r.row_ID && !skip.has(r.row_ID));
+    const results = await fetchDetailsInTab(tabId, baseUrl, reqs, MEDICATION_SPEC);
+    return collectDrugs(results, MEDICATION_SPEC, null);
+  }
+  async function fetchChronicMedicationDetails({ tabId, baseUrl, visits }) {
+    const reqs = visits.map((v) => ({ row_ID: rowId(v), ctype: String(v.ori_TYPE || v.ori_type || "") })).filter((r) => r.row_ID);
+    const results = await fetchDetailsInTab(tabId, baseUrl, reqs, CHRONIC_MEDICATION_SPEC);
+    return collectDrugs(results, CHRONIC_MEDICATION_SPEC, { is_chronic: true });
+  }
+  async function fetchImagingDetails({ tabId, baseUrl, visits }) {
+    const reqs = visits.map((v) => ({ row_ID: rowId(v), ctype: v.ori_TYPE || v.ori_type || "A" })).filter((r) => r.row_ID);
+    const results = await fetchDetailsInTab(tabId, baseUrl, reqs, IMAGING_SPEC);
+    const reports = [];
+    for (const r of results) {
+      if (!r || r.error || !r.body) continue;
+      const main = Array.isArray(r.body[IMAGING_SPEC.mainDataKey]) ? r.body[IMAGING_SPEC.mainDataKey] : [];
+      for (const visit of main) {
+        const adapted = adaptImagingReportFromDetail(visit);
+        if (adapted) reports.push(adapted);
+      }
+    }
+    return reports;
+  }
+  async function fetchProcedureDetails({ tabId, baseUrl, visits }) {
+    const reqs = visits.map((v) => ({
+      row_ID: v.row_ID || v.row_id || v.rowid || v.rowID || "",
+      ctype: v.ori_type || v.ori_TYPE || ""
+    })).filter((r) => r.row_ID);
+    const results = await fetchDetailsInTab(tabId, baseUrl, reqs, PROCEDURE_SPEC);
+    const procedures = [];
+    for (const r of results) {
+      if (!r || r.error || !r.body) continue;
+      const main = Array.isArray(r.body[PROCEDURE_SPEC.mainDataKey]) ? r.body[PROCEDURE_SPEC.mainDataKey] : [];
+      for (const row of main) {
+        const adapted = adaptProcedureFromDetail(row);
+        if (adapted) procedures.push(adapted);
+      }
+    }
+    return procedures;
+  }
+  async function fetchEncounterDetails({ tabId, baseUrl, visits }) {
+    const reqs = visits.map((v, idx) => ({ idx, row_ID: v.roW_ID || v.row_ID || "" })).filter((r) => r.row_ID);
+    if (reqs.length === 0) return /* @__PURE__ */ new Map();
+    const results = await fetchDetailsInTab(tabId, baseUrl, reqs, ENCOUNTER_SPEC);
+    return byVisitIndex(reqs, results);
+  }
+  async function fetchInpatientDetails({ tabId, baseUrl, visits }) {
+    const reqs = visits.map((v, idx) => ({ idx, row_ID: v.row_ID || v.row_id || v.roW_ID || "" })).filter((r) => r.row_ID);
+    if (reqs.length === 0) return /* @__PURE__ */ new Map();
+    const results = await fetchDetailsInTab(tabId, baseUrl, reqs, INPATIENT_SPEC);
+    return byVisitIndex(reqs, results);
+  }
+
+  // src/background/s02-detail.js
+  function pickS02MainRow(body) {
+    if (!body || typeof body !== "object") return null;
+    for (const k of Object.keys(body)) {
+      if (/^ihke\d+S02_main_data$/i.test(k) && Array.isArray(body[k]) && body[k].length > 0) {
+        return body[k][0];
+      }
+    }
+    return null;
+  }
+  function classFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return null;
+    const tn = String(main.hosp_DATA_TYPE_NAME || "");
+    if (tn.includes("\u6025")) return "EMER";
+    if (tn.includes("\u4F4F\u9662")) return "IMP";
+    return "AMB";
+  }
+  function primaryIcdFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return null;
+    const codeName = main.icd9cm_CODE_CNAME || main.icd9cm_code_cname || "";
+    if (!codeName) return null;
+    const code = main.icd9cm_CODE || main.icd9cm_code || "";
+    const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
+    const pickHalf = (s, half) => {
+      const str = String(s || "");
+      const idx = str.indexOf("||");
+      if (idx === -1) return str.trim();
+      if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
+      return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
+    };
+    const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
+    const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
+    if (!code && !name_en && !name_zh) return null;
+    return { code, name_en, name_zh };
+  }
+  function secondaryIcdsFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return [];
+    const list = Array.isArray(main.icdcode_data) ? main.icdcode_data : [];
+    const out = [];
+    const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
+    const pickHalf = (s, half) => {
+      const str = String(s || "");
+      const idx = str.indexOf("||");
+      if (idx === -1) return str.trim();
+      if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
+      return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
+    };
+    for (const item of list) {
+      const codeName = item?.icd_code_name || item?.icd_CODE_NAME || "";
+      const codeMatch = String(codeName).match(/^([A-Z0-9.]+)\//);
+      const code = codeMatch ? codeMatch[1] : "";
+      const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
+      const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
+      if (!code && !name_en && !name_zh) continue;
+      out.push({ code, name_en, name_zh });
+    }
+    return out;
+  }
+
+  // src/background/bundle.js
+  function assembleLocalBundle(byType, patientOverride, maskEnabled) {
+    const patient = buildOverridePatient(patientOverride, maskEnabled);
+    const pid = patient.id;
+    const all = [patient];
+    for (const pt of LOCAL_PAGE_TYPE_ORDER) {
+      const items = byType[pt];
+      if (!items || items.length === 0) continue;
+      let mapped;
+      if (GROUP_HANDLERS[pt]) {
+        mapped = GROUP_HANDLERS[pt](items, pid);
+      } else if (LIST_HANDLERS[pt]) {
+        const [fn] = LIST_HANDLERS[pt];
+        mapped = items.filter((it) => it && typeof it === "object").map((it) => fn(it, pid)).filter((r) => r !== null);
+      } else {
+        continue;
+      }
+      if (pt === "encounters") mapped = dedupAdmissionDayAmb(mapped);
+      all.push(...mapped);
+    }
+    const seen = /* @__PURE__ */ new Set();
+    const unique = [];
+    for (const r of all) {
+      const key = `${r.resourceType}/${r.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(r);
+    }
+    linkEncountersInResources(unique, unique);
+    resolveSexStratifiedRanges(patient, unique);
+    const bridgeVersion = chrome.runtime.getManifest()?.version || "unknown";
+    return {
+      resourceType: "Bundle",
+      type: "collection",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d+Z$/, "Z"),
+      meta: {
+        tag: [
+          {
+            system: "https://github.com/voho0000/NHI-FHIR-BRIDGE/bridge-version",
+            code: bridgeVersion,
+            display: `NHI-FHIR-Bridge v${bridgeVersion}`
+          }
+        ]
+      },
+      entry: unique.map((r) => ({
+        fullUrl: `${r.resourceType}/${r.id}`,
+        resource: r
+      }))
+    };
+  }
+  async function stashFhirBundle(bundle, patientId, dateRange) {
+    const now = /* @__PURE__ */ new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const fmt = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+    const maskedPid = maskId(patientId || "unknown", "X");
+    const safePid = maskedPid.replace(/[^A-Za-z0-9_-]/g, "_");
+    const compact = (d) => (d || "").slice(0, 10).replace(/-/g, "");
+    let s, e;
+    if (dateRange && (dateRange.start || dateRange.end)) {
+      s = compact(dateRange.start) || fmt(now);
+      e = compact(dateRange.end) || fmt(now);
+    } else {
+      const oneYearAgo = new Date(now);
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      s = fmt(oneYearAgo);
+      e = fmt(now);
+    }
+    const version = chrome.runtime.getManifest()?.version || "unknown";
+    const filename = `nhi-${safePid}-${s}-${e}-v${version}.json`;
+    const json = JSON.stringify(bundle, null, 2);
+    await chrome.storage.session.set({
+      [PENDING_BUNDLE_KEY]: {
+        filename,
+        json,
+        bytes: json.length,
+        generatedAt: Date.now(),
+        patientId: patientId || null
+      }
+    });
+    return { filename, bytes: json.length };
+  }
+
+  // src/background/sync-orchestrator.js
+  async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patientOverride, dateRange, dateRangeLabel }) {
+    resetCancelled();
+    const BASE = nhiBase || `https://${NHI_HOST}`;
+    if (!patientOverride) {
+      await chrome.storage.local.set({
+        syncStatus: {
+          running: false,
+          progress: "\u26D4 \u8ACB\u5148\u5230\u300C\u2461 \u60A8\u7684\u8CC7\u6599\u300D\u586B\u5BEB\u8CC7\u6599\u5F8C\u518D\u8A66",
+          phase: "error",
+          ts: Date.now(),
+          completed: Date.now()
+        }
+      });
+      return;
+    }
+    if (!tabId) {
+      throw new Error("API sync requires NHI tab id (cookies are first-party)");
+    }
+    patientOverride = await maybeFetchPatientIdFromNhi(tabId, patientOverride);
+    setActiveSyncCtx({ backend, syncApiKey, patientId: patientOverride.id_no });
+    const _t0 = Date.now();
+    const _phases = [];
+    let _phaseStart = _t0;
+    const _markPhase = (name) => {
+      const now = Date.now();
+      _phases.push({ name, ms: now - _phaseStart });
+      _phaseStart = now;
+    };
+    await setStatus({
+      running: true,
+      progress: "\u{1F680} \u958B\u59CB\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u2026",
+      phase: "init",
+      started: _t0,
+      totalResources: 0,
+      host: NHI_HOST,
+      errors: []
+    });
+    const fetchSpec = NHI_API_ENDPOINTS.map((ep) => {
+      const path = ep.supportsDateRange ? applyDateRangeToPath(ep.path, dateRange) : ep.path;
+      return { name: ep.name, url: BASE + path, method: "GET" };
+    });
+    const settledRaw = await fetchNhiListsInTab(tabId, fetchSpec);
+    const errors = [];
+    const settled = adaptSettledLists(settledRaw);
     _markPhase("nhi-parallel");
     const pharmacyRowIds = /* @__PURE__ */ new Set();
     for (const name of ["medications", "chronic_prescriptions"]) {
@@ -6235,19 +6069,19 @@
       const visits = settled[encIdx].value.rawList || [];
       if (visits.length > 0) {
         try {
-          const detailMap = await _withProgressTimer(
+          const detailMap = await withProgressTimer(
             (sec) => sec === 0 ? `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u5C31\u91AB\u7D00\u9304\u8A73\u60C5\u2026` : `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u5C31\u91AB\u7D00\u9304\u8A73\u60C5\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
-            () => _fetchEncounterDetailsInTab({ tabId, baseUrl: BASE, visits })
+            () => fetchEncounterDetails({ tabId, baseUrl: BASE, visits })
           );
           const reAdapted = [];
           for (let i = 0; i < visits.length; i++) {
             const detail = detailMap?.get(i) || null;
-            const cls = _classFromS02Detail(detail) || "AMB";
-            const secondaryDiagnoses = _secondaryIcdsFromS02Detail(detail);
-            const primaryDiagnosis = _primaryIcdFromS02Detail(detail);
+            const cls = classFromS02Detail(detail) || "AMB";
+            const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
+            const primaryDiagnosis = primaryIcdFromS02Detail(detail);
             const visit = visits[i];
-            const rowId = visit.roW_ID || visit.row_id || visit.row_ID;
-            const isPharmacy = rowId ? pharmacyRowIds.has(rowId) : false;
+            const rowId2 = visit.roW_ID || visit.row_id || visit.row_ID;
+            const isPharmacy = rowId2 ? pharmacyRowIds.has(rowId2) : false;
             const it = adaptEncounterFromMedExpense(visit, cls, {
               pharmacy: isPharmacy,
               primary_diagnosis: primaryDiagnosis,
@@ -6268,15 +6102,15 @@
       const visits = settled[inpIdx].value.rawList || [];
       if (visits.length > 0) {
         try {
-          const detailMap = await _withProgressTimer(
+          const detailMap = await withProgressTimer(
             (sec) => sec === 0 ? `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u4F4F\u9662\u7D00\u9304\u8A73\u60C5\u2026` : `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u4F4F\u9662\u7D00\u9304\u8A73\u60C5\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
-            () => _fetchInpatientDetailsInTab({ tabId, baseUrl: BASE, visits })
+            () => fetchInpatientDetails({ tabId, baseUrl: BASE, visits })
           );
           const reAdapted = [];
           for (let i = 0; i < visits.length; i++) {
             const detail = detailMap?.get(i) || null;
-            const primaryDiagnosis = _primaryIcdFromS02Detail(detail);
-            const secondaryDiagnoses = _secondaryIcdsFromS02Detail(detail);
+            const primaryDiagnosis = primaryIcdFromS02Detail(detail);
+            const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
             const it = adaptInpatientEncounter(visits[i], {
               primary_diagnosis: primaryDiagnosis,
               secondary_diagnoses: secondaryDiagnoses
@@ -6296,9 +6130,9 @@
       const visits = settled[imgIdx].value.rawList || [];
       if (visits.length > 0) {
         try {
-          const reports = await _withProgressTimer(
+          const reports = await withProgressTimer(
             (sec) => sec === 0 ? `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u5F71\u50CF\u6AA2\u67E5\u5831\u544A\u2026` : `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u5F71\u50CF\u6AA2\u67E5\u5831\u544A\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
-            () => _fetchImagingDetailsInTab({ tabId, baseUrl: BASE, visits })
+            () => fetchImagingDetails({ tabId, baseUrl: BASE, visits })
           );
           settled[imgIdx].value.items = reports;
           settled[imgIdx].value.raw_count = reports.length;
@@ -6314,9 +6148,9 @@
       const visits = settled[procIdx].value.rawList || [];
       if (visits.length > 0) {
         try {
-          const procs = await _withProgressTimer(
+          const procs = await withProgressTimer(
             (sec) => sec === 0 ? `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u8655\u7F6E/\u624B\u8853\u8A73\u60C5\u2026` : `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u8655\u7F6E/\u624B\u8853\u8A73\u60C5\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
-            () => _fetchProcedureDetailsInTab({ tabId, baseUrl: BASE, visits })
+            () => fetchProcedureDetails({ tabId, baseUrl: BASE, visits })
           );
           settled[procIdx].value.items = procs;
           settled[procIdx].value.raw_count = procs.length;
@@ -6335,9 +6169,9 @@
       const visits = settled[chronicIdx].value.rawList || [];
       if (visits.length > 0) {
         try {
-          const drugItems = await _withProgressTimer(
+          const drugItems = await withProgressTimer(
             (sec) => sec === 0 ? `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u6162\u6027\u8655\u65B9\u7B8B\u2026` : `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u6162\u6027\u8655\u65B9\u7B8B\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
-            () => _fetchChronicMedicationDetailsInTab({ tabId, baseUrl: BASE, visits })
+            () => fetchChronicMedicationDetails({ tabId, baseUrl: BASE, visits })
           );
           settled[chronicIdx].value.items = drugItems;
           settled[chronicIdx].value.visitCount = visits.length;
@@ -6361,9 +6195,9 @@
           return id && !chronicRowIds.has(id);
         }).length;
         try {
-          const drugItems = await _withProgressTimer(
+          const drugItems = await withProgressTimer(
             (sec) => sec === 0 ? `\u{1F4E5} \u53D6\u5F97 ${remaining} \u7B46\u7528\u85E5\u660E\u7D30\u2026` : `\u{1F4E5} \u53D6\u5F97 ${remaining} \u7B46\u7528\u85E5\u660E\u7D30\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
-            () => _fetchMedicationDetailsInTab({
+            () => fetchMedicationDetails({
               tabId,
               baseUrl: BASE,
               visits,
@@ -6380,8 +6214,6 @@
     }
     _markPhase("medication-detail");
     const byType = {};
-    let raw_total = 0;
-    let adapted_total = 0;
     const breakdown = [];
     for (let i = 0; i < settled.length; i++) {
       const ep = NHI_API_ENDPOINTS[i];
@@ -6393,8 +6225,6 @@
         continue;
       }
       const { items, raw_count } = s.value;
-      raw_total += raw_count;
-      adapted_total += items.length;
       if (raw_count === 0) continue;
       if (items.length > raw_count && raw_count > 0) {
         breakdown.push(`${label}\uFF1A${raw_count} \u7B46 \u2192 ${items.length} \u9805`);
@@ -6412,21 +6242,21 @@
       if (items.length === 0) continue;
       (byType[ep.page_type] = byType[ep.page_type] || []).push(...items);
     }
-    const maskEnabled = await _isMaskEnabled();
+    const maskEnabled = await isMaskEnabled();
     if (maskEnabled && patientOverride.name) {
       const replacement = maskName(patientOverride.name);
       for (const key of Object.keys(byType)) {
-        byType[key] = _replaceNameDeep(byType[key], patientOverride.name, replacement);
+        byType[key] = replaceNameDeep(byType[key], patientOverride.name, replacement);
       }
     }
     let total = 0;
     let _localFilename = null;
     if (mode === "local") {
-      if (_cancelled) throw new Error(CANCEL_ERROR);
+      if (isCancelled()) throw new Error(CANCEL_ERROR);
       await setStatus({ progress: "\u{1F9EC} \u8F49\u63DB\u70BA\u5065\u5EB7\u7D00\u9304\u6A94\u2026", totalResources: 0 });
       let bundle;
       try {
-        bundle = _assembleLocalBundle(byType, patientOverride, maskEnabled);
+        bundle = assembleLocalBundle(byType, patientOverride, maskEnabled);
       } catch (e) {
         errors.push(`local mapping: ${e.message}`);
         bundle = null;
@@ -6435,7 +6265,7 @@
         total = bundle.entry.length;
         await setStatus({ progress: `\u{1F4BE} \u6E96\u5099 ${total} \u7B46\u5065\u5EB7\u8CC7\u6599\u2026`, totalResources: total });
         try {
-          const dl = await _stashFhirBundle(bundle, patientOverride.id_no, dateRange);
+          const dl = await stashFhirBundle(bundle, patientOverride.id_no, dateRange);
           _localFilename = dl.filename;
         } catch (e) {
           errors.push(`stash bundle: ${e.message}`);
@@ -6444,13 +6274,13 @@
     } else {
       const uploadOverride = maskEnabled && patientOverride.name ? { ...patientOverride, name: maskName(patientOverride.name) } : patientOverride;
       for (const [page_type, items] of Object.entries(byType)) {
-        if (_cancelled) throw new Error(CANCEL_ERROR);
+        if (isCancelled()) throw new Error(CANCEL_ERROR);
         await setStatus({
           progress: `\u2B06\uFE0F \u4E0A\u50B3 ${ENDPOINT_LABEL_ZH[page_type] ?? page_type}\uFF08${items.length} \u7B46\uFF09\u2026`,
           totalResources: total
         });
         try {
-          const data = await _postStructured(backend, page_type, items, syncApiKey, uploadOverride);
+          const data = await postStructured(backend, page_type, items, syncApiKey, uploadOverride);
           total += data.count || 0;
         } catch (e) {
           errors.push(`upload ${page_type}: ${e.message}`);
@@ -6459,20 +6289,11 @@
       if (patientOverride.id_no && total > 0) {
         try {
           await setStatus({ progress: "\u{1F4E6} \u6574\u7406\u4F3A\u670D\u5668\u4E0A\u7684\u5B8C\u6574\u8CC7\u6599\u2026", totalResources: total });
-          const fhirPid = derivePatientId(patientOverride.id_no);
-          const expUrl = `${backend}/fhir/export?patient=${encodeURIComponent(fhirPid)}`;
-          const r = await fetch(expUrl, {
-            headers: syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {}
-          });
-          if (r.ok) {
-            const bundle = await r.json();
-            const dl = await _stashFhirBundle(bundle, patientOverride.id_no, dateRange);
-            _localFilename = dl.filename;
-            if (Array.isArray(bundle.entry) && bundle.entry.length > 0) {
-              total = bundle.entry.length;
-            }
-          } else {
-            errors.push(`export bundle: HTTP ${r.status}`);
+          const bundle = await exportPatientBundle(backend, syncApiKey, patientOverride.id_no);
+          const dl = await stashFhirBundle(bundle, patientOverride.id_no, dateRange);
+          _localFilename = dl.filename;
+          if (Array.isArray(bundle.entry) && bundle.entry.length > 0) {
+            total = bundle.entry.length;
           }
         } catch (e) {
           errors.push(`export bundle: ${e.message}`);
@@ -6502,9 +6323,6 @@
       completed: Date.now(),
       elapsedMs: _elapsedMs,
       // Per-endpoint breakdown for the popup's '查看明細' collapsible.
-      // Keep as a plain array so popup.js can render with DOM API (no
-      // innerHTML / no escaping concerns). Items look like
-      // 'encounters=12/12' or 'adult_preventive=2 rows → 36 obs'.
       breakdown: _fullBreakdown,
       errors,
       histno: patientOverride.id_no,
@@ -6512,40 +6330,27 @@
       localFilename: _localFilename
     });
     if (mode !== "local") try {
-      await fetch(`${backend}/sync/log`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {}
-        },
-        body: JSON.stringify({
-          status: errors.length ? "partial" : "success",
-          patient_id: patientOverride.id_no || "",
-          // /sync/log lands in the dashboard's sync-history row. Only
-          // mask when the user has opted in — otherwise dashboard sees
-          // the raw name they typed (consistent with "民眾自用" default).
-          patient_name: maskEnabled ? maskName(patientOverride.name || "") : patientOverride.name || "",
-          total,
-          breakdown,
-          date_range: dateRangeLabel || "",
-          elapsed_ms: _elapsedMs,
-          started_at: new Date(_t0).toISOString(),
-          errors
-        })
+      await postSyncLog(backend, syncApiKey, {
+        status: errors.length ? "partial" : "success",
+        patient_id: patientOverride.id_no || "",
+        // /sync/log lands in the dashboard's sync-history row. Only
+        // mask when the user has opted in — otherwise dashboard sees
+        // the raw name they typed (consistent with "民眾自用" default).
+        patient_name: maskEnabled ? maskName(patientOverride.name || "") : patientOverride.name || "",
+        total,
+        breakdown,
+        date_range: dateRangeLabel || "",
+        elapsed_ms: _elapsedMs,
+        started_at: new Date(_t0).toISOString(),
+        errors
       });
     } catch (e) {
       console.warn("[NHI sync] failed to write history log:", e);
     }
-    _activeSyncCtx = null;
+    setActiveSyncCtx(null);
   }
-  var SYNC_KEYS_TO_MIGRATE = [
-    "backendUrl",
-    "syncApiKey",
-    "smartAppLaunchUrl",
-    "patientOverride",
-    "syncMode",
-    "maskNameEnabled"
-  ];
+
+  // src/background/storage-migration.js
   async function migrateSyncToLocal() {
     try {
       const synced = await chrome.storage.sync.get(SYNC_KEYS_TO_MIGRATE);
@@ -6564,8 +6369,7 @@
     } catch {
     }
   }
-  chrome.runtime.onInstalled.addListener(async () => {
-    await migrateSyncToLocal();
+  async function sweepStaleLocalKeys() {
     try {
       const all = await chrome.storage.local.get(null);
       const stale = Object.keys(all).filter(
@@ -6574,6 +6378,23 @@
       if (stale.length) await chrome.storage.local.remove(stale);
     } catch {
     }
+  }
+  async function sweepPendingBundleIfStale() {
+    try {
+      const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+      if (!pending) return;
+      const age = Date.now() - (pending.generatedAt || 0);
+      if (age > PENDING_BUNDLE_TTL_MS) {
+        await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
+      }
+    } catch {
+    }
+  }
+
+  // src/background.js
+  chrome.runtime.onInstalled.addListener(async () => {
+    await migrateSyncToLocal();
+    await sweepStaleLocalKeys();
   });
   chrome.runtime.onStartup?.addListener?.(() => {
     migrateSyncToLocal();
@@ -6624,19 +6445,12 @@
       return true;
     }
     if (msg?.type === "stopSync") {
-      _cancelled = true;
-      const ctx = _activeSyncCtx;
+      requestCancel();
+      const ctx = getActiveSyncCtx();
       if (ctx?.patientId && ctx.backend) {
         (async () => {
           try {
-            const fhirPid = derivePatientId(ctx.patientId);
-            await fetch(
-              `${ctx.backend}/sync/patient/${encodeURIComponent(fhirPid)}`,
-              {
-                method: "DELETE",
-                headers: ctx.syncApiKey ? { "X-Sync-API-Key": ctx.syncApiKey } : {}
-              }
-            );
+            await deletePartialPatientData(ctx.backend, ctx.syncApiKey, ctx.patientId);
             const prev = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] || {};
             await chrome.storage.local.set({
               [STORAGE_KEY]: {
@@ -6653,7 +6467,7 @@
           }
         })();
       }
-      _activeSyncCtx = null;
+      setActiveSyncCtx(null);
       try {
         sendResponse({ ok: true });
       } catch {
@@ -6669,7 +6483,7 @@
       return true;
     }
     if (msg?.type === "checkNhiLogin") {
-      _checkNhiLoginState(msg.tabId).then(
+      checkNhiLoginState(msg.tabId).then(
         (state) => {
           try {
             sendResponse({ loggedIn: state });
@@ -6688,20 +6502,9 @@
   });
   chrome.alarms.create("sw-keepalive", { periodInMinutes: 0.34 });
   chrome.alarms.create(PENDING_BUNDLE_SWEEP_ALARM, { periodInMinutes: 10 });
-  async function _sweepPendingBundleIfStale() {
-    try {
-      const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-      if (!pending) return;
-      const age = Date.now() - (pending.generatedAt || 0);
-      if (age > PENDING_BUNDLE_TTL_MS) {
-        await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
-      }
-    } catch {
-    }
-  }
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === PENDING_BUNDLE_SWEEP_ALARM) {
-      _sweepPendingBundleIfStale();
+      sweepPendingBundleIfStale();
     }
   });
 })();
