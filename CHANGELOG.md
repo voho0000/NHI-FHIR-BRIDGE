@@ -3,6 +3,25 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.13.5 重點 — 2026-06-03
+
+**🩺 LOINC 修正 — 抗粒線體抗體 (AMA) 標錯成黴菌血清學；補上 IgM / 血氨 LOINC**
+
+App 端（MediPrisma）回報 Observation LOINC 標註錯誤／缺漏，本版修正：
+
+- **Bug A（高風險）— 12056B「粒線體抗體」(AMA, PBC 指標) 標錯**：原本對到 LOINC `16124-0`「Cryptococcus sp Ab」（隱球菌血清學，完全是另一個臨床意義）。改對到 **`20483-4`**（Mitochondria Ab [Titer] in Serum，method-independent）。同時移除已無人引用的 `16124-0` display 條目。
+- **Bug B（中風險）— 補上定量分析物 LOINC**：
+  - **IgM** `12028B`／`12029B` → **`2472-9`**（IgM [Mass/volume] in S/P），與 IgG `12025B`→`2465-3`、IgA→`2458-8` 對稱。
+  - **血氨 (Ammonia)** `09037C`：回報建議的 `1827-1` **在 LOINC 並不存在**（已查證），改採實際代碼 — 預設 **`22763-7`**（Ammonia [Mass/volume] in Plasma，對 µg/dL）；當單位為 molar（µmol/L）時，經新增的 `ammoniaLoincFix()` 切換為 **`16362-6`**（Ammonia [Moles/volume] in Plasma），手法與既有 `urineProteinLoincFix()` 一致，避免 LOINC↔單位不一致。
+
+所有 LOINC 均依規則 5 透過 loinc.org 查證 Component／Property／System／Method。依規則 8 為 AMA、IgM、血氨（質量／莫耳濃度切換）新增 silent-bug CI invariant 測試。
+
+**忠實搬運：僅修正 LOINC 對應，未更動任何病人數值／日期／單位。** 驗證：backend-ts `tsc`／`biome`／`vitest` 457 綠、extension `build.mjs` 綠＋140 tests 綠。
+
+本版同時收尾 clean-code 初始化：移除無用的 Python backend（PR3）、extension 全面遷移至 TypeScript + Biome（PR4，零行為變更）。
+
+---
+
 ## 0.13.4 重點 — 2026-06-03
 
 **🔴 工具列圖示紅點提示 — 同步完成有抓到資料時，圖示右上角浮出小紅點**
