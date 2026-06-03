@@ -469,6 +469,93 @@
     }
   });
 
+  // src/popup/constants.js
+  var DEFAULT_BACKEND = "http://localhost:8010";
+  var DEFAULT_SMART_APP_LAUNCH = "https://voho0000.github.io/medical-note-smart-on-fhir/smart/launch";
+  var STANDALONE_SMART_APP_URL = "https://voho0000.github.io/medical-note-smart-on-fhir/";
+  var DEFAULT_MODE = "local";
+  var NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
+  var NHI_LOGIN_URL = "https://myhealthbank.nhi.gov.tw/IHKE3000/IHKE3095S01";
+  var PENDING_BUNDLE_KEY = "pendingFhirBundle";
+  var RANGE_LABELS = {
+    "1": "\u6700\u8FD1 1 \u5E74",
+    "3": "\u6700\u8FD1 3 \u5E74",
+    "5": "\u6700\u8FD1 5 \u5E74",
+    "10": "\u6700\u8FD1 10 \u5E74",
+    all: "\u5168\u90E8\u6B77\u53F2\u7D00\u9304"
+  };
+  var VIEWPORT_MARGIN = 6;
+
+  // src/popup/els.js
+  var els = {
+    modeRadios: () => document.querySelectorAll('input[name="sync-mode"]'),
+    backendUrl: document.getElementById("backend-url"),
+    syncApiKey: document.getElementById("sync-api-key"),
+    smartAppUrl: document.getElementById("smart-app-url"),
+    syncApiBtn: document.getElementById("sync-api-btn"),
+    syncBlockedReason: document.getElementById("sync-blocked-reason"),
+    apiSyncRange: document.getElementById("api-sync-range"),
+    stopBtn: document.getElementById("stop-btn"),
+    ovName: document.getElementById("ov-name"),
+    ovBirthDate: document.getElementById("ov-birth-date"),
+    ovGender: document.getElementById("ov-gender"),
+    ovSaveBtn: document.getElementById("ov-save-btn"),
+    ovClearBtn: document.getElementById("ov-clear-btn"),
+    ovSummary: document.getElementById("override-summary"),
+    patientOverrideDetails: document.getElementById("patient-override"),
+    launchBtn: document.getElementById("launch-btn"),
+    openSmartAppBtn: document.getElementById("open-smart-app-btn"),
+    openSettingsBtn: document.getElementById("open-settings-btn"),
+    settingsBackBtn: document.getElementById("settings-back-btn"),
+    status: document.getElementById("status"),
+    dashboardLink: document.getElementById("dashboard-link"),
+    pendingBundle: document.getElementById("pending-bundle"),
+    downloadBundleBtn: document.getElementById("download-bundle-btn"),
+    clearBundleBtn: document.getElementById("clear-bundle-btn"),
+    // bundleMeta legacy id removed in the panel-merge; filename+size now
+    // live in dedicated #bundle-filename / #bundle-sizeage elements
+    // below.
+    connBanner: document.getElementById("conn-banner"),
+    connSection: document.getElementById("conn-section"),
+    connMini: document.getElementById("conn-mini"),
+    connMsg: document.getElementById("conn-msg"),
+    connRetryBtn: document.getElementById("conn-retry-btn"),
+    connHelp: document.getElementById("conn-help"),
+    dataStateSection: document.getElementById("data-state-section"),
+    backendState: document.getElementById("backend-state"),
+    localStateRow: document.getElementById("local-state-row"),
+    localState: document.getElementById("local-state"),
+    pushLocalBtn: document.getElementById("push-local-btn"),
+    syncStatusHint: document.getElementById("sync-status-hint"),
+    maskNameEnabled: document.getElementById("mask-name-enabled"),
+    backendModeEnabled: document.getElementById("backend-mode-enabled"),
+    openNhiSection: document.getElementById("open-nhi-section"),
+    openNhiBtn: document.getElementById("open-nhi-btn"),
+    nhiNeedsLoginSection: document.getElementById("nhi-needs-login-section"),
+    nhiReloadBtn: document.getElementById("nhi-reload-btn"),
+    loginOkSection: document.getElementById("login-ok-section"),
+    wizardStepper: document.getElementById("wizard-stepper"),
+    resultZone: document.getElementById("result-zone"),
+    activePatient: document.getElementById("active-patient"),
+    activePatientValue: document.getElementById("active-patient-value"),
+    bundleMetaBlock: document.getElementById("bundle-meta-block"),
+    bundleFilename: document.getElementById("bundle-filename"),
+    bundleSizeage: document.getElementById("bundle-sizeage")
+  };
+
+  // src/popup/state.js
+  var state = {
+    connState: "unknown",
+    connFailReason: null,
+    backendPatient: { state: "unknown", count: 0, lastUpdated: null },
+    localBundle: { exists: false, count: 0, generatedAt: 0, patientId: null },
+    activeStep: 1,
+    wizardInitialized: false,
+    step2Confirmed: false,
+    latestStatus: null,
+    nhiTabId: null
+  };
+
   // ../packages/mapper/src/helpers.ts
   var import_js_sha1 = __toESM(require_sha1(), 1);
   function derivePatientId(nationalId) {
@@ -1592,10 +1679,7 @@
     ])
   );
 
-  // src/popup.js
-  var DEFAULT_BACKEND = "http://localhost:8010";
-  var DEFAULT_SMART_APP_LAUNCH = "https://voho0000.github.io/medical-note-smart-on-fhir/smart/launch";
-  var STANDALONE_SMART_APP_URL = "https://voho0000.github.io/medical-note-smart-on-fhir/";
+  // src/popup/utils.js
   function isNhiTab(url) {
     if (!url) return false;
     try {
@@ -1605,119 +1689,39 @@
       return false;
     }
   }
-  var DEFAULT_MODE = "local";
-  var els = {
-    modeRadios: () => document.querySelectorAll('input[name="sync-mode"]'),
-    backendUrl: document.getElementById("backend-url"),
-    syncApiKey: document.getElementById("sync-api-key"),
-    smartAppUrl: document.getElementById("smart-app-url"),
-    syncApiBtn: document.getElementById("sync-api-btn"),
-    syncBlockedReason: document.getElementById("sync-blocked-reason"),
-    apiSyncRange: document.getElementById("api-sync-range"),
-    stopBtn: document.getElementById("stop-btn"),
-    ovName: document.getElementById("ov-name"),
-    ovBirthDate: document.getElementById("ov-birth-date"),
-    ovGender: document.getElementById("ov-gender"),
-    ovSaveBtn: document.getElementById("ov-save-btn"),
-    ovClearBtn: document.getElementById("ov-clear-btn"),
-    ovSummary: document.getElementById("override-summary"),
-    patientOverrideDetails: document.getElementById("patient-override"),
-    launchBtn: document.getElementById("launch-btn"),
-    openSmartAppBtn: document.getElementById("open-smart-app-btn"),
-    openSettingsBtn: document.getElementById("open-settings-btn"),
-    settingsBackBtn: document.getElementById("settings-back-btn"),
-    status: document.getElementById("status"),
-    dashboardLink: document.getElementById("dashboard-link"),
-    pendingBundle: document.getElementById("pending-bundle"),
-    downloadBundleBtn: document.getElementById("download-bundle-btn"),
-    clearBundleBtn: document.getElementById("clear-bundle-btn"),
-    // bundleMeta legacy id removed in the panel-merge; filename+size now
-    // live in dedicated #bundle-filename / #bundle-sizeage elements
-    // below.
-    connBanner: document.getElementById("conn-banner"),
-    connSection: document.getElementById("conn-section"),
-    connMini: document.getElementById("conn-mini"),
-    connMsg: document.getElementById("conn-msg"),
-    connRetryBtn: document.getElementById("conn-retry-btn"),
-    connHelp: document.getElementById("conn-help"),
-    dataStateSection: document.getElementById("data-state-section"),
-    backendState: document.getElementById("backend-state"),
-    localStateRow: document.getElementById("local-state-row"),
-    localState: document.getElementById("local-state"),
-    pushLocalBtn: document.getElementById("push-local-btn"),
-    syncStatusHint: document.getElementById("sync-status-hint"),
-    maskNameEnabled: document.getElementById("mask-name-enabled"),
-    backendModeEnabled: document.getElementById("backend-mode-enabled"),
-    openNhiSection: document.getElementById("open-nhi-section"),
-    openNhiBtn: document.getElementById("open-nhi-btn"),
-    nhiNeedsLoginSection: document.getElementById("nhi-needs-login-section"),
-    nhiReloadBtn: document.getElementById("nhi-reload-btn"),
-    loginOkSection: document.getElementById("login-ok-section"),
-    wizardStepper: document.getElementById("wizard-stepper"),
-    resultZone: document.getElementById("result-zone"),
-    activePatient: document.getElementById("active-patient"),
-    activePatientValue: document.getElementById("active-patient-value"),
-    bundleMetaBlock: document.getElementById("bundle-meta-block"),
-    bundleFilename: document.getElementById("bundle-filename"),
-    bundleSizeage: document.getElementById("bundle-sizeage")
-  };
-  var NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
-  var NHI_LOGIN_URL = "https://myhealthbank.nhi.gov.tw/IHKE3000/IHKE3095S01";
-  var PENDING_BUNDLE_KEY = "pendingFhirBundle";
-  async function loadBackendUrl() {
-    const { backendUrl, syncApiKey, smartAppLaunchUrl } = await chrome.storage.local.get(
-      ["backendUrl", "syncApiKey", "smartAppLaunchUrl"]
-    );
-    els.backendUrl.value = backendUrl || DEFAULT_BACKEND;
-    els.syncApiKey.value = syncApiKey || "";
-    els.smartAppUrl.value = smartAppLaunchUrl || DEFAULT_SMART_APP_LAUNCH;
-    els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
+  async function getActiveTab() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tab;
   }
-  var _storedIdNo = null;
-  var _nhiTabId = null;
-  async function loadPatientOverride() {
-    const { patientOverride } = await chrome.storage.local.get("patientOverride");
-    _storedIdNo = patientOverride?.id_no || null;
-    if (patientOverride) {
-      els.ovName.value = patientOverride.name || "";
-      els.ovBirthDate.value = patientOverride.birth_date || "";
-      els.ovGender.value = patientOverride.gender || "";
-    }
-    _markStep2Confirmed(
-      !!(patientOverride?.gender && patientOverride?.birth_date)
-    );
-    refreshOverrideSummary();
+  function currentMode() {
+    for (const r of els.modeRadios()) if (r.checked) return r.value;
+    return DEFAULT_MODE;
   }
-  function getPatientOverride() {
-    const name = els.ovName.value.trim();
-    const birth_date = els.ovBirthDate.value.trim();
-    const gender = els.ovGender.value;
-    if (!_storedIdNo && !name && !birth_date && !gender) return null;
-    const out = {};
-    if (_storedIdNo) out.id_no = _storedIdNo;
-    if (name) out.name = name;
-    if (birth_date) out.birth_date = birth_date;
-    if (gender) out.gender = gender;
-    return out;
+  function _fmtTimeShort(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
-  function validateBirthDate() {
-    const el = els.ovBirthDate;
-    if (!el) return null;
-    if (el.validity && el.validity.badInput) {
-      return "\u751F\u65E5\u8ACB\u586B\u5B8C\u6574\u5E74\u6708\u65E5";
-    }
-    const s = (el.value || "").trim();
-    if (!s) return "\u8ACB\u586B\u751F\u65E5";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "\u751F\u65E5\u8ACB\u586B\u5B8C\u6574\u5E74\u6708\u65E5";
-    const [y, m, d] = s.split("-").map(Number);
-    const dt = /* @__PURE__ */ new Date(s + "T00:00:00Z");
-    if (Number.isNaN(dt.getTime()) || dt.getUTCFullYear() !== y || dt.getUTCMonth() + 1 !== m || dt.getUTCDate() !== d) {
-      return "\u751F\u65E5\u4E0D\u662F\u6709\u6548\u65E5\u671F";
-    }
-    const now = /* @__PURE__ */ new Date();
-    if (dt.getTime() > now.getTime()) return "\u751F\u65E5\u4E0D\u80FD\u662F\u672A\u4F86";
-    if (y < 1900) return "\u751F\u65E5\u5E74\u4EFD\u592A\u65E9\uFF0C\u8ACB\u78BA\u8A8D";
-    return null;
+  function _fmtRelative(ms) {
+    const diff = Date.now() - ms;
+    if (diff < 6e4) return `${Math.max(1, Math.round(diff / 1e3))} \u79D2\u524D`;
+    if (diff < 36e5) return `${Math.round(diff / 6e4)} \u5206\u9418\u524D`;
+    if (diff < 864e5) return `${Math.round(diff / 36e5)} \u5C0F\u6642\u524D`;
+    return _fmtTimeShort(new Date(ms).toISOString());
+  }
+  function _fmtBytes(n) {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  }
+  function _fmtElapsed(ms) {
+    if (ms < 6e4) return `${Math.floor(ms / 1e3)}s`;
+    return `${Math.floor(ms / 6e4)}m${Math.round(ms % 6e4 / 1e3)}s`;
+  }
+  function _stepNumGlyph(n) {
+    return n === 1 ? "\u2460" : n === 2 ? "\u2461" : n === 3 ? "\u2462" : "\u2463";
   }
   function _generateAutoPatientId() {
     const bytes = new Uint8Array(4);
@@ -1729,160 +1733,30 @@
     if (!idNo || idNo.startsWith("auto-")) return "";
     return maskId(idNo);
   }
-  function refreshOverrideSummary() {
-    const ov = getPatientOverride();
-    const card = els.patientOverrideDetails;
-    let summaryText = "";
-    if (!ov || !ov.name) {
-      els.ovSummary.textContent = "\u672A\u8A2D\u5B9A";
-      if (card) card.dataset.state = "empty";
-    } else {
-      const parts = [_maybeMask(ov.name)];
-      const idLabel = _displayId(ov.id_no);
-      if (idLabel) parts.push(idLabel);
-      summaryText = parts.join("  \xB7  ");
-      els.ovSummary.textContent = `\u2713 ${summaryText}`;
-      if (card) card.dataset.state = "filled";
-    }
-    if (els.activePatient && els.activePatientValue) {
-      const showActive = _step2Confirmed && !!summaryText;
-      els.activePatient.hidden = !showActive;
-      if (showActive) els.activePatientValue.textContent = summaryText;
-    }
-    _refreshButtonStates();
-    _renderDataState();
-    refreshPendingBundle();
-    _clearStaleSyncStatus(getPatientOverride());
-    if (currentMode() === "backend" && _connState === "ok") checkBackendPatient();
-  }
-  function _clearStaleSyncStatus(ov) {
-    if (!_latestStatus) return;
-    if (_latestStatus.running) return;
-    if (!_latestStatus.histno) return;
-    if (ov?.id_no === _latestStatus.histno) return;
-    _latestStatus = null;
-    setStatus("", null);
-    chrome.storage.local.remove("syncStatus").catch(() => {
-    });
-  }
-  async function savePatientOverride() {
-    if (!els.ovGender.value) {
-      setStatus("\u26D4 \u8ACB\u9078\u64C7\u6027\u5225", "error");
-      els.ovGender.focus();
-      return;
-    }
-    const dobError = validateBirthDate();
-    if (dobError) {
-      setStatus(`\u26D4 ${dobError}`, "error");
-      els.ovBirthDate.focus();
-      return;
-    }
-    if (!els.ovName.value.trim()) {
-      setStatus("\u26D4 \u8ACB\u586B\u5BEB\u59D3\u540D", "error");
-      els.ovName.focus();
-      return;
-    }
-    const ov = {
-      name: els.ovName.value.trim() || null,
-      birth_date: els.ovBirthDate.value.trim(),
-      gender: els.ovGender.value
-    };
-    if (!ov.name) delete ov.name;
-    const prevStored = (await chrome.storage.local.get("patientOverride")).patientOverride;
-    const _norm = (v) => v == null ? "" : String(v);
-    const patientChanged = !!prevStored && (_norm(prevStored.name) !== _norm(ov.name) || _norm(prevStored.gender) !== _norm(ov.gender) || _norm(prevStored.birth_date) !== _norm(ov.birth_date));
-    if (patientChanged) {
-      ov.id_no = _generateAutoPatientId();
-    } else {
-      ov.id_no = prevStored?.id_no || _generateAutoPatientId();
-    }
-    _storedIdNo = ov.id_no;
-    await chrome.storage.local.set({ patientOverride: ov });
-    if (patientChanged) {
-      await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {
-      });
-      await chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {
-      });
-      _latestStatus = null;
-      setStatus("", null);
-      _backendPatient = { state: "checking", count: 0, lastUpdated: null };
-      _localBundle = { exists: false, count: 0, generatedAt: 0, patientId: null };
-    }
-    _markStep2Confirmed(true);
-    refreshOverrideSummary();
-    _refreshButtonStates();
-    if (_wizardInitialized) _maybeAutoAdvance();
-    const idLabel = _displayId(ov.id_no);
-    const tail = idLabel ? ` \xB7 ${idLabel}` : "";
-    setStatus(`\u2705 \u75C5\u4EBA\u8EAB\u4EFD\u5DF2\u8A18\u4F4F\uFF1A${_maybeMask(ov.name)}${tail}`, "success");
-  }
-  async function clearPatientOverride() {
-    await chrome.storage.local.remove("patientOverride");
-    _storedIdNo = null;
-    els.ovName.value = "";
-    els.ovBirthDate.value = "";
-    els.ovGender.value = "";
-    _markStep2Confirmed(false);
-    refreshOverrideSummary();
-    _refreshButtonStates();
-    setStatus("\u5DF2\u6E05\u9664\u75C5\u4EBA\u8CC7\u6599", "info");
-  }
-  var _connState = "unknown";
-  var _connFailReason = null;
-  var _CONN_LABELS = {
-    unknown: "\u5C1A\u672A\u6AA2\u67E5",
-    checking: "\u78BA\u8A8D\u4E2D\u2026",
-    ok: () => `\u5DF2\u9023\u7DDA \u2014 ${els.backendUrl.value.trim()}`,
-    fail: () => {
-      const r = _connFailReason || {};
-      return {
-        "no-url": "\u672A\u8A2D\u5B9A Backend URL",
-        "no-permission": "\u672A\u6388\u6B0A\u9023\u7DDA",
-        "network": "\u9023\u4E0D\u4E0A\u5F8C\u7AEF",
-        "timeout": "\u9023\u7DDA\u903E\u6642",
-        "http": `HTTP ${r.detail || ""}`.trim(),
-        "not-fhir": "\u56DE\u61C9\u4E0D\u662F FHIR"
-      }[r.kind] ?? "\u9023\u7DDA\u5931\u6557";
-    }
-  };
-  var _CONN_HELP = {
-    "no-url": "\u8ACB\u5230\u300C\u9032\u968E\u8A2D\u5B9A\u300D\u586B\u5165 Backend URL\uFF0C\u4F8B\u5982 <code>http://localhost:8010</code>\u3002",
-    "no-permission": "Chrome \u963B\u64CB\u4E86\u8DE8\u4F86\u6E90\u8ACB\u6C42\u3002\u8ACB\u91CD\u65B0\u958B popup\uFF0C\u7576\u6B0A\u9650\u5C0D\u8A71\u6846\u8DF3\u51FA\u6642\u6309\u300C\u5141\u8A31\u300D\u3002",
-    "network": "\u5F8C\u7AEF\u53EF\u80FD\u9084\u6C92\u555F\u52D5\u3002\u8ACB\u57F7\u884C\uFF1A<br><code>docker compose up -d</code><br>\u78BA\u8A8D backend \u5BB9\u5668\u8DD1\u8D77\u4F86\u518D\u91CD\u8A66\u3002",
-    "timeout": "5 \u79D2\u5167\u6C92\u6536\u5230\u56DE\u61C9 \u2014 backend \u53EF\u80FD\u9084\u5728\u555F\u52D5\u4E2D\uFF0C\u7B49 30 \u79D2\u518D\u6309\u91CD\u8A66\u3002",
-    "http": "Backend \u56DE\u61C9\u932F\u8AA4\u72C0\u614B\u78BC\u3002\u6AA2\u67E5 backend \u7684 log\uFF1A<br><code>docker compose logs backend</code>",
-    "not-fhir": "\u9019\u500B URL \u56DE\u4E86\u6771\u897F\uFF0C\u4F46\u4E0D\u662F FHIR CapabilityStatement\u3002\u78BA\u8A8D Backend URL \u6307\u5411 NHI-FHIR-Bridge \u7684 /fhir \u6839\u76EE\u9304\u3002"
-  };
-  function _renderConnBanner() {
-    const banner = els.connBanner;
-    if (!banner) return;
-    banner.dataset.state = _connState;
-    if (els.connSection) els.connSection.dataset.state = _connState;
-    const label = _CONN_LABELS[_connState];
-    els.connMsg.textContent = typeof label === "function" ? label() : label;
-    els.connRetryBtn.hidden = _connState !== "fail";
-    if (_connState === "fail" && _connFailReason?.kind) {
-      els.connHelp.hidden = false;
-      els.connHelp.innerHTML = _CONN_HELP[_connFailReason.kind] ?? "";
-    } else {
-      els.connHelp.hidden = true;
-      els.connHelp.innerHTML = "";
-    }
-    const isOk = _connState === "ok";
-    if (els.connSection) els.connSection.hidden = isOk;
-    if (els.connMini) {
-      els.connMini.hidden = !isOk;
-      if (isOk) els.connMini.title = `\u5DF2\u9023\u7DDA \u2014 ${els.backendUrl.value.trim()}`;
+  function _originPatternFor(url) {
+    try {
+      const u = new URL(url);
+      return `${u.protocol}//${u.host}/*`;
+    } catch {
+      return null;
     }
   }
-  var _activeStep = 1;
-  var _wizardInitialized = false;
-  var _step2Confirmed = false;
-  function _stepNumGlyph(n) {
-    return n === 1 ? "\u2460" : n === 2 ? "\u2461" : n === 3 ? "\u2462" : "\u2463";
+  function _isSafeSmartAppUrl(s) {
+    try {
+      const u = new URL(s);
+      if (u.protocol === "https:") return true;
+      if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) {
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   }
+
+  // src/popup/wizard.js
   function _markStep2Confirmed(yes) {
-    _step2Confirmed = !!yes;
+    state.step2Confirmed = !!yes;
   }
   function _isStepDone(step) {
     const onNhi = !els.syncApiBtn.dataset.offNhi;
@@ -1891,7 +1765,7 @@
       case 1:
         return onNhi && loggedIn;
       case 2:
-        return _step2Confirmed;
+        return state.step2Confirmed;
       case 3:
         return !!els.pendingBundle && !els.pendingBundle.hidden;
       case 4:
@@ -1902,7 +1776,7 @@
   }
   function _setActiveStep(n, opts = {}) {
     const clamped = Math.max(1, Math.min(4, n));
-    _activeStep = clamped;
+    state.activeStep = clamped;
     document.body.dataset.activeStep = String(clamped);
     _refreshWizardUi();
     if (!opts.silent) {
@@ -1914,7 +1788,7 @@
     const lis = els.wizardStepper.querySelectorAll("li[data-step]");
     for (const li of lis) {
       const n = Number(li.dataset.step);
-      const isActive = n === _activeStep;
+      const isActive = n === state.activeStep;
       const isDone = _isStepDone(n);
       if (isActive) li.setAttribute("aria-current", "true");
       else li.removeAttribute("aria-current");
@@ -1948,18 +1822,18 @@
     if (els.syncApiBtn) {
       const shouldDemote = hasResultArtifact && !els.syncApiBtn.disabled;
       els.syncApiBtn.classList.toggle("is-secondary", shouldDemote);
-      if (!_latestStatus?.running) {
+      if (!state.latestStatus?.running) {
         els.syncApiBtn.textContent = shouldDemote ? "\u91CD\u65B0\u53D6\u5F97" : "\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599";
       }
     }
   }
   function _maybeAutoAdvance() {
-    if (_activeStep === 1 && _isStepDone(1)) _setActiveStep(2);
-    else if (_activeStep === 2 && _isStepDone(2)) _setActiveStep(3);
+    if (state.activeStep === 1 && _isStepDone(1)) _setActiveStep(2);
+    else if (state.activeStep === 2 && _isStepDone(2)) _setActiveStep(3);
   }
   function _initWizard() {
-    if (_wizardInitialized) return;
-    _wizardInitialized = true;
+    if (state.wizardInitialized) return;
+    state.wizardInitialized = true;
     let start;
     if (!_isStepDone(1)) start = 1;
     else if (!_isStepDone(2)) start = 2;
@@ -1979,7 +1853,7 @@
   function _refreshButtonStates() {
     const onNhi = !els.syncApiBtn.dataset.offNhi;
     const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
-    const modeOk = currentMode() === "local" || _connState === "ok";
+    const modeOk = currentMode() === "local" || state.connState === "ok";
     const step2BasicOk = !!els.ovGender?.value && !!els.ovName?.value?.trim();
     const dobError = validateBirthDate();
     let inlineMsg = "";
@@ -2002,7 +1876,7 @@
       tooltipReason = "\u5F8C\u7AEF\u5C1A\u672A\u9023\u7DDA";
     }
     if (jumpTo) tooltipReason = `\u56DE ${_stepNumGlyph(jumpTo.step)} ${jumpTo.label}\uFF1A${inlineMsg}`;
-    const syncRunning = _latestStatus?.running === true;
+    const syncRunning = state.latestStatus?.running === true;
     els.syncApiBtn.disabled = syncRunning || tooltipReason !== "";
     els.syncApiBtn.title = syncRunning ? "" : tooltipReason;
     if (els.syncBlockedReason) {
@@ -2027,362 +1901,14 @@
     }
     if (els.stopBtn) els.stopBtn.hidden = !syncRunning;
     const ov = getPatientOverride();
-    const haveBackendPatient = _backendPatient.state === "present";
-    els.launchBtn.disabled = !(currentMode() === "backend" && _connState === "ok" && !!ov?.id_no && haveBackendPatient);
-    els.launchBtn.title = currentMode() !== "backend" ? "\u8ACB\u5207\u5230\u300C\u{1F3E5} \u672C\u6A5F\u4F3A\u670D\u5668 (\u9032\u968E)\u300D\u6A21\u5F0F" : _connState !== "ok" ? "\u5F8C\u7AEF\u5C1A\u672A\u9023\u7DDA" : !ov?.id_no ? "\u8ACB\u56DE\u5230\u300C\u2461 \u60A8\u7684\u8CC7\u6599\u300D\u586B\u5BEB\u8CC7\u6599" : !haveBackendPatient ? "\u672C\u6A5F\u4F3A\u670D\u5668\u9084\u6C92\u6709\u9019\u4F4D\u7684\u8CC7\u6599 \u2014 \u5148\u6309\u300C\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u300D\u6216\u4E0B\u65B9\u300C\u628A\u9019\u6B21\u8CC7\u6599\u50B3\u5230\u672C\u6A5F\u4F3A\u670D\u5668\u300D" : "";
-    if (_wizardInitialized) _refreshWizardUi();
+    const haveBackendPatient = state.backendPatient.state === "present";
+    els.launchBtn.disabled = !(currentMode() === "backend" && state.connState === "ok" && !!ov?.id_no && haveBackendPatient);
+    els.launchBtn.title = currentMode() !== "backend" ? "\u8ACB\u5207\u5230\u300C\u{1F3E5} \u672C\u6A5F\u4F3A\u670D\u5668 (\u9032\u968E)\u300D\u6A21\u5F0F" : state.connState !== "ok" ? "\u5F8C\u7AEF\u5C1A\u672A\u9023\u7DDA" : !ov?.id_no ? "\u8ACB\u56DE\u5230\u300C\u2461 \u60A8\u7684\u8CC7\u6599\u300D\u586B\u5BEB\u8CC7\u6599" : !haveBackendPatient ? "\u672C\u6A5F\u4F3A\u670D\u5668\u9084\u6C92\u6709\u9019\u4F4D\u7684\u8CC7\u6599 \u2014 \u5148\u6309\u300C\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u300D\u6216\u4E0B\u65B9\u300C\u628A\u9019\u6B21\u8CC7\u6599\u50B3\u5230\u672C\u6A5F\u4F3A\u670D\u5668\u300D" : "";
+    if (state.wizardInitialized) _refreshWizardUi();
   }
-  async function testBackendConnection() {
-    const url = els.backendUrl.value.trim();
-    if (!url) {
-      _connState = "fail";
-      _connFailReason = { kind: "no-url" };
-      _renderConnBanner();
-      _refreshButtonStates();
-      return false;
-    }
-    _connState = "checking";
-    _connFailReason = null;
-    _renderConnBanner();
-    _refreshButtonStates();
-    const perm = await ensureBackendPermission(url);
-    if (!perm.ok) {
-      _connState = "fail";
-      _connFailReason = { kind: "no-permission" };
-      _renderConnBanner();
-      _refreshButtonStates();
-      return false;
-    }
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5e3);
-    try {
-      const res = await fetch(`${url.replace(/\/$/, "")}/fhir/metadata`, { signal: ctrl.signal });
-      if (!res.ok) {
-        _connState = "fail";
-        _connFailReason = { kind: "http", detail: res.status };
-      } else {
-        const body = await res.json().catch(() => null);
-        if (body?.resourceType !== "CapabilityStatement") {
-          _connState = "fail";
-          _connFailReason = { kind: "not-fhir" };
-        } else {
-          _connState = "ok";
-          _connFailReason = null;
-        }
-      }
-    } catch (e) {
-      _connState = "fail";
-      _connFailReason = { kind: e.name === "AbortError" ? "timeout" : "network" };
-    } finally {
-      clearTimeout(timer);
-    }
-    _renderConnBanner();
-    _refreshButtonStates();
-    if (currentMode() === "backend") checkBackendPatient();
-    return _connState === "ok";
-  }
-  els.connRetryBtn?.addEventListener("click", testBackendConnection);
-  var _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
-  var _localBundle = { exists: false, count: 0, generatedAt: 0, patientId: null };
-  function _fmtTimeShort(iso) {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-  function _fmtRelative(ms) {
-    const diff = Date.now() - ms;
-    if (diff < 6e4) return `${Math.max(1, Math.round(diff / 1e3))} \u79D2\u524D`;
-    if (diff < 36e5) return `${Math.round(diff / 6e4)} \u5206\u9418\u524D`;
-    if (diff < 864e5) return `${Math.round(diff / 36e5)} \u5C0F\u6642\u524D`;
-    return _fmtTimeShort(new Date(ms).toISOString());
-  }
-  function _renderDataState() {
-    const ov = getPatientOverride();
-    if (currentMode() !== "backend" || !ov?.id_no) {
-      els.dataStateSection.hidden = true;
-      if (els.syncStatusHint) els.syncStatusHint.hidden = true;
-      return;
-    }
-    const localMatches = _localBundle.exists && _localBundle.patientId === ov.id_no;
-    const inSync = _backendPatient.state === "present" && localMatches && _backendPatient.count === _localBundle.count;
-    if (els.syncStatusHint) els.syncStatusHint.hidden = !inSync;
-    const nothingToShow = _backendPatient.state === "present" && (!localMatches || inSync);
-    if (nothingToShow) {
-      els.dataStateSection.hidden = true;
-      return;
-    }
-    els.dataStateSection.hidden = false;
-    const bs = els.backendState;
-    switch (_backendPatient.state) {
-      case "checking":
-        bs.className = "state-value";
-        bs.textContent = "\u6AA2\u67E5\u4E2D\u2026";
-        break;
-      case "absent":
-        bs.className = "state-value empty";
-        bs.textContent = "\u26A0 \u672C\u6A5F\u4F3A\u670D\u5668\u9084\u6C92\u6709\u9019\u4F4D\u7684\u8CC7\u6599";
-        break;
-      case "present": {
-        const count = _backendPatient.count;
-        const ts = _backendPatient.lastUpdated;
-        bs.className = "state-value ok";
-        bs.textContent = `\u2713 ${count > 0 ? `${count} \u7B46 \xB7 ` : ""}\u6700\u5F8C\u66F4\u65B0 ${_fmtTimeShort(ts) || "(unknown)"}`;
-        break;
-      }
-      case "fail":
-        bs.className = "state-value fail";
-        bs.textContent = "\u2717 \u78BA\u8A8D\u5931\u6557\uFF08\u8ACB\u770B\u4E0A\u65B9\u63D0\u793A\uFF09";
-        break;
-      default:
-        bs.className = "state-value";
-        bs.textContent = "\u2014";
-    }
-    if (localMatches) {
-      els.localStateRow.hidden = false;
-      els.localState.className = "state-value ok";
-      els.localState.textContent = `\u2713 ${_localBundle.count} \u7B46 \xB7 ${_fmtRelative(_localBundle.generatedAt)}\u7522\u751F`;
-    } else {
-      els.localStateRow.hidden = true;
-    }
-    els.pushLocalBtn.hidden = !localMatches;
-    els.pushLocalBtn.disabled = false;
-    els.pushLocalBtn.title = "";
-    els.pushLocalBtn.textContent = "\u628A\u9019\u6B21\u8CC7\u6599\u50B3\u5230\u672C\u6A5F\u4F3A\u670D\u5668";
-  }
-  async function _refreshLocalBundleState() {
-    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-    _localBundle = pending ? {
-      exists: true,
-      count: Array.isArray(JSON.parse(pending.json)?.entry) ? JSON.parse(pending.json).entry.length : 0,
-      generatedAt: pending.generatedAt || 0,
-      patientId: pending.patientId || null
-    } : { exists: false, count: 0, generatedAt: 0, patientId: null };
-    _renderDataState();
-  }
-  async function checkBackendPatient() {
-    const ov = getPatientOverride();
-    if (currentMode() !== "backend" || !ov?.id_no || _connState !== "ok") {
-      _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
-      _renderDataState();
-      _refreshButtonStates();
-      return;
-    }
-    _backendPatient = { state: "checking", count: 0, lastUpdated: null };
-    _renderDataState();
-    const url = els.backendUrl.value.trim().replace(/\/$/, "");
-    const key = els.syncApiKey.value.trim();
-    const headers = key ? { "X-Sync-API-Key": key } : {};
-    const fhirPid = derivePatientId(ov.id_no);
-    try {
-      const pr = await fetch(`${url}/fhir/Patient/${encodeURIComponent(fhirPid)}`, { headers });
-      if (pr.status === 404) {
-        _backendPatient = { state: "absent", count: 0, lastUpdated: null };
-        _renderDataState();
-        _refreshButtonStates();
-        return;
-      }
-      if (!pr.ok) {
-        _backendPatient = { state: "fail", count: 0, lastUpdated: null };
-        _renderDataState();
-        _refreshButtonStates();
-        return;
-      }
-      const patient = await pr.json();
-      const lastUpdated = patient?.meta?.lastUpdated ?? null;
-      let count = 0;
-      try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 5e3);
-        const er = await fetch(`${url}/fhir/export?patient=${encodeURIComponent(fhirPid)}`, {
-          headers,
-          signal: ctrl.signal
-        });
-        clearTimeout(timer);
-        if (er.ok) {
-          const bundle = await er.json();
-          if (Array.isArray(bundle.entry)) count = bundle.entry.length;
-        }
-      } catch {
-      }
-      _backendPatient = { state: "present", count, lastUpdated };
-    } catch (_e) {
-      _backendPatient = { state: "fail", count: 0, lastUpdated: null };
-    }
-    _renderDataState();
-    _refreshButtonStates();
-  }
-  async function pushLocalBundleToBackend() {
-    const ov = getPatientOverride();
-    if (!ov?.id_no || !_localBundle.exists || _localBundle.patientId !== ov.id_no) return;
-    const url = els.backendUrl.value.trim().replace(/\/$/, "");
-    const key = els.syncApiKey.value.trim();
-    const headers = {
-      "Content-Type": "application/json",
-      ...key ? { "X-Sync-API-Key": key } : {}
-    };
-    els.pushLocalBtn.disabled = true;
-    els.pushLocalBtn.textContent = "\u50B3\u9001\u4E2D\u2026";
-    try {
-      const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-      if (!pending?.json) throw new Error("no local bundle");
-      const r = await fetch(`${url}/fhir/import`, {
-        method: "POST",
-        headers,
-        body: pending.json
-      });
-      if (!r.ok) {
-        const text = await r.text();
-        throw new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`);
-      }
-      const result = await r.json();
-      setStatus(`\u2705 \u5DF2\u4E0A\u50B3 ${result.imported ?? "?"} \u7B46\u5230\u5F8C\u7AEF`, "success");
-      await checkBackendPatient();
-    } catch (e) {
-      setStatus(`\u26D4 \u4E0A\u50B3\u5931\u6557\uFF1A${e.message}`, "error");
-    } finally {
-      _renderDataState();
-    }
-  }
-  els.pushLocalBtn?.addEventListener("click", pushLocalBundleToBackend);
-  els.syncBlockedReason?.addEventListener("click", () => {
-    const target = Number(els.syncBlockedReason.dataset.targetStep);
-    if (target >= 1 && target <= 3) _setActiveStep(target);
-  });
-  els.openNhiBtn?.addEventListener("click", async () => {
-    await chrome.tabs.create({ url: NHI_LANDING });
-    window.close();
-  });
-  els.nhiReloadBtn?.addEventListener("click", async () => {
-    if (!_nhiTabId) {
-      await chrome.tabs.create({ url: NHI_LOGIN_URL });
-      window.close();
-      return;
-    }
-    try {
-      await chrome.tabs.update(_nhiTabId, { url: NHI_LOGIN_URL, active: true });
-    } catch {
-    }
-    window.close();
-  });
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "session" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
-  });
-  async function loadBackendModeEnabled() {
-    const { backendModeEnabled } = await chrome.storage.local.get("backendModeEnabled");
-    const enabled = backendModeEnabled === true;
-    els.backendModeEnabled.checked = enabled;
-    document.body.dataset.backendEnabled = enabled ? "true" : "false";
-  }
-  els.backendModeEnabled?.addEventListener("change", async () => {
-    const enabled = els.backendModeEnabled.checked;
-    document.body.dataset.backendEnabled = enabled ? "true" : "false";
-    await chrome.storage.local.set({ backendModeEnabled: enabled });
-    if (enabled) {
-      for (const r of els.modeRadios()) r.checked = r.value === "backend";
-      document.body.dataset.mode = "backend";
-      await chrome.storage.local.set({ syncMode: "backend" });
-      testBackendConnection();
-    } else {
-      for (const r of els.modeRadios()) r.checked = r.value === "local";
-      document.body.dataset.mode = "local";
-      await chrome.storage.local.set({ syncMode: "local" });
-      _connState = "unknown";
-      _connFailReason = null;
-      _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
-      _renderConnBanner();
-      _renderDataState();
-      _refreshButtonStates();
-    }
-  });
-  async function loadSyncMode() {
-    const { syncMode } = await chrome.storage.local.get("syncMode");
-    const backendEnabled = document.body.dataset.backendEnabled === "true";
-    const mode = backendEnabled && syncMode === "backend" ? "backend" : DEFAULT_MODE;
-    for (const r of els.modeRadios()) r.checked = r.value === mode;
-    document.body.dataset.mode = mode;
-    if (mode === "backend") {
-      await testBackendConnection();
-    } else {
-      _connState = "unknown";
-      _connFailReason = null;
-      _renderConnBanner();
-    }
-  }
-  function currentMode() {
-    for (const r of els.modeRadios()) if (r.checked) return r.value;
-    return DEFAULT_MODE;
-  }
-  for (const r of els.modeRadios()) {
-    r.addEventListener("change", () => {
-      const mode = currentMode();
-      document.body.dataset.mode = mode;
-      chrome.storage.local.set({ syncMode: mode });
-      if (mode === "backend") {
-        testBackendConnection();
-      } else {
-        _connState = "unknown";
-        _connFailReason = null;
-        _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
-        _renderConnBanner();
-        _renderDataState();
-        _refreshButtonStates();
-      }
-    });
-  }
-  els.backendUrl.addEventListener("change", () => {
-    chrome.storage.local.set({ backendUrl: els.backendUrl.value.trim() });
-    els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
-    if (currentMode() === "backend") testBackendConnection();
-  });
-  els.syncApiKey.addEventListener("change", () => {
-    chrome.storage.local.set({ syncApiKey: els.syncApiKey.value.trim() });
-  });
-  var _maskNameEnabled = false;
-  async function loadMaskNameEnabled() {
-    const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
-    _maskNameEnabled = maskNameEnabled === true;
-    if (els.maskNameEnabled) els.maskNameEnabled.checked = _maskNameEnabled;
-  }
-  function _maybeMask(name) {
-    return _maskNameEnabled ? maskName(name) : name || "";
-  }
-  els.maskNameEnabled?.addEventListener("change", async () => {
-    _maskNameEnabled = els.maskNameEnabled.checked;
-    await chrome.storage.local.set({ maskNameEnabled: _maskNameEnabled });
-    refreshOverrideSummary();
-  });
-  function _isSafeSmartAppUrl(s) {
-    try {
-      const u = new URL(s);
-      if (u.protocol === "https:") return true;
-      if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) {
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  }
-  els.smartAppUrl.addEventListener("change", () => {
-    const v = els.smartAppUrl.value.trim();
-    if (!v) {
-      chrome.storage.local.remove("smartAppLaunchUrl");
-      els.smartAppUrl.value = DEFAULT_SMART_APP_LAUNCH;
-      return;
-    }
-    if (!_isSafeSmartAppUrl(v)) {
-      setStatus(
-        "\u26D4 SMART App URL \u5FC5\u9808\u662F https:// \u6216\u672C\u6A5F (http://localhost)\uFF1B\u5DF2\u9084\u539F\u9810\u8A2D\u3002",
-        "error"
-      );
-      chrome.storage.local.remove("smartAppLaunchUrl");
-      els.smartAppUrl.value = DEFAULT_SMART_APP_LAUNCH;
-      return;
-    }
-    chrome.storage.local.set({ smartAppLaunchUrl: v });
-  });
+
+  // src/popup/status.js
+  var _elapsedTickerId = null;
   function setStatus(text, kind, breakdown, errors, action) {
     els.status.className = kind || "";
     els.status.textContent = "";
@@ -2394,7 +1920,7 @@
     textSpan.className = "status-text";
     textSpan.textContent = text || "";
     header.appendChild(textSpan);
-    const running = _latestStatus?.running === true;
+    const running = state.latestStatus?.running === true;
     if (!running) {
       const dismissBtn = document.createElement("button");
       dismissBtn.type = "button";
@@ -2405,7 +1931,7 @@
       dismissBtn.addEventListener("click", () => {
         chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {
         });
-        _latestStatus = null;
+        state.latestStatus = null;
         setStatus("", null);
       });
       header.appendChild(dismissBtn);
@@ -2500,28 +2026,237 @@
       }
       els.status.appendChild(details);
     }
-    if (_wizardInitialized) _refreshResultZone();
+    if (state.wizardInitialized) _refreshResultZone();
   }
-  async function getActiveTab() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    return tab;
+  async function refreshSyncStatusFromBackground() {
+    const status = await chrome.runtime.sendMessage({ type: "getSyncStatus" }).catch(() => null);
+    if (!status) return;
+    applySyncStatus(status);
   }
-  function _fmtBytes(n) {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  function _renderStatus() {
+    const status = state.latestStatus;
+    if (!status) return;
+    let text = status.progress || "(sync \u9032\u884C\u4E2D)";
+    text = text.replace(/\s*[—-]\s*接著至\s*④.*$/u, "").trim();
+    if (status.running && status.started) {
+      const elapsed = Date.now() - status.started;
+      text = `\u23F1 ${_fmtElapsed(elapsed)} \xB7 ${text}`;
+    }
+    const kind = status.running ? "info" : status.phase === "error" ? "error" : "success";
+    const breakdown = status.running ? null : status.breakdown;
+    const errors = status.running ? null : status.errors;
+    let action = null;
+    if (status.phase === "downloaded") {
+      action = {
+        label: "\u2192 \u81F3 \u2463 \u67E5\u770B \u958B\u555F\u300C\u91AB\u6790 MediPrisma\u300D",
+        onClick: () => _setActiveStep(4)
+      };
+    }
+    setStatus(text, kind, breakdown, errors, action);
   }
+  function applySyncStatus(status) {
+    if (!status) return;
+    state.latestStatus = status;
+    _renderStatus();
+    if (state.wizardInitialized && state.activeStep !== 3) {
+      _setActiveStep(3, { silent: true });
+    }
+    if (status.running) {
+      els.syncApiBtn.disabled = true;
+      els.syncApiBtn.textContent = "\u53D6\u5F97\u4E2D\u2026";
+      els.stopBtn.hidden = false;
+      if (!_elapsedTickerId) {
+        _elapsedTickerId = setInterval(_renderStatus, 1e3);
+      }
+    } else {
+      els.stopBtn.hidden = true;
+      if (_elapsedTickerId) {
+        clearInterval(_elapsedTickerId);
+        _elapsedTickerId = null;
+      }
+      _refreshButtonStates();
+      _refreshLocalBundleState();
+      if (currentMode() === "backend" && state.connState === "ok") checkBackendPatient();
+    }
+  }
+  async function stopSync() {
+    await chrome.storage.local.set({
+      syncStatus: {
+        running: false,
+        progress: "\u26D4 \u505C\u6B62\u4E2D\uFF0C\u6B63\u5728\u6E05\u9664\u90E8\u5206\u8CC7\u6599\u2026",
+        phase: "cancelled",
+        ts: Date.now(),
+        completed: Date.now()
+      }
+    });
+    setStatus("\u26D4 \u505C\u6B62\u4E2D\uFF0C\u6B63\u5728\u6E05\u9664\u90E8\u5206\u8CC7\u6599\u2026", "info");
+    chrome.runtime.sendMessage({ type: "stopSync" }).catch(() => {
+    });
+    els.stopBtn.hidden = true;
+    _refreshButtonStates();
+  }
+
+  // src/popup/data-state.js
+  function _renderDataState() {
+    const ov = getPatientOverride();
+    if (currentMode() !== "backend" || !ov?.id_no) {
+      els.dataStateSection.hidden = true;
+      if (els.syncStatusHint) els.syncStatusHint.hidden = true;
+      return;
+    }
+    const localMatches = state.localBundle.exists && state.localBundle.patientId === ov.id_no;
+    const inSync = state.backendPatient.state === "present" && localMatches && state.backendPatient.count === state.localBundle.count;
+    if (els.syncStatusHint) els.syncStatusHint.hidden = !inSync;
+    const nothingToShow = state.backendPatient.state === "present" && (!localMatches || inSync);
+    if (nothingToShow) {
+      els.dataStateSection.hidden = true;
+      return;
+    }
+    els.dataStateSection.hidden = false;
+    const bs = els.backendState;
+    switch (state.backendPatient.state) {
+      case "checking":
+        bs.className = "state-value";
+        bs.textContent = "\u6AA2\u67E5\u4E2D\u2026";
+        break;
+      case "absent":
+        bs.className = "state-value empty";
+        bs.textContent = "\u26A0 \u672C\u6A5F\u4F3A\u670D\u5668\u9084\u6C92\u6709\u9019\u4F4D\u7684\u8CC7\u6599";
+        break;
+      case "present": {
+        const count = state.backendPatient.count;
+        const ts = state.backendPatient.lastUpdated;
+        bs.className = "state-value ok";
+        bs.textContent = `\u2713 ${count > 0 ? `${count} \u7B46 \xB7 ` : ""}\u6700\u5F8C\u66F4\u65B0 ${_fmtTimeShort(ts) || "(unknown)"}`;
+        break;
+      }
+      case "fail":
+        bs.className = "state-value fail";
+        bs.textContent = "\u2717 \u78BA\u8A8D\u5931\u6557\uFF08\u8ACB\u770B\u4E0A\u65B9\u63D0\u793A\uFF09";
+        break;
+      default:
+        bs.className = "state-value";
+        bs.textContent = "\u2014";
+    }
+    if (localMatches) {
+      els.localStateRow.hidden = false;
+      els.localState.className = "state-value ok";
+      els.localState.textContent = `\u2713 ${state.localBundle.count} \u7B46 \xB7 ${_fmtRelative(state.localBundle.generatedAt)}\u7522\u751F`;
+    } else {
+      els.localStateRow.hidden = true;
+    }
+    els.pushLocalBtn.hidden = !localMatches;
+    els.pushLocalBtn.disabled = false;
+    els.pushLocalBtn.title = "";
+    els.pushLocalBtn.textContent = "\u628A\u9019\u6B21\u8CC7\u6599\u50B3\u5230\u672C\u6A5F\u4F3A\u670D\u5668";
+  }
+  async function _refreshLocalBundleState() {
+    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+    state.localBundle = pending ? {
+      exists: true,
+      count: Array.isArray(JSON.parse(pending.json)?.entry) ? JSON.parse(pending.json).entry.length : 0,
+      generatedAt: pending.generatedAt || 0,
+      patientId: pending.patientId || null
+    } : { exists: false, count: 0, generatedAt: 0, patientId: null };
+    _renderDataState();
+  }
+  async function checkBackendPatient() {
+    const ov = getPatientOverride();
+    if (currentMode() !== "backend" || !ov?.id_no || state.connState !== "ok") {
+      state.backendPatient = { state: "unknown", count: 0, lastUpdated: null };
+      _renderDataState();
+      _refreshButtonStates();
+      return;
+    }
+    state.backendPatient = { state: "checking", count: 0, lastUpdated: null };
+    _renderDataState();
+    const url = els.backendUrl.value.trim().replace(/\/$/, "");
+    const key = els.syncApiKey.value.trim();
+    const headers = key ? { "X-Sync-API-Key": key } : {};
+    const fhirPid = derivePatientId(ov.id_no);
+    try {
+      const pr = await fetch(`${url}/fhir/Patient/${encodeURIComponent(fhirPid)}`, { headers });
+      if (pr.status === 404) {
+        state.backendPatient = { state: "absent", count: 0, lastUpdated: null };
+        _renderDataState();
+        _refreshButtonStates();
+        return;
+      }
+      if (!pr.ok) {
+        state.backendPatient = { state: "fail", count: 0, lastUpdated: null };
+        _renderDataState();
+        _refreshButtonStates();
+        return;
+      }
+      const patient = await pr.json();
+      const lastUpdated = patient?.meta?.lastUpdated ?? null;
+      let count = 0;
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 5e3);
+        const er = await fetch(`${url}/fhir/export?patient=${encodeURIComponent(fhirPid)}`, {
+          headers,
+          signal: ctrl.signal
+        });
+        clearTimeout(timer);
+        if (er.ok) {
+          const bundle = await er.json();
+          if (Array.isArray(bundle.entry)) count = bundle.entry.length;
+        }
+      } catch {
+      }
+      state.backendPatient = { state: "present", count, lastUpdated };
+    } catch (_e) {
+      state.backendPatient = { state: "fail", count: 0, lastUpdated: null };
+    }
+    _renderDataState();
+    _refreshButtonStates();
+  }
+  async function pushLocalBundleToBackend() {
+    const ov = getPatientOverride();
+    if (!ov?.id_no || !state.localBundle.exists || state.localBundle.patientId !== ov.id_no) return;
+    const url = els.backendUrl.value.trim().replace(/\/$/, "");
+    const key = els.syncApiKey.value.trim();
+    const headers = {
+      "Content-Type": "application/json",
+      ...key ? { "X-Sync-API-Key": key } : {}
+    };
+    els.pushLocalBtn.disabled = true;
+    els.pushLocalBtn.textContent = "\u50B3\u9001\u4E2D\u2026";
+    try {
+      const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+      if (!pending?.json) throw new Error("no local bundle");
+      const r = await fetch(`${url}/fhir/import`, {
+        method: "POST",
+        headers,
+        body: pending.json
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`);
+      }
+      const result = await r.json();
+      setStatus(`\u2705 \u5DF2\u4E0A\u50B3 ${result.imported ?? "?"} \u7B46\u5230\u5F8C\u7AEF`, "success");
+      await checkBackendPatient();
+    } catch (e) {
+      setStatus(`\u26D4 \u4E0A\u50B3\u5931\u6557\uFF1A${e.message}`, "error");
+    } finally {
+      _renderDataState();
+    }
+  }
+
+  // src/popup/bundle.js
   async function refreshPendingBundle() {
     const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
     if (!pending || !pending.json) {
       els.pendingBundle.hidden = true;
-      if (_wizardInitialized) _refreshResultZone();
+      if (state.wizardInitialized) _refreshResultZone();
       return;
     }
     const ov = getPatientOverride();
     if (ov?.id_no && pending.patientId && pending.patientId !== ov.id_no) {
       els.pendingBundle.hidden = true;
-      if (_wizardInitialized) _refreshResultZone();
+      if (state.wizardInitialized) _refreshResultZone();
       return;
     }
     els.pendingBundle.hidden = false;
@@ -2533,7 +2268,7 @@
     if (els.bundleSizeage) {
       els.bundleSizeage.textContent = `${_fmtBytes(pending.bytes || 0)}${ago ? ` \xB7 ${ago}` : ""}`;
     }
-    if (_wizardInitialized) _refreshResultZone();
+    if (state.wizardInitialized) _refreshResultZone();
   }
   async function _transitionStatusToDownloaded(bytes) {
     try {
@@ -2589,183 +2324,352 @@
   async function clearPendingBundle() {
     await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
     await refreshPendingBundle();
-    _latestStatus = null;
+    state.latestStatus = null;
     setStatus("", null);
     await chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {
     });
   }
-  els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);
-  els.clearBundleBtn.addEventListener("click", clearPendingBundle);
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "session" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
-  });
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.patientOverride) loadPatientOverride();
-  });
-  var _helpTip = document.createElement("div");
-  _helpTip.className = "help-tooltip";
-  document.body.appendChild(_helpTip);
-  var VIEWPORT_MARGIN = 6;
-  function _showHelpTooltip(icon) {
-    _helpTip.textContent = icon.dataset.tip || icon.getAttribute("data-tip") || "";
-    _helpTip.classList.add("visible");
-    const iconRect = icon.getBoundingClientRect();
-    const tipRect = _helpTip.getBoundingClientRect();
-    const viewportW = document.documentElement.clientWidth;
-    const viewportH = document.documentElement.clientHeight;
-    let left = iconRect.left + iconRect.width / 2 - tipRect.width / 2;
-    if (left < VIEWPORT_MARGIN) left = VIEWPORT_MARGIN;
-    if (left + tipRect.width > viewportW - VIEWPORT_MARGIN) {
-      left = viewportW - VIEWPORT_MARGIN - tipRect.width;
+
+  // src/popup/patient-form.js
+  var _storedIdNo = null;
+  var _maskNameEnabled = false;
+  async function loadPatientOverride() {
+    const { patientOverride } = await chrome.storage.local.get("patientOverride");
+    _storedIdNo = patientOverride?.id_no || null;
+    if (patientOverride) {
+      els.ovName.value = patientOverride.name || "";
+      els.ovBirthDate.value = patientOverride.birth_date || "";
+      els.ovGender.value = patientOverride.gender || "";
     }
-    let top = iconRect.top - tipRect.height - 6;
-    if (top < VIEWPORT_MARGIN) top = iconRect.bottom + 6;
-    if (top + tipRect.height > viewportH - VIEWPORT_MARGIN) {
-      top = Math.max(VIEWPORT_MARGIN, viewportH - VIEWPORT_MARGIN - tipRect.height);
+    _markStep2Confirmed(
+      !!(patientOverride?.gender && patientOverride?.birth_date)
+    );
+    refreshOverrideSummary();
+  }
+  function getPatientOverride() {
+    const name = els.ovName.value.trim();
+    const birth_date = els.ovBirthDate.value.trim();
+    const gender = els.ovGender.value;
+    if (!_storedIdNo && !name && !birth_date && !gender) return null;
+    const out = {};
+    if (_storedIdNo) out.id_no = _storedIdNo;
+    if (name) out.name = name;
+    if (birth_date) out.birth_date = birth_date;
+    if (gender) out.gender = gender;
+    return out;
+  }
+  function validateBirthDate() {
+    const el = els.ovBirthDate;
+    if (!el) return null;
+    if (el.validity && el.validity.badInput) {
+      return "\u751F\u65E5\u8ACB\u586B\u5B8C\u6574\u5E74\u6708\u65E5";
     }
-    _helpTip.style.left = `${left}px`;
-    _helpTip.style.top = `${top}px`;
+    const s = (el.value || "").trim();
+    if (!s) return "\u8ACB\u586B\u751F\u65E5";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "\u751F\u65E5\u8ACB\u586B\u5B8C\u6574\u5E74\u6708\u65E5";
+    const [y, m, d] = s.split("-").map(Number);
+    const dt = /* @__PURE__ */ new Date(s + "T00:00:00Z");
+    if (Number.isNaN(dt.getTime()) || dt.getUTCFullYear() !== y || dt.getUTCMonth() + 1 !== m || dt.getUTCDate() !== d) {
+      return "\u751F\u65E5\u4E0D\u662F\u6709\u6548\u65E5\u671F";
+    }
+    const now = /* @__PURE__ */ new Date();
+    if (dt.getTime() > now.getTime()) return "\u751F\u65E5\u4E0D\u80FD\u662F\u672A\u4F86";
+    if (y < 1900) return "\u751F\u65E5\u5E74\u4EFD\u592A\u65E9\uFF0C\u8ACB\u78BA\u8A8D";
+    return null;
   }
-  function _hideHelpTooltip() {
-    _helpTip.classList.remove("visible");
+  function refreshOverrideSummary() {
+    const ov = getPatientOverride();
+    const card = els.patientOverrideDetails;
+    let summaryText = "";
+    if (!ov || !ov.name) {
+      els.ovSummary.textContent = "\u672A\u8A2D\u5B9A";
+      if (card) card.dataset.state = "empty";
+    } else {
+      const parts = [_maybeMask(ov.name)];
+      const idLabel = _displayId(ov.id_no);
+      if (idLabel) parts.push(idLabel);
+      summaryText = parts.join("  \xB7  ");
+      els.ovSummary.textContent = `\u2713 ${summaryText}`;
+      if (card) card.dataset.state = "filled";
+    }
+    if (els.activePatient && els.activePatientValue) {
+      const showActive = state.step2Confirmed && !!summaryText;
+      els.activePatient.hidden = !showActive;
+      if (showActive) els.activePatientValue.textContent = summaryText;
+    }
+    _refreshButtonStates();
+    _renderDataState();
+    refreshPendingBundle();
+    _clearStaleSyncStatus(getPatientOverride());
+    if (currentMode() === "backend" && state.connState === "ok") checkBackendPatient();
   }
-  document.addEventListener("mouseover", (e) => {
-    const icon = e.target.closest?.(".help-icon");
-    if (icon) _showHelpTooltip(icon);
-  });
-  document.addEventListener("mouseout", (e) => {
-    const icon = e.target.closest?.(".help-icon");
-    if (icon) _hideHelpTooltip();
-  });
-  async function init() {
-    document.getElementById("version").textContent = "v" + chrome.runtime.getManifest().version;
-    document.getElementById("login-ok-next")?.addEventListener("click", () => _setActiveStep(2));
-    await loadMaskNameEnabled();
-    await _refreshLocalBundleState();
-    await loadBackendModeEnabled();
-    await loadBackendUrl();
-    await loadSyncMode();
-    await loadPatientOverride();
-    await refreshPendingBundle();
-    const tab = await getActiveTab();
-    if (!tab?.url) {
-      setStatus("no active tab", "error");
-      els.syncApiBtn.dataset.offNhi = "1";
-      _refreshButtonStates();
+  function _clearStaleSyncStatus(ov) {
+    if (!state.latestStatus) return;
+    if (state.latestStatus.running) return;
+    if (!state.latestStatus.histno) return;
+    if (ov?.id_no === state.latestStatus.histno) return;
+    state.latestStatus = null;
+    setStatus("", null);
+    chrome.storage.local.remove("syncStatus").catch(() => {
+    });
+  }
+  async function savePatientOverride() {
+    if (!els.ovGender.value) {
+      setStatus("\u26D4 \u8ACB\u9078\u64C7\u6027\u5225", "error");
+      els.ovGender.focus();
       return;
     }
-    const onNhi = isNhiTab(tab.url);
-    if (onNhi) delete els.syncApiBtn.dataset.offNhi;
-    else els.syncApiBtn.dataset.offNhi = "1";
-    if (els.openNhiSection) els.openNhiSection.hidden = onNhi;
-    _nhiTabId = onNhi ? tab.id : null;
-    if (onNhi && tab.id) {
-      chrome.runtime.sendMessage({ type: "checkNhiLogin", tabId: tab.id }).then((resp) => {
-        const loggedIn = resp?.loggedIn === true;
-        if (loggedIn) delete els.syncApiBtn.dataset.nhiLoggedIn;
-        else els.syncApiBtn.dataset.nhiLoggedIn = "no";
-        if (els.nhiNeedsLoginSection) {
-          els.nhiNeedsLoginSection.hidden = loggedIn;
-        }
-        _refreshButtonStates();
-        if (loggedIn && _wizardInitialized) _maybeAutoAdvance();
-      }).catch(() => {
-        delete els.syncApiBtn.dataset.nhiLoggedIn;
-        if (els.nhiNeedsLoginSection) els.nhiNeedsLoginSection.hidden = true;
-        _refreshButtonStates();
+    const dobError = validateBirthDate();
+    if (dobError) {
+      setStatus(`\u26D4 ${dobError}`, "error");
+      els.ovBirthDate.focus();
+      return;
+    }
+    if (!els.ovName.value.trim()) {
+      setStatus("\u26D4 \u8ACB\u586B\u5BEB\u59D3\u540D", "error");
+      els.ovName.focus();
+      return;
+    }
+    const ov = {
+      name: els.ovName.value.trim() || null,
+      birth_date: els.ovBirthDate.value.trim(),
+      gender: els.ovGender.value
+    };
+    if (!ov.name) delete ov.name;
+    const prevStored = (await chrome.storage.local.get("patientOverride")).patientOverride;
+    const _norm = (v) => v == null ? "" : String(v);
+    const patientChanged = !!prevStored && (_norm(prevStored.name) !== _norm(ov.name) || _norm(prevStored.gender) !== _norm(ov.gender) || _norm(prevStored.birth_date) !== _norm(ov.birth_date));
+    if (patientChanged) {
+      ov.id_no = _generateAutoPatientId();
+    } else {
+      ov.id_no = prevStored?.id_no || _generateAutoPatientId();
+    }
+    _storedIdNo = ov.id_no;
+    await chrome.storage.local.set({ patientOverride: ov });
+    if (patientChanged) {
+      await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {
       });
-    } else {
-      delete els.syncApiBtn.dataset.nhiLoggedIn;
-      if (els.nhiNeedsLoginSection) els.nhiNeedsLoginSection.hidden = true;
+      await chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {
+      });
+      state.latestStatus = null;
+      setStatus("", null);
+      state.backendPatient = { state: "checking", count: 0, lastUpdated: null };
+      state.localBundle = { exists: false, count: 0, generatedAt: 0, patientId: null };
     }
+    _markStep2Confirmed(true);
+    refreshOverrideSummary();
     _refreshButtonStates();
-    _initWizard();
-    await refreshSyncStatusFromBackground();
+    if (state.wizardInitialized) _maybeAutoAdvance();
+    const idLabel = _displayId(ov.id_no);
+    const tail = idLabel ? ` \xB7 ${idLabel}` : "";
+    setStatus(`\u2705 \u75C5\u4EBA\u8EAB\u4EFD\u5DF2\u8A18\u4F4F\uFF1A${_maybeMask(ov.name)}${tail}`, "success");
   }
-  async function refreshSyncStatusFromBackground() {
-    const status = await chrome.runtime.sendMessage({ type: "getSyncStatus" }).catch(() => null);
-    if (!status) return;
-    applySyncStatus(status);
+  async function clearPatientOverride() {
+    await chrome.storage.local.remove("patientOverride");
+    _storedIdNo = null;
+    els.ovName.value = "";
+    els.ovBirthDate.value = "";
+    els.ovGender.value = "";
+    _markStep2Confirmed(false);
+    refreshOverrideSummary();
+    _refreshButtonStates();
+    setStatus("\u5DF2\u6E05\u9664\u75C5\u4EBA\u8CC7\u6599", "info");
   }
-  var _latestStatus = null;
-  var _elapsedTickerId = null;
-  function _fmtElapsed(ms) {
-    if (ms < 6e4) return `${Math.floor(ms / 1e3)}s`;
-    return `${Math.floor(ms / 6e4)}m${Math.round(ms % 6e4 / 1e3)}s`;
+  async function loadMaskNameEnabled() {
+    const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
+    _maskNameEnabled = maskNameEnabled === true;
+    if (els.maskNameEnabled) els.maskNameEnabled.checked = _maskNameEnabled;
   }
-  function _renderStatus() {
-    const status = _latestStatus;
-    if (!status) return;
-    let text = status.progress || "(sync \u9032\u884C\u4E2D)";
-    text = text.replace(/\s*[—-]\s*接著至\s*④.*$/u, "").trim();
-    if (status.running && status.started) {
-      const elapsed = Date.now() - status.started;
-      text = `\u23F1 ${_fmtElapsed(elapsed)} \xB7 ${text}`;
+  function _maybeMask(name) {
+    return _maskNameEnabled ? maskName(name) : name || "";
+  }
+  async function onMaskNameToggle() {
+    _maskNameEnabled = els.maskNameEnabled.checked;
+    await chrome.storage.local.set({ maskNameEnabled: _maskNameEnabled });
+    refreshOverrideSummary();
+  }
+
+  // src/popup/connection.js
+  async function loadBackendUrl() {
+    const { backendUrl, syncApiKey, smartAppLaunchUrl } = await chrome.storage.local.get(
+      ["backendUrl", "syncApiKey", "smartAppLaunchUrl"]
+    );
+    els.backendUrl.value = backendUrl || DEFAULT_BACKEND;
+    els.syncApiKey.value = syncApiKey || "";
+    els.smartAppUrl.value = smartAppLaunchUrl || DEFAULT_SMART_APP_LAUNCH;
+    els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
+  }
+  var _CONN_LABELS = {
+    unknown: "\u5C1A\u672A\u6AA2\u67E5",
+    checking: "\u78BA\u8A8D\u4E2D\u2026",
+    ok: () => `\u5DF2\u9023\u7DDA \u2014 ${els.backendUrl.value.trim()}`,
+    fail: () => {
+      const r = state.connFailReason || {};
+      return {
+        "no-url": "\u672A\u8A2D\u5B9A Backend URL",
+        "no-permission": "\u672A\u6388\u6B0A\u9023\u7DDA",
+        "network": "\u9023\u4E0D\u4E0A\u5F8C\u7AEF",
+        "timeout": "\u9023\u7DDA\u903E\u6642",
+        "http": `HTTP ${r.detail || ""}`.trim(),
+        "not-fhir": "\u56DE\u61C9\u4E0D\u662F FHIR"
+      }[r.kind] ?? "\u9023\u7DDA\u5931\u6557";
     }
-    const kind = status.running ? "info" : status.phase === "error" ? "error" : "success";
-    const breakdown = status.running ? null : status.breakdown;
-    const errors = status.running ? null : status.errors;
-    let action = null;
-    if (status.phase === "downloaded") {
-      action = {
-        label: "\u2192 \u81F3 \u2463 \u67E5\u770B \u958B\u555F\u300C\u91AB\u6790 MediPrisma\u300D",
-        onClick: () => _setActiveStep(4)
-      };
-    }
-    setStatus(text, kind, breakdown, errors, action);
-  }
-  function applySyncStatus(status) {
-    if (!status) return;
-    _latestStatus = status;
-    _renderStatus();
-    if (_wizardInitialized && _activeStep !== 3) {
-      _setActiveStep(3, { silent: true });
-    }
-    if (status.running) {
-      els.syncApiBtn.disabled = true;
-      els.syncApiBtn.textContent = "\u53D6\u5F97\u4E2D\u2026";
-      els.stopBtn.hidden = false;
-      if (!_elapsedTickerId) {
-        _elapsedTickerId = setInterval(_renderStatus, 1e3);
-      }
+  };
+  var _CONN_HELP = {
+    "no-url": "\u8ACB\u5230\u300C\u9032\u968E\u8A2D\u5B9A\u300D\u586B\u5165 Backend URL\uFF0C\u4F8B\u5982 <code>http://localhost:8010</code>\u3002",
+    "no-permission": "Chrome \u963B\u64CB\u4E86\u8DE8\u4F86\u6E90\u8ACB\u6C42\u3002\u8ACB\u91CD\u65B0\u958B popup\uFF0C\u7576\u6B0A\u9650\u5C0D\u8A71\u6846\u8DF3\u51FA\u6642\u6309\u300C\u5141\u8A31\u300D\u3002",
+    "network": "\u5F8C\u7AEF\u53EF\u80FD\u9084\u6C92\u555F\u52D5\u3002\u8ACB\u57F7\u884C\uFF1A<br><code>docker compose up -d</code><br>\u78BA\u8A8D backend \u5BB9\u5668\u8DD1\u8D77\u4F86\u518D\u91CD\u8A66\u3002",
+    "timeout": "5 \u79D2\u5167\u6C92\u6536\u5230\u56DE\u61C9 \u2014 backend \u53EF\u80FD\u9084\u5728\u555F\u52D5\u4E2D\uFF0C\u7B49 30 \u79D2\u518D\u6309\u91CD\u8A66\u3002",
+    "http": "Backend \u56DE\u61C9\u932F\u8AA4\u72C0\u614B\u78BC\u3002\u6AA2\u67E5 backend \u7684 log\uFF1A<br><code>docker compose logs backend</code>",
+    "not-fhir": "\u9019\u500B URL \u56DE\u4E86\u6771\u897F\uFF0C\u4F46\u4E0D\u662F FHIR CapabilityStatement\u3002\u78BA\u8A8D Backend URL \u6307\u5411 NHI-FHIR-Bridge \u7684 /fhir \u6839\u76EE\u9304\u3002"
+  };
+  function _renderConnBanner() {
+    const banner = els.connBanner;
+    if (!banner) return;
+    banner.dataset.state = state.connState;
+    if (els.connSection) els.connSection.dataset.state = state.connState;
+    const label = _CONN_LABELS[state.connState];
+    els.connMsg.textContent = typeof label === "function" ? label() : label;
+    els.connRetryBtn.hidden = state.connState !== "fail";
+    if (state.connState === "fail" && state.connFailReason?.kind) {
+      els.connHelp.hidden = false;
+      els.connHelp.innerHTML = _CONN_HELP[state.connFailReason.kind] ?? "";
     } else {
-      els.stopBtn.hidden = true;
-      if (_elapsedTickerId) {
-        clearInterval(_elapsedTickerId);
-        _elapsedTickerId = null;
-      }
+      els.connHelp.hidden = true;
+      els.connHelp.innerHTML = "";
+    }
+    const isOk = state.connState === "ok";
+    if (els.connSection) els.connSection.hidden = isOk;
+    if (els.connMini) {
+      els.connMini.hidden = !isOk;
+      if (isOk) els.connMini.title = `\u5DF2\u9023\u7DDA \u2014 ${els.backendUrl.value.trim()}`;
+    }
+  }
+  async function ensureBackendPermission(backendUrl) {
+    const pattern = _originPatternFor(backendUrl);
+    if (!pattern) return { ok: false, reason: `Backend URL \u7121\u6CD5\u89E3\u6790: ${backendUrl}` };
+    const already = await chrome.permissions.contains({ origins: [pattern] });
+    if (already) return { ok: true };
+    let granted;
+    try {
+      granted = await chrome.permissions.request({ origins: [pattern] });
+    } catch (e) {
+      return { ok: false, reason: `\u6B0A\u9650\u8ACB\u6C42\u5931\u6557: ${e.message}` };
+    }
+    return granted ? { ok: true } : { ok: false, reason: `\u672A\u6388\u6B0A\u9023\u7DDA\u5230 ${pattern} \u2014 \u53D6\u6D88` };
+  }
+  async function testBackendConnection() {
+    const url = els.backendUrl.value.trim();
+    if (!url) {
+      state.connState = "fail";
+      state.connFailReason = { kind: "no-url" };
+      _renderConnBanner();
       _refreshButtonStates();
-      _refreshLocalBundleState();
-      if (currentMode() === "backend" && _connState === "ok") checkBackendPatient();
+      return false;
     }
-  }
-  async function stopSync() {
-    await chrome.storage.local.set({
-      syncStatus: {
-        running: false,
-        progress: "\u26D4 \u505C\u6B62\u4E2D\uFF0C\u6B63\u5728\u6E05\u9664\u90E8\u5206\u8CC7\u6599\u2026",
-        phase: "cancelled",
-        ts: Date.now(),
-        completed: Date.now()
-      }
-    });
-    setStatus("\u26D4 \u505C\u6B62\u4E2D\uFF0C\u6B63\u5728\u6E05\u9664\u90E8\u5206\u8CC7\u6599\u2026", "info");
-    chrome.runtime.sendMessage({ type: "stopSync" }).catch(() => {
-    });
-    els.stopBtn.hidden = true;
+    state.connState = "checking";
+    state.connFailReason = null;
+    _renderConnBanner();
     _refreshButtonStates();
+    const perm = await ensureBackendPermission(url);
+    if (!perm.ok) {
+      state.connState = "fail";
+      state.connFailReason = { kind: "no-permission" };
+      _renderConnBanner();
+      _refreshButtonStates();
+      return false;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5e3);
+    try {
+      const res = await fetch(`${url.replace(/\/$/, "")}/fhir/metadata`, { signal: ctrl.signal });
+      if (!res.ok) {
+        state.connState = "fail";
+        state.connFailReason = { kind: "http", detail: res.status };
+      } else {
+        const body = await res.json().catch(() => null);
+        if (body?.resourceType !== "CapabilityStatement") {
+          state.connState = "fail";
+          state.connFailReason = { kind: "not-fhir" };
+        } else {
+          state.connState = "ok";
+          state.connFailReason = null;
+        }
+      }
+    } catch (e) {
+      state.connState = "fail";
+      state.connFailReason = { kind: e.name === "AbortError" ? "timeout" : "network" };
+    } finally {
+      clearTimeout(timer);
+    }
+    _renderConnBanner();
+    _refreshButtonStates();
+    if (currentMode() === "backend") checkBackendPatient();
+    return state.connState === "ok";
   }
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.syncStatus) {
-      applySyncStatus(changes.syncStatus.newValue);
+  async function loadBackendModeEnabled() {
+    const { backendModeEnabled } = await chrome.storage.local.get("backendModeEnabled");
+    const enabled = backendModeEnabled === true;
+    els.backendModeEnabled.checked = enabled;
+    document.body.dataset.backendEnabled = enabled ? "true" : "false";
+  }
+  async function onBackendModeToggle() {
+    const enabled = els.backendModeEnabled.checked;
+    document.body.dataset.backendEnabled = enabled ? "true" : "false";
+    await chrome.storage.local.set({ backendModeEnabled: enabled });
+    if (enabled) {
+      for (const r of els.modeRadios()) r.checked = r.value === "backend";
+      document.body.dataset.mode = "backend";
+      await chrome.storage.local.set({ syncMode: "backend" });
+      testBackendConnection();
+    } else {
+      for (const r of els.modeRadios()) r.checked = r.value === "local";
+      document.body.dataset.mode = "local";
+      await chrome.storage.local.set({ syncMode: "local" });
+      state.connState = "unknown";
+      state.connFailReason = null;
+      state.backendPatient = { state: "unknown", count: 0, lastUpdated: null };
+      _renderConnBanner();
+      _renderDataState();
+      _refreshButtonStates();
     }
-  });
-  chrome.runtime.onMessage.addListener((msg, sender) => {
-    if (sender?.id !== chrome.runtime.id) return;
-    if (msg?.type === "syncProgress") {
-      applySyncStatus(msg.status);
+  }
+  async function loadSyncMode() {
+    const { syncMode } = await chrome.storage.local.get("syncMode");
+    const backendEnabled = document.body.dataset.backendEnabled === "true";
+    const mode = backendEnabled && syncMode === "backend" ? "backend" : DEFAULT_MODE;
+    for (const r of els.modeRadios()) r.checked = r.value === mode;
+    document.body.dataset.mode = mode;
+    if (mode === "backend") {
+      await testBackendConnection();
+    } else {
+      state.connState = "unknown";
+      state.connFailReason = null;
+      _renderConnBanner();
     }
-  });
+  }
+  function onModeChange() {
+    const mode = currentMode();
+    document.body.dataset.mode = mode;
+    chrome.storage.local.set({ syncMode: mode });
+    if (mode === "backend") {
+      testBackendConnection();
+    } else {
+      state.connState = "unknown";
+      state.connFailReason = null;
+      state.backendPatient = { state: "unknown", count: 0, lastUpdated: null };
+      _renderConnBanner();
+      _renderDataState();
+      _refreshButtonStates();
+    }
+  }
+  function onBackendUrlChange() {
+    chrome.storage.local.set({ backendUrl: els.backendUrl.value.trim() });
+    els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
+    if (currentMode() === "backend") testBackendConnection();
+  }
+
+  // src/popup/sync-client.js
   async function isOnNhiLoginPage(tabId, url) {
     if (url?.pathname && /IHKE3099/.test(url.pathname)) return true;
     try {
@@ -2793,27 +2697,6 @@
     } catch {
       return false;
     }
-  }
-  function _originPatternFor(url) {
-    try {
-      const u = new URL(url);
-      return `${u.protocol}//${u.host}/*`;
-    } catch {
-      return null;
-    }
-  }
-  async function ensureBackendPermission(backendUrl) {
-    const pattern = _originPatternFor(backendUrl);
-    if (!pattern) return { ok: false, reason: `Backend URL \u7121\u6CD5\u89E3\u6790: ${backendUrl}` };
-    const already = await chrome.permissions.contains({ origins: [pattern] });
-    if (already) return { ok: true };
-    let granted;
-    try {
-      granted = await chrome.permissions.request({ origins: [pattern] });
-    } catch (e) {
-      return { ok: false, reason: `\u6B0A\u9650\u8ACB\u6C42\u5931\u6557: ${e.message}` };
-    }
-    return granted ? { ok: true } : { ok: false, reason: `\u672A\u6388\u6B0A\u9023\u7DDA\u5230 ${pattern} \u2014 \u53D6\u6D88` };
   }
   async function apiSyncNhi() {
     const ov = getPatientOverride();
@@ -2854,13 +2737,6 @@
     setStatus("\u958B\u59CB\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u2026", "info");
     const rangeSel = els.apiSyncRange?.value || "3";
     let dateRange = null;
-    const RANGE_LABELS = {
-      "1": "\u6700\u8FD1 1 \u5E74",
-      "3": "\u6700\u8FD1 3 \u5E74",
-      "5": "\u6700\u8FD1 5 \u5E74",
-      "10": "\u6700\u8FD1 10 \u5E74",
-      "all": "\u5168\u90E8\u6B77\u53F2\u7D00\u9304"
-    };
     const dateRangeLabel = RANGE_LABELS[rangeSel] || `\u6700\u8FD1 ${rangeSel} \u5E74`;
     if (rangeSel !== "1") {
       const today = /* @__PURE__ */ new Date();
@@ -2930,6 +2806,170 @@
       setStatus(`\u274C \u958B\u555F\u91AB\u6790\u5931\u6557\uFF1A${e.message}`, "error");
     }
   }
+  function onSmartAppUrlChange() {
+    const v = els.smartAppUrl.value.trim();
+    if (!v) {
+      chrome.storage.local.remove("smartAppLaunchUrl");
+      els.smartAppUrl.value = DEFAULT_SMART_APP_LAUNCH;
+      return;
+    }
+    if (!_isSafeSmartAppUrl(v)) {
+      setStatus(
+        "\u26D4 SMART App URL \u5FC5\u9808\u662F https:// \u6216\u672C\u6A5F (http://localhost)\uFF1B\u5DF2\u9084\u539F\u9810\u8A2D\u3002",
+        "error"
+      );
+      chrome.storage.local.remove("smartAppLaunchUrl");
+      els.smartAppUrl.value = DEFAULT_SMART_APP_LAUNCH;
+      return;
+    }
+    chrome.storage.local.set({ smartAppLaunchUrl: v });
+  }
+
+  // src/popup/tooltip.js
+  var _helpTip = document.createElement("div");
+  _helpTip.className = "help-tooltip";
+  document.body.appendChild(_helpTip);
+  function _showHelpTooltip(icon) {
+    _helpTip.textContent = icon.dataset.tip || icon.getAttribute("data-tip") || "";
+    _helpTip.classList.add("visible");
+    const iconRect = icon.getBoundingClientRect();
+    const tipRect = _helpTip.getBoundingClientRect();
+    const viewportW = document.documentElement.clientWidth;
+    const viewportH = document.documentElement.clientHeight;
+    let left = iconRect.left + iconRect.width / 2 - tipRect.width / 2;
+    if (left < VIEWPORT_MARGIN) left = VIEWPORT_MARGIN;
+    if (left + tipRect.width > viewportW - VIEWPORT_MARGIN) {
+      left = viewportW - VIEWPORT_MARGIN - tipRect.width;
+    }
+    let top = iconRect.top - tipRect.height - 6;
+    if (top < VIEWPORT_MARGIN) top = iconRect.bottom + 6;
+    if (top + tipRect.height > viewportH - VIEWPORT_MARGIN) {
+      top = Math.max(VIEWPORT_MARGIN, viewportH - VIEWPORT_MARGIN - tipRect.height);
+    }
+    _helpTip.style.left = `${left}px`;
+    _helpTip.style.top = `${top}px`;
+  }
+  function _hideHelpTooltip() {
+    _helpTip.classList.remove("visible");
+  }
+
+  // src/popup.js
+  async function init() {
+    document.getElementById("version").textContent = "v" + chrome.runtime.getManifest().version;
+    document.getElementById("login-ok-next")?.addEventListener("click", () => _setActiveStep(2));
+    await loadMaskNameEnabled();
+    await _refreshLocalBundleState();
+    await loadBackendModeEnabled();
+    await loadBackendUrl();
+    await loadSyncMode();
+    await loadPatientOverride();
+    await refreshPendingBundle();
+    const tab = await getActiveTab();
+    if (!tab?.url) {
+      setStatus("no active tab", "error");
+      els.syncApiBtn.dataset.offNhi = "1";
+      _refreshButtonStates();
+      return;
+    }
+    const onNhi = isNhiTab(tab.url);
+    if (onNhi) delete els.syncApiBtn.dataset.offNhi;
+    else els.syncApiBtn.dataset.offNhi = "1";
+    if (els.openNhiSection) els.openNhiSection.hidden = onNhi;
+    state.nhiTabId = onNhi ? tab.id : null;
+    if (onNhi && tab.id) {
+      chrome.runtime.sendMessage({ type: "checkNhiLogin", tabId: tab.id }).then((resp) => {
+        const loggedIn = resp?.loggedIn === true;
+        if (loggedIn) delete els.syncApiBtn.dataset.nhiLoggedIn;
+        else els.syncApiBtn.dataset.nhiLoggedIn = "no";
+        if (els.nhiNeedsLoginSection) {
+          els.nhiNeedsLoginSection.hidden = loggedIn;
+        }
+        _refreshButtonStates();
+        if (loggedIn && state.wizardInitialized) _maybeAutoAdvance();
+      }).catch(() => {
+        delete els.syncApiBtn.dataset.nhiLoggedIn;
+        if (els.nhiNeedsLoginSection) els.nhiNeedsLoginSection.hidden = true;
+        _refreshButtonStates();
+      });
+    } else {
+      delete els.syncApiBtn.dataset.nhiLoggedIn;
+      if (els.nhiNeedsLoginSection) els.nhiNeedsLoginSection.hidden = true;
+    }
+    _refreshButtonStates();
+    _initWizard();
+    await refreshSyncStatusFromBackground();
+  }
+  function _openSettingsView() {
+    document.body.dataset.view = "settings";
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+  function _closeSettingsView() {
+    delete document.body.dataset.view;
+    _refreshWizardUi();
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+  els.connRetryBtn?.addEventListener("click", testBackendConnection);
+  els.pushLocalBtn?.addEventListener("click", pushLocalBundleToBackend);
+  els.syncBlockedReason?.addEventListener("click", () => {
+    const target = Number(els.syncBlockedReason.dataset.targetStep);
+    if (target >= 1 && target <= 3) _setActiveStep(target);
+  });
+  els.openNhiBtn?.addEventListener("click", async () => {
+    await chrome.tabs.create({ url: NHI_LANDING });
+    window.close();
+  });
+  els.nhiReloadBtn?.addEventListener("click", async () => {
+    if (!state.nhiTabId) {
+      await chrome.tabs.create({ url: NHI_LOGIN_URL });
+      window.close();
+      return;
+    }
+    try {
+      await chrome.tabs.update(state.nhiTabId, { url: NHI_LOGIN_URL, active: true });
+    } catch {
+    }
+    window.close();
+  });
+  els.backendModeEnabled?.addEventListener("change", onBackendModeToggle);
+  for (const r of els.modeRadios()) {
+    r.addEventListener("change", onModeChange);
+  }
+  els.backendUrl.addEventListener("change", onBackendUrlChange);
+  els.syncApiKey.addEventListener("change", () => {
+    chrome.storage.local.set({ syncApiKey: els.syncApiKey.value.trim() });
+  });
+  els.maskNameEnabled?.addEventListener("change", onMaskNameToggle);
+  els.smartAppUrl.addEventListener("change", onSmartAppUrlChange);
+  els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);
+  els.clearBundleBtn.addEventListener("click", clearPendingBundle);
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "session" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "session" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.patientOverride) loadPatientOverride();
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.syncStatus) {
+      applySyncStatus(changes.syncStatus.newValue);
+    }
+  });
+  chrome.runtime.onMessage.addListener((msg, sender) => {
+    if (sender?.id !== chrome.runtime.id) return;
+    if (msg?.type === "syncProgress") {
+      applySyncStatus(msg.status);
+    }
+  });
+  document.addEventListener("mouseover", (e) => {
+    const icon = e.target.closest?.(".help-icon");
+    if (icon) _showHelpTooltip(icon);
+  });
+  document.addEventListener("mouseout", (e) => {
+    const icon = e.target.closest?.(".help-icon");
+    if (icon) _hideHelpTooltip();
+  });
   els.syncApiBtn.addEventListener("click", apiSyncNhi);
   els.stopBtn.addEventListener("click", stopSync);
   els.ovSaveBtn.addEventListener("click", savePatientOverride);
@@ -2941,25 +2981,13 @@
   els.openSmartAppBtn?.addEventListener("click", () => {
     chrome.tabs.create({ url: STANDALONE_SMART_APP_URL });
   });
-  function _openSettingsView() {
-    document.body.dataset.view = "settings";
-    window.scrollTo({ top: 0, behavior: "instant" });
-  }
-  function _closeSettingsView() {
-    delete document.body.dataset.view;
-    _refreshWizardUi();
-    window.scrollTo({ top: 0, behavior: "instant" });
-  }
   els.openSettingsBtn?.addEventListener("click", _openSettingsView);
   els.settingsBackBtn?.addEventListener("click", _closeSettingsView);
-  function _gotoStep2Edit() {
-    _setActiveStep(2);
-  }
-  els.activePatient?.addEventListener("click", _gotoStep2Edit);
+  els.activePatient?.addEventListener("click", () => _setActiveStep(2));
   els.activePatient?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      _gotoStep2Edit();
+      _setActiveStep(2);
     }
   });
   init();

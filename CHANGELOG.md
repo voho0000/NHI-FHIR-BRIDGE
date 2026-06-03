@@ -3,6 +3,36 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.13.3 重點 — 2026-06-03
+
+**🧹 內部重構 — 拆分 `popup.js`（零行為變更）**
+
+Clean-code 初始化的第二階段（PR2）：popup 的單一 2145 行 `popup.js` 拆成 12 個聚焦模組，**純搬移、不改任何行為、UI 與訊息流程完全一致**。延續 v0.13.2 background 拆分的同一手法。
+
+拆分後結構（`extension/src/popup/`）：
+
+| 模組 | 內容 |
+|---|---|
+| `constants.js` / `els.js` / `utils.js` | 共用常數、DOM 元素註冊表、純工具（`isNhiTab` / `getActiveTab` / fmt helpers）|
+| `state.js` | 跨模組共用的 mutable `state`（bundle 後共用同一份）|
+| `patient-form.js` | 病人覆寫表單（load/get/validate/save/clear/summary）|
+| `connection.js` / `data-state.js` | backend 連線測試、本機 bundle 狀態卡 |
+| `wizard.js` | 步驟 UI（conn banner / active step / button states / init wizard）|
+| `status.js` | sync 狀態渲染 + 背景同步狀態橋接 |
+| `bundle.js` | pending bundle 下載／清除／重整 |
+| `sync-client.js` | `apiSyncNhi` / `launch` / 背景訊息 client |
+| `tooltip.js` | help tooltip |
+
+`popup.js` 入口縮成 `init` + 集中事件綁定。所有 `addEventListener` 收斂到單一入口（避免拆分時掉控制項）。
+
+**安全網**：
+- 新增 `tests/popup-imports.test.js` — 鏡像 `background-imports.test.js`，掃描 `popup.js` + `popup/*.js`，per-file 檢查跨模組呼叫 ⊆（本地定義 ∪ import 名稱），守住「呼叫了但沒 import」那類 silent bug
+- 驗證：`node build.mjs` 綠、extension 168 tests 綠、手動逐一點擊每個 popup 控制項（wizard 步驟、存／清病人、backend 測試、模式切換、遮罩切換、同步、停止、下載 bundle、設定開關）確認無遺漏綁定
+
+esbuild 仍打包成單一 `dist/popup.js` IIFE，`manifest.json` / `build.mjs` entry 不變。
+
+---
+
 ## 0.13.2 重點 — 2026-06-02
 
 **🧹 內部重構 — 拆分 `background.js`（零行為變更）**

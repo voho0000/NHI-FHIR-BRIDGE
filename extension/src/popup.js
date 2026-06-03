@@ -1,4 +1,4 @@
-// NHI-FHIR Bridge popup logic.
+// NHI-FHIR Bridge popup — entry point.
 //
 // Flow:
 //   1. On open, check the active tab is an NHI 健康存摺 page.
@@ -6,1669 +6,65 @@
 //   3. Clicks "📥 同步健保存摺資料" → background runs runNhiApiSync().
 //   4. Progress streamed back via chrome.storage.local.syncStatus.
 //   5. After sync completes, "🚀 開啟 SMART App" launches with that patient.
-
-import { derivePatientId, maskId, maskName } from "@nhi-fhir-bridge/mapper";
-
-const DEFAULT_BACKEND = "http://localhost:8010";
-// Default SMART app for a fresh install. Users can override via
-// the '⚙️ 進階設定 → SMART App Launch URL' field; the value is
-// persisted in chrome.storage.local under `smartAppLaunchUrl`.
-// This URL is used for Mode B's OAuth launch flow (it expects to
-// receive iss + launch query params from a SMART on FHIR launch).
-const DEFAULT_SMART_APP_LAUNCH = "https://voho0000.github.io/medical-note-smart-on-fhir/smart/launch";
-// Step 4 standalone-open URL. Hardcoded — the step 4 button always
-// opens this URL in a new tab with no query params (Mode A users
-// manually drag the downloaded JSON into the page). Distinct from
-// DEFAULT_SMART_APP_LAUNCH because that one is the OAuth /smart/launch
-// endpoint; this one is the SMART app's plain entry page.
-const STANDALONE_SMART_APP_URL = "https://voho0000.github.io/medical-note-smart-on-fhir/";
-
-// True if the active tab is an NHI 健康存摺 page (real site).
-function isNhiTab(url) {
-  if (!url) return false;
-  try {
-    const u = typeof url === "string" ? new URL(url) : url;
-    return /myhealthbank\.nhi\.gov\.tw/.test(u.hostname);
-  } catch {
-    return false;
-  }
-}
-
-const DEFAULT_MODE = "local";
-
-const els = {
-  modeRadios: () => document.querySelectorAll('input[name="sync-mode"]'),
-  backendUrl: document.getElementById("backend-url"),
-  syncApiKey: document.getElementById("sync-api-key"),
-  smartAppUrl: document.getElementById("smart-app-url"),
-  syncApiBtn: document.getElementById("sync-api-btn"),
-  syncBlockedReason: document.getElementById("sync-blocked-reason"),
-  apiSyncRange: document.getElementById("api-sync-range"),
-  stopBtn: document.getElementById("stop-btn"),
-  ovName: document.getElementById("ov-name"),
-  ovBirthDate: document.getElementById("ov-birth-date"),
-  ovGender: document.getElementById("ov-gender"),
-  ovSaveBtn: document.getElementById("ov-save-btn"),
-  ovClearBtn: document.getElementById("ov-clear-btn"),
-  ovSummary: document.getElementById("override-summary"),
-  patientOverrideDetails: document.getElementById("patient-override"),
-  launchBtn: document.getElementById("launch-btn"),
-  openSmartAppBtn: document.getElementById("open-smart-app-btn"),
-  openSettingsBtn: document.getElementById("open-settings-btn"),
-  settingsBackBtn: document.getElementById("settings-back-btn"),
-  status: document.getElementById("status"),
-  dashboardLink: document.getElementById("dashboard-link"),
-  pendingBundle: document.getElementById("pending-bundle"),
-  downloadBundleBtn: document.getElementById("download-bundle-btn"),
-  clearBundleBtn: document.getElementById("clear-bundle-btn"),
-  // bundleMeta legacy id removed in the panel-merge; filename+size now
-  // live in dedicated #bundle-filename / #bundle-sizeage elements
-  // below.
-  connBanner: document.getElementById("conn-banner"),
-  connSection: document.getElementById("conn-section"),
-  connMini: document.getElementById("conn-mini"),
-  connMsg: document.getElementById("conn-msg"),
-  connRetryBtn: document.getElementById("conn-retry-btn"),
-  connHelp: document.getElementById("conn-help"),
-  dataStateSection: document.getElementById("data-state-section"),
-  backendState: document.getElementById("backend-state"),
-  localStateRow: document.getElementById("local-state-row"),
-  localState: document.getElementById("local-state"),
-  pushLocalBtn: document.getElementById("push-local-btn"),
-  syncStatusHint: document.getElementById("sync-status-hint"),
-  maskNameEnabled: document.getElementById("mask-name-enabled"),
-  backendModeEnabled: document.getElementById("backend-mode-enabled"),
-  openNhiSection: document.getElementById("open-nhi-section"),
-  openNhiBtn: document.getElementById("open-nhi-btn"),
-  nhiNeedsLoginSection: document.getElementById("nhi-needs-login-section"),
-  nhiReloadBtn: document.getElementById("nhi-reload-btn"),
-  loginOkSection: document.getElementById("login-ok-section"),
-  wizardStepper: document.getElementById("wizard-stepper"),
-  resultZone: document.getElementById("result-zone"),
-  activePatient: document.getElementById("active-patient"),
-  activePatientValue: document.getElementById("active-patient-value"),
-  bundleMetaBlock: document.getElementById("bundle-meta-block"),
-  bundleFilename: document.getElementById("bundle-filename"),
-  bundleSizeage: document.getElementById("bundle-sizeage"),
-};
-
-const NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
-// Direct URL of the login picker page (a generic landing → login redirect
-// happens automatically for unauthenticated visits, but going straight
-// here also handles users sitting on a public sub-page like 問答專區
-// where a plain reload would just re-render the same un-auth page).
-const NHI_LOGIN_URL = "https://myhealthbank.nhi.gov.tw/IHKE3000/IHKE3095S01";
-
-const PENDING_BUNDLE_KEY = "pendingFhirBundle";
-
-// Persisted-state keys. Backend URL and API key persist across browser sessions.
-async function loadBackendUrl() {
-  const { backendUrl, syncApiKey, smartAppLaunchUrl } = await chrome.storage.local.get(
-    ["backendUrl", "syncApiKey", "smartAppLaunchUrl"]
-  );
-  els.backendUrl.value = backendUrl || DEFAULT_BACKEND;
-  els.syncApiKey.value = syncApiKey || "";
-  els.smartAppUrl.value = smartAppLaunchUrl || DEFAULT_SMART_APP_LAUNCH;
-  els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
-}
-
-// ── Patient override (manual NHI identity) ────────────────────────────────
-// NHI 健康存摺 doesn't expose the user's national ID in the URL. The user
-// fills these once and they're sent with every upload call until cleared.
-
-// id_no is no longer a UI field, so getPatientOverride() (sync, called
-// in many hot paths) can't read it from the form. Cache it here from
-// storage; loadPatientOverride / savePatientOverride / clear keep it
-// fresh, and applySyncStatus pokes it when background swaps the
-// placeholder for the real cid.
-let _storedIdNo = null;
-
-// NHI tab id, captured in init() when the active tab is the NHI page.
-// Used by the "重新整理頁面" button in the needs-login banner so the
-// user doesn't have to know F5 / switch tabs themselves.
-let _nhiTabId = null;
-
-async function loadPatientOverride() {
-  const { patientOverride } = await chrome.storage.local.get("patientOverride");
-  _storedIdNo = patientOverride?.id_no || null;
-  if (patientOverride) {
-    els.ovName.value = patientOverride.name || "";
-    els.ovBirthDate.value = patientOverride.birth_date || "";
-    els.ovGender.value = patientOverride.gender || "";
-  }
-  // A stored override with both required fields counts as "step 2
-  // already confirmed" — returning user shouldn't be forced to click
-  // ✓ 確定 again to advance the wizard.
-  _markStep2Confirmed(
-    !!(patientOverride?.gender && patientOverride?.birth_date),
-  );
-  // Patient panel is now always-expanded (step 2 owns its own page);
-  // the previous collapse-when-confirmed behaviour was a leftover from
-  // the single-scroll layout.
-  refreshOverrideSummary();
-}
-
-function getPatientOverride() {
-  // Returns {id_no, name?, birth_date?, gender?}.
-  // id_no comes from the storage cache (_storedIdNo) since it's no
-  // longer a UI field — it's auto-minted at save time and replaced
-  // with the real cid by background's NHI fetch on first sync.
-  // Returns null when nothing identifying is filled.
-  const name = els.ovName.value.trim();
-  const birth_date = els.ovBirthDate.value.trim();
-  const gender = els.ovGender.value;
-  if (!_storedIdNo && !name && !birth_date && !gender) return null;
-  const out = {};
-  if (_storedIdNo) out.id_no = _storedIdNo;
-  if (name) out.name = name;
-  if (birth_date) out.birth_date = birth_date;
-  if (gender) out.gender = gender;
-  return out;
-}
-
-/**
- * Validate the patient card's birth-date input. Returns null when OK,
- * otherwise a user-facing error string. Reads directly from the
- * <input type="date"> so we can detect partial-input states that
- * Chrome reports through `validity.badInput` (the input's `.value`
- * is "" in that case, indistinguishable from "blank" by string check
- * alone — that's why the old version of this function let partial
- * year-only entries slip through).
- *
- * Allowed states:
- *   - genuinely empty (the field is optional)
- *   - full ISO YYYY-MM-DD that round-trips through Date()
- * Rejected:
- *   - year-only / year+month: the input renders blank value but
- *     validity.badInput is true
- *   - dates in the future
- *   - implausibly old dates (year < 1900)
- */
-function validateBirthDate() {
-  const el = els.ovBirthDate;
-  if (!el) return null;
-  // Chrome's native date input: partial entry (just year, just yyyy-mm)
-  // surfaces here even though .value is "".
-  if (el.validity && el.validity.badInput) {
-    return "生日請填完整年月日";
-  }
-  const s = (el.value || "").trim();
-  // Birth date is now required — age affects every reference range
-  // and any downstream age-based UI; empty input lets a typo / browser
-  // quirk silently propagate as NaN.
-  if (!s) return "請填生日";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "生日請填完整年月日";
-  const [y, m, d] = s.split("-").map(Number);
-  const dt = new Date(s + "T00:00:00Z");
-  if (
-    Number.isNaN(dt.getTime()) ||
-    dt.getUTCFullYear() !== y ||
-    dt.getUTCMonth() + 1 !== m ||
-    dt.getUTCDate() !== d
-  ) {
-    return "生日不是有效日期";
-  }
-  const now = new Date();
-  if (dt.getTime() > now.getTime()) return "生日不能是未來";
-  if (y < 1900) return "生日年份太早，請確認";
-  return null;
-}
-
-// Random "auto-XXXXXXXX" — 8 hex chars from crypto.getRandomValues so
-// every fresh popup install gets a different ID and re-syncs are stable.
-function _generateAutoPatientId() {
-  const bytes = new Uint8Array(4);
-  crypto.getRandomValues(bytes);
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-  return `auto-${hex}`;
-}
-
-// Format id_no for display. Real NHI cids (P123450866 → P12345****)
-// get shown half-masked so the user has visual confirmation we
-// captured their real identity. The internal auto-XXXXXXXX placeholder
-// is hidden — it's a system-generated string that means nothing to
-// the user and just creates "what's that gibberish?" friction until
-// the real cid arrives via background's NHI fetch on first sync.
-function _displayId(idNo) {
-  if (!idNo || idNo.startsWith("auto-")) return "";
-  return maskId(idNo);
-}
-
-function refreshOverrideSummary() {
-  const ov = getPatientOverride();
-  const card = els.patientOverrideDetails;
-  let summaryText = "";
-  if (!ov || !ov.name) {
-    els.ovSummary.textContent = "未設定";
-    if (card) card.dataset.state = "empty";
-  } else {
-    // Name (mask toggle: 民眾自用 預設關 = 真名 / multi-patient demo
-    // 開啟 = 遮罩) + masked real cid when available. Auto-placeholder
-    // is suppressed via _displayId.
-    const parts = [_maybeMask(ov.name)];
-    const idLabel = _displayId(ov.id_no);
-    if (idLabel) parts.push(idLabel);
-    summaryText = parts.join("  ·  ");
-    els.ovSummary.textContent = `✓ ${summaryText}`;
-    if (card) card.dataset.state = "filled";
-  }
-  // Mirror onto step 3's "取得對象" banner so the user knows who
-  // they're about to fetch without scrolling back to step 2. Only
-  // when step 2 has been confirmed (which now implies a saved name).
-  if (els.activePatient && els.activePatientValue) {
-    const showActive = _step2Confirmed && !!summaryText;
-    els.activePatient.hidden = !showActive;
-    if (showActive) els.activePatientValue.textContent = summaryText;
-  }
-  // Both launch + sync enabled state depend on patient + mode + conn.
-  _refreshButtonStates();
-  // Changing patient ID invalidates: (a) backend-state cache (new
-  // patient might not be on backend); (b) local-bundle row in the
-  // data-state card; (c) the 📥 download bundle section, which would
-  // otherwise still show the previous patient's stashed file; (d)
-  // the last completed sync's success message, which was tagged for
-  // the previous patient.
-  _renderDataState();
-  refreshPendingBundle();
-  _clearStaleSyncStatus(getPatientOverride());
-  if (currentMode() === "backend" && _connState === "ok") checkBackendPatient();
-}
-
-// Drop a "✅ 同步完成 …" status banner that was recorded for a
-// different patient. Mid-flight syncs are left alone (status.running)
-// so the user can still see progress of the in-flight sync.
-function _clearStaleSyncStatus(ov) {
-  if (!_latestStatus) return;
-  if (_latestStatus.running) return;
-  if (!_latestStatus.histno) return;
-  if (ov?.id_no === _latestStatus.histno) return;
-  _latestStatus = null;
-  setStatus("", null);
-  chrome.storage.local.remove("syncStatus").catch(() => {});
-}
-
-async function savePatientOverride() {
-  // Gender + birth_date + name are required. id_no is the only optional
-  // field — it's auto-fetched from NHI on sync, never user-entered.
-  if (!els.ovGender.value) {
-    setStatus("⛔ 請選擇性別", "error");
-    els.ovGender.focus();
-    return;
-  }
-  const dobError = validateBirthDate();
-  if (dobError) {
-    setStatus(`⛔ ${dobError}`, "error");
-    els.ovBirthDate.focus();
-    return;
-  }
-  if (!els.ovName.value.trim()) {
-    setStatus("⛔ 請填寫姓名", "error");
-    els.ovName.focus();
-    return;
-  }
-  // Build the override directly so we don't depend on
-  // getPatientOverride's null-return — the required-field path above
-  // has already validated what matters.
-  const ov = {
-    name: els.ovName.value.trim() || null,
-    birth_date: els.ovBirthDate.value.trim(),
-    gender: els.ovGender.value,
-  };
-  if (!ov.name) delete ov.name;
-  // Read previous stored override so we can:
-  //   1. Detect whether the user is editing the SAME person (re-save)
-  //      or has switched to a DIFFERENT person.
-  //   2. Decide whether to reuse the previously stored id_no
-  //      (placeholder OR real cid) or mint a fresh one.
-  const prevStored = (await chrome.storage.local.get("patientOverride"))
-    .patientOverride;
-
-  // Identity-change detection runs on the user-editable identity fields
-  // (name / gender / birth_date). id_no is auto-generated / auto-fetched
-  // so it CAN'T be the signal — the user never types it. Any of these
-  // changing means "switched to a different person":
-  //   - name:        manually editing name (clinic doctor swaps patients
-  //                  on the same NHI session)
-  //   - gender:      identity-defining; also affects sex-stratified
-  //                  reference ranges for labs
-  //   - birth_date:  same person can't have two DOBs
-  const _norm = (v) => (v == null ? "" : String(v));
-  const patientChanged = !!prevStored && (
-    _norm(prevStored.name) !== _norm(ov.name) ||
-    _norm(prevStored.gender) !== _norm(ov.gender) ||
-    _norm(prevStored.birth_date) !== _norm(ov.birth_date)
-  );
-
-  // id_no policy:
-  //   • Same person (just re-saving the same identity) → reuse prev
-  //     id_no so we don't keep minting new placeholders and orphaning
-  //     backend resources keyed on the old one.
-  //   • Different person → mint a fresh placeholder; do NOT carry over
-  //     the previous patient's real cid (e.g. F22345****) onto the new
-  //     identity. The "✅ 病人身份已記住：[new name] · [old masked cid]"
-  //     UX bug came from carrying the cid forward indiscriminately.
-  //   • background's NHI fetch swaps the placeholder for the real cid
-  //     on first sync.
-  if (patientChanged) {
-    ov.id_no = _generateAutoPatientId();
-  } else {
-    ov.id_no = prevStored?.id_no || _generateAutoPatientId();
-  }
-  _storedIdNo = ov.id_no;
-
-  // PHI safety: any of the identity fields changing → drop the
-  // previously-captured bundle so the user can't accidentally download
-  // a JSON file labelled with the NEW patient's identity but populated
-  // with the OLD patient's medical records.
-  await chrome.storage.local.set({ patientOverride: ov });
-
-  if (patientChanged) {
-    // 1. drop the prior local FHIR bundle (download button content)
-    // 2. drop the SW's last sync status so the result zone doesn't
-    //    keep showing "✅ 取得完成 · A 的 81 筆…"
-    // 3. drop the in-popup latest-status snapshot
-    await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {});
-    await chrome.runtime
-      .sendMessage({ type: "clearSyncStatus" })
-      .catch(() => {});
-    _latestStatus = null;
-    setStatus("", null);
-    // 4. Reset in-memory caches that _renderDataState reads. Without
-    //    this, when refreshOverrideSummary calls _renderDataState
-    //    synchronously below, the data-state card still shows
-    //    「✓ A 的 81 筆 · 最後更新…」for the brief moment until the
-    //    async checkBackendPatient + chrome.storage.onChanged events
-    //    fire. Flip to "checking" / empty so the UI shows the loading
-    //    state immediately, then the async refreshes paint the truth.
-    _backendPatient = { state: "checking", count: 0, lastUpdated: null };
-    _localBundle = { exists: false, count: 0, generatedAt: 0, patientId: null };
-  }
-
-  _markStep2Confirmed(true);
-  refreshOverrideSummary();
-  _refreshButtonStates();
-  // Successful save is THE intentional step-2 completion event — this
-  // is where the wizard is allowed to advance forward.
-  if (_wizardInitialized) _maybeAutoAdvance();
-  // Make clear this is the identity save, not a medical-record sync —
-  // 「病人資料」alone reads as "patient data" (medical) for some users.
-  // _displayId suppresses the auto-XXXX placeholder (no value to the
-  // user) but keeps the masked real cid (P12345****) when it's
-  // available — confirms we captured their actual identity.
-  const idLabel = _displayId(ov.id_no);
-  const tail = idLabel ? ` · ${idLabel}` : "";
-  setStatus(`✅ 病人身份已記住：${_maybeMask(ov.name)}${tail}`, "success");
-}
-
-async function clearPatientOverride() {
-  await chrome.storage.local.remove("patientOverride");
-  _storedIdNo = null;
-  els.ovName.value = "";
-  els.ovBirthDate.value = "";
-  els.ovGender.value = "";
-  _markStep2Confirmed(false);
-  refreshOverrideSummary();
-  _refreshButtonStates();
-  setStatus("已清除病人資料", "info");
-}
-
-// ── Backend connection state ─────────────────────────────────────────
 //
-// Single source of truth: `_connState` reflects the latest backend
-// connectivity check. Both the banner UI and the enabled-state of the
-// 📥 Sync / 🚀 Launch buttons read from it.
-//
-// States:
-//   "unknown"  — not yet checked (e.g. first paint in local mode)
-//   "checking" — fetch in flight
-//   "ok"       — GET /fhir/metadata returned a FHIR CapabilityStatement
-//   "fail"     — anything else; `_connFailReason` carries detail
-//
-// Backend connectivity is treated as a *prerequisite* for backend mode,
-// not as a per-action check. Switching to backend mode triggers a test
-// immediately; failure shows a banner with actionable guidance and
-// disables both action buttons until connectivity recovers.
-
-let _connState = "unknown";
-let _connFailReason = null; // { kind: "no-permission" | "no-url" | "network" | "timeout" | "http" | "not-fhir", detail? }
-
-// Banner copy. Drop the leading ✗ — the red dot left of the text is
-// already the "fail" signal, and the row was reading "● ✗ 連不上後端"
-// = three indicators stacked.
-const _CONN_LABELS = {
-  unknown: "尚未檢查",
-  checking: "確認中…",
-  ok: () => `已連線 — ${els.backendUrl.value.trim()}`,
-  fail: () => {
-    const r = _connFailReason || {};
-    return ({
-      "no-url": "未設定 Backend URL",
-      "no-permission": "未授權連線",
-      "network": "連不上後端",
-      "timeout": "連線逾時",
-      "http": `HTTP ${r.detail || ""}`.trim(),
-      "not-fhir": "回應不是 FHIR",
-    })[r.kind] ?? "連線失敗";
-  },
-};
-
-const _CONN_HELP = {
-  "no-url":        "請到「進階設定」填入 Backend URL，例如 <code>http://localhost:8010</code>。",
-  "no-permission": "Chrome 阻擋了跨來源請求。請重新開 popup，當權限對話框跳出時按「允許」。",
-  "network":       "後端可能還沒啟動。請執行：<br><code>docker compose up -d</code><br>確認 backend 容器跑起來再重試。",
-  "timeout":       "5 秒內沒收到回應 — backend 可能還在啟動中，等 30 秒再按重試。",
-  "http":          "Backend 回應錯誤狀態碼。檢查 backend 的 log：<br><code>docker compose logs backend</code>",
-  "not-fhir":      "這個 URL 回了東西，但不是 FHIR CapabilityStatement。確認 Backend URL 指向 NHI-FHIR-Bridge 的 /fhir 根目錄。",
-};
-
-function _renderConnBanner() {
-  const banner = els.connBanner;
-  if (!banner) return;
-  banner.dataset.state = _connState;
-  // Mirror state onto the outer .conn-block so the wrapper border
-  // (which holds banner + help body inside ONE card) tracks the same
-  // color the banner is using.
-  if (els.connSection) els.connSection.dataset.state = _connState;
-  const label = _CONN_LABELS[_connState];
-  els.connMsg.textContent = typeof label === "function" ? label() : label;
-  els.connRetryBtn.hidden = _connState !== "fail";
-  if (_connState === "fail" && _connFailReason?.kind) {
-    els.connHelp.hidden = false;
-    els.connHelp.innerHTML = _CONN_HELP[_connFailReason.kind] ?? "";
-  } else {
-    els.connHelp.hidden = true;
-    els.connHelp.innerHTML = "";
-  }
-
-  // Compact-pill vs full-banner swap: when everything's fine, shrink to
-  // a small green pill in the header so the popup body has more room
-  // for actionable content. Anything else (unknown / checking / fail)
-  // keeps the full banner so progress + error help has space to render.
-  const isOk = _connState === "ok";
-  if (els.connSection) els.connSection.hidden = isOk;
-  if (els.connMini) {
-    els.connMini.hidden = !isOk;
-    if (isOk) els.connMini.title = `已連線 — ${els.backendUrl.value.trim()}`;
-  }
-}
-
-// ── 3-step wizard ────────────────────────────────────────────────────
-//
-// Conceptually:
-//   Step 1 — 登入：on NHI tab + session token is valid
-//   Step 2 — 設定：gender filled + (mode==local OR backend reachable)
-//                + birth_date if entered must be valid
-//   Step 3 — 取得：the action itself (sync CTA, status, results)
-//
-// Steps auto-advance when their precondition flips green; users can
-// click the stepper to revisit any step. We never auto-step BACK on
-// state change — once the user has moved forward, only an explicit
-// stepper click brings them back. Otherwise opening the popup mid-
-// sync would jerk them back to step 1.
-let _activeStep = 1;
-let _wizardInitialized = false;
-// Step 2 is "done" only after the user has clicked ✓ 確定 with valid
-// inputs. We track this with a boolean rather than reading live DOM
-// state — otherwise the wizard would auto-advance the moment the
-// fields happened to look right, before the user had a chance to
-// review. Flipped true in savePatientOverride success, false in
-// clearPatientOverride and on a load that yields no saved record.
-let _step2Confirmed = false;
-
-// Step number rendered as a circled digit glyph — matches the
-// "回 ① 登入" copy elsewhere in the popup and the wizard stepper labels.
-function _stepNumGlyph(n) {
-  return n === 1 ? "①" : n === 2 ? "②" : n === 3 ? "③" : "④";
-}
-
-function _markStep2Confirmed(yes) {
-  _step2Confirmed = !!yes;
-}
-
-function _isStepDone(step) {
-  const onNhi = !els.syncApiBtn.dataset.offNhi;
-  const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
-  switch (step) {
-    case 1:
-      return onNhi && loggedIn;
-    case 2:
-      // Confirmed = user clicked ✓ 確定 AND the override is currently
-      // valid (so revisits with a now-invalid override don't show a
-      // false green check).
-      return _step2Confirmed;
-    case 3:
-      // Done = a pending FHIR bundle exists (sync succeeded). The
-      // download UI inside step 3 stays visible — this flag exists
-      // purely so the stepper shows ✓ on step 3 once data is ready,
-      // letting the user jump forward to step 4 (open SMART App).
-      // els.pendingBundle.hidden is the source of truth — refreshed
-      // by refreshPendingBundle() whenever the session-stash changes.
-      return !!els.pendingBundle && !els.pendingBundle.hidden;
-    case 4:
-      // Terminal step. The "doneness" is the user opening the SMART
-      // App, which we can't observe; leaving as false keeps the
-      // stepper from showing a misleading ✓ before they've actually
-      // viewed anything.
-      return false;
-    default:
-      return false;
-  }
-}
-
-function _setActiveStep(n, opts = {}) {
-  const clamped = Math.max(1, Math.min(4, n));
-  _activeStep = clamped;
-  document.body.dataset.activeStep = String(clamped);
-  _refreshWizardUi();
-  if (!opts.silent) {
-    // Auto-scroll the popup to the top of the step so users always
-    // see the step header / first input after navigation.
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-}
-
-function _refreshWizardUi() {
-  if (!els.wizardStepper) return;
-  const lis = els.wizardStepper.querySelectorAll("li[data-step]");
-  for (const li of lis) {
-    const n = Number(li.dataset.step);
-    const isActive = n === _activeStep;
-    const isDone = _isStepDone(n);
-    if (isActive) li.setAttribute("aria-current", "true");
-    else li.removeAttribute("aria-current");
-    if (isDone) li.dataset.done = "true";
-    else delete li.dataset.done;
-  }
-  // Step 1's three sub-cards (off-nhi / needs-login / login-ok) are
-  // mutually exclusive — pick the one that matches current state.
-  const onNhi = !els.syncApiBtn.dataset.offNhi;
-  const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
-  if (els.openNhiSection)
-    els.openNhiSection.hidden = onNhi;
-  if (els.nhiNeedsLoginSection)
-    els.nhiNeedsLoginSection.hidden = !onNhi || loggedIn;
-  if (els.loginOkSection)
-    els.loginOkSection.hidden = !(onNhi && loggedIn);
-
-  _refreshResultZone();
-}
-
-// Show/hide step-3 result cards based on whether each has content.
-// Empty cards (e.g. a summary card with no status + no data-state in
-// local mode pre-sync) used to render as a blank stripe — now they
-// stay collapsed individually, and the whole zone goes away when all
-// three cards would be empty.
-function _refreshResultZone() {
-  if (!els.resultZone) return;
-  const hasStatus = (els.status?.textContent ?? "").trim() !== "";
-  const dataStateShown =
-    els.dataStateSection && !els.dataStateSection.hidden;
-  const bundleShown =
-    els.pendingBundle && !els.pendingBundle.hidden;
-  // Launch button only counts when usable — backend mode + the patient
-  // actually exists on the backend (`launchBtn.disabled === false`).
-  // A perma-disabled button shouldn't pin the zone open.
-  const launchUsable =
-    currentMode() === "backend" && els.launchBtn && !els.launchBtn.disabled;
-
-  // Hide the entire result section (the divider + everything after) when
-  // there's nothing meaningful to show.
-  els.resultZone.hidden = !(hasStatus || bundleShown || dataStateShown || launchUsable);
-
-  // Bundle filename / size block follows bundle visibility.
-  if (els.bundleMetaBlock) {
-    els.bundleMetaBlock.hidden = !bundleShown;
-  }
-  // Launch button hide-when-not-usable so the .next-actions row
-  // doesn't show a perma-disabled outline button next to nothing.
-  if (els.launchBtn) {
-    els.launchBtn.hidden = currentMode() !== "backend" || !launchUsable;
-  }
-
-  // Demote the 取得 CTA once we have a result + a usable next-step
-  // action. The "primary action" baton passes to 下載 / 開啟 App so
-  // the user's eye lands on what's next, not on "redo the thing".
-  const hasResultArtifact = bundleShown || launchUsable;
-  if (els.syncApiBtn) {
-    const shouldDemote = hasResultArtifact && !els.syncApiBtn.disabled;
-    els.syncApiBtn.classList.toggle("is-secondary", shouldDemote);
-    // Relabel to match the new role. While the sync is running we keep
-    // the prompt mid-render text alone (applySyncStatus owns that).
-    if (!_latestStatus?.running) {
-      els.syncApiBtn.textContent = shouldDemote
-        ? "重新取得"
-        : "取得健保存摺資料";
-    }
-  }
-}
-
-function _maybeAutoAdvance() {
-  // Only advance forward, never back. Save user's place if they've
-  // clicked into a later step manually.
-  //
-  // Deliberately do NOT auto-advance 3 → 4. Step 3 contains the
-  // "✅ 已產生 N 筆 · 📥 下載" success state — jumping the user past
-  // that the moment sync completes would steal the moment they're
-  // waiting 30 seconds for. They click step 4 (or the stepper item)
-  // themselves when they're ready to open the SMART App.
-  if (_activeStep === 1 && _isStepDone(1)) _setActiveStep(2);
-  else if (_activeStep === 2 && _isStepDone(2)) _setActiveStep(3);
-}
-
-function _initWizard() {
-  if (_wizardInitialized) return;
-  _wizardInitialized = true;
-  // Initial step: whichever is the FIRST not-yet-done step at popup open.
-  // First-time user → step 1. Returning user with valid session + saved
-  // patient → step 3. If a fresh bundle is sitting in session-storage
-  // (sync done in a prior popup open of the same browser session) →
-  // step 4, so the natural next action — "open SMART App" — is visible.
-  let start;
-  if (!_isStepDone(1)) start = 1;
-  else if (!_isStepDone(2)) start = 2;
-  else if (!_isStepDone(3)) start = 3;
-  else start = 4;
-  _setActiveStep(start, { silent: true });
-
-  // Stepper clicks → jump
-  for (const li of els.wizardStepper.querySelectorAll("li[data-step]")) {
-    li.addEventListener("click", () => _setActiveStep(Number(li.dataset.step)));
-    li.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        _setActiveStep(Number(li.dataset.step));
-      }
-    });
-  }
-}
-
-function _refreshButtonStates() {
-  // Sync button. Conditions, in priority order:
-  //   1. on an NHI tab
-  //   2. logged in to NHI (detected via background pre-flight)
-  //   3. backend mode → backend connected
-  //   4. gender filled (other patient fields all optional)
-  // Whatever blocks the CTA also gets surfaced as an inline message
-  // below the button — tooltips are invisible in the 360px popup.
-  const onNhi = !els.syncApiBtn.dataset.offNhi;
-  const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
-  const modeOk = currentMode() === "local" || _connState === "ok";
-  // Step 2 hard requirements: gender, birth_date (valid), and name.
-  // Tracked as one rolled-up flag so the blocked-CTA strip says
-  // "complete the basic info" generically regardless of which field
-  // is missing first.
-  const step2BasicOk = !!els.ovGender?.value && !!els.ovName?.value?.trim();
-  const dobError = validateBirthDate();
-
-  // Each blocking reason names the step that needs attention. Mode +
-  // connection now live in step 3 alongside the CTA itself, so those
-  // reasons reference what's directly above the button rather than
-  // sending the user back through the stepper.
-  //
-  // EXCEPT the conn-failed case: the conn banner directly above the
-  // CTA already shouts "✗ 連不上後端" + retry button + help. Adding
-  // another inline strip just to repeat the same fact (with a slightly
-  // longer sentence) is noise — silently disable the CTA instead, with
-  // a tooltip explanation. inlineReason is what shows in the warning
-  // strip; tooltipReason is what the disabled button advertises on hover.
-  // Reason for blocked CTA. inlineMsg renders in the warning strip;
-  // tooltip is what the disabled button advertises on hover; jumpTo
-  // (when set) makes the strip a clickable shortcut back to that step.
-  let inlineMsg = "";
-  let jumpTo = null;       // { step: 1|2, label: "登入" | "您的資料" }
-  let tooltipReason = "";
-  if (!onNhi) {
-    inlineMsg = "請切到健保存摺分頁";
-    jumpTo = { step: 1, label: "登入" };
-  } else if (!loggedIn) {
-    inlineMsg = "健保存摺分頁尚未登入";
-    jumpTo = { step: 1, label: "登入" };
-  } else if (!step2BasicOk) {
-    // Don't enumerate which field is missing — there could be more
-    // than one (gender, name, both), and step 2 already marks each
-    // required field with a red * the user will see after the one-
-    // click jump. Keep the message about the high-level action
-    // (complete + confirm).
-    inlineMsg = "請完成基本資料並按確定";
-    jumpTo = { step: 2, label: "您的資料" };
-  } else if (dobError) {
-    inlineMsg = dobError;
-    jumpTo = { step: 2, label: "您的資料" };
-  } else if (!modeOk) {
-    inlineMsg = "";                 // conn banner above carries the message
-    tooltipReason = "後端尚未連線";
-  }
-  if (jumpTo) tooltipReason = `回 ${_stepNumGlyph(jumpTo.step)} ${jumpTo.label}：${inlineMsg}`;
-
-  // Don't flip the CTA back to enabled if a sync is currently running
-  // — the SW updates `patientOverride` mid-sync (auto-fetched cid),
-  // which triggers storage.onChanged → loadPatientOverride →
-  // _refreshButtonStates. Without this guard the button would re-enable
-  // halfway through a sync and the user could click it again.
-  const syncRunning = _latestStatus?.running === true;
-  els.syncApiBtn.disabled = syncRunning || tooltipReason !== "";
-  els.syncApiBtn.title = syncRunning ? "" : tooltipReason;
-  if (els.syncBlockedReason) {
-    const show = !syncRunning && inlineMsg !== "";
-    els.syncBlockedReason.hidden = !show;
-    if (show) {
-      // Build the strip's content: "→ {msg}    回 ① 登入 →" so the
-      // user sees both the reason and where the click will take them.
-      // "→" arrow signals "do this next" (information/guidance);
-      // the original ⚠️ was alarm-grade and clashed with the genuine
-      // disclaimer card below. Blue palette in CSS reinforces the
-      // info-not-warning framing.
-      els.syncBlockedReason.textContent = "";
-      const msgEl = document.createElement("span");
-      msgEl.className = "cta-reason-msg";
-      msgEl.textContent = `→ ${inlineMsg}`;
-      els.syncBlockedReason.appendChild(msgEl);
-      if (jumpTo) {
-        const jumpEl = document.createElement("span");
-        jumpEl.className = "cta-reason-jump";
-        jumpEl.textContent = `回 ${_stepNumGlyph(jumpTo.step)} ${jumpTo.label} →`;
-        els.syncBlockedReason.appendChild(jumpEl);
-        els.syncBlockedReason.dataset.targetStep = String(jumpTo.step);
-      } else {
-        delete els.syncBlockedReason.dataset.targetStep;
-      }
-    }
-  }
-  // Mirror the stop-button visibility so the user can always cancel
-  // mid-sync even if the popup re-renders due to onChanged.
-  if (els.stopBtn) els.stopBtn.hidden = !syncRunning;
-
-  // Launch button: backend mode + conn ok + patient set + backend
-  // actually has this patient (otherwise the SMART app launches into
-  // an empty FHIR store — confusing blank screen).
-  const ov = getPatientOverride();
-  const haveBackendPatient = _backendPatient.state === "present";
-  els.launchBtn.disabled = !(
-    currentMode() === "backend" &&
-    _connState === "ok" &&
-    !!ov?.id_no &&
-    haveBackendPatient
-  );
-  els.launchBtn.title =
-    currentMode() !== "backend"  ? "請切到「🏥 本機伺服器 (進階)」模式" :
-    _connState !== "ok"           ? "後端尚未連線" :
-    !ov?.id_no                    ? "請回到「② 您的資料」填寫資料" :
-    !haveBackendPatient           ? "本機伺服器還沒有這位的資料 — 先按「取得健保存摺資料」或下方「把這次資料傳到本機伺服器」" :
-                                    "";
-
-  // Refresh the stepper UI on every state change, but DON'T auto-
-  // advance from here — incidental input changes (typing in a field
-  // while revisiting step 2) shouldn't yank the user forward. Auto-
-  // advance is only fired from the events that signal intent:
-  //   - login probe flipping to true → forward into step 2
-  //   - savePatientOverride success → forward into step 3
-  if (_wizardInitialized) _refreshWizardUi();
-}
-
-async function testBackendConnection() {
-  const url = els.backendUrl.value.trim();
-  if (!url) {
-    _connState = "fail"; _connFailReason = { kind: "no-url" };
-    _renderConnBanner(); _refreshButtonStates(); return false;
-  }
-  _connState = "checking"; _connFailReason = null;
-  _renderConnBanner(); _refreshButtonStates();
-
-  const perm = await ensureBackendPermission(url);
-  if (!perm.ok) {
-    _connState = "fail"; _connFailReason = { kind: "no-permission" };
-    _renderConnBanner(); _refreshButtonStates(); return false;
-  }
-
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 5000);
-  try {
-    const res = await fetch(`${url.replace(/\/$/, "")}/fhir/metadata`, { signal: ctrl.signal });
-    if (!res.ok) {
-      _connState = "fail"; _connFailReason = { kind: "http", detail: res.status };
-    } else {
-      const body = await res.json().catch(() => null);
-      if (body?.resourceType !== "CapabilityStatement") {
-        _connState = "fail"; _connFailReason = { kind: "not-fhir" };
-      } else {
-        _connState = "ok"; _connFailReason = null;
-      }
-    }
-  } catch (e) {
-    _connState = "fail";
-    _connFailReason = { kind: e.name === "AbortError" ? "timeout" : "network" };
-  } finally {
-    clearTimeout(timer);
-  }
-
-  _renderConnBanner();
-  _refreshButtonStates();
-  // Whenever connectivity flips, re-check whether this patient already
-  // exists on backend. (Stale "_backendPatient" state would otherwise
-  // cause Launch to look enabled / disabled wrongly.)
-  if (currentMode() === "backend") checkBackendPatient();
-  return _connState === "ok";
-}
-
-els.connRetryBtn?.addEventListener("click", testBackendConnection);
-
-// ── Backend ↔ local data-state ───────────────────────────────────────
-//
-// Independent of the connection banner (which only tells us "can we
-// reach the backend"). This card answers two questions:
-//
-//   1. Does the backend already have this patient's data?
-//      → drives whether 🚀 Launch is allowed at all (Launch on an
-//        empty backend gives a confusing SMART-app blank).
-//   2. Does the user have a local Bundle that's newer than the
-//      backend's view?
-//      → offer "📤 上傳本地 Bundle 到後端" to push it via /fhir/import
-//        without re-fetching NHI (fast, non-destructive: stable IDs
-//        upsert so backend resources just bump versionId).
-//
-// We don't second-guess the user: even when local is clearly newer,
-// Launch stays enabled if the backend has the patient — they may
-// genuinely want to look at the older state. The UI lays out both
-// sides; user decides.
-
-let _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
-//   state: "unknown" | "checking" | "absent" | "present" | "fail"
-let _localBundle = { exists: false, count: 0, generatedAt: 0, patientId: null };
-
-function _fmtTimeShort(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function _fmtRelative(ms) {
-  const diff = Date.now() - ms;
-  if (diff < 60_000) return `${Math.max(1, Math.round(diff / 1000))} 秒前`;
-  if (diff < 3600_000) return `${Math.round(diff / 60_000)} 分鐘前`;
-  if (diff < 86_400_000) return `${Math.round(diff / 3600_000)} 小時前`;
-  return _fmtTimeShort(new Date(ms).toISOString());
-}
-
-function _renderDataState() {
-  // Section only visible in backend mode (handled by .backend-only CSS),
-  // but we also explicitly hide when the popup has no patient_override
-  // set, since both checks key off patient_id.
-  const ov = getPatientOverride();
-  if (currentMode() !== "backend" || !ov?.id_no) {
-    els.dataStateSection.hidden = true;
-    if (els.syncStatusHint) els.syncStatusHint.hidden = true;
-    return;
-  }
-
-  // Card serves as an alert, not a dashboard — show only when there's
-  // something actionable / worth flagging. Hide when:
-  //   - backend has this patient AND no local bundle to compare against
-  //     (Launch is enabled → that's the signal everything's fine), or
-  //   - both sides agree on count (already in sync, no upload needed).
-  // The remaining states (checking / fail / absent / count mismatch) all
-  // either need user attention or are transient loading feedback.
-  const localMatches = _localBundle.exists && _localBundle.patientId === ov.id_no;
-  const inSync =
-    _backendPatient.state === "present" &&
-    localMatches &&
-    _backendPatient.count === _localBundle.count;
-  // Quiet "✓ 已同步" hint sits under the download button when in-sync —
-  // gives the user a tiny acknowledgement instead of total silence.
-  if (els.syncStatusHint) els.syncStatusHint.hidden = !inSync;
-  const nothingToShow =
-    _backendPatient.state === "present" && (!localMatches || inSync);
-  if (nothingToShow) {
-    els.dataStateSection.hidden = true;
-    return;
-  }
-  els.dataStateSection.hidden = false;
-
-  // Backend row
-  const bs = els.backendState;
-  switch (_backendPatient.state) {
-    case "checking":
-      bs.className = "state-value";
-      bs.textContent = "檢查中…";
-      break;
-    case "absent":
-      bs.className = "state-value empty";
-      // Card sits inside the result zone next to the 🔄 取得 CTA and
-      // the 📤 上傳 button — pointing at them with text would be
-      // double-talk. Just state the fact.
-      bs.textContent = "⚠ 本機伺服器還沒有這位的資料";
-      break;
-    case "present": {
-      const count = _backendPatient.count;
-      const ts = _backendPatient.lastUpdated;
-      bs.className = "state-value ok";
-      bs.textContent = `✓ ${count > 0 ? `${count} 筆 · ` : ""}最後更新 ${_fmtTimeShort(ts) || "(unknown)"}`;
-      break;
-    }
-    case "fail":
-      bs.className = "state-value fail";
-      bs.textContent = "✗ 確認失敗（請看上方提示）";
-      break;
-    default:
-      bs.className = "state-value";
-      bs.textContent = "—";
-  }
-
-  // Local row — show only when the pending bundle matches this patient.
-  // (localMatches was computed above for the early-return check.)
-  if (localMatches) {
-    els.localStateRow.hidden = false;
-    els.localState.className = "state-value ok";
-    els.localState.textContent =
-      `✓ ${_localBundle.count} 筆 · ${_fmtRelative(_localBundle.generatedAt)}產生`;
-  } else {
-    els.localStateRow.hidden = true;
-  }
-
-  // "📤 上傳本地 Bundle" button shows only when there's a local bundle
-  // for this patient. We don't reach this branch when in-sync (the
-  // whole section gets hidden above), so no need for a separate
-  // disabled state — when the button shows, upload is always meaningful.
-  els.pushLocalBtn.hidden = !localMatches;
-  els.pushLocalBtn.disabled = false;
-  els.pushLocalBtn.title = "";
-  els.pushLocalBtn.textContent = "把這次資料傳到本機伺服器";
-}
-
-async function _refreshLocalBundleState() {
-  const { [PENDING_BUNDLE_KEY]: pending } =
-    await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-  _localBundle = pending
-    ? {
-        exists: true,
-        count: Array.isArray(JSON.parse(pending.json)?.entry)
-          ? JSON.parse(pending.json).entry.length
-          : 0,
-        generatedAt: pending.generatedAt || 0,
-        patientId: pending.patientId || null,
-      }
-    : { exists: false, count: 0, generatedAt: 0, patientId: null };
-  _renderDataState();
-}
-
-async function checkBackendPatient() {
-  const ov = getPatientOverride();
-  if (currentMode() !== "backend" || !ov?.id_no || _connState !== "ok") {
-    _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
-    _renderDataState();
-    _refreshButtonStates();
-    return;
-  }
-  _backendPatient = { state: "checking", count: 0, lastUpdated: null };
-  _renderDataState();
-
-  const url = els.backendUrl.value.trim().replace(/\/$/, "");
-  const key = els.syncApiKey.value.trim();
-  const headers = key ? { "X-Sync-API-Key": key } : {};
-  // Backend stores Patient under the hashed FHIR id, never under the raw
-  // national ID — query / export by the hashed form.
-  const fhirPid = derivePatientId(ov.id_no);
-  try {
-    const pr = await fetch(`${url}/fhir/Patient/${encodeURIComponent(fhirPid)}`, { headers });
-    if (pr.status === 404) {
-      _backendPatient = { state: "absent", count: 0, lastUpdated: null };
-      _renderDataState(); _refreshButtonStates();
-      return;
-    }
-    if (!pr.ok) {
-      _backendPatient = { state: "fail", count: 0, lastUpdated: null };
-      _renderDataState(); _refreshButtonStates();
-      return;
-    }
-    const patient = await pr.json();
-    const lastUpdated = patient?.meta?.lastUpdated ?? null;
-    // Count via /fhir/export — slightly heavier but it's the only
-    // off-the-shelf way to get total resources for a patient. Cap by
-    // 5s timeout so a slow backend doesn't lock the popup forever.
-    let count = 0;
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 5000);
-      const er = await fetch(`${url}/fhir/export?patient=${encodeURIComponent(fhirPid)}`, {
-        headers, signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      if (er.ok) {
-        const bundle = await er.json();
-        if (Array.isArray(bundle.entry)) count = bundle.entry.length;
-      }
-    } catch { /* leave count = 0; not fatal */ }
-    _backendPatient = { state: "present", count, lastUpdated };
-  } catch (_e) {
-    _backendPatient = { state: "fail", count: 0, lastUpdated: null };
-  }
-  _renderDataState();
-  _refreshButtonStates();
-}
-
-async function pushLocalBundleToBackend() {
-  const ov = getPatientOverride();
-  if (!ov?.id_no || !_localBundle.exists || _localBundle.patientId !== ov.id_no) return;
-  const url = els.backendUrl.value.trim().replace(/\/$/, "");
-  const key = els.syncApiKey.value.trim();
-  const headers = {
-    "Content-Type": "application/json",
-    ...(key ? { "X-Sync-API-Key": key } : {}),
-  };
-  els.pushLocalBtn.disabled = true;
-  els.pushLocalBtn.textContent = "傳送中…";
-  try {
-    const { [PENDING_BUNDLE_KEY]: pending } =
-      await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-    if (!pending?.json) throw new Error("no local bundle");
-    const r = await fetch(`${url}/fhir/import`, {
-      method: "POST", headers, body: pending.json,
-    });
-    if (!r.ok) {
-      const text = await r.text();
-      throw new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`);
-    }
-    const result = await r.json();
-    setStatus(`✅ 已上傳 ${result.imported ?? "?"} 筆到後端`, "success");
-    await checkBackendPatient();
-  } catch (e) {
-    setStatus(`⛔ 上傳失敗：${e.message}`, "error");
-  } finally {
-    // _renderDataState() (already called from checkBackendPatient on
-    // success) decides the right disabled state + label based on
-    // whether backend and local agree. Call it here too to cover the
-    // failure path that skipped checkBackendPatient.
-    _renderDataState();
-  }
-}
-
-els.pushLocalBtn?.addEventListener("click", pushLocalBundleToBackend);
-
-// The blocked-reason warning strip doubles as a "jump back to the
-// relevant step" button when there's a known target step. Click
-// anywhere on it to navigate; the trailing "回 ① 登入 →" hint
-// telegraphs where the click will land.
-els.syncBlockedReason?.addEventListener("click", () => {
-  const target = Number(els.syncBlockedReason.dataset.targetStep);
-  if (target >= 1 && target <= 3) _setActiveStep(target);
-});
-
-// "🔗 開啟健保存摺登入" — opens the NHI landing page so the user
-// doesn't have to remember / google the URL. Closes the popup so
-// they don't have to dismiss it manually after the new tab opens.
-els.openNhiBtn?.addEventListener("click", async () => {
-  await chrome.tabs.create({ url: NHI_LANDING });
-  window.close();
-});
-
-// "前往登入頁面" inside the needs-login banner. Covers both:
-//   1. Session expired silently while on a logged-in page (looks
-//      "still logged in" to the user → they're confused why we say
-//      otherwise).
-//   2. User is on a public sub-page like 問答專區 — a plain reload
-//      would just re-render the same un-auth page without surfacing
-//      a login form. Navigating directly to the login URL handles
-//      both cases identically.
-// Drives chrome.tabs.update with a url so the existing NHI tab
-// goes straight to the login picker; focuses + closes popup so the
-// user lands on the page they need to act on.
-els.nhiReloadBtn?.addEventListener("click", async () => {
-  if (!_nhiTabId) {
-    // Defensive: banner shouldn't be visible when off-NHI, but if
-    // something went sideways just open the login page in a new tab.
-    await chrome.tabs.create({ url: NHI_LOGIN_URL });
-    window.close();
-    return;
-  }
-  try {
-    await chrome.tabs.update(_nhiTabId, { url: NHI_LOGIN_URL, active: true });
-  } catch {}
-  window.close();
-});
-
-// Pending bundle now lives in chrome.storage.session (auto-clears when
-// the browser closes — see security audit #5 fix). Listener filters on
-// "session" area accordingly.
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "session" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
-});
-
-// ── Backend mode feature gate ────────────────────────────────────────
-// Layperson default: backend mode (Docker server + Dashboard + SMART
-// App) is hidden behind a toggle in 進階設定. When OFF (default), the
-// mode-toggle row in step 3 doesn't render and syncMode is forced to
-// "local" regardless of what's in storage.
-async function loadBackendModeEnabled() {
-  const { backendModeEnabled } = await chrome.storage.local.get("backendModeEnabled");
-  const enabled = backendModeEnabled === true;
-  els.backendModeEnabled.checked = enabled;
-  document.body.dataset.backendEnabled = enabled ? "true" : "false";
-}
-
-els.backendModeEnabled?.addEventListener("change", async () => {
-  const enabled = els.backendModeEnabled.checked;
-  document.body.dataset.backendEnabled = enabled ? "true" : "false";
-  await chrome.storage.local.set({ backendModeEnabled: enabled });
-  if (enabled) {
-    // Auto-switch to backend mode so the user immediately sees the
-    // mode tab + the backend config fields they just unlocked. Beats
-    // "I enabled it but nothing happened".
-    for (const r of els.modeRadios()) r.checked = r.value === "backend";
-    document.body.dataset.mode = "backend";
-    await chrome.storage.local.set({ syncMode: "backend" });
-    testBackendConnection();
-  } else {
-    // Force back to local; clear any leftover backend connection state
-    // so the next time they re-enable it doesn't show stale "已連線".
-    for (const r of els.modeRadios()) r.checked = r.value === "local";
-    document.body.dataset.mode = "local";
-    await chrome.storage.local.set({ syncMode: "local" });
-    _connState = "unknown"; _connFailReason = null;
-    _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
-    _renderConnBanner(); _renderDataState(); _refreshButtonStates();
-  }
-});
-
-// ── Sync mode (local | backend) ──────────────────────────────────────
-async function loadSyncMode() {
-  const { syncMode } = await chrome.storage.local.get("syncMode");
-  // Backend mode disabled in 進階設定 → ignore any stored backend mode.
-  const backendEnabled = document.body.dataset.backendEnabled === "true";
-  const mode = (backendEnabled && syncMode === "backend") ? "backend" : DEFAULT_MODE;
-  for (const r of els.modeRadios()) r.checked = r.value === mode;
-  document.body.dataset.mode = mode;
-  if (mode === "backend") {
-    // Auto-test on open so the user sees status without clicking. Awaiting
-    // here serializes the rest of init() until we know the answer.
-    await testBackendConnection();
-  } else {
-    _connState = "unknown"; _connFailReason = null;
-    _renderConnBanner();
-  }
-}
-
-function currentMode() {
-  for (const r of els.modeRadios()) if (r.checked) return r.value;
-  return DEFAULT_MODE;
-}
-
-for (const r of els.modeRadios()) {
-  r.addEventListener("change", () => {
-    const mode = currentMode();
-    document.body.dataset.mode = mode;
-    chrome.storage.local.set({ syncMode: mode });
-    if (mode === "backend") {
-      testBackendConnection(); // triggers checkBackendPatient on success
-    } else {
-      _connState = "unknown"; _connFailReason = null;
-      _backendPatient = { state: "unknown", count: 0, lastUpdated: null };
-      _renderConnBanner(); _renderDataState(); _refreshButtonStates();
-    }
-  });
-}
-
-els.backendUrl.addEventListener("change", () => {
-  chrome.storage.local.set({ backendUrl: els.backendUrl.value.trim() });
-  els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
-  if (currentMode() === "backend") testBackendConnection();
-});
-els.syncApiKey.addEventListener("change", () => {
-  chrome.storage.local.set({ syncApiKey: els.syncApiKey.value.trim() });
-});
-// Mask-patient-name toggle — defaults OFF (citizens downloading their
-// own data don't need anonymization). When ON: popup summary, FHIR
-// Bundle output, sync-log, and NHI report narrative all use the
-// masked form (郭一新 → 郭O新) instead of the real name.
-let _maskNameEnabled = false;
-async function loadMaskNameEnabled() {
-  const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
-  _maskNameEnabled = maskNameEnabled === true;
-  if (els.maskNameEnabled) els.maskNameEnabled.checked = _maskNameEnabled;
-}
-
-function _maybeMask(name) {
-  return _maskNameEnabled ? maskName(name) : name || "";
-}
-
-els.maskNameEnabled?.addEventListener("change", async () => {
-  _maskNameEnabled = els.maskNameEnabled.checked;
-  await chrome.storage.local.set({ maskNameEnabled: _maskNameEnabled });
-  // Re-render popup chrome (summary line is the only spot that reads
-  // _maybeMask reactively; everywhere else samples it just-in-time).
-  refreshOverrideSummary();
-});
-
-// Reject SMART App Launch URLs that aren't https:// or localhost
-// loopback. Otherwise a typo or paste from a chat message could send
-// the (short-lived but real) iss + launch token to an attacker-
-// controlled origin, who can then walk the OAuth flow and obtain a
-// patient-scoped Bearer token. Validated here on change AND again at
-// launch time below — two gates because a malicious extension peer
-// could otherwise write directly to chrome.storage.local.
-function _isSafeSmartAppUrl(s) {
-  try {
-    const u = new URL(s);
-    if (u.protocol === "https:") return true;
-    if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) {
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-els.smartAppUrl.addEventListener("change", () => {
-  // Persist trimmed value. Empty string → restore default on next load.
-  const v = els.smartAppUrl.value.trim();
-  if (!v) {
-    chrome.storage.local.remove("smartAppLaunchUrl");
-    els.smartAppUrl.value = DEFAULT_SMART_APP_LAUNCH;
-    return;
-  }
-  if (!_isSafeSmartAppUrl(v)) {
-    setStatus(
-      "⛔ SMART App URL 必須是 https:// 或本機 (http://localhost)；已還原預設。",
-      "error",
-    );
-    chrome.storage.local.remove("smartAppLaunchUrl");
-    els.smartAppUrl.value = DEFAULT_SMART_APP_LAUNCH;
-    return;
-  }
-  chrome.storage.local.set({ smartAppLaunchUrl: v });
-});
-
-function setStatus(text, kind, breakdown, errors, action) {
-  // Build with DOM API — avoids innerHTML / XSS risk.
-  // breakdown is an array of mixed entries:
-  //   - phase timings prefixed with "⏱"  → 階段耗時
-  //   - per-endpoint counts                → 各 endpoint 抓到幾筆
-  // errors (optional) is the raw `${ep}: ${msg}` strings from the SW,
-  // surfaced under a "失敗明細" sub-section so the user can see what
-  // the "N 項失敗" summary actually points at (no longer DevTools-only).
-  // Both groups are tucked inside a single "查看明細" toggle so the
-  // popup stays compact by default.
-  els.status.className = kind || "";
-  els.status.textContent = "";
-  const hasErrors = Array.isArray(errors) && errors.length > 0;
-  if (!text && !(breakdown && breakdown.length) && !hasErrors) return;
-
-  // Header row: status text + dismiss button (only when sync not
-  // running, so the user can declutter the popup once they're done
-  // reading the result). Mid-sync the button is suppressed so the
-  // user can't accidentally hide the live progress.
-  const header = document.createElement("div");
-  header.className = "status-header";
-  const textSpan = document.createElement("span");
-  textSpan.className = "status-text";
-  textSpan.textContent = text || "";
-  header.appendChild(textSpan);
-  const running = _latestStatus?.running === true;
-  if (!running) {
-    const dismissBtn = document.createElement("button");
-    dismissBtn.type = "button";
-    dismissBtn.className = "status-dismiss";
-    dismissBtn.textContent = "✕";
-    dismissBtn.title = "清除這則訊息";
-    dismissBtn.setAttribute("aria-label", "清除訊息");
-    dismissBtn.addEventListener("click", () => {
-      // Mirror what the existing clearPendingBundle flow does for
-      // its sibling stale-result wipe — drop SW-side persisted
-      // syncStatus, drop popup-side cached _latestStatus, then
-      // re-render empty.
-      chrome.runtime
-        .sendMessage({ type: "clearSyncStatus" })
-        .catch(() => {});
-      _latestStatus = null;
-      setStatus("", null);
-    });
-    header.appendChild(dismissBtn);
-  }
-  els.status.appendChild(header);
-
-  // Optional call-to-action button. Rendered between header and any
-  // breakdown/error details so it stays visually adjacent to the
-  // status text. Used by the "downloaded" phase to take users straight
-  // to step 4 (where the SMART app launcher lives) without making
-  // them mentally parse the wizard tabs.
-  if (action && typeof action.onClick === "function") {
-    const actionBtn = document.createElement("button");
-    actionBtn.type = "button";
-    actionBtn.className = "status-action";
-    actionBtn.textContent = action.label;
-    actionBtn.addEventListener("click", action.onClick);
-    els.status.appendChild(actionBtn);
-  }
-
-  if ((breakdown && breakdown.length) || hasErrors) {
-    const bd = breakdown || [];
-    const phaseRows = bd.filter((b) => b.startsWith("⏱"));
-    const otherRows = bd.filter((b) => !b.startsWith("⏱"));
-
-    const details = document.createElement("details");
-    details.className = "status-detail";
-    const summary = document.createElement("summary");
-    summary.textContent = "查看明細";
-    details.appendChild(summary);
-
-    if (otherRows.length) {
-      const body = document.createElement("div");
-      body.className = "status-breakdown";
-      // Each breakdown string looks like "就醫：164 筆". Split on the
-      // full-width colon and render label left / value right so the
-      // count column lines up cleanly. Rows that don't have a clean
-      // colon split (or have multiple, e.g. composite "成人健檢：
-      // 2 筆 → 34 項") fall back to one-line plain rendering.
-      for (const row of otherRows) {
-        const lineEl = document.createElement("div");
-        lineEl.className = "br-row";
-        const colonIdx = row.indexOf("：");
-        if (colonIdx > 0 && colonIdx < row.length - 1) {
-          const labelSpan = document.createElement("span");
-          labelSpan.className = "br-label";
-          labelSpan.textContent = row.slice(0, colonIdx);
-          const valueSpan = document.createElement("span");
-          valueSpan.className = "br-value";
-          valueSpan.textContent = row.slice(colonIdx + 1).trim();
-          lineEl.appendChild(labelSpan);
-          lineEl.appendChild(valueSpan);
-        } else {
-          lineEl.classList.add("br-row-plain");
-          lineEl.textContent = row;
-        }
-        body.appendChild(lineEl);
-      }
-      details.appendChild(body);
-    }
-    if (hasErrors) {
-      // Failure-detail nested section. Per-error raw messages are
-      // dev-ish (e.g. "imaging detail: HTTP 504") but surfacing them
-      // beats the previous "N 項失敗 — DevTools to read" UX. Folded
-      // by default so the success summary stays the dominant signal
-      // when something did still get through.
-      const errDetails = document.createElement("details");
-      errDetails.className = "status-detail status-errors";
-      const errSummary = document.createElement("summary");
-      errSummary.textContent = `失敗明細（${errors.length}）`;
-      errDetails.appendChild(errSummary);
-      const errBody = document.createElement("div");
-      errBody.className = "status-error-list";
-      for (const e of errors) {
-        const line = document.createElement("div");
-        line.textContent = `• ${e}`;
-        errBody.appendChild(line);
-      }
-      errDetails.appendChild(errBody);
-      details.appendChild(errDetails);
-    }
-    if (phaseRows.length) {
-      // Phase timings are dev info — tuck them inside a second toggle
-      // so end users don't see "nhi-parallel=8s" right after a success
-      // banner and think something's wrong.
-      const techDetails = document.createElement("details");
-      techDetails.className = "status-detail status-tech";
-      const techSummary = document.createElement("summary");
-      techSummary.textContent = "技術細節";
-      techDetails.appendChild(techSummary);
-      const phases = document.createElement("div");
-      phases.className = "status-phases";
-      // Each phaseRow looks like "⏱ nhi-parallel=2.6s". Strip the
-      // stopwatch prefix, split on "=", render as label / value pair
-      // so durations align vertically (tabular-nums in CSS).
-      for (const raw of phaseRows) {
-        const clean = raw.replace(/^⏱\s*/, "");
-        const eqIdx = clean.indexOf("=");
-        const rowEl = document.createElement("div");
-        rowEl.className = "ph-row";
-        if (eqIdx > 0 && eqIdx < clean.length - 1) {
-          const labelSpan = document.createElement("span");
-          labelSpan.className = "ph-label";
-          labelSpan.textContent = clean.slice(0, eqIdx);
-          const valueSpan = document.createElement("span");
-          valueSpan.className = "ph-value";
-          valueSpan.textContent = clean.slice(eqIdx + 1);
-          rowEl.appendChild(labelSpan);
-          rowEl.appendChild(valueSpan);
-        } else {
-          rowEl.textContent = clean;
-        }
-        phases.appendChild(rowEl);
-      }
-      techDetails.appendChild(phases);
-      details.appendChild(techDetails);
-    }
-    els.status.appendChild(details);
-  }
-  // Status visibility drives whether the result zone shows at all.
-  if (_wizardInitialized) _refreshResultZone();
-}
-
-async function getActiveTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab;
-}
-
-// ── Pending FHIR Bundle (local-mode result) ──────────────────────────
-//
-// Background stashes the generated Bundle into chrome.storage.local
-// under `pendingFhirBundle`. Popup renders a download button. User must
-// click to actually trigger chrome.downloads.download — the file never
-// hits the disk unsolicited.
-
-function _fmtBytes(n) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-async function refreshPendingBundle() {
-  const { [PENDING_BUNDLE_KEY]: pending } =
-    await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-  if (!pending || !pending.json) {
-    els.pendingBundle.hidden = true;
-    if (_wizardInitialized) _refreshResultZone();
-    return;
-  }
-  // If the user has switched override to a different patient, the
-  // stashed bundle is for the *previous* patient. Hide it so they
-  // can't accidentally download the wrong file. The bundle stays in
-  // storage; re-entering the matching override will surface it again.
-  const ov = getPatientOverride();
-  if (ov?.id_no && pending.patientId && pending.patientId !== ov.id_no) {
-    els.pendingBundle.hidden = true;
-    if (_wizardInitialized) _refreshResultZone();
-    return;
-  }
-  els.pendingBundle.hidden = false;
-  // Filename + sizeage live in separate sibling elements in the new
-  // single-panel layout so we just update each directly.
-  const ago = pending.generatedAt ? _fmtRelative(pending.generatedAt) : "";
-  if (els.bundleFilename) {
-    els.bundleFilename.textContent = pending.filename;
-    els.bundleFilename.title = pending.filename;
-  }
-  if (els.bundleSizeage) {
-    els.bundleSizeage.textContent = `${_fmtBytes(pending.bytes || 0)}${ago ? ` · ${ago}` : ""}`;
-  }
-  if (_wizardInitialized) _refreshResultZone();
-}
-
-// Rewrite the sync-status banner from "✅ 取得完成" → "✅ 已下載" once
-// the user has actually saved the bundle to disk. Keeps totalResources
-// + elapsed info that was in the original message so the user still
-// sees "what got downloaded" at a glance. Idempotent — re-runs noop
-// if phase is already "downloaded".
-async function _transitionStatusToDownloaded(bytes) {
-  try {
-    const { syncStatus } = await chrome.storage.local.get("syncStatus");
-    if (!syncStatus || syncStatus.phase === "downloaded") return;
-    const total = syncStatus.totalResources ?? 0;
-    const sizeStr = bytes ? ` · ${_fmtBytes(bytes)}` : "";
-    const next = {
-      ...syncStatus,
-      progress: `✅ 已下載健康紀錄檔（共 ${total} 筆${sizeStr}）`,
-      phase: "downloaded",
-      ts: Date.now(),
-    };
-    await chrome.storage.local.set({ syncStatus: next });
-  } catch {}
-}
-
-async function downloadPendingBundle() {
-  const { [PENDING_BUNDLE_KEY]: pending } =
-    await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-  if (!pending) return;
-  const blob = new Blob([pending.json], { type: "application/fhir+json" });
-  const url = URL.createObjectURL(blob);
-  let downloadId = null;
-  try {
-    // saveAs: true → Chrome opens a native "save as" dialog so the user
-    // explicitly chooses the destination and can review the filename
-    // before PHI lands on disk. Better than silently dropping into the
-    // default Downloads folder.
-    downloadId = await chrome.downloads.download({
-      url,
-      filename: pending.filename,
-      saveAs: true,
-    });
-  } catch (e) {
-    // User cancelled the save dialog or the download otherwise failed —
-    // leave the pending bundle in place so the user can try again.
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    return;
-  }
-  if (downloadId == null) {
-    // User dismissed the saveAs dialog (Chrome resolves the promise
-    // with undefined in that case). Don't wipe the stash.
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    return;
-  }
-  // Wipe the session-stashed copy once the download actually starts.
-  // The file is now on the user's disk under their chosen path —
-  // keeping a duplicate in chrome.storage.session is pure PHI surface.
-  // We listen for the download's terminal state (complete or interrupted)
-  // before wiping, so a half-written file followed by a retry still has
-  // something to fall back on. Belt-and-suspenders only — TTL sweep in
-  // the SW will catch any case where the listener never fires.
-  const _onChange = (delta) => {
-    if (delta.id !== downloadId) return;
-    const final = delta.state?.current;
-    if (final === "complete") {
-      chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {});
-      chrome.downloads.onChanged.removeListener(_onChange);
-      // Transition the sync status banner from "✅ 取得完成" to
-      // "✅ 已下載" so users who close + reopen the popup (or just
-      // glance at the banner) see an accurate up-to-date state
-      // rather than a stale "completed sync" message. The breakdown
-      // (查看明細) stays so the count of what was downloaded is
-      // still inspectable.
-      _transitionStatusToDownloaded(pending.bytes);
-    } else if (final === "interrupted") {
-      // Keep the stash; user might retry.
-      chrome.downloads.onChanged.removeListener(_onChange);
-    }
-  };
-  chrome.downloads.onChanged.addListener(_onChange);
-  // Release object URL after the download has time to start.
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
-
-async function clearPendingBundle() {
-  await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
-  await refreshPendingBundle();
-  // Clearing the download is the user's "I'm done with this result"
-  // gesture — wipe the completion status banner too so the result zone
-  // collapses entirely instead of lingering with a stale "✅ 取得完成"
-  // and no download button next to it.
-  _latestStatus = null;
-  setStatus("", null);
-  await chrome.runtime
-    .sendMessage({ type: "clearSyncStatus" })
-    .catch(() => {});
-}
-
-els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);
-els.clearBundleBtn.addEventListener("click", clearPendingBundle);
-
-// Live update when background stashes a new bundle while popup is open.
-// (Note: another onChanged listener earlier in the file refreshes the
-// data-state card; we leave that one separate so failure of either path
-// doesn't take the other down.)
-// Pending bundle is in chrome.storage.session (security audit #5 fix);
-// listener filters on "session" area accordingly.
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "session" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
-});
-
-// Background-side flow can mutate the patientOverride mid-sync — most
-// importantly _maybeFetchPatientIdFromNhi swaps the auto-XXXXXXXX
-// placeholder for the real NHI cid. Without this listener the popup
-// inputs stayed stale, refreshPendingBundle's patient-match check
-// then compared old input value vs. fresh bundle.patientId and hid
-// the download button. Reload the override into the inputs whenever
-// storage changes so every downstream guard sees consistent values.
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.patientOverride) loadPatientOverride();
-});
-
-// ── ⓘ Help-icon tooltip ─────────────────────────────────────────────
-//
-// One shared <div> appended to the popup body. On hover of any
-// .help-icon, we copy its data-tip text and position the tooltip
-// inside the popup, clamping to its viewport so it can't clip off
-// either edge regardless of where the icon sits. (CSS pseudo-elements
-// can't be measured, so a pure-CSS approach inevitably picks one
-// anchor side and breaks for icons on the other side of the popup.)
-const _helpTip = document.createElement("div");
-_helpTip.className = "help-tooltip";
-document.body.appendChild(_helpTip);
-
-const VIEWPORT_MARGIN = 6; // keep this many px clear of popup edges
-
-function _showHelpTooltip(icon) {
-  _helpTip.textContent = icon.dataset.tip || icon.getAttribute("data-tip") || "";
-  _helpTip.classList.add("visible");
-
-  // Measure now that content is set.
-  const iconRect = icon.getBoundingClientRect();
-  const tipRect = _helpTip.getBoundingClientRect();
-  const viewportW = document.documentElement.clientWidth;
-  const viewportH = document.documentElement.clientHeight;
-
-  // Horizontal: prefer centered on the icon; clamp into [margin, vw-tip-margin].
-  let left = iconRect.left + iconRect.width / 2 - tipRect.width / 2;
-  if (left < VIEWPORT_MARGIN) left = VIEWPORT_MARGIN;
-  if (left + tipRect.width > viewportW - VIEWPORT_MARGIN) {
-    left = viewportW - VIEWPORT_MARGIN - tipRect.width;
-  }
-  // Vertical: prefer above the icon; flip below if there's no room up top.
-  let top = iconRect.top - tipRect.height - 6;
-  if (top < VIEWPORT_MARGIN) top = iconRect.bottom + 6;
-  // Final safety: clamp into viewport so very long tooltips can't bleed
-  // off the bottom either.
-  if (top + tipRect.height > viewportH - VIEWPORT_MARGIN) {
-    top = Math.max(VIEWPORT_MARGIN, viewportH - VIEWPORT_MARGIN - tipRect.height);
-  }
-
-  _helpTip.style.left = `${left}px`;
-  _helpTip.style.top = `${top}px`;
-}
-
-function _hideHelpTooltip() {
-  _helpTip.classList.remove("visible");
-}
-
-// Delegated hover handlers — works for icons added after popup load too
-// (e.g. when mode toggle reveals backend-only fields).
-document.addEventListener("mouseover", (e) => {
-  const icon = e.target.closest?.(".help-icon");
-  if (icon) _showHelpTooltip(icon);
-});
-document.addEventListener("mouseout", (e) => {
-  const icon = e.target.closest?.(".help-icon");
-  if (icon) _hideHelpTooltip();
-});
+// The popup logic lives across src/popup/*.js (split out of the former
+// 2100-line popup.js). This entry owns two things only:
+//   • init() — load persisted state, probe the NHI tab, start the wizard.
+//   • ALL event wiring — every addEventListener is consolidated here so
+//     a listener can't be silently dropped during a module move (the
+//     popup has no automated test coverage; this file is the wiring
+//     source of truth). Each handler delegates to an imported function.
+
+import {
+  NHI_LANDING,
+  NHI_LOGIN_URL,
+  PENDING_BUNDLE_KEY,
+  STANDALONE_SMART_APP_URL,
+} from "./popup/constants.js";
+import { els } from "./popup/els.js";
+import { state } from "./popup/state.js";
+import { getActiveTab, isNhiTab } from "./popup/utils.js";
+import {
+  clearPatientOverride,
+  loadMaskNameEnabled,
+  loadPatientOverride,
+  onMaskNameToggle,
+  refreshOverrideSummary,
+  savePatientOverride,
+} from "./popup/patient-form.js";
+import {
+  loadBackendModeEnabled,
+  loadBackendUrl,
+  loadSyncMode,
+  onBackendModeToggle,
+  onBackendUrlChange,
+  onModeChange,
+  testBackendConnection,
+} from "./popup/connection.js";
+import {
+  _refreshLocalBundleState,
+  pushLocalBundleToBackend,
+} from "./popup/data-state.js";
+import {
+  _initWizard,
+  _maybeAutoAdvance,
+  _refreshButtonStates,
+  _refreshWizardUi,
+  _setActiveStep,
+} from "./popup/wizard.js";
+import {
+  applySyncStatus,
+  refreshSyncStatusFromBackground,
+  setStatus,
+  stopSync,
+} from "./popup/status.js";
+import {
+  clearPendingBundle,
+  downloadPendingBundle,
+  refreshPendingBundle,
+} from "./popup/bundle.js";
+import { apiSyncNhi, launch, onSmartAppUrlChange } from "./popup/sync-client.js";
+import { _hideHelpTooltip, _showHelpTooltip } from "./popup/tooltip.js";
 
 async function init() {
   document.getElementById("version").textContent =
@@ -1713,7 +109,7 @@ async function init() {
   if (els.openNhiSection) els.openNhiSection.hidden = onNhi;
   // Stash the NHI tab id so the "重新整理頁面" button inside the
   // needs-login banner can reload it without having to re-query tabs.
-  _nhiTabId = onNhi ? tab.id : null;
+  state.nhiTabId = onNhi ? tab.id : null;
 
   // When on the NHI tab, ask background to verify there's an active
   // session. The SW probes IHKE3410 with sessionStorage.token — cheap
@@ -1735,7 +131,7 @@ async function init() {
         // Login probe completing positively is the step-1 intentional
         // completion event — advance the wizard once if the user is
         // currently looking at step 1.
-        if (loggedIn && _wizardInitialized) _maybeAutoAdvance();
+        if (loggedIn && state.wizardInitialized) _maybeAutoAdvance();
       })
       .catch(() => {
         // If the probe fails (SW unreachable, etc), don't punish the
@@ -1762,110 +158,112 @@ async function init() {
   await refreshSyncStatusFromBackground();
 }
 
-async function refreshSyncStatusFromBackground() {
-  const status = await chrome.runtime.sendMessage({ type: "getSyncStatus" }).catch(() => null);
-  if (!status) return;
-  applySyncStatus(status);
+// ── Settings view toggle ─────────────────────────────────────────────
+//
+// Gear icon in the header opens a dedicated settings view that replaces
+// the wizard. Returning is via the "← 返回" button at the top of that
+// view. The CSS is driven by body[data-view="settings"] — toggling that
+// attribute is all the JS does. We deliberately do NOT auto-jump back to
+// the wizard after a field change: users editing the backend URL may
+// need to verify changes across multiple fields before closing.
+function _openSettingsView() {
+  document.body.dataset.view = "settings";
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+function _closeSettingsView() {
+  delete document.body.dataset.view;
+  // Pop back to whichever wizard step is current — refresh visual
+  // state so the user lands on the same step they came from.
+  _refreshWizardUi();
+  window.scrollTo({ top: 0, behavior: "instant" });
 }
 
-// Latest status snapshot — keeping it lets the live-elapsed ticker
-// repaint the same progress text with an updated `[Ns]` prefix every
-// second without spamming chrome.storage from the service worker.
-let _latestStatus = null;
-let _elapsedTickerId = null;
+// ════════════════════════════════════════════════════════════════════
+//  Event wiring — single source of truth (see file header).
+// ════════════════════════════════════════════════════════════════════
 
-function _fmtElapsed(ms) {
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}s`;
-  return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`;
-}
+// Connection banner retry.
+els.connRetryBtn?.addEventListener("click", testBackendConnection);
 
-function _renderStatus() {
-  const status = _latestStatus;
-  if (!status) return;
-  let text = status.progress || "(sync 進行中)";
-  // Strip legacy "— 接著至 ④ 查看 開啟「醫析 MediPrisma」..." suffix
-  // from any syncStatus that was persisted by pre-v0.11.2 builds. The
-  // suffix became a CTA button below; without this strip, freshly-
-  // upgraded popups show both old text AND the new button until the
-  // user does the next sync. Idempotent (no-op once already stripped).
-  text = text.replace(/\s*[—-]\s*接著至\s*④.*$/u, "").trim();
-  if (status.running && status.started) {
-    const elapsed = Date.now() - status.started;
-    text = `⏱ ${_fmtElapsed(elapsed)} · ${text}`;
+// Data-state: upload local bundle to backend.
+els.pushLocalBtn?.addEventListener("click", pushLocalBundleToBackend);
+
+// The blocked-reason warning strip doubles as a "jump back to the
+// relevant step" button when there's a known target step. Click anywhere
+// on it to navigate; the trailing "回 ① 登入 →" hint telegraphs where
+// the click will land.
+els.syncBlockedReason?.addEventListener("click", () => {
+  const target = Number(els.syncBlockedReason.dataset.targetStep);
+  if (target >= 1 && target <= 3) _setActiveStep(target);
+});
+
+// "🔗 開啟健保存摺登入" — opens the NHI landing page so the user
+// doesn't have to remember / google the URL. Closes the popup so they
+// don't have to dismiss it manually after the new tab opens.
+els.openNhiBtn?.addEventListener("click", async () => {
+  await chrome.tabs.create({ url: NHI_LANDING });
+  window.close();
+});
+
+// "前往登入頁面" inside the needs-login banner. Covers both:
+//   1. Session expired silently while on a logged-in page (looks
+//      "still logged in" to the user → they're confused why we say
+//      otherwise).
+//   2. User is on a public sub-page like 問答專區 — a plain reload
+//      would just re-render the same un-auth page without surfacing a
+//      login form. Navigating directly to the login URL handles both.
+// Drives chrome.tabs.update with a url so the existing NHI tab goes
+// straight to the login picker; focuses + closes popup so the user
+// lands on the page they need to act on.
+els.nhiReloadBtn?.addEventListener("click", async () => {
+  if (!state.nhiTabId) {
+    // Defensive: banner shouldn't be visible when off-NHI, but if
+    // something went sideways just open the login page in a new tab.
+    await chrome.tabs.create({ url: NHI_LOGIN_URL });
+    window.close();
+    return;
   }
-  const kind = status.running ? "info" : (status.phase === "error" ? "error" : "success");
-  const breakdown = status.running ? null : status.breakdown;
-  const errors = status.running ? null : status.errors;
-  // Phase-specific CTA: after the bundle hits disk, surface a button
-  // that jumps the wizard to step 4 (SMART app launcher) so the user
-  // doesn't have to mentally locate "step ④" themselves. The status
-  // message body no longer includes the "接著至 ④ 查看..." suffix —
-  // it became this button.
-  let action = null;
-  if (status.phase === "downloaded") {
-    action = {
-      label: "→ 至 ④ 查看 開啟「醫析 MediPrisma」",
-      onClick: () => _setActiveStep(4),
-    };
-  }
-  setStatus(text, kind, breakdown, errors, action);
-}
+  try {
+    await chrome.tabs.update(state.nhiTabId, { url: NHI_LOGIN_URL, active: true });
+  } catch {}
+  window.close();
+});
 
-function applySyncStatus(status) {
-  if (!status) return;
-  _latestStatus = status;
-  _renderStatus();
-  // Status banner lives inside step 3 — force-jump there so it's
-  // actually visible. Running sync OR a fresh completion both warrant
-  // being on the result step.
-  if (_wizardInitialized && _activeStep !== 3) {
-    _setActiveStep(3, { silent: true });
-  }
-  if (status.running) {
-    els.syncApiBtn.disabled = true;
-    els.syncApiBtn.textContent = "取得中…";
-    els.stopBtn.hidden = false;
-    if (!_elapsedTickerId) {
-      _elapsedTickerId = setInterval(_renderStatus, 1000);
-    }
-  } else {
-    els.stopBtn.hidden = true;
-    if (_elapsedTickerId) {
-      clearInterval(_elapsedTickerId);
-      _elapsedTickerId = null;
-    }
-    // Re-derive sync button enabled state from mode/conn/NHI-tab instead
-    // of unconditionally enabling — keeps the button disabled when we
-    // know we shouldn't sync (e.g. backend down, off-NHI tab).
-    _refreshButtonStates();
-    // Sync just finished — both sides may have changed (backend got
-    // new resources in backend mode, local bundle was stashed in either
-    // mode). Refresh data-state card so the user sees up-to-date counts.
-    _refreshLocalBundleState();
-    if (currentMode() === "backend" && _connState === "ok") checkBackendPatient();
-  }
+// Backend-mode feature gate + sync-mode radios + persisted config fields.
+els.backendModeEnabled?.addEventListener("change", onBackendModeToggle);
+for (const r of els.modeRadios()) {
+  r.addEventListener("change", onModeChange);
 }
+els.backendUrl.addEventListener("change", onBackendUrlChange);
+els.syncApiKey.addEventListener("change", () => {
+  chrome.storage.local.set({ syncApiKey: els.syncApiKey.value.trim() });
+});
+els.maskNameEnabled?.addEventListener("change", onMaskNameToggle);
+els.smartAppUrl.addEventListener("change", onSmartAppUrlChange);
 
-// Stop the in-progress sync. Two-pronged so it works even when the
-// service worker has died: (1) tell the SW to set its cancel flag,
-// (2) write storage directly to running:false so the popup UI unfreezes
-// immediately even if the SW message can't be delivered.
-async function stopSync() {
-  await chrome.storage.local.set({
-    syncStatus: {
-      running: false,
-      progress: "⛔ 停止中，正在清除部分資料…",
-      phase: "cancelled",
-      ts: Date.now(),
-      completed: Date.now(),
-    },
-  });
-  setStatus("⛔ 停止中，正在清除部分資料…", "info");
-  chrome.runtime.sendMessage({ type: "stopSync" }).catch(() => {});
-  els.stopBtn.hidden = true;
-  _refreshButtonStates();
-}
+// Pending-bundle download / clear buttons.
+els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);
+els.clearBundleBtn.addEventListener("click", clearPendingBundle);
 
+// chrome.storage.onChanged listeners. The pending bundle lives in
+// chrome.storage.session (security audit #5 fix); syncStatus +
+// patientOverride live in local. We keep the two session-bundle
+// listeners separate (data-state vs download UI) so a failure in one
+// path doesn't take the other down.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "session" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "session" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
+});
+// Background-side flow can mutate the patientOverride mid-sync — most
+// importantly _maybeFetchPatientIdFromNhi swaps the auto-XXXXXXXX
+// placeholder for the real NHI cid. Reload the override into the inputs
+// whenever storage changes so every downstream guard sees consistent
+// values.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.patientOverride) loadPatientOverride();
+});
 // Live progress updates — listen on chrome.storage.onChanged so we get
 // every update the SW writes, regardless of whether the SW's broadcast
 // sendMessage reached us.
@@ -1891,199 +289,18 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   }
 });
 
-// Pre-flight detection for NHI login state. Two signals (either triggers):
-//  1. URL is in NHI auth namespace (IHKE3099Sxx) — login / IC card pages
-//  2. Page contains a password input or known logged-out phrases
-async function isOnNhiLoginPage(tabId, url) {
-  if (url?.pathname && /IHKE3099/.test(url.pathname)) return true;
-  try {
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        if (document.querySelector('input[type="password"]')) return true;
-        const text = (document.body?.innerText || "").trim();
-        const phrases = [
-          "請使用健保卡", "請插入健保卡", "請插入您的健保卡",
-          "登入健康存摺", "登入失敗", "請重新登入",
-          "Session 已逾時", "session 已逾時", "已逾時",
-          "請以健保卡登入",
-        ];
-        return phrases.some((p) => text.includes(p));
-      },
-    });
-    return !!result;
-  } catch {
-    return false;
-  }
-}
+// Delegated help-tooltip hover handlers — works for icons added after
+// popup load too (e.g. when mode toggle reveals backend-only fields).
+document.addEventListener("mouseover", (e) => {
+  const icon = e.target.closest?.(".help-icon");
+  if (icon) _showHelpTooltip(icon);
+});
+document.addEventListener("mouseout", (e) => {
+  const icon = e.target.closest?.(".help-icon");
+  if (icon) _hideHelpTooltip();
+});
 
-// ⚡ NHI API-direct sync — primary path. Hits NHI's underlying JSON
-// endpoints in parallel and posts adapted items to /sync/upload-structured.
-// Requires patient_override to be filled.
-// Convert a backend URL → the origin-pattern Chrome wants for permission
-// requests. "http://192.168.1.5:8010" → "http://192.168.1.5:8010/*".
-// Returns null when the URL isn't parseable so the caller can short-circuit.
-function _originPatternFor(url) {
-  try {
-    const u = new URL(url);
-    return `${u.protocol}//${u.host}/*`;
-  } catch {
-    return null;
-  }
-}
-
-// Backend-mode pre-flight: ensure the extension has host permission for
-// the user-configured backend URL. Localhost / 127.0.0.1 are covered by
-// the default manifest host_permissions; remote / LAN / production URLs
-// need a one-time user grant. Must run from a user gesture (button click).
-async function ensureBackendPermission(backendUrl) {
-  const pattern = _originPatternFor(backendUrl);
-  if (!pattern) return { ok: false, reason: `Backend URL 無法解析: ${backendUrl}` };
-  const already = await chrome.permissions.contains({ origins: [pattern] });
-  if (already) return { ok: true };
-  let granted;
-  try {
-    granted = await chrome.permissions.request({ origins: [pattern] });
-  } catch (e) {
-    return { ok: false, reason: `權限請求失敗: ${e.message}` };
-  }
-  return granted
-    ? { ok: true }
-    : { ok: false, reason: `未授權連線到 ${pattern} — 取消` };
-}
-
-async function apiSyncNhi() {
-  const ov = getPatientOverride();
-  if (!ov) {
-    setStatus("⛔ 請回到「② 您的資料」，填好性別、生日後按「儲存」", "error");
-    return;
-  }
-
-  // Pre-flight: check we're on an NHI tab so cookies are usable from SW.
-  const tab = await getActiveTab();
-  let url;
-  try { url = new URL(tab.url); } catch { setStatus("active tab has no URL", "error"); return; }
-  const onLogin = await isOnNhiLoginPage(tab.id, url);
-  if (onLogin) {
-    setStatus("🔒 還沒登入健保存摺 — 請回到「① 登入」", "error");
-    return;
-  }
-
-  // Backend mode: re-verify connectivity right here even if the banner
-  // last said ok. Between the previous check and this click the user
-  // may have stopped docker; without a fresh probe we'd start an upload
-  // that fails mid-flight after partial data has hit (or failed to hit)
-  // the backend. Cheap (≤5s) and saves a lot of confusion.
-  if (currentMode() === "backend") {
-    const ok = await testBackendConnection();
-    if (!ok) {
-      setStatus("⛔ 連不上本機伺服器 — 請看上方提示說明", "error");
-      return;
-    }
-  }
-
-  els.syncApiBtn.disabled = true;
-
-  await chrome.storage.local.set({
-    syncStatus: {
-      running: true,
-      progress: "開始取得健保存摺資料…",
-      phase: "starting", started: Date.now(), ts: Date.now(),
-    },
-  });
-  setStatus("開始取得健保存摺資料…", "info");
-
-  // Compute date range from the dropdown. "1" = NHI's default window;
-  // anything else is "today back N years". Helper inside background.js
-  // converts to 民國 for NHI's API.
-  const rangeSel = els.apiSyncRange?.value || "3";
-  let dateRange = null;
-  const RANGE_LABELS = {
-    "1":   "最近 1 年",
-    "3":   "最近 3 年",
-    "5":   "最近 5 年",
-    "10":  "最近 10 年",
-    "all": "全部歷史紀錄",
-  };
-  const dateRangeLabel = RANGE_LABELS[rangeSel] || `最近 ${rangeSel} 年`;
-  if (rangeSel !== "1") {
-    const today = new Date();
-    const end = today.toISOString().slice(0, 10);
-    let start;
-    if (rangeSel === "all") {
-      start = "2001-01-01";  // 民國 90 — far enough back for any clinical case
-    } else {
-      const years = parseInt(rangeSel, 10);
-      const s = new Date(today);
-      s.setFullYear(s.getFullYear() - years);
-      start = s.toISOString().slice(0, 10);
-    }
-    dateRange = { start, end };
-  }
-
-  chrome.runtime.sendMessage({
-    type: "startNhiApiSync",
-    payload: {
-      tabId: tab.id,
-      mode: currentMode(),
-      backend: els.backendUrl.value.trim(),
-      syncApiKey: els.syncApiKey.value.trim(),
-      nhiBase: "https://myhealthbank.nhi.gov.tw",
-      patientOverride: ov,
-      dateRange,
-      dateRangeLabel,
-    },
-  }).catch(() => {});
-}
-
-async function launch() {
-  const backend = els.backendUrl.value.trim();
-  const ov = getPatientOverride();
-  const rawId = ov?.id_no;
-  const smartAppLaunch = els.smartAppUrl.value.trim() || DEFAULT_SMART_APP_LAUNCH;
-  // Defense-in-depth: even if a malicious browser extension wrote a
-  // non-HTTPS / non-loopback URL straight into chrome.storage.local
-  // (bypassing the change-listener validator above), the launch path
-  // double-checks before sending the launch token anywhere.
-  if (!_isSafeSmartAppUrl(smartAppLaunch)) {
-    setStatus(
-      "⛔ SMART App URL 不安全（必須 https:// 或本機）；請到進階設定修正。",
-      "error",
-    );
-    return;
-  }
-  if (!rawId) {
-    setStatus("還沒有身分資料 — 請先按「取得健保存摺資料」一次", "error");
-    return;
-  }
-  // Backend tracks Patient under its hashed FHIR id, not the raw national ID.
-  const patientId = derivePatientId(rawId);
-  // Re-test connection even if banner shows ok — backend may have gone
-  // down since the last probe.
-  const ok = await testBackendConnection();
-  if (!ok) {
-    setStatus("⛔ 連不上本機伺服器 — 請看上方提示說明", "error");
-    return;
-  }
-  setStatus("準備開啟醫析…", "info");
-  try {
-    const res = await fetch(`${backend}/smart/launch-context`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ patient_id: patientId }),
-    });
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-    const { launch } = await res.json();
-    const params = new URLSearchParams({ iss: `${backend}/fhir`, launch });
-    // Append iss + launch params, respecting any existing query string.
-    const sep = smartAppLaunch.includes("?") ? "&" : "?";
-    chrome.tabs.create({ url: `${smartAppLaunch}${sep}${params}` });
-    window.close();
-  } catch (e) {
-    setStatus(`❌ 開啟醫析失敗：${e.message}`, "error");
-  }
-}
-
+// Primary action buttons + patient-form controls.
 els.syncApiBtn.addEventListener("click", apiSyncNhi);
 els.stopBtn.addEventListener("click", stopSync);
 els.ovSaveBtn.addEventListener("click", savePatientOverride);
@@ -2094,51 +311,28 @@ els.ovClearBtn.addEventListener("click", clearPatientOverride);
 els.launchBtn.addEventListener("click", launch);
 
 // Step 4: plain new-tab open of the SMART App. URL is hardcoded
-// (STANDALONE_SMART_APP_URL); no FHIR data is passed via URL — the
-// user manually drops the downloaded JSON onto the SMART App page.
-// Decoupling extension <-> SMART App keeps both sides simple, leaks
-// zero PHI through query strings or hash fragments, and lets the
-// extension survive any SMART App protocol change.
+// (STANDALONE_SMART_APP_URL); no FHIR data is passed via URL — the user
+// manually drops the downloaded JSON onto the SMART App page. Decoupling
+// extension <-> SMART App keeps both sides simple, leaks zero PHI through
+// query strings or hash fragments, and lets the extension survive any
+// SMART App protocol change.
 els.openSmartAppBtn?.addEventListener("click", () => {
   chrome.tabs.create({ url: STANDALONE_SMART_APP_URL });
   // Don't auto-close the popup — user may want to re-download or
   // re-launch (e.g. drag failed first time).
 });
 
-// ── Settings view toggle ─────────────────────────────────────────────
-//
-// Gear icon in the header opens a dedicated settings view that
-// replaces the wizard. Returning is via the "← 返回" button at the
-// top of that view. The CSS is driven by body[data-view="settings"]
-// — toggling that attribute is all the JS does.
-//
-// We deliberately do NOT auto-jump back to the wizard after a field
-// change: users editing the backend URL may need to verify changes
-// across multiple fields before closing.
-function _openSettingsView() {
-  document.body.dataset.view = "settings";
-  window.scrollTo({ top: 0, behavior: "instant" });
-}
-function _closeSettingsView() {
-  delete document.body.dataset.view;
-  // Pop back to whichever wizard step is current — refresh visual
-  // state so the user lands on the same step they came from.
-  _refreshWizardUi();
-  window.scrollTo({ top: 0, behavior: "instant" });
-}
+// Settings view open / close.
 els.openSettingsBtn?.addEventListener("click", _openSettingsView);
 els.settingsBackBtn?.addEventListener("click", _closeSettingsView);
 
-// "取得對象" banner: click / Enter / Space jumps back to step 2 and
-// expands the patient card so the user can adjust the identity.
-function _gotoStep2Edit() {
-  _setActiveStep(2);
-}
-els.activePatient?.addEventListener("click", _gotoStep2Edit);
+// "取得對象" banner: click / Enter / Space jumps back to step 2 so the
+// user can adjust the identity.
+els.activePatient?.addEventListener("click", () => _setActiveStep(2));
 els.activePatient?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
-    _gotoStep2Edit();
+    _setActiveStep(2);
   }
 });
 
