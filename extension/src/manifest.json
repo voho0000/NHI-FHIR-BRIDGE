@@ -21,13 +21,7 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": [
-    "activeTab",
-    "storage",
-    "scripting",
-    "downloads",
-    "alarms"
-  ],
+  "permissions": ["activeTab", "storage", "scripting", "downloads", "alarms"],
   "host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*",

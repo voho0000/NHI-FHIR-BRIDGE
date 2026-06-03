@@ -28,7 +28,7 @@ import {
   adaptMedicationFromDetail,
   adaptProcedureFromDetail,
   adaptProcedureListStub,
-} from "../src/nhi-adapters.js";
+} from "../src/nhi-adapters.ts";
 
 const FIX = resolve(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const load = (name) => JSON.parse(readFileSync(resolve(FIX, name), "utf8"));

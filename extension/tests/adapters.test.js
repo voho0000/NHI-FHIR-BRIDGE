@@ -37,7 +37,7 @@ import {
   pickChinese,
   pickEnglish,
   rocToISO,
-} from "../src/nhi-adapters.js";
+} from "../src/nhi-adapters.ts";
 
 const FIX = resolve(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const readFixture = (name) => JSON.parse(readFileSync(resolve(FIX, name), "utf8"));
@@ -706,7 +706,7 @@ describe("adaptChronicListStub", () => {
 
 describe("adaptImagingListStub", () => {
   test("always returns null — imaging list rows carry no narrative", async () => {
-    const { adaptImagingListStub } = await import("../src/nhi-adapters.js");
+    const { adaptImagingListStub } = await import("../src/nhi-adapters.ts");
     expect(adaptImagingListStub()).toBeNull();
     expect(adaptImagingListStub({ anything: "ignored" })).toBeNull();
   });

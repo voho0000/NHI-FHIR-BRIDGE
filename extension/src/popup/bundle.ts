@@ -8,15 +8,14 @@
 
 import { PENDING_BUNDLE_KEY } from "./constants.js";
 import { els } from "./els.js";
-import { state } from "./state.js";
-import { _fmtBytes, _fmtRelative } from "./utils.js";
 import { getPatientOverride } from "./patient-form.js";
-import { _refreshResultZone } from "./wizard.js";
+import { state } from "./state.js";
 import { setStatus } from "./status.js";
+import { _fmtBytes, _fmtRelative } from "./utils.js";
+import { _refreshResultZone } from "./wizard.js";
 
 export async function refreshPendingBundle() {
-  const { [PENDING_BUNDLE_KEY]: pending } =
-    await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+  const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
   if (!pending || !pending.json) {
     els.pendingBundle.hidden = true;
     if (state.wizardInitialized) _refreshResultZone();
@@ -68,8 +67,7 @@ async function _transitionStatusToDownloaded(bytes) {
 }
 
 export async function downloadPendingBundle() {
-  const { [PENDING_BUNDLE_KEY]: pending } =
-    await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+  const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
   if (!pending) return;
   const blob = new Blob([pending.json], { type: "application/fhir+json" });
   const url = URL.createObjectURL(blob);
@@ -135,7 +133,5 @@ export async function clearPendingBundle() {
   // and no download button next to it.
   state.latestStatus = null;
   setStatus("", null);
-  await chrome.runtime
-    .sendMessage({ type: "clearSyncStatus" })
-    .catch(() => {});
+  await chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {});
 }

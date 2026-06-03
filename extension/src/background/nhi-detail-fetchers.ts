@@ -48,8 +48,10 @@ async function fetchDetailsInTab(tabId, baseUrl, items, spec) {
         const t = setTimeout(() => ac.abort(), 30000);
         try {
           const r = await fetch(url, {
-            method: "GET", credentials: "same-origin", signal: ac.signal,
-            headers: { "Accept": "application/json", "Authorization": auth },
+            method: "GET",
+            credentials: "same-origin",
+            signal: ac.signal,
+            headers: { Accept: "application/json", Authorization: auth },
           });
           clearTimeout(t);
           if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
@@ -267,7 +269,9 @@ export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
   const reports = [];
   for (const r of results) {
     if (!r || r.error || !r.body) continue;
-    const main = Array.isArray(r.body[IMAGING_SPEC.mainDataKey]) ? r.body[IMAGING_SPEC.mainDataKey] : [];
+    const main = Array.isArray(r.body[IMAGING_SPEC.mainDataKey])
+      ? r.body[IMAGING_SPEC.mainDataKey]
+      : [];
     for (const visit of main) {
       const adapted = adaptImagingReportFromDetail(visit);
       if (adapted) reports.push(adapted);
@@ -287,7 +291,9 @@ export async function fetchProcedureDetails({ tabId, baseUrl, visits }) {
   const procedures = [];
   for (const r of results) {
     if (!r || r.error || !r.body) continue;
-    const main = Array.isArray(r.body[PROCEDURE_SPEC.mainDataKey]) ? r.body[PROCEDURE_SPEC.mainDataKey] : [];
+    const main = Array.isArray(r.body[PROCEDURE_SPEC.mainDataKey])
+      ? r.body[PROCEDURE_SPEC.mainDataKey]
+      : [];
     for (const row of main) {
       const adapted = adaptProcedureFromDetail(row);
       if (adapted) procedures.push(adapted);

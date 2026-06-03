@@ -22,7 +22,8 @@ export async function postStructured(backend, page_type, items, syncApiKey, pati
       patient_override: patientOverride || null,
     }),
   });
-  if (!r.ok) throw new Error(`POST upload-structured ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  if (!r.ok)
+    throw new Error(`POST upload-structured ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return await r.json();
 }
 

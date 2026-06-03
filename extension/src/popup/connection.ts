@@ -16,17 +16,19 @@
 // disables both action buttons until connectivity recovers.
 
 import { DEFAULT_BACKEND, DEFAULT_MODE, DEFAULT_SMART_APP_LAUNCH } from "./constants.js";
+import { _renderDataState, checkBackendPatient } from "./data-state.js";
 import { els } from "./els.js";
 import { state } from "./state.js";
 import { _originPatternFor, currentMode } from "./utils.js";
 import { _refreshButtonStates } from "./wizard.js";
-import { _renderDataState, checkBackendPatient } from "./data-state.js";
 
 // Persisted-state keys. Backend URL and API key persist across browser sessions.
 export async function loadBackendUrl() {
-  const { backendUrl, syncApiKey, smartAppLaunchUrl } = await chrome.storage.local.get(
-    ["backendUrl", "syncApiKey", "smartAppLaunchUrl"]
-  );
+  const { backendUrl, syncApiKey, smartAppLaunchUrl } = await chrome.storage.local.get([
+    "backendUrl",
+    "syncApiKey",
+    "smartAppLaunchUrl",
+  ]);
   els.backendUrl.value = backendUrl || DEFAULT_BACKEND;
   els.syncApiKey.value = syncApiKey || "";
   els.smartAppUrl.value = smartAppLaunchUrl || DEFAULT_SMART_APP_LAUNCH;
@@ -42,24 +44,28 @@ const _CONN_LABELS = {
   ok: () => `已連線 — ${els.backendUrl.value.trim()}`,
   fail: () => {
     const r = state.connFailReason || {};
-    return ({
-      "no-url": "未設定 Backend URL",
-      "no-permission": "未授權連線",
-      "network": "連不上後端",
-      "timeout": "連線逾時",
-      "http": `HTTP ${r.detail || ""}`.trim(),
-      "not-fhir": "回應不是 FHIR",
-    })[r.kind] ?? "連線失敗";
+    return (
+      {
+        "no-url": "未設定 Backend URL",
+        "no-permission": "未授權連線",
+        network: "連不上後端",
+        timeout: "連線逾時",
+        http: `HTTP ${r.detail || ""}`.trim(),
+        "not-fhir": "回應不是 FHIR",
+      }[r.kind] ?? "連線失敗"
+    );
   },
 };
 
 const _CONN_HELP = {
-  "no-url":        "請到「進階設定」填入 Backend URL，例如 <code>http://localhost:8010</code>。",
+  "no-url": "請到「進階設定」填入 Backend URL，例如 <code>http://localhost:8010</code>。",
   "no-permission": "Chrome 阻擋了跨來源請求。請重新開 popup，當權限對話框跳出時按「允許」。",
-  "network":       "後端可能還沒啟動。請執行：<br><code>docker compose up -d</code><br>確認 backend 容器跑起來再重試。",
-  "timeout":       "5 秒內沒收到回應 — backend 可能還在啟動中，等 30 秒再按重試。",
-  "http":          "Backend 回應錯誤狀態碼。檢查 backend 的 log：<br><code>docker compose logs backend</code>",
-  "not-fhir":      "這個 URL 回了東西，但不是 FHIR CapabilityStatement。確認 Backend URL 指向 NHI-FHIR-Bridge 的 /fhir 根目錄。",
+  network:
+    "後端可能還沒啟動。請執行：<br><code>docker compose up -d</code><br>確認 backend 容器跑起來再重試。",
+  timeout: "5 秒內沒收到回應 — backend 可能還在啟動中，等 30 秒再按重試。",
+  http: "Backend 回應錯誤狀態碼。檢查 backend 的 log：<br><code>docker compose logs backend</code>",
+  "not-fhir":
+    "這個 URL 回了東西，但不是 FHIR CapabilityStatement。確認 Backend URL 指向 NHI-FHIR-Bridge 的 /fhir 根目錄。",
 };
 
 export function _renderConnBanner() {
@@ -102,30 +108,36 @@ export async function ensureBackendPermission(backendUrl) {
   if (!pattern) return { ok: false, reason: `Backend URL 無法解析: ${backendUrl}` };
   const already = await chrome.permissions.contains({ origins: [pattern] });
   if (already) return { ok: true };
-  let granted;
+  let granted: any;
   try {
     granted = await chrome.permissions.request({ origins: [pattern] });
   } catch (e) {
     return { ok: false, reason: `權限請求失敗: ${e.message}` };
   }
-  return granted
-    ? { ok: true }
-    : { ok: false, reason: `未授權連線到 ${pattern} — 取消` };
+  return granted ? { ok: true } : { ok: false, reason: `未授權連線到 ${pattern} — 取消` };
 }
 
 export async function testBackendConnection() {
   const url = els.backendUrl.value.trim();
   if (!url) {
-    state.connState = "fail"; state.connFailReason = { kind: "no-url" };
-    _renderConnBanner(); _refreshButtonStates(); return false;
+    state.connState = "fail";
+    state.connFailReason = { kind: "no-url" };
+    _renderConnBanner();
+    _refreshButtonStates();
+    return false;
   }
-  state.connState = "checking"; state.connFailReason = null;
-  _renderConnBanner(); _refreshButtonStates();
+  state.connState = "checking";
+  state.connFailReason = null;
+  _renderConnBanner();
+  _refreshButtonStates();
 
   const perm = await ensureBackendPermission(url);
   if (!perm.ok) {
-    state.connState = "fail"; state.connFailReason = { kind: "no-permission" };
-    _renderConnBanner(); _refreshButtonStates(); return false;
+    state.connState = "fail";
+    state.connFailReason = { kind: "no-permission" };
+    _renderConnBanner();
+    _refreshButtonStates();
+    return false;
   }
 
   const ctrl = new AbortController();
@@ -133,13 +145,16 @@ export async function testBackendConnection() {
   try {
     const res = await fetch(`${url.replace(/\/$/, "")}/fhir/metadata`, { signal: ctrl.signal });
     if (!res.ok) {
-      state.connState = "fail"; state.connFailReason = { kind: "http", detail: res.status };
+      state.connState = "fail";
+      state.connFailReason = { kind: "http", detail: res.status };
     } else {
       const body = await res.json().catch(() => null);
       if (body?.resourceType !== "CapabilityStatement") {
-        state.connState = "fail"; state.connFailReason = { kind: "not-fhir" };
+        state.connState = "fail";
+        state.connFailReason = { kind: "not-fhir" };
       } else {
-        state.connState = "ok"; state.connFailReason = null;
+        state.connState = "ok";
+        state.connFailReason = null;
       }
     }
   } catch (e) {
@@ -189,9 +204,12 @@ export async function onBackendModeToggle() {
     for (const r of els.modeRadios()) r.checked = r.value === "local";
     document.body.dataset.mode = "local";
     await chrome.storage.local.set({ syncMode: "local" });
-    state.connState = "unknown"; state.connFailReason = null;
+    state.connState = "unknown";
+    state.connFailReason = null;
     state.backendPatient = { state: "unknown", count: 0, lastUpdated: null };
-    _renderConnBanner(); _renderDataState(); _refreshButtonStates();
+    _renderConnBanner();
+    _renderDataState();
+    _refreshButtonStates();
   }
 }
 
@@ -200,7 +218,7 @@ export async function loadSyncMode() {
   const { syncMode } = await chrome.storage.local.get("syncMode");
   // Backend mode disabled in 進階設定 → ignore any stored backend mode.
   const backendEnabled = document.body.dataset.backendEnabled === "true";
-  const mode = (backendEnabled && syncMode === "backend") ? "backend" : DEFAULT_MODE;
+  const mode = backendEnabled && syncMode === "backend" ? "backend" : DEFAULT_MODE;
   for (const r of els.modeRadios()) r.checked = r.value === mode;
   document.body.dataset.mode = mode;
   if (mode === "backend") {
@@ -208,7 +226,8 @@ export async function loadSyncMode() {
     // here serializes the rest of init() until we know the answer.
     await testBackendConnection();
   } else {
-    state.connState = "unknown"; state.connFailReason = null;
+    state.connState = "unknown";
+    state.connFailReason = null;
     _renderConnBanner();
   }
 }
@@ -221,9 +240,12 @@ export function onModeChange() {
   if (mode === "backend") {
     testBackendConnection(); // triggers checkBackendPatient on success
   } else {
-    state.connState = "unknown"; state.connFailReason = null;
+    state.connState = "unknown";
+    state.connFailReason = null;
     state.backendPatient = { state: "unknown", count: 0, lastUpdated: null };
-    _renderConnBanner(); _renderDataState(); _refreshButtonStates();
+    _renderConnBanner();
+    _renderDataState();
+    _refreshButtonStates();
   }
 }
 

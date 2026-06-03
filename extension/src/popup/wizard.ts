@@ -13,9 +13,9 @@
 // sync would jerk them back to step 1.
 
 import { els } from "./els.js";
+import { getPatientOverride, validateBirthDate } from "./patient-form.js";
 import { state } from "./state.js";
 import { _stepNumGlyph, currentMode } from "./utils.js";
-import { getPatientOverride, validateBirthDate } from "./patient-form.js";
 
 // Step 2 is "done" only after the user has clicked ✓ 確定 with valid
 // inputs. We track this with a boolean rather than reading live DOM
@@ -57,7 +57,7 @@ export function _isStepDone(step) {
   }
 }
 
-export function _setActiveStep(n, opts = {}) {
+export function _setActiveStep(n, opts: any = {}) {
   const clamped = Math.max(1, Math.min(4, n));
   state.activeStep = clamped;
   document.body.dataset.activeStep = String(clamped);
@@ -85,12 +85,9 @@ export function _refreshWizardUi() {
   // mutually exclusive — pick the one that matches current state.
   const onNhi = !els.syncApiBtn.dataset.offNhi;
   const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
-  if (els.openNhiSection)
-    els.openNhiSection.hidden = onNhi;
-  if (els.nhiNeedsLoginSection)
-    els.nhiNeedsLoginSection.hidden = !onNhi || loggedIn;
-  if (els.loginOkSection)
-    els.loginOkSection.hidden = !(onNhi && loggedIn);
+  if (els.openNhiSection) els.openNhiSection.hidden = onNhi;
+  if (els.nhiNeedsLoginSection) els.nhiNeedsLoginSection.hidden = !onNhi || loggedIn;
+  if (els.loginOkSection) els.loginOkSection.hidden = !(onNhi && loggedIn);
 
   _refreshResultZone();
 }
@@ -103,15 +100,12 @@ export function _refreshWizardUi() {
 export function _refreshResultZone() {
   if (!els.resultZone) return;
   const hasStatus = (els.status?.textContent ?? "").trim() !== "";
-  const dataStateShown =
-    els.dataStateSection && !els.dataStateSection.hidden;
-  const bundleShown =
-    els.pendingBundle && !els.pendingBundle.hidden;
+  const dataStateShown = els.dataStateSection && !els.dataStateSection.hidden;
+  const bundleShown = els.pendingBundle && !els.pendingBundle.hidden;
   // Launch button only counts when usable — backend mode + the patient
   // actually exists on the backend (`launchBtn.disabled === false`).
   // A perma-disabled button shouldn't pin the zone open.
-  const launchUsable =
-    currentMode() === "backend" && els.launchBtn && !els.launchBtn.disabled;
+  const launchUsable = currentMode() === "backend" && els.launchBtn && !els.launchBtn.disabled;
 
   // Hide the entire result section (the divider + everything after) when
   // there's nothing meaningful to show.
@@ -137,9 +131,7 @@ export function _refreshResultZone() {
     // Relabel to match the new role. While the sync is running we keep
     // the prompt mid-render text alone (applySyncStatus owns that).
     if (!state.latestStatus?.running) {
-      els.syncApiBtn.textContent = shouldDemote
-        ? "重新取得"
-        : "取得健保存摺資料";
+      els.syncApiBtn.textContent = shouldDemote ? "重新取得" : "取得健保存摺資料";
     }
   }
 }
@@ -165,7 +157,7 @@ export function _initWizard() {
   // patient → step 3. If a fresh bundle is sitting in session-storage
   // (sync done in a prior popup open of the same browser session) →
   // step 4, so the natural next action — "open SMART App" — is visible.
-  let start;
+  let start: number;
   if (!_isStepDone(1)) start = 1;
   else if (!_isStepDone(2)) start = 2;
   else if (!_isStepDone(3)) start = 3;
@@ -217,7 +209,7 @@ export function _refreshButtonStates() {
   // tooltip is what the disabled button advertises on hover; jumpTo
   // (when set) makes the strip a clickable shortcut back to that step.
   let inlineMsg = "";
-  let jumpTo = null;       // { step: 1|2, label: "登入" | "您的資料" }
+  let jumpTo = null; // { step: 1|2, label: "登入" | "您的資料" }
   let tooltipReason = "";
   if (!onNhi) {
     inlineMsg = "請切到健保存摺分頁";
@@ -237,7 +229,7 @@ export function _refreshButtonStates() {
     inlineMsg = dobError;
     jumpTo = { step: 2, label: "您的資料" };
   } else if (!modeOk) {
-    inlineMsg = "";                 // conn banner above carries the message
+    inlineMsg = ""; // conn banner above carries the message
     tooltipReason = "後端尚未連線";
   }
   if (jumpTo) tooltipReason = `回 ${_stepNumGlyph(jumpTo.step)} ${jumpTo.label}：${inlineMsg}`;
@@ -292,11 +284,15 @@ export function _refreshButtonStates() {
     haveBackendPatient
   );
   els.launchBtn.title =
-    currentMode() !== "backend"  ? "請切到「🏥 本機伺服器 (進階)」模式" :
-    state.connState !== "ok"      ? "後端尚未連線" :
-    !ov?.id_no                    ? "請回到「② 您的資料」填寫資料" :
-    !haveBackendPatient           ? "本機伺服器還沒有這位的資料 — 先按「取得健保存摺資料」或下方「把這次資料傳到本機伺服器」" :
-                                    "";
+    currentMode() !== "backend"
+      ? "請切到「🏥 本機伺服器 (進階)」模式"
+      : state.connState !== "ok"
+        ? "後端尚未連線"
+        : !ov?.id_no
+          ? "請回到「② 您的資料」填寫資料"
+          : !haveBackendPatient
+            ? "本機伺服器還沒有這位的資料 — 先按「取得健保存摺資料」或下方「把這次資料傳到本機伺服器」"
+            : "";
 
   // Refresh the stepper UI on every state change, but DON'T auto-
   // advance from here — incidental input changes (typing in a field

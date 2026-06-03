@@ -7,12 +7,12 @@
 // override + a fresh connectivity check.
 
 import { derivePatientId } from "@nhi-fhir-bridge/mapper";
+import { testBackendConnection } from "./connection.js";
 import { DEFAULT_SMART_APP_LAUNCH, RANGE_LABELS } from "./constants.js";
 import { els } from "./els.js";
-import { _isSafeSmartAppUrl, currentMode, getActiveTab } from "./utils.js";
 import { getPatientOverride } from "./patient-form.js";
-import { testBackendConnection } from "./connection.js";
 import { setStatus } from "./status.js";
+import { _isSafeSmartAppUrl, currentMode, getActiveTab } from "./utils.js";
 
 // Pre-flight detection for NHI login state. Two signals (either triggers):
 //  1. URL is in NHI auth namespace (IHKE3099Sxx) — login / IC card pages
@@ -26,9 +26,15 @@ export async function isOnNhiLoginPage(tabId, url) {
         if (document.querySelector('input[type="password"]')) return true;
         const text = (document.body?.innerText || "").trim();
         const phrases = [
-          "請使用健保卡", "請插入健保卡", "請插入您的健保卡",
-          "登入健康存摺", "登入失敗", "請重新登入",
-          "Session 已逾時", "session 已逾時", "已逾時",
+          "請使用健保卡",
+          "請插入健保卡",
+          "請插入您的健保卡",
+          "登入健康存摺",
+          "登入失敗",
+          "請重新登入",
+          "Session 已逾時",
+          "session 已逾時",
+          "已逾時",
           "請以健保卡登入",
         ];
         return phrases.some((p) => text.includes(p));
@@ -49,8 +55,13 @@ export async function apiSyncNhi() {
 
   // Pre-flight: check we're on an NHI tab so cookies are usable from SW.
   const tab = await getActiveTab();
-  let url;
-  try { url = new URL(tab.url); } catch { setStatus("active tab has no URL", "error"); return; }
+  let url: any;
+  try {
+    url = new URL(tab.url);
+  } catch {
+    setStatus("active tab has no URL", "error");
+    return;
+  }
   const onLogin = await isOnNhiLoginPage(tab.id, url);
   if (onLogin) {
     setStatus("🔒 還沒登入健保存摺 — 請回到「① 登入」", "error");
@@ -76,7 +87,9 @@ export async function apiSyncNhi() {
     syncStatus: {
       running: true,
       progress: "開始取得健保存摺資料…",
-      phase: "starting", started: Date.now(), ts: Date.now(),
+      phase: "starting",
+      started: Date.now(),
+      ts: Date.now(),
     },
   });
   setStatus("開始取得健保存摺資料…", "info");
@@ -90,11 +103,11 @@ export async function apiSyncNhi() {
   if (rangeSel !== "1") {
     const today = new Date();
     const end = today.toISOString().slice(0, 10);
-    let start;
+    let start: string;
     if (rangeSel === "all") {
-      start = "2001-01-01";  // 民國 90 — far enough back for any clinical case
+      start = "2001-01-01"; // 民國 90 — far enough back for any clinical case
     } else {
-      const years = parseInt(rangeSel, 10);
+      const years = Number.parseInt(rangeSel, 10);
       const s = new Date(today);
       s.setFullYear(s.getFullYear() - years);
       start = s.toISOString().slice(0, 10);
@@ -102,19 +115,21 @@ export async function apiSyncNhi() {
     dateRange = { start, end };
   }
 
-  chrome.runtime.sendMessage({
-    type: "startNhiApiSync",
-    payload: {
-      tabId: tab.id,
-      mode: currentMode(),
-      backend: els.backendUrl.value.trim(),
-      syncApiKey: els.syncApiKey.value.trim(),
-      nhiBase: "https://myhealthbank.nhi.gov.tw",
-      patientOverride: ov,
-      dateRange,
-      dateRangeLabel,
-    },
-  }).catch(() => {});
+  chrome.runtime
+    .sendMessage({
+      type: "startNhiApiSync",
+      payload: {
+        tabId: tab.id,
+        mode: currentMode(),
+        backend: els.backendUrl.value.trim(),
+        syncApiKey: els.syncApiKey.value.trim(),
+        nhiBase: "https://myhealthbank.nhi.gov.tw",
+        patientOverride: ov,
+        dateRange,
+        dateRangeLabel,
+      },
+    })
+    .catch(() => {});
 }
 
 export async function launch() {
@@ -127,10 +142,7 @@ export async function launch() {
   // (bypassing the change-listener validator above), the launch path
   // double-checks before sending the launch token anywhere.
   if (!_isSafeSmartAppUrl(smartAppLaunch)) {
-    setStatus(
-      "⛔ SMART App URL 不安全（必須 https:// 或本機）；請到進階設定修正。",
-      "error",
-    );
+    setStatus("⛔ SMART App URL 不安全（必須 https:// 或本機）；請到進階設定修正。", "error");
     return;
   }
   if (!rawId) {
@@ -175,10 +187,7 @@ export function onSmartAppUrlChange() {
     return;
   }
   if (!_isSafeSmartAppUrl(v)) {
-    setStatus(
-      "⛔ SMART App URL 必須是 https:// 或本機 (http://localhost)；已還原預設。",
-      "error",
-    );
+    setStatus("⛔ SMART App URL 必須是 https:// 或本機 (http://localhost)；已還原預設。", "error");
     chrome.storage.local.remove("smartAppLaunchUrl");
     els.smartAppUrl.value = DEFAULT_SMART_APP_LAUNCH;
     return;

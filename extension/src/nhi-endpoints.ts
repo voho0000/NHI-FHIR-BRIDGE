@@ -66,29 +66,51 @@ export const NHI_API_ENDPOINTS = [
   // their own /search endpoints, encounter MUST also use /search or
   // the (hospital, date) linker has nothing to match against for older
   // lab dates.
-  { name: "encounters",          path: "/api/ihke3000/ihke3303s01/search?s_date=&e_date=",
-    page_type: "encounters",        adapt: adaptEncounterFromMedExpense, supportsDateRange: true },
+  {
+    name: "encounters",
+    path: "/api/ihke3000/ihke3303s01/search?s_date=&e_date=",
+    page_type: "encounters",
+    adapt: adaptEncounterFromMedExpense,
+    supportsDateRange: true,
+  },
   // Inpatient (住院) — IHKE3309S01 is the primary list with in_DATE/out_DATE
   // span. IHKE3308S01 carries a small set of older 住院 records with the
   // same fields (func_DATE in some rows instead of in_DATE; adapter
   // handles both). Both feed the same encounter mapper.
-  { name: "inpatient",           path: "/api/ihke3000/ihke3309s01/page_load",
-    page_type: "encounters",        adapt: adaptInpatientEncounter },
-  { name: "inpatient_legacy",    path: "/api/ihke3000/ihke3308s01/page_load",
-    page_type: "encounters",        adapt: adaptInpatientEncounter },
+  {
+    name: "inpatient",
+    path: "/api/ihke3000/ihke3309s01/page_load",
+    page_type: "encounters",
+    adapt: adaptInpatientEncounter,
+  },
+  {
+    name: "inpatient_legacy",
+    path: "/api/ihke3000/ihke3308s01/page_load",
+    page_type: "encounters",
+    adapt: adaptInpatientEncounter,
+  },
   // Procedures (IHKE3301S05) list only has order-level metadata —
   // no ICD-10-PCS code and no actual performed-date. The full
   // record lives at IHKE3308S02 (sub-list carries exe_S_DATE +
   // NHI 醫令碼 per execution). Same 2-step fan-out pattern as
   // imaging; see _fetchProcedureDetailsInTab.
-  { name: "procedures",          path: "/api/ihke3000/ihke3301s05/page_load",
-    page_type: "procedures",        adapt: adaptProcedureListStub },
+  {
+    name: "procedures",
+    path: "/api/ihke3000/ihke3301s05/page_load",
+    page_type: "procedures",
+    adapt: adaptProcedureListStub,
+  },
   // medications: page_load only accepts empty dates (HTTP 400 otherwise).
   // The /search endpoint is what the SPA hits when user picks a custom
   // date range and accepts ISO 西元 dates with dashes (2023-01-01).
   // Confirmed via DevTools observation of the 篩選 panel submit.
-  { name: "medications",         path: "/api/ihke3000/ihke3306s01/search?s_date=&e_date=&s_sort=A1&s_type=A",
-    page_type: "medications",       adapt: adaptMedication, supportsDateRange: true },
+  {
+    name: "medications",
+    path: "/api/ihke3000/ihke3306s01/search?s_date=&e_date=&s_sort=A1&s_type=A",
+    page_type: "medications",
+    adapt: adaptMedication,
+    supportsDateRange: true,
+  },
   // 慢性處方箋 (refill="Y") — separate list endpoint from medications.
   // ~52 of 126 entries overlap with IHKE3306S01; the rest are
   // chronic-only and would be missed if we relied on regular list alone.
@@ -98,21 +120,41 @@ export const NHI_API_ENDPOINTS = [
   // in background.js. Detail endpoint is the same IHKE3306S02 as
   // regular meds; ctype must equal the list row's ori_TYPE (1=門診,
   // 2=IC卡, 8=藥局), not hardcoded to 8.
-  { name: "chronic_prescriptions", path: "/api/ihke3000/IHKE3307S01/page_load",
-    page_type: "medications",       adapt: adaptChronicListStub },
-  { name: "allergies",           path: "/api/ihke3000/ihke3202s01/SP_IHKE3202S01",
-    page_type: "allergies",         adapt: adaptAllergy },
-  { name: "allergies_b",         path: "/api/ihke3000/ihke3202s01/SP_IHKE3202S04",
-    page_type: "allergies",         adapt: adaptAllergy },
+  {
+    name: "chronic_prescriptions",
+    path: "/api/ihke3000/IHKE3307S01/page_load",
+    page_type: "medications",
+    adapt: adaptChronicListStub,
+  },
+  {
+    name: "allergies",
+    path: "/api/ihke3000/ihke3202s01/SP_IHKE3202S01",
+    page_type: "allergies",
+    adapt: adaptAllergy,
+  },
+  {
+    name: "allergies_b",
+    path: "/api/ihke3000/ihke3202s01/SP_IHKE3202S04",
+    page_type: "allergies",
+    adapt: adaptAllergy,
+  },
   // 成人預防保健結果 (IHKE3402S01): one row per screening, contains
   // BMI / vitals / lipid panel / LFT / RFT / Hep B/C / uric acid all
   // pre-computed by NHI's screening programme. adaptAdultPreventive
   // returns an array (one Observation per measurement) so the
   // adapter-call loop flattens it.
-  { name: "adult_preventive",    path: "/api/ihke3000/ihke3402s01/SP_IHKE3402S01",
-    page_type: "observations",      adapt: adaptAdultPreventive },
-  { name: "cancer_screening",    path: "/api/ihke3000/ihke3404s01/SP_IHKE3404S01",
-    page_type: "observations",      adapt: adaptLabItem },
+  {
+    name: "adult_preventive",
+    path: "/api/ihke3000/ihke3402s01/SP_IHKE3402S01",
+    page_type: "observations",
+    adapt: adaptAdultPreventive,
+  },
+  {
+    name: "cancer_screening",
+    path: "/api/ihke3000/ihke3404s01/SP_IHKE3404S01",
+    page_type: "observations",
+    adapt: adaptLabItem,
+  },
   // glucose (IHKE3406S01) + lipid (IHKE3407S01) are subsets of
   // other_labs (IHKE3409S01) per NHI's data model — fetching them
   // separately just creates dup observations, so we skip them.
@@ -121,21 +163,39 @@ export const NHI_API_ENDPOINTS = [
   // _fetchImagingDetailsInTab) to grab the report, then map to a real
   // DiagnosticReport. The list adapter is a no-op stub like medications.
   // imaging: search endpoint accepts ISO date range like medications.
-  { name: "imaging",             path: "/api/ihke3000/ihke3408s01/search?s_type=&s_date=&e_date=&s_sort=A1",
-    page_type: "diagnostic_reports", adapt: adaptImagingListStub, supportsDateRange: true },
+  {
+    name: "imaging",
+    path: "/api/ihke3000/ihke3408s01/search?s_type=&s_date=&e_date=&s_sort=A1",
+    page_type: "diagnostic_reports",
+    adapt: adaptImagingListStub,
+    supportsDateRange: true,
+  },
   // other_labs already uses /search; same ISO-dash date format works.
-  { name: "other_labs",          path: "/api/ihke3000/ihke3409s01/search?s_type=&s_date=&e_date=&s_sort=A1",
-    page_type: "observations",      adapt: adaptLabItem, supportsDateRange: true },
+  {
+    name: "other_labs",
+    path: "/api/ihke3000/ihke3409s01/search?s_type=&s_date=&e_date=&s_sort=A1",
+    page_type: "observations",
+    adapt: adaptLabItem,
+    supportsDateRange: true,
+  },
   // IHKE3209S01 (重大傷病) — NHI-vetted catastrophic-illness registry.
   // Each row → a FHIR Condition with category=problem-list-item, the
   // closest 健康存摺 equivalent to a curated problem list. Endpoint
   // doesn't accept date params (NHI returns currently-valid certs only).
-  { name: "catastrophic_illness", path: "/api/ihke3000/ihke3209s01/SP_IHKE3209S01",
-    page_type: "conditions",        adapt: adaptCatastrophicIllness },
+  {
+    name: "catastrophic_illness",
+    path: "/api/ihke3000/ihke3209s01/SP_IHKE3209S01",
+    page_type: "conditions",
+    adapt: adaptCatastrophicIllness,
+  },
   // IHKE3203S01 (預防接種紀錄 / 疫苗) — Taiwan CDC sourced. Each row
   // → FHIR Immunization. NHI ships Chinese-only vaccine names with
   // batch number inlined as "(批號XXX)"; adapter splits the lot.
   // No date range parameter (NHI returns all historical vaccinations).
-  { name: "immunizations",       path: "/api/ihke3000/ihke3203s01/SP_IHKE3203S01",
-    page_type: "immunizations",     adapt: adaptImmunization },
+  {
+    name: "immunizations",
+    path: "/api/ihke3000/ihke3203s01/SP_IHKE3203S01",
+    page_type: "immunizations",
+    adapt: adaptImmunization,
+  },
 ];

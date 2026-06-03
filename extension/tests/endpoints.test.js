@@ -12,7 +12,7 @@ import { describe, expect, test } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { NHI_API_ENDPOINTS, ENDPOINT_LABEL_ZH } from "../src/nhi-endpoints.js";
+import { NHI_API_ENDPOINTS, ENDPOINT_LABEL_ZH } from "../src/nhi-endpoints.ts";
 
 // After the v0.13.x background.js split, SW logic lives across
 // src/background.js + src/background/*.js. The text-scanning tests below
@@ -21,9 +21,9 @@ import { NHI_API_ENDPOINTS, ENDPOINT_LABEL_ZH } from "../src/nhi-endpoints.js";
 const SRC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
 const BG_DIR = resolve(SRC_DIR, "background");
 const SW_FILES = [
-  resolve(SRC_DIR, "background.js"),
+  resolve(SRC_DIR, "background.ts"),
   ...readdirSync(BG_DIR)
-    .filter((f) => f.endsWith(".js"))
+    .filter((f) => f.endsWith(".ts"))
     .map((f) => resolve(BG_DIR, f)),
 ];
 const SW_SOURCE = SW_FILES.map((p) => readFileSync(p, "utf8")).join("\n");

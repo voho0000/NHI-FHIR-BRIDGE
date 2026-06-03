@@ -2,11 +2,7 @@
 // install-time PHI sweep for keys older extension versions left behind,
 // and the periodic TTL sweep of the pending-bundle slot.
 
-import {
-  PENDING_BUNDLE_KEY,
-  PENDING_BUNDLE_TTL_MS,
-  SYNC_KEYS_TO_MIGRATE,
-} from "./constants.js";
+import { PENDING_BUNDLE_KEY, PENDING_BUNDLE_TTL_MS, SYNC_KEYS_TO_MIGRATE } from "./constants.js";
 
 // One-time migration from chrome.storage.sync → chrome.storage.local.
 // Previous versions stored syncApiKey + patientOverride (containing the
@@ -16,9 +12,7 @@ import {
 export async function migrateSyncToLocal() {
   try {
     const synced = await chrome.storage.sync.get(SYNC_KEYS_TO_MIGRATE);
-    const present = Object.fromEntries(
-      Object.entries(synced).filter(([, v]) => v !== undefined),
-    );
+    const present = Object.fromEntries(Object.entries(synced).filter(([, v]) => v !== undefined));
     if (Object.keys(present).length === 0) return;
     const local = await chrome.storage.local.get(Object.keys(present));
     // Don't overwrite anything the user already set on this machine.
@@ -43,7 +37,7 @@ export async function migrateSyncToLocal() {
 // PHI dead weight. Sweep them on every install/update.
 export async function sweepStaleLocalKeys() {
   try {
-    const all = await chrome.storage.local.get(null);
+    const all: any = await chrome.storage.local.get(null);
     const stale = Object.keys(all).filter(
       (k) => k === "pendingFhirBundle" || k.startsWith("__sampleBody_"),
     );
@@ -60,8 +54,7 @@ export async function sweepStaleLocalKeys() {
 // PENDING_BUNDLE_TTL_MS (1 hour).
 export async function sweepPendingBundleIfStale() {
   try {
-    const { [PENDING_BUNDLE_KEY]: pending } =
-      await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
     if (!pending) return;
     const age = Date.now() - (pending.generatedAt || 0);
     if (age > PENDING_BUNDLE_TTL_MS) {

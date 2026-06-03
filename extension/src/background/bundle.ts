@@ -22,7 +22,7 @@ export function assembleLocalBundle(byType, patientOverride, maskEnabled) {
   for (const pt of LOCAL_PAGE_TYPE_ORDER) {
     const items = byType[pt];
     if (!items || items.length === 0) continue;
-    let mapped;
+    let mapped: any;
     if (GROUP_HANDLERS[pt]) {
       mapped = GROUP_HANDLERS[pt](items, pid);
     } else if (LIST_HANDLERS[pt]) {
@@ -123,7 +123,8 @@ export async function stashFhirBundle(bundle, patientId, dateRange) {
   const maskedPid = maskId(patientId || "unknown", "X");
   const safePid = maskedPid.replace(/[^A-Za-z0-9_-]/g, "_");
   const compact = (d) => (d || "").slice(0, 10).replace(/-/g, "");
-  let s, e;
+  let s: string;
+  let e: string;
   if (dateRange && (dateRange.start || dateRange.end)) {
     s = compact(dateRange.start) || fmt(now);
     e = compact(dateRange.end) || fmt(now);

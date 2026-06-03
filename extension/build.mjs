@@ -1,10 +1,14 @@
 /**
  * Extension build script.
  *
- * Bundles `src/{background,popup}.js` → `dist/`, inlining the
- * shared mapper from `@nhi-fhir-bridge/mapper` so the service worker
- * and popup can both call `mapPatient`, `linkEncountersInResources`,
- * etc. without runtime module resolution.
+ * Bundles `src/{background,popup}.ts` → `dist/{background,popup}.js`,
+ * inlining the shared mapper from `@nhi-fhir-bridge/mapper` so the
+ * service worker and popup can both call `mapPatient`,
+ * `linkEncountersInResources`, etc. without runtime module resolution.
+ *
+ * esbuild transpiles TypeScript natively but does NOT type-check — run
+ * `npm run typecheck` (tsc --noEmit) for that. Output filenames stay
+ * `*.js` so manifest.json needs no change.
  *
  * Static assets (manifest.json, popup.html) are copied verbatim.
  * Run `node build.mjs` for one-shot, `node build.mjs --watch` for dev.
@@ -43,14 +47,19 @@ const bundleOpts = {
   logLevel: "info",
 };
 
-const entries = ["background.js", "popup.js"];
+// TypeScript entry points (PR4). `in` is the .ts source, `out` keeps the
+// historical .js filename so manifest.json / Chrome see no change.
+const entries = [
+  { in: "background.ts", out: "background.js" },
+  { in: "popup.ts", out: "popup.js" },
+];
 
 const contexts = await Promise.all(
-  entries.map((file) =>
+  entries.map((entry) =>
     esbuild.context({
       ...bundleOpts,
-      entryPoints: [resolve(SRC, file)],
-      outfile: resolve(DIST, file),
+      entryPoints: [resolve(SRC, entry.in)],
+      outfile: resolve(DIST, entry.out),
     }),
   ),
 );

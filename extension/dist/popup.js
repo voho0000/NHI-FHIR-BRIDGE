@@ -469,7 +469,7 @@
     }
   });
 
-  // src/popup/constants.js
+  // src/popup/constants.ts
   var DEFAULT_BACKEND = "http://localhost:8010";
   var DEFAULT_SMART_APP_LAUNCH = "https://voho0000.github.io/medical-note-smart-on-fhir/smart/launch";
   var STANDALONE_SMART_APP_URL = "https://voho0000.github.io/medical-note-smart-on-fhir/";
@@ -486,74 +486,63 @@
   };
   var VIEWPORT_MARGIN = 6;
 
-  // src/popup/els.js
+  // src/popup/els.ts
+  var byId = (id) => document.getElementById(id);
   var els = {
+    // live NodeList; callers read .value/.checked off each radio
     modeRadios: () => document.querySelectorAll('input[name="sync-mode"]'),
-    backendUrl: document.getElementById("backend-url"),
-    syncApiKey: document.getElementById("sync-api-key"),
-    smartAppUrl: document.getElementById("smart-app-url"),
-    syncApiBtn: document.getElementById("sync-api-btn"),
-    syncBlockedReason: document.getElementById("sync-blocked-reason"),
-    apiSyncRange: document.getElementById("api-sync-range"),
-    stopBtn: document.getElementById("stop-btn"),
-    ovName: document.getElementById("ov-name"),
-    ovBirthDate: document.getElementById("ov-birth-date"),
-    ovGender: document.getElementById("ov-gender"),
-    ovSaveBtn: document.getElementById("ov-save-btn"),
-    ovClearBtn: document.getElementById("ov-clear-btn"),
-    ovSummary: document.getElementById("override-summary"),
-    patientOverrideDetails: document.getElementById("patient-override"),
-    launchBtn: document.getElementById("launch-btn"),
-    openSmartAppBtn: document.getElementById("open-smart-app-btn"),
-    openSettingsBtn: document.getElementById("open-settings-btn"),
-    settingsBackBtn: document.getElementById("settings-back-btn"),
-    status: document.getElementById("status"),
-    dashboardLink: document.getElementById("dashboard-link"),
-    pendingBundle: document.getElementById("pending-bundle"),
-    downloadBundleBtn: document.getElementById("download-bundle-btn"),
-    clearBundleBtn: document.getElementById("clear-bundle-btn"),
+    backendUrl: byId("backend-url"),
+    syncApiKey: byId("sync-api-key"),
+    smartAppUrl: byId("smart-app-url"),
+    syncApiBtn: byId("sync-api-btn"),
+    syncBlockedReason: byId("sync-blocked-reason"),
+    apiSyncRange: byId("api-sync-range"),
+    stopBtn: byId("stop-btn"),
+    ovName: byId("ov-name"),
+    ovBirthDate: byId("ov-birth-date"),
+    ovGender: byId("ov-gender"),
+    ovSaveBtn: byId("ov-save-btn"),
+    ovClearBtn: byId("ov-clear-btn"),
+    ovSummary: byId("override-summary"),
+    patientOverrideDetails: byId("patient-override"),
+    launchBtn: byId("launch-btn"),
+    openSmartAppBtn: byId("open-smart-app-btn"),
+    openSettingsBtn: byId("open-settings-btn"),
+    settingsBackBtn: byId("settings-back-btn"),
+    status: byId("status"),
+    dashboardLink: byId("dashboard-link"),
+    pendingBundle: byId("pending-bundle"),
+    downloadBundleBtn: byId("download-bundle-btn"),
+    clearBundleBtn: byId("clear-bundle-btn"),
     // bundleMeta legacy id removed in the panel-merge; filename+size now
     // live in dedicated #bundle-filename / #bundle-sizeage elements
     // below.
-    connBanner: document.getElementById("conn-banner"),
-    connSection: document.getElementById("conn-section"),
-    connMini: document.getElementById("conn-mini"),
-    connMsg: document.getElementById("conn-msg"),
-    connRetryBtn: document.getElementById("conn-retry-btn"),
-    connHelp: document.getElementById("conn-help"),
-    dataStateSection: document.getElementById("data-state-section"),
-    backendState: document.getElementById("backend-state"),
-    localStateRow: document.getElementById("local-state-row"),
-    localState: document.getElementById("local-state"),
-    pushLocalBtn: document.getElementById("push-local-btn"),
-    syncStatusHint: document.getElementById("sync-status-hint"),
-    maskNameEnabled: document.getElementById("mask-name-enabled"),
-    backendModeEnabled: document.getElementById("backend-mode-enabled"),
-    openNhiSection: document.getElementById("open-nhi-section"),
-    openNhiBtn: document.getElementById("open-nhi-btn"),
-    nhiNeedsLoginSection: document.getElementById("nhi-needs-login-section"),
-    nhiReloadBtn: document.getElementById("nhi-reload-btn"),
-    loginOkSection: document.getElementById("login-ok-section"),
-    wizardStepper: document.getElementById("wizard-stepper"),
-    resultZone: document.getElementById("result-zone"),
-    activePatient: document.getElementById("active-patient"),
-    activePatientValue: document.getElementById("active-patient-value"),
-    bundleMetaBlock: document.getElementById("bundle-meta-block"),
-    bundleFilename: document.getElementById("bundle-filename"),
-    bundleSizeage: document.getElementById("bundle-sizeage")
-  };
-
-  // src/popup/state.js
-  var state = {
-    connState: "unknown",
-    connFailReason: null,
-    backendPatient: { state: "unknown", count: 0, lastUpdated: null },
-    localBundle: { exists: false, count: 0, generatedAt: 0, patientId: null },
-    activeStep: 1,
-    wizardInitialized: false,
-    step2Confirmed: false,
-    latestStatus: null,
-    nhiTabId: null
+    connBanner: byId("conn-banner"),
+    connSection: byId("conn-section"),
+    connMini: byId("conn-mini"),
+    connMsg: byId("conn-msg"),
+    connRetryBtn: byId("conn-retry-btn"),
+    connHelp: byId("conn-help"),
+    dataStateSection: byId("data-state-section"),
+    backendState: byId("backend-state"),
+    localStateRow: byId("local-state-row"),
+    localState: byId("local-state"),
+    pushLocalBtn: byId("push-local-btn"),
+    syncStatusHint: byId("sync-status-hint"),
+    maskNameEnabled: byId("mask-name-enabled"),
+    backendModeEnabled: byId("backend-mode-enabled"),
+    openNhiSection: byId("open-nhi-section"),
+    openNhiBtn: byId("open-nhi-btn"),
+    nhiNeedsLoginSection: byId("nhi-needs-login-section"),
+    nhiReloadBtn: byId("nhi-reload-btn"),
+    loginOkSection: byId("login-ok-section"),
+    wizardStepper: byId("wizard-stepper"),
+    resultZone: byId("result-zone"),
+    activePatient: byId("active-patient"),
+    activePatientValue: byId("active-patient-value"),
+    bundleMetaBlock: byId("bundle-meta-block"),
+    bundleFilename: byId("bundle-filename"),
+    bundleSizeage: byId("bundle-sizeage")
   };
 
   // ../packages/mapper/src/helpers.ts
@@ -1679,7 +1668,20 @@
     ])
   );
 
-  // src/popup/utils.js
+  // src/popup/state.ts
+  var state = {
+    connState: "unknown",
+    connFailReason: null,
+    backendPatient: { state: "unknown", count: 0, lastUpdated: null },
+    localBundle: { exists: false, count: 0, generatedAt: 0, patientId: null },
+    activeStep: 1,
+    wizardInitialized: false,
+    step2Confirmed: false,
+    latestStatus: null,
+    nhiTabId: null
+  };
+
+  // src/popup/utils.ts
   function isNhiTab(url) {
     if (!url) return false;
     try {
@@ -1754,7 +1756,7 @@
     }
   }
 
-  // src/popup/wizard.js
+  // src/popup/wizard.ts
   function _markStep2Confirmed(yes) {
     state.step2Confirmed = !!yes;
   }
@@ -1797,12 +1799,9 @@
     }
     const onNhi = !els.syncApiBtn.dataset.offNhi;
     const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
-    if (els.openNhiSection)
-      els.openNhiSection.hidden = onNhi;
-    if (els.nhiNeedsLoginSection)
-      els.nhiNeedsLoginSection.hidden = !onNhi || loggedIn;
-    if (els.loginOkSection)
-      els.loginOkSection.hidden = !(onNhi && loggedIn);
+    if (els.openNhiSection) els.openNhiSection.hidden = onNhi;
+    if (els.nhiNeedsLoginSection) els.nhiNeedsLoginSection.hidden = !onNhi || loggedIn;
+    if (els.loginOkSection) els.loginOkSection.hidden = !(onNhi && loggedIn);
     _refreshResultZone();
   }
   function _refreshResultZone() {
@@ -1907,13 +1906,13 @@
     if (state.wizardInitialized) _refreshWizardUi();
   }
 
-  // src/popup/status.js
+  // src/popup/status.ts
   var _elapsedTickerId = null;
   function setStatus(text, kind, breakdown, errors, action) {
     els.status.className = kind || "";
     els.status.textContent = "";
     const hasErrors = Array.isArray(errors) && errors.length > 0;
-    if (!text && !(breakdown && breakdown.length) && !hasErrors) return;
+    if (!text && !breakdown?.length && !hasErrors) return;
     const header = document.createElement("div");
     header.className = "status-header";
     const textSpan = document.createElement("span");
@@ -1945,7 +1944,7 @@
       actionBtn.addEventListener("click", action.onClick);
       els.status.appendChild(actionBtn);
     }
-    if (breakdown && breakdown.length || hasErrors) {
+    if (breakdown?.length || hasErrors) {
       const bd = breakdown || [];
       const phaseRows = bd.filter((b) => b.startsWith("\u23F1"));
       const otherRows = bd.filter((b) => !b.startsWith("\u23F1"));
@@ -2096,7 +2095,7 @@
     _refreshButtonStates();
   }
 
-  // src/popup/data-state.js
+  // src/popup/data-state.ts
   function _renderDataState() {
     const ov = getPatientOverride();
     if (currentMode() !== "backend" || !ov?.id_no) {
@@ -2245,92 +2244,7 @@
     }
   }
 
-  // src/popup/bundle.js
-  async function refreshPendingBundle() {
-    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-    if (!pending || !pending.json) {
-      els.pendingBundle.hidden = true;
-      if (state.wizardInitialized) _refreshResultZone();
-      return;
-    }
-    const ov = getPatientOverride();
-    if (ov?.id_no && pending.patientId && pending.patientId !== ov.id_no) {
-      els.pendingBundle.hidden = true;
-      if (state.wizardInitialized) _refreshResultZone();
-      return;
-    }
-    els.pendingBundle.hidden = false;
-    const ago = pending.generatedAt ? _fmtRelative(pending.generatedAt) : "";
-    if (els.bundleFilename) {
-      els.bundleFilename.textContent = pending.filename;
-      els.bundleFilename.title = pending.filename;
-    }
-    if (els.bundleSizeage) {
-      els.bundleSizeage.textContent = `${_fmtBytes(pending.bytes || 0)}${ago ? ` \xB7 ${ago}` : ""}`;
-    }
-    if (state.wizardInitialized) _refreshResultZone();
-  }
-  async function _transitionStatusToDownloaded(bytes) {
-    try {
-      const { syncStatus } = await chrome.storage.local.get("syncStatus");
-      if (!syncStatus || syncStatus.phase === "downloaded") return;
-      const total = syncStatus.totalResources ?? 0;
-      const sizeStr = bytes ? ` \xB7 ${_fmtBytes(bytes)}` : "";
-      const next = {
-        ...syncStatus,
-        progress: `\u2705 \u5DF2\u4E0B\u8F09\u5065\u5EB7\u7D00\u9304\u6A94\uFF08\u5171 ${total} \u7B46${sizeStr}\uFF09`,
-        phase: "downloaded",
-        ts: Date.now()
-      };
-      await chrome.storage.local.set({ syncStatus: next });
-    } catch {
-    }
-  }
-  async function downloadPendingBundle() {
-    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-    if (!pending) return;
-    const blob = new Blob([pending.json], { type: "application/fhir+json" });
-    const url = URL.createObjectURL(blob);
-    let downloadId = null;
-    try {
-      downloadId = await chrome.downloads.download({
-        url,
-        filename: pending.filename,
-        saveAs: true
-      });
-    } catch (e) {
-      setTimeout(() => URL.revokeObjectURL(url), 5e3);
-      return;
-    }
-    if (downloadId == null) {
-      setTimeout(() => URL.revokeObjectURL(url), 5e3);
-      return;
-    }
-    const _onChange = (delta) => {
-      if (delta.id !== downloadId) return;
-      const final = delta.state?.current;
-      if (final === "complete") {
-        chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {
-        });
-        chrome.downloads.onChanged.removeListener(_onChange);
-        _transitionStatusToDownloaded(pending.bytes);
-      } else if (final === "interrupted") {
-        chrome.downloads.onChanged.removeListener(_onChange);
-      }
-    };
-    chrome.downloads.onChanged.addListener(_onChange);
-    setTimeout(() => URL.revokeObjectURL(url), 5e3);
-  }
-  async function clearPendingBundle() {
-    await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
-    await refreshPendingBundle();
-    state.latestStatus = null;
-    setStatus("", null);
-    await chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {
-    });
-  }
-
-  // src/popup/patient-form.js
+  // src/popup/patient-form.ts
   var _storedIdNo = null;
   var _maskNameEnabled = false;
   async function loadPatientOverride() {
@@ -2341,9 +2255,7 @@
       els.ovBirthDate.value = patientOverride.birth_date || "";
       els.ovGender.value = patientOverride.gender || "";
     }
-    _markStep2Confirmed(
-      !!(patientOverride?.gender && patientOverride?.birth_date)
-    );
+    _markStep2Confirmed(!!(patientOverride?.gender && patientOverride?.birth_date));
     refreshOverrideSummary();
   }
   function getPatientOverride() {
@@ -2361,14 +2273,14 @@
   function validateBirthDate() {
     const el = els.ovBirthDate;
     if (!el) return null;
-    if (el.validity && el.validity.badInput) {
+    if (el.validity?.badInput) {
       return "\u751F\u65E5\u8ACB\u586B\u5B8C\u6574\u5E74\u6708\u65E5";
     }
     const s = (el.value || "").trim();
     if (!s) return "\u8ACB\u586B\u751F\u65E5";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "\u751F\u65E5\u8ACB\u586B\u5B8C\u6574\u5E74\u6708\u65E5";
     const [y, m, d] = s.split("-").map(Number);
-    const dt = /* @__PURE__ */ new Date(s + "T00:00:00Z");
+    const dt = /* @__PURE__ */ new Date(`${s}T00:00:00Z`);
     if (Number.isNaN(dt.getTime()) || dt.getUTCFullYear() !== y || dt.getUTCMonth() + 1 !== m || dt.getUTCDate() !== d) {
       return "\u751F\u65E5\u4E0D\u662F\u6709\u6548\u65E5\u671F";
     }
@@ -2489,11 +2401,98 @@
     refreshOverrideSummary();
   }
 
-  // src/popup/connection.js
+  // src/popup/bundle.ts
+  async function refreshPendingBundle() {
+    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+    if (!pending || !pending.json) {
+      els.pendingBundle.hidden = true;
+      if (state.wizardInitialized) _refreshResultZone();
+      return;
+    }
+    const ov = getPatientOverride();
+    if (ov?.id_no && pending.patientId && pending.patientId !== ov.id_no) {
+      els.pendingBundle.hidden = true;
+      if (state.wizardInitialized) _refreshResultZone();
+      return;
+    }
+    els.pendingBundle.hidden = false;
+    const ago = pending.generatedAt ? _fmtRelative(pending.generatedAt) : "";
+    if (els.bundleFilename) {
+      els.bundleFilename.textContent = pending.filename;
+      els.bundleFilename.title = pending.filename;
+    }
+    if (els.bundleSizeage) {
+      els.bundleSizeage.textContent = `${_fmtBytes(pending.bytes || 0)}${ago ? ` \xB7 ${ago}` : ""}`;
+    }
+    if (state.wizardInitialized) _refreshResultZone();
+  }
+  async function _transitionStatusToDownloaded(bytes) {
+    try {
+      const { syncStatus } = await chrome.storage.local.get("syncStatus");
+      if (!syncStatus || syncStatus.phase === "downloaded") return;
+      const total = syncStatus.totalResources ?? 0;
+      const sizeStr = bytes ? ` \xB7 ${_fmtBytes(bytes)}` : "";
+      const next = {
+        ...syncStatus,
+        progress: `\u2705 \u5DF2\u4E0B\u8F09\u5065\u5EB7\u7D00\u9304\u6A94\uFF08\u5171 ${total} \u7B46${sizeStr}\uFF09`,
+        phase: "downloaded",
+        ts: Date.now()
+      };
+      await chrome.storage.local.set({ syncStatus: next });
+    } catch {
+    }
+  }
+  async function downloadPendingBundle() {
+    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+    if (!pending) return;
+    const blob = new Blob([pending.json], { type: "application/fhir+json" });
+    const url = URL.createObjectURL(blob);
+    let downloadId = null;
+    try {
+      downloadId = await chrome.downloads.download({
+        url,
+        filename: pending.filename,
+        saveAs: true
+      });
+    } catch (e) {
+      setTimeout(() => URL.revokeObjectURL(url), 5e3);
+      return;
+    }
+    if (downloadId == null) {
+      setTimeout(() => URL.revokeObjectURL(url), 5e3);
+      return;
+    }
+    const _onChange = (delta) => {
+      if (delta.id !== downloadId) return;
+      const final = delta.state?.current;
+      if (final === "complete") {
+        chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {
+        });
+        chrome.downloads.onChanged.removeListener(_onChange);
+        _transitionStatusToDownloaded(pending.bytes);
+      } else if (final === "interrupted") {
+        chrome.downloads.onChanged.removeListener(_onChange);
+      }
+    };
+    chrome.downloads.onChanged.addListener(_onChange);
+    setTimeout(() => URL.revokeObjectURL(url), 5e3);
+  }
+  async function clearPendingBundle() {
+    await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
+    await refreshPendingBundle();
+    state.latestStatus = null;
+    setStatus("", null);
+    await chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {
+    });
+  }
+
+  // src/popup/connection.ts
   async function loadBackendUrl() {
-    const { backendUrl, syncApiKey, smartAppLaunchUrl } = await chrome.storage.local.get(
-      ["backendUrl", "syncApiKey", "smartAppLaunchUrl"]
-    );
+    const { backendUrl, syncApiKey, smartAppLaunchUrl } = await chrome.storage.local.get([
+      "backendUrl",
+      "syncApiKey",
+      "smartAppLaunchUrl"
+    ]);
     els.backendUrl.value = backendUrl || DEFAULT_BACKEND;
     els.syncApiKey.value = syncApiKey || "";
     els.smartAppUrl.value = smartAppLaunchUrl || DEFAULT_SMART_APP_LAUNCH;
@@ -2508,9 +2507,9 @@
       return {
         "no-url": "\u672A\u8A2D\u5B9A Backend URL",
         "no-permission": "\u672A\u6388\u6B0A\u9023\u7DDA",
-        "network": "\u9023\u4E0D\u4E0A\u5F8C\u7AEF",
-        "timeout": "\u9023\u7DDA\u903E\u6642",
-        "http": `HTTP ${r.detail || ""}`.trim(),
+        network: "\u9023\u4E0D\u4E0A\u5F8C\u7AEF",
+        timeout: "\u9023\u7DDA\u903E\u6642",
+        http: `HTTP ${r.detail || ""}`.trim(),
         "not-fhir": "\u56DE\u61C9\u4E0D\u662F FHIR"
       }[r.kind] ?? "\u9023\u7DDA\u5931\u6557";
     }
@@ -2518,9 +2517,9 @@
   var _CONN_HELP = {
     "no-url": "\u8ACB\u5230\u300C\u9032\u968E\u8A2D\u5B9A\u300D\u586B\u5165 Backend URL\uFF0C\u4F8B\u5982 <code>http://localhost:8010</code>\u3002",
     "no-permission": "Chrome \u963B\u64CB\u4E86\u8DE8\u4F86\u6E90\u8ACB\u6C42\u3002\u8ACB\u91CD\u65B0\u958B popup\uFF0C\u7576\u6B0A\u9650\u5C0D\u8A71\u6846\u8DF3\u51FA\u6642\u6309\u300C\u5141\u8A31\u300D\u3002",
-    "network": "\u5F8C\u7AEF\u53EF\u80FD\u9084\u6C92\u555F\u52D5\u3002\u8ACB\u57F7\u884C\uFF1A<br><code>docker compose up -d</code><br>\u78BA\u8A8D backend \u5BB9\u5668\u8DD1\u8D77\u4F86\u518D\u91CD\u8A66\u3002",
-    "timeout": "5 \u79D2\u5167\u6C92\u6536\u5230\u56DE\u61C9 \u2014 backend \u53EF\u80FD\u9084\u5728\u555F\u52D5\u4E2D\uFF0C\u7B49 30 \u79D2\u518D\u6309\u91CD\u8A66\u3002",
-    "http": "Backend \u56DE\u61C9\u932F\u8AA4\u72C0\u614B\u78BC\u3002\u6AA2\u67E5 backend \u7684 log\uFF1A<br><code>docker compose logs backend</code>",
+    network: "\u5F8C\u7AEF\u53EF\u80FD\u9084\u6C92\u555F\u52D5\u3002\u8ACB\u57F7\u884C\uFF1A<br><code>docker compose up -d</code><br>\u78BA\u8A8D backend \u5BB9\u5668\u8DD1\u8D77\u4F86\u518D\u91CD\u8A66\u3002",
+    timeout: "5 \u79D2\u5167\u6C92\u6536\u5230\u56DE\u61C9 \u2014 backend \u53EF\u80FD\u9084\u5728\u555F\u52D5\u4E2D\uFF0C\u7B49 30 \u79D2\u518D\u6309\u91CD\u8A66\u3002",
+    http: "Backend \u56DE\u61C9\u932F\u8AA4\u72C0\u614B\u78BC\u3002\u6AA2\u67E5 backend \u7684 log\uFF1A<br><code>docker compose logs backend</code>",
     "not-fhir": "\u9019\u500B URL \u56DE\u4E86\u6771\u897F\uFF0C\u4F46\u4E0D\u662F FHIR CapabilityStatement\u3002\u78BA\u8A8D Backend URL \u6307\u5411 NHI-FHIR-Bridge \u7684 /fhir \u6839\u76EE\u9304\u3002"
   };
   function _renderConnBanner() {
@@ -2669,7 +2668,7 @@
     if (currentMode() === "backend") testBackendConnection();
   }
 
-  // src/popup/sync-client.js
+  // src/popup/sync-client.ts
   async function isOnNhiLoginPage(tabId, url) {
     if (url?.pathname && /IHKE3099/.test(url.pathname)) return true;
     try {
@@ -2745,7 +2744,7 @@
       if (rangeSel === "all") {
         start = "2001-01-01";
       } else {
-        const years = parseInt(rangeSel, 10);
+        const years = Number.parseInt(rangeSel, 10);
         const s = new Date(today);
         s.setFullYear(s.getFullYear() - years);
         start = s.toISOString().slice(0, 10);
@@ -2773,10 +2772,7 @@
     const rawId = ov?.id_no;
     const smartAppLaunch = els.smartAppUrl.value.trim() || DEFAULT_SMART_APP_LAUNCH;
     if (!_isSafeSmartAppUrl(smartAppLaunch)) {
-      setStatus(
-        "\u26D4 SMART App URL \u4E0D\u5B89\u5168\uFF08\u5FC5\u9808 https:// \u6216\u672C\u6A5F\uFF09\uFF1B\u8ACB\u5230\u9032\u968E\u8A2D\u5B9A\u4FEE\u6B63\u3002",
-        "error"
-      );
+      setStatus("\u26D4 SMART App URL \u4E0D\u5B89\u5168\uFF08\u5FC5\u9808 https:// \u6216\u672C\u6A5F\uFF09\uFF1B\u8ACB\u5230\u9032\u968E\u8A2D\u5B9A\u4FEE\u6B63\u3002", "error");
       return;
     }
     if (!rawId) {
@@ -2814,10 +2810,7 @@
       return;
     }
     if (!_isSafeSmartAppUrl(v)) {
-      setStatus(
-        "\u26D4 SMART App URL \u5FC5\u9808\u662F https:// \u6216\u672C\u6A5F (http://localhost)\uFF1B\u5DF2\u9084\u539F\u9810\u8A2D\u3002",
-        "error"
-      );
+      setStatus("\u26D4 SMART App URL \u5FC5\u9808\u662F https:// \u6216\u672C\u6A5F (http://localhost)\uFF1B\u5DF2\u9084\u539F\u9810\u8A2D\u3002", "error");
       chrome.storage.local.remove("smartAppLaunchUrl");
       els.smartAppUrl.value = DEFAULT_SMART_APP_LAUNCH;
       return;
@@ -2825,7 +2818,7 @@
     chrome.storage.local.set({ smartAppLaunchUrl: v });
   }
 
-  // src/popup/tooltip.js
+  // src/popup/tooltip.ts
   var _helpTip = document.createElement("div");
   _helpTip.className = "help-tooltip";
   document.body.appendChild(_helpTip);
@@ -2853,9 +2846,9 @@
     _helpTip.classList.remove("visible");
   }
 
-  // src/popup.js
+  // src/popup.ts
   async function init() {
-    document.getElementById("version").textContent = "v" + chrome.runtime.getManifest().version;
+    document.getElementById("version").textContent = `v${chrome.runtime.getManifest().version}`;
     chrome.runtime.sendMessage({ type: "markSyncSeen" }).catch(() => {
     });
     document.getElementById("login-ok-next")?.addEventListener("click", () => _setActiveStep(2));

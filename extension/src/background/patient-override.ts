@@ -20,7 +20,7 @@ export function applyDateRangeToPath(path, dateRange) {
   if (/[?&]s_date=/.test(p)) {
     p = p.replace(/([?&]s_date=)[^&]*/, `$1${s}`);
   } else {
-    p += (p.includes("?") ? "&" : "?") + `s_date=${s}`;
+    p += `${p.includes("?") ? "&" : "?"}s_date=${s}`;
   }
   if (/[?&]e_date=/.test(p)) {
     p = p.replace(/([?&]e_date=)[^&]*/, `$1${e}`);
@@ -45,7 +45,8 @@ export async function isMaskEnabled() {
 
 export function buildOverridePatient(ov, maskEnabled) {
   const displayName = maskEnabled ? maskName(ov.name || "") : ov.name || "";
-  const raw = {
+  // Phase-1 migration: birthDate/gender added below.
+  const raw: any = {
     id: ov.id_no,
     identifier: ov.id_no,
     name: displayName || ov.id_no,

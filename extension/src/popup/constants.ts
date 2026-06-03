@@ -15,8 +15,7 @@ export const DEFAULT_SMART_APP_LAUNCH =
 // manually drag the downloaded JSON into the page). Distinct from
 // DEFAULT_SMART_APP_LAUNCH because that one is the OAuth /smart/launch
 // endpoint; this one is the SMART app's plain entry page.
-export const STANDALONE_SMART_APP_URL =
-  "https://voho0000.github.io/medical-note-smart-on-fhir/";
+export const STANDALONE_SMART_APP_URL = "https://voho0000.github.io/medical-note-smart-on-fhir/";
 
 export const DEFAULT_MODE = "local";
 

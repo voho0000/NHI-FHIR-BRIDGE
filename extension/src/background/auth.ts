@@ -56,6 +56,8 @@ export async function checkNhiLoginState(tabId) {
 // session's truth. Manual override is gone, NHI session is authoritative.
 export async function maybeFetchPatientIdFromNhi(tabId, patientOverride) {
   const current = patientOverride.id_no || "";
+  // Local copy so we never mutate the caller's param (returned at the end).
+  let resolved = patientOverride;
 
   let cid = null;
   try {
@@ -86,8 +88,8 @@ export async function maybeFetchPatientIdFromNhi(tabId, patientOverride) {
   }
 
   if (cid && cid !== current) {
-    patientOverride = { ...patientOverride, id_no: cid };
-    await chrome.storage.local.set({ patientOverride }).catch(() => {});
+    resolved = { ...patientOverride, id_no: cid };
+    await chrome.storage.local.set({ patientOverride: resolved }).catch(() => {});
 
     // Patient-switch cleanup. If the cid just changed from one real
     // cid to another (not just "auto-XXXX → real cid" first-sync swap),
@@ -95,11 +97,10 @@ export async function maybeFetchPatientIdFromNhi(tabId, patientOverride) {
     // Drop it so the popup's download button doesn't keep offering the
     // wrong patient's file. Same set of wipes popup.js does in
     // savePatientOverride when it detects patientChanged.
-    const switchedRealPatients =
-      current && !current.startsWith("auto-") && current !== cid;
+    const switchedRealPatients = current && !current.startsWith("auto-") && current !== cid;
     if (switchedRealPatients) {
       await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {});
     }
   }
-  return patientOverride;
+  return resolved;
 }

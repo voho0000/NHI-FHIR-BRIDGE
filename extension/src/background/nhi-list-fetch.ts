@@ -16,7 +16,7 @@ import { SESSION_EXPIRED_ERROR } from "./constants.js";
 // rejected session, or "executeScript failed: …" if injection itself
 // fails.
 export async function fetchNhiListsInTab(tabId, fetchSpec) {
-  let settledRaw;
+  let settledRaw: any;
   try {
     [{ result: settledRaw }] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -43,7 +43,7 @@ export async function fetchNhiListsInTab(tabId, fetchSpec) {
               method: s.method,
               credentials: "same-origin",
               signal: ac.signal,
-              headers: { "Accept": "application/json", "Authorization": auth },
+              headers: { Accept: "application/json", Authorization: auth },
             });
             clearTimeout(timer);
             const ct = r.headers.get("content-type") || "";
@@ -54,9 +54,12 @@ export async function fetchNhiListsInTab(tabId, fetchSpec) {
             if (!ct.includes("application/json")) {
               return { name: s.name, error: `non-JSON (ct=${ct})` };
             }
-            let body;
-            try { body = await r.json(); }
-            catch (e) { return { name: s.name, error: "JSON parse: " + e.message }; }
+            let body: any;
+            try {
+              body = await r.json();
+            } catch (e) {
+              return { name: s.name, error: `JSON parse: ${e.message}` };
+            }
             return { name: s.name, body };
           } catch (e) {
             clearTimeout(timer);
@@ -76,7 +79,7 @@ export async function fetchNhiListsInTab(tabId, fetchSpec) {
         async function worker() {
           while (nextIdx < specs.length) {
             const i = nextIdx++;
-            await new Promise(r => setTimeout(r, Math.random() * JITTER_MS));
+            await new Promise((r) => setTimeout(r, Math.random() * JITTER_MS));
             results[i] = await fetchOne(specs[i], 60000);
           }
         }
@@ -107,10 +110,12 @@ export async function fetchNhiListsInTab(tabId, fetchSpec) {
 //     split by 西醫/中醫/牙醫 — we want all three)
 // For multi-array shapes we merge all arrays and tag each item with
 // `__section` (the source key) so adapters can disambiguate.
-export function extractList(body) {
+export function extractList(body: any): any[] {
   if (Array.isArray(body)) return body;
   if (!body || typeof body !== "object") return [];
-  let arrayKeys = Object.entries(body).filter(([_, v]) => Array.isArray(v));
+  let arrayKeys: [string, any[]][] = Object.entries(body as Record<string, any>).filter(([_, v]) =>
+    Array.isArray(v),
+  );
   if (arrayKeys.length === 0) return [];
   if (arrayKeys.length === 1) return arrayKeys[0][1];
   // Multiple arrays — drop UI-helper arrays (dropdown options, sort
@@ -152,7 +157,7 @@ export function adaptSettledLists(settledRaw) {
     const list = extractList(r.body);
     const items = [];
     for (const it of list) {
-      const r = ep.adapt(it);
+      const r = (ep.adapt as any)(it);
       if (r === null || r === undefined) continue;
       if (Array.isArray(r)) {
         for (const x of r) if (x) items.push(x);
@@ -172,6 +177,9 @@ export function adaptSettledLists(settledRaw) {
         secondItem: list[1] ?? null,
       }).slice(0, 4000);
     }
-    return { status: "fulfilled", value: { ep, items, raw_count: list.length, bodySample, rawList: list } };
+    return {
+      status: "fulfilled",
+      value: { ep, items, raw_count: list.length, bodySample, rawList: list },
+    };
   });
 }

@@ -469,7 +469,7 @@
     }
   });
 
-  // src/background/constants.js
+  // src/background/constants.ts
   var STORAGE_KEY = "syncStatus";
   var NHI_HOST = "myhealthbank.nhi.gov.tw";
   var CANCEL_ERROR = "__SYNC_CANCELLED__";
@@ -497,48 +497,7 @@
     "maskNameEnabled"
   ];
 
-  // src/background/sync-state.js
-  var _cancelled = false;
-  var _activeSyncCtx = null;
-  function isCancelled() {
-    return _cancelled;
-  }
-  function resetCancelled() {
-    _cancelled = false;
-  }
-  function requestCancel() {
-    _cancelled = true;
-  }
-  function getActiveSyncCtx() {
-    return _activeSyncCtx;
-  }
-  function setActiveSyncCtx(ctx) {
-    _activeSyncCtx = ctx;
-  }
-  async function setStatus(partial) {
-    if (_cancelled) return;
-    const prev = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] || {};
-    const next = { ...prev, ...partial, ts: Date.now() };
-    await chrome.storage.local.set({ [STORAGE_KEY]: next });
-    chrome.runtime.sendMessage({ type: "syncProgress", status: next }).catch(() => {
-    });
-  }
-  async function withProgressTimer(makeLabel, fn) {
-    const start = Date.now();
-    await setStatus({ progress: makeLabel(0) });
-    const interval = setInterval(() => {
-      const elapsed = Math.round((Date.now() - start) / 1e3);
-      setStatus({ progress: makeLabel(elapsed) }).catch(() => {
-      });
-    }, 3e3);
-    try {
-      return await fn();
-    } finally {
-      clearInterval(interval);
-    }
-  }
-
-  // src/background/auth.js
+  // src/background/auth.ts
   async function checkNhiLoginState(tabId) {
     try {
       const [{ result }] = await chrome.scripting.executeScript({
@@ -564,6 +523,7 @@
   }
   async function maybeFetchPatientIdFromNhi(tabId, patientOverride) {
     const current = patientOverride.id_no || "";
+    let resolved = patientOverride;
     let cid = null;
     try {
       const [{ result }] = await chrome.scripting.executeScript({
@@ -589,8 +549,8 @@
       console.warn("[NHI sync] IHKE3410 cid fetch failed:", e?.message ?? e);
     }
     if (cid && cid !== current) {
-      patientOverride = { ...patientOverride, id_no: cid };
-      await chrome.storage.local.set({ patientOverride }).catch(() => {
+      resolved = { ...patientOverride, id_no: cid };
+      await chrome.storage.local.set({ patientOverride: resolved }).catch(() => {
       });
       const switchedRealPatients = current && !current.startsWith("auto-") && current !== cid;
       if (switchedRealPatients) {
@@ -598,7 +558,7 @@
         });
       }
     }
-    return patientOverride;
+    return resolved;
   }
 
   // ../packages/mapper/src/systems.ts
@@ -4859,7 +4819,7 @@
     return "unknown";
   }
 
-  // src/background/backend-upload.js
+  // src/background/backend-upload.ts
   async function postStructured(backend, page_type, items, syncApiKey, patientOverride) {
     const r = await fetch(`${backend}/sync/upload-structured`, {
       method: "POST",
@@ -4874,7 +4834,8 @@
         patient_override: patientOverride || null
       })
     });
-    if (!r.ok) throw new Error(`POST upload-structured ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    if (!r.ok)
+      throw new Error(`POST upload-structured ${r.status}: ${(await r.text()).slice(0, 200)}`);
     return await r.json();
   }
   async function exportPatientBundle(backend, syncApiKey, patientId) {
@@ -4904,12 +4865,116 @@
     });
   }
 
-  // src/nhi-adapters.js
+  // src/background/badge.ts
+  var UNSEEN_KEY = "unseenSyncResult";
+  var ICON_SIZES = [16, 32, 48];
+  var DOT_COLOR = "#d70015";
+  var RING_COLOR = "#ffffff";
+  var PLAIN_ICON_PATH = {
+    16: "icons/icon-16.png",
+    32: "icons/icon-32.png",
+    48: "icons/icon-48.png"
+  };
+  async function _buildDottedIcon(size) {
+    const url = chrome.runtime.getURL(`icons/icon-${size}.png`);
+    const blob = await (await fetch(url)).blob();
+    const bmp = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(size, size);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bmp, 0, 0, size, size);
+    const r = Math.max(3, Math.round(size * 0.17));
+    const ring = Math.max(1, Math.round(size * 0.05));
+    const cx = size - r;
+    const cy = r;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+    ctx.fillStyle = RING_COLOR;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r - ring, 0, 2 * Math.PI);
+    ctx.fillStyle = DOT_COLOR;
+    ctx.fill();
+    return ctx.getImageData(0, 0, size, size);
+  }
+  async function _paintDot() {
+    try {
+      const imageData = {};
+      for (const s of ICON_SIZES) imageData[s] = await _buildDottedIcon(s);
+      await chrome.action.setIcon({ imageData });
+    } catch {
+    }
+  }
+  async function showResultBadge(count) {
+    const n = Number(count) || 0;
+    if (n <= 0) {
+      await clearResultBadge();
+      return;
+    }
+    await chrome.storage.local.set({ [UNSEEN_KEY]: true }).catch(() => {
+    });
+    await _paintDot();
+  }
+  async function clearResultBadge() {
+    try {
+      await chrome.action.setIcon({ path: PLAIN_ICON_PATH });
+    } catch {
+    }
+    await chrome.storage.local.remove(UNSEEN_KEY).catch(() => {
+    });
+  }
+  async function restoreResultBadge() {
+    try {
+      const { [UNSEEN_KEY]: unseen } = await chrome.storage.local.get(UNSEEN_KEY);
+      if (unseen) await _paintDot();
+    } catch {
+    }
+  }
+
+  // src/background/storage-migration.ts
+  async function migrateSyncToLocal() {
+    try {
+      const synced = await chrome.storage.sync.get(SYNC_KEYS_TO_MIGRATE);
+      const present = Object.fromEntries(Object.entries(synced).filter(([, v]) => v !== void 0));
+      if (Object.keys(present).length === 0) return;
+      const local = await chrome.storage.local.get(Object.keys(present));
+      const toWrite = Object.fromEntries(
+        Object.entries(present).filter(([k]) => local[k] === void 0)
+      );
+      if (Object.keys(toWrite).length > 0) {
+        await chrome.storage.local.set(toWrite);
+      }
+      await chrome.storage.sync.remove(Object.keys(present));
+    } catch {
+    }
+  }
+  async function sweepStaleLocalKeys() {
+    try {
+      const all = await chrome.storage.local.get(null);
+      const stale = Object.keys(all).filter(
+        (k) => k === "pendingFhirBundle" || k.startsWith("__sampleBody_")
+      );
+      if (stale.length) await chrome.storage.local.remove(stale);
+    } catch {
+    }
+  }
+  async function sweepPendingBundleIfStale() {
+    try {
+      const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+      if (!pending) return;
+      const age = Date.now() - (pending.generatedAt || 0);
+      if (age > PENDING_BUNDLE_TTL_MS) {
+        await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
+      }
+    } catch {
+    }
+  }
+
+  // src/nhi-adapters.ts
   function rocToISO(rocDate) {
     if (!rocDate) return "";
     const m = String(rocDate).match(/^(\d{2,3})[/.-](\d{1,2})[/.-](\d{1,2})/);
     if (!m) return "";
-    const y = parseInt(m[1], 10) + 1911;
+    const y = Number.parseInt(m[1], 10) + 1911;
     return `${y}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
   }
   function pickEnglish(s) {
@@ -4934,9 +4999,7 @@
   }
   function adaptLabItem(item) {
     if (!item || typeof item !== "object") return null;
-    const date = rocToISO(
-      item.reaL_INSPECT_DATE || item.real_inspect_date || item.funC_DATE
-    );
+    const date = rocToISO(item.reaL_INSPECT_DATE || item.real_inspect_date || item.funC_DATE);
     const value = item.assaY_VALUE;
     if (!date || value === void 0 || value === null || value === "") return null;
     const fullName = _cleanLabName(item.assaY_ITEM_NAME) || _cleanLabName(item.order_shortname) || _cleanLabName(item.ordeR_NAME);
@@ -4988,7 +5051,7 @@
     if (!date || !drug_name) return null;
     const end_date = rocToISO(visit?.cure_E_DATE || visit?.cure_e_date || "");
     const days = Number(drug.order_drug_day || drug.order_DRUG_DAY || 0);
-    const is_chronic = !!(options && options.is_chronic);
+    const is_chronic = !!options?.is_chronic;
     const drug_name_zh = drug.drug_name2 || drug.druG_NAME2 || pickChinese(rawDrugName);
     const rawIndication = visit?.icd9cm_CODE_CNAME || visit?.icd9cm_name || "";
     const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
@@ -5110,22 +5173,12 @@
     );
     push("BUN", row.urinE_BUN, "mg/dL", "", "laboratory", "09002C");
     push("Creatinine", row.bloD_CREAT, "mg/dL", "", "laboratory", "09015C");
-    push(
-      "eGFR",
-      row.egfr,
-      "mL/min/1.73m2",
-      row.rF_DIAG_RESULT_TEXT || ""
-    );
+    push("eGFR", row.egfr, "mL/min/1.73m2", row.rF_DIAG_RESULT_TEXT || "");
     push("Urine Protein", row.urinE_PROTEIN_TEXT || "", "", "");
     push("HBsAg", row.hbsaG_TEXT || "", "", row.hbV_RESULT_TEXT || "", "laboratory", "14032C");
     push("Anti-HCV", row.antI_HCV_TEXT || "", "", row.hcV_RESULT_TEXT || "", "laboratory", "14051C");
     push("Uric Acid", row.uriC_ACID, "mg/dL", "", "laboratory", "09013C");
-    push(
-      "\u4EE3\u8B1D\u75C7\u5019\u7FA4\u7BE9\u6AA2 (Metabolic Syndrome Screening)",
-      row.metA_SYNDR_RESULT_TEXT,
-      "",
-      ""
-    );
+    push("\u4EE3\u8B1D\u75C7\u5019\u7FA4\u7BE9\u6AA2 (Metabolic Syndrome Screening)", row.metA_SYNDR_RESULT_TEXT, "", "");
     return out;
   }
   function adaptInpatientEncounter(item, options) {
@@ -5134,9 +5187,10 @@
     const end = rocToISO(item.out_DATE || "");
     if (!start) return null;
     const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
-    const s02Primary = options && options.primary_diagnosis;
-    const icdCode = s02Primary && s02Primary.code || item.icd9cm_CODE || item.icd9cm_code || "";
-    let icdName, icdName_zh;
+    const s02Primary = options?.primary_diagnosis;
+    const icdCode = s02Primary?.code || item.icd9cm_CODE || item.icd9cm_code || "";
+    let icdName;
+    let icdName_zh;
     if (s02Primary && (s02Primary.name_en || s02Primary.name_zh)) {
       icdName = s02Primary.name_en || s02Primary.name_zh;
       icdName_zh = s02Primary.name_zh || s02Primary.name_en;
@@ -5168,9 +5222,10 @@
     const date = rocToISO(item.funC_DATE || item.func_DATE || item.func_date || "");
     if (!date) return null;
     const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
-    const s02Primary = options && options.primary_diagnosis;
-    const icdCode = s02Primary && s02Primary.code || item.icD9CM_CODE || item.icd9cm_CODE || item.icd9cm_code || "";
-    let icdName, icdName_zh;
+    const s02Primary = options?.primary_diagnosis;
+    const icdCode = s02Primary?.code || item.icD9CM_CODE || item.icd9cm_CODE || item.icd9cm_code || "";
+    let icdName;
+    let icdName_zh;
     if (s02Primary && (s02Primary.name_en || s02Primary.name_zh)) {
       icdName = s02Primary.name_en || s02Primary.name_zh;
       icdName_zh = s02Primary.name_zh || s02Primary.name_en;
@@ -5309,7 +5364,7 @@
     };
   }
 
-  // src/nhi-endpoints.js
+  // src/nhi-endpoints.ts
   var ENDPOINT_LABEL_ZH = {
     encounters: "\u5C31\u91AB",
     inpatient: "\u4F4F\u9662",
@@ -5472,7 +5527,7 @@
     }
   ];
 
-  // src/background/patient-override.js
+  // src/background/patient-override.ts
   function applyDateRangeToPath(path, dateRange) {
     if (!dateRange || !dateRange.start && !dateRange.end) return path;
     const s = (dateRange.start || "").slice(0, 10);
@@ -5481,7 +5536,7 @@
     if (/[?&]s_date=/.test(p)) {
       p = p.replace(/([?&]s_date=)[^&]*/, `$1${s}`);
     } else {
-      p += (p.includes("?") ? "&" : "?") + `s_date=${s}`;
+      p += `${p.includes("?") ? "&" : "?"}s_date=${s}`;
     }
     if (/[?&]e_date=/.test(p)) {
       p = p.replace(/([?&]e_date=)[^&]*/, `$1${e}`);
@@ -5521,133 +5576,90 @@
     return value;
   }
 
-  // src/background/nhi-list-fetch.js
-  async function fetchNhiListsInTab(tabId, fetchSpec) {
-    let settledRaw;
-    try {
-      [{ result: settledRaw }] = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: async (specs) => {
-          const token = sessionStorage.getItem("token");
-          if (!token) return [{ error: "SESSION_EXPIRED" }];
-          const auth = `Bearer ${token}`;
-          if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
-            return [{ error: "SESSION_EXPIRED" }];
-          }
-          async function fetchOne(s, ms) {
-            const ac = new AbortController();
-            const timer = setTimeout(() => ac.abort(), ms);
-            try {
-              const r = await fetch(s.url, {
-                method: s.method,
-                credentials: "same-origin",
-                signal: ac.signal,
-                headers: { "Accept": "application/json", "Authorization": auth }
-              });
-              clearTimeout(timer);
-              const ct = r.headers.get("content-type") || "";
-              if (r.status === 401 || r.status === 403) {
-                return { name: s.name, error: "SESSION_EXPIRED" };
-              }
-              if (!r.ok) return { name: s.name, error: `HTTP ${r.status}` };
-              if (!ct.includes("application/json")) {
-                return { name: s.name, error: `non-JSON (ct=${ct})` };
-              }
-              let body;
-              try {
-                body = await r.json();
-              } catch (e) {
-                return { name: s.name, error: "JSON parse: " + e.message };
-              }
-              return { name: s.name, body };
-            } catch (e) {
-              clearTimeout(timer);
-              if (e.name === "AbortError") return { name: s.name, error: "timeout 60s" };
-              return { name: s.name, error: String(e?.message || e) };
-            }
-          }
-          const CONCURRENCY = 3;
-          const JITTER_MS = 200;
-          const results = new Array(specs.length);
-          let nextIdx = 0;
-          async function worker() {
-            while (nextIdx < specs.length) {
-              const i = nextIdx++;
-              await new Promise((r) => setTimeout(r, Math.random() * JITTER_MS));
-              results[i] = await fetchOne(specs[i], 6e4);
-            }
-          }
-          const workers = [];
-          for (let w = 0; w < CONCURRENCY && w < specs.length; w++) {
-            workers.push(worker());
-          }
-          await Promise.all(workers);
-          return results;
-        },
-        args: [fetchSpec]
-      });
-    } catch (e) {
-      throw new Error(`executeScript failed: ${e.message}`);
+  // src/background/bundle.ts
+  function assembleLocalBundle(byType, patientOverride, maskEnabled) {
+    const patient = buildOverridePatient(patientOverride, maskEnabled);
+    const pid = patient.id;
+    const all = [patient];
+    for (const pt of LOCAL_PAGE_TYPE_ORDER) {
+      const items = byType[pt];
+      if (!items || items.length === 0) continue;
+      let mapped;
+      if (GROUP_HANDLERS[pt]) {
+        mapped = GROUP_HANDLERS[pt](items, pid);
+      } else if (LIST_HANDLERS[pt]) {
+        const [fn] = LIST_HANDLERS[pt];
+        mapped = items.filter((it) => it && typeof it === "object").map((it) => fn(it, pid)).filter((r) => r !== null);
+      } else {
+        continue;
+      }
+      if (pt === "encounters") mapped = dedupAdmissionDayAmb(mapped);
+      all.push(...mapped);
     }
-    if (settledRaw.some((r) => r.error === "SESSION_EXPIRED")) {
-      throw new Error(SESSION_EXPIRED_ERROR);
+    const seen = /* @__PURE__ */ new Set();
+    const unique = [];
+    for (const r of all) {
+      const key = `${r.resourceType}/${r.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(r);
     }
-    return settledRaw;
+    linkEncountersInResources(unique, unique);
+    resolveSexStratifiedRanges(patient, unique);
+    const bridgeVersion = chrome.runtime.getManifest()?.version || "unknown";
+    return {
+      resourceType: "Bundle",
+      type: "collection",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d+Z$/, "Z"),
+      meta: {
+        tag: [
+          {
+            system: "https://github.com/voho0000/NHI-FHIR-BRIDGE/bridge-version",
+            code: bridgeVersion,
+            display: `NHI-FHIR-Bridge v${bridgeVersion}`
+          }
+        ]
+      },
+      entry: unique.map((r) => ({
+        fullUrl: `${r.resourceType}/${r.id}`,
+        resource: r
+      }))
+    };
   }
-  function extractList(body) {
-    if (Array.isArray(body)) return body;
-    if (!body || typeof body !== "object") return [];
-    let arrayKeys = Object.entries(body).filter(([_, v]) => Array.isArray(v));
-    if (arrayKeys.length === 0) return [];
-    if (arrayKeys.length === 1) return arrayKeys[0][1];
-    const HELPER_RE = /select|option|dropdown|filter|sort|lookup/i;
-    const dataKeys = arrayKeys.filter(([k]) => !HELPER_RE.test(k));
-    if (dataKeys.length === 1) return dataKeys[0][1];
-    if (dataKeys.length === 0) return arrayKeys[0][1];
-    arrayKeys = dataKeys;
-    const merged = [];
-    for (const [k, v] of arrayKeys) {
-      for (const item of v) {
-        if (item && typeof item === "object") {
-          merged.push({ ...item, __section: k });
-        } else {
-          merged.push(item);
-        }
-      }
+  async function stashFhirBundle(bundle, patientId, dateRange) {
+    const now = /* @__PURE__ */ new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const fmt = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+    const maskedPid = maskId(patientId || "unknown", "X");
+    const safePid = maskedPid.replace(/[^A-Za-z0-9_-]/g, "_");
+    const compact = (d) => (d || "").slice(0, 10).replace(/-/g, "");
+    let s;
+    let e;
+    if (dateRange && (dateRange.start || dateRange.end)) {
+      s = compact(dateRange.start) || fmt(now);
+      e = compact(dateRange.end) || fmt(now);
+    } else {
+      const oneYearAgo = new Date(now);
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      s = fmt(oneYearAgo);
+      e = fmt(now);
     }
-    return merged;
-  }
-  function adaptSettledLists(settledRaw) {
-    return settledRaw.map((r, i) => {
-      const ep = NHI_API_ENDPOINTS[i];
-      if (r.error) {
-        return { status: "rejected", reason: { message: `${ep.name}: ${r.error}` } };
+    const version = chrome.runtime.getManifest()?.version || "unknown";
+    const filename = `nhi-${safePid}-${s}-${e}-v${version}.json`;
+    const json = JSON.stringify(bundle, null, 2);
+    await chrome.storage.session.set({
+      [PENDING_BUNDLE_KEY]: {
+        filename,
+        json,
+        bytes: json.length,
+        generatedAt: Date.now(),
+        patientId: patientId || null
       }
-      const list = extractList(r.body);
-      const items = [];
-      for (const it of list) {
-        const r2 = ep.adapt(it);
-        if (r2 === null || r2 === void 0) continue;
-        if (Array.isArray(r2)) {
-          for (const x of r2) if (x) items.push(x);
-        } else {
-          items.push(r2);
-        }
-      }
-      let bodySample = null;
-      if (list.length > 0 && items.length === 0) {
-        bodySample = JSON.stringify({
-          topLevelKeys: Array.isArray(r.body) ? null : Object.keys(r.body || {}).slice(0, 10),
-          wasArray: Array.isArray(r.body),
-          firstItem: list[0] ?? null,
-          secondItem: list[1] ?? null
-        }).slice(0, 4e3);
-      }
-      return { status: "fulfilled", value: { ep, items, raw_count: list.length, bodySample, rawList: list } };
     });
+    return { filename, bytes: json.length };
   }
 
-  // src/background/nhi-detail-fetchers.js
+  // src/background/nhi-detail-fetchers.ts
   async function fetchDetailsInTab(tabId, baseUrl, items, spec) {
     if (items.length === 0) return [];
     const [{ result }] = await chrome.scripting.executeScript({
@@ -5668,7 +5680,7 @@
               method: "GET",
               credentials: "same-origin",
               signal: ac.signal,
-              headers: { "Accept": "application/json", "Authorization": auth }
+              headers: { Accept: "application/json", Authorization: auth }
             });
             clearTimeout(t);
             if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
@@ -5862,7 +5874,138 @@
     return byVisitIndex(reqs, results);
   }
 
-  // src/background/s02-detail.js
+  // src/background/nhi-list-fetch.ts
+  async function fetchNhiListsInTab(tabId, fetchSpec) {
+    let settledRaw;
+    try {
+      [{ result: settledRaw }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: async (specs) => {
+          const token = sessionStorage.getItem("token");
+          if (!token) return [{ error: "SESSION_EXPIRED" }];
+          const auth = `Bearer ${token}`;
+          if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
+            return [{ error: "SESSION_EXPIRED" }];
+          }
+          async function fetchOne(s, ms) {
+            const ac = new AbortController();
+            const timer = setTimeout(() => ac.abort(), ms);
+            try {
+              const r = await fetch(s.url, {
+                method: s.method,
+                credentials: "same-origin",
+                signal: ac.signal,
+                headers: { Accept: "application/json", Authorization: auth }
+              });
+              clearTimeout(timer);
+              const ct = r.headers.get("content-type") || "";
+              if (r.status === 401 || r.status === 403) {
+                return { name: s.name, error: "SESSION_EXPIRED" };
+              }
+              if (!r.ok) return { name: s.name, error: `HTTP ${r.status}` };
+              if (!ct.includes("application/json")) {
+                return { name: s.name, error: `non-JSON (ct=${ct})` };
+              }
+              let body;
+              try {
+                body = await r.json();
+              } catch (e) {
+                return { name: s.name, error: `JSON parse: ${e.message}` };
+              }
+              return { name: s.name, body };
+            } catch (e) {
+              clearTimeout(timer);
+              if (e.name === "AbortError") return { name: s.name, error: "timeout 60s" };
+              return { name: s.name, error: String(e?.message || e) };
+            }
+          }
+          const CONCURRENCY = 3;
+          const JITTER_MS = 200;
+          const results = new Array(specs.length);
+          let nextIdx = 0;
+          async function worker() {
+            while (nextIdx < specs.length) {
+              const i = nextIdx++;
+              await new Promise((r) => setTimeout(r, Math.random() * JITTER_MS));
+              results[i] = await fetchOne(specs[i], 6e4);
+            }
+          }
+          const workers = [];
+          for (let w = 0; w < CONCURRENCY && w < specs.length; w++) {
+            workers.push(worker());
+          }
+          await Promise.all(workers);
+          return results;
+        },
+        args: [fetchSpec]
+      });
+    } catch (e) {
+      throw new Error(`executeScript failed: ${e.message}`);
+    }
+    if (settledRaw.some((r) => r.error === "SESSION_EXPIRED")) {
+      throw new Error(SESSION_EXPIRED_ERROR);
+    }
+    return settledRaw;
+  }
+  function extractList(body) {
+    if (Array.isArray(body)) return body;
+    if (!body || typeof body !== "object") return [];
+    let arrayKeys = Object.entries(body).filter(
+      ([_, v]) => Array.isArray(v)
+    );
+    if (arrayKeys.length === 0) return [];
+    if (arrayKeys.length === 1) return arrayKeys[0][1];
+    const HELPER_RE = /select|option|dropdown|filter|sort|lookup/i;
+    const dataKeys = arrayKeys.filter(([k]) => !HELPER_RE.test(k));
+    if (dataKeys.length === 1) return dataKeys[0][1];
+    if (dataKeys.length === 0) return arrayKeys[0][1];
+    arrayKeys = dataKeys;
+    const merged = [];
+    for (const [k, v] of arrayKeys) {
+      for (const item of v) {
+        if (item && typeof item === "object") {
+          merged.push({ ...item, __section: k });
+        } else {
+          merged.push(item);
+        }
+      }
+    }
+    return merged;
+  }
+  function adaptSettledLists(settledRaw) {
+    return settledRaw.map((r, i) => {
+      const ep = NHI_API_ENDPOINTS[i];
+      if (r.error) {
+        return { status: "rejected", reason: { message: `${ep.name}: ${r.error}` } };
+      }
+      const list = extractList(r.body);
+      const items = [];
+      for (const it of list) {
+        const r2 = ep.adapt(it);
+        if (r2 === null || r2 === void 0) continue;
+        if (Array.isArray(r2)) {
+          for (const x of r2) if (x) items.push(x);
+        } else {
+          items.push(r2);
+        }
+      }
+      let bodySample = null;
+      if (list.length > 0 && items.length === 0) {
+        bodySample = JSON.stringify({
+          topLevelKeys: Array.isArray(r.body) ? null : Object.keys(r.body || {}).slice(0, 10),
+          wasArray: Array.isArray(r.body),
+          firstItem: list[0] ?? null,
+          secondItem: list[1] ?? null
+        }).slice(0, 4e3);
+      }
+      return {
+        status: "fulfilled",
+        value: { ep, items, raw_count: list.length, bodySample, rawList: list }
+      };
+    });
+  }
+
+  // src/background/s02-detail.ts
   function pickS02MainRow(body) {
     if (!body || typeof body !== "object") return null;
     for (const k of Object.keys(body)) {
@@ -5924,155 +6067,58 @@
     return out;
   }
 
-  // src/background/bundle.js
-  function assembleLocalBundle(byType, patientOverride, maskEnabled) {
-    const patient = buildOverridePatient(patientOverride, maskEnabled);
-    const pid = patient.id;
-    const all = [patient];
-    for (const pt of LOCAL_PAGE_TYPE_ORDER) {
-      const items = byType[pt];
-      if (!items || items.length === 0) continue;
-      let mapped;
-      if (GROUP_HANDLERS[pt]) {
-        mapped = GROUP_HANDLERS[pt](items, pid);
-      } else if (LIST_HANDLERS[pt]) {
-        const [fn] = LIST_HANDLERS[pt];
-        mapped = items.filter((it) => it && typeof it === "object").map((it) => fn(it, pid)).filter((r) => r !== null);
-      } else {
-        continue;
-      }
-      if (pt === "encounters") mapped = dedupAdmissionDayAmb(mapped);
-      all.push(...mapped);
-    }
-    const seen = /* @__PURE__ */ new Set();
-    const unique = [];
-    for (const r of all) {
-      const key = `${r.resourceType}/${r.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(r);
-    }
-    linkEncountersInResources(unique, unique);
-    resolveSexStratifiedRanges(patient, unique);
-    const bridgeVersion = chrome.runtime.getManifest()?.version || "unknown";
-    return {
-      resourceType: "Bundle",
-      type: "collection",
-      timestamp: (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d+Z$/, "Z"),
-      meta: {
-        tag: [
-          {
-            system: "https://github.com/voho0000/NHI-FHIR-BRIDGE/bridge-version",
-            code: bridgeVersion,
-            display: `NHI-FHIR-Bridge v${bridgeVersion}`
-          }
-        ]
-      },
-      entry: unique.map((r) => ({
-        fullUrl: `${r.resourceType}/${r.id}`,
-        resource: r
-      }))
-    };
+  // src/background/sync-state.ts
+  var _cancelled = false;
+  var _activeSyncCtx = null;
+  function isCancelled() {
+    return _cancelled;
   }
-  async function stashFhirBundle(bundle, patientId, dateRange) {
-    const now = /* @__PURE__ */ new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    const fmt = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
-    const maskedPid = maskId(patientId || "unknown", "X");
-    const safePid = maskedPid.replace(/[^A-Za-z0-9_-]/g, "_");
-    const compact = (d) => (d || "").slice(0, 10).replace(/-/g, "");
-    let s, e;
-    if (dateRange && (dateRange.start || dateRange.end)) {
-      s = compact(dateRange.start) || fmt(now);
-      e = compact(dateRange.end) || fmt(now);
-    } else {
-      const oneYearAgo = new Date(now);
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-      s = fmt(oneYearAgo);
-      e = fmt(now);
-    }
-    const version = chrome.runtime.getManifest()?.version || "unknown";
-    const filename = `nhi-${safePid}-${s}-${e}-v${version}.json`;
-    const json = JSON.stringify(bundle, null, 2);
-    await chrome.storage.session.set({
-      [PENDING_BUNDLE_KEY]: {
-        filename,
-        json,
-        bytes: json.length,
-        generatedAt: Date.now(),
-        patientId: patientId || null
-      }
-    });
-    return { filename, bytes: json.length };
+  function resetCancelled() {
+    _cancelled = false;
   }
-
-  // src/background/badge.js
-  var UNSEEN_KEY = "unseenSyncResult";
-  var ICON_SIZES = [16, 32, 48];
-  var DOT_COLOR = "#d70015";
-  var RING_COLOR = "#ffffff";
-  var PLAIN_ICON_PATH = {
-    16: "icons/icon-16.png",
-    32: "icons/icon-32.png",
-    48: "icons/icon-48.png"
-  };
-  async function _buildDottedIcon(size) {
-    const url = chrome.runtime.getURL(`icons/icon-${size}.png`);
-    const blob = await (await fetch(url)).blob();
-    const bmp = await createImageBitmap(blob);
-    const canvas = new OffscreenCanvas(size, size);
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(bmp, 0, 0, size, size);
-    const r = Math.max(3, Math.round(size * 0.17));
-    const ring = Math.max(1, Math.round(size * 0.05));
-    const cx = size - r;
-    const cy = r;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-    ctx.fillStyle = RING_COLOR;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx, cy, r - ring, 0, 2 * Math.PI);
-    ctx.fillStyle = DOT_COLOR;
-    ctx.fill();
-    return ctx.getImageData(0, 0, size, size);
+  function requestCancel() {
+    _cancelled = true;
   }
-  async function _paintDot() {
-    try {
-      const imageData = {};
-      for (const s of ICON_SIZES) imageData[s] = await _buildDottedIcon(s);
-      await chrome.action.setIcon({ imageData });
-    } catch {
-    }
+  function getActiveSyncCtx() {
+    return _activeSyncCtx;
   }
-  async function showResultBadge(count) {
-    const n = Number(count) || 0;
-    if (n <= 0) {
-      await clearResultBadge();
-      return;
-    }
-    await chrome.storage.local.set({ [UNSEEN_KEY]: true }).catch(() => {
-    });
-    await _paintDot();
+  function setActiveSyncCtx(ctx) {
+    _activeSyncCtx = ctx;
   }
-  async function clearResultBadge() {
-    try {
-      await chrome.action.setIcon({ path: PLAIN_ICON_PATH });
-    } catch {
-    }
-    await chrome.storage.local.remove(UNSEEN_KEY).catch(() => {
+  async function setStatus(partial) {
+    if (_cancelled) return;
+    const prev = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] || {};
+    const next = { ...prev, ...partial, ts: Date.now() };
+    await chrome.storage.local.set({ [STORAGE_KEY]: next });
+    chrome.runtime.sendMessage({ type: "syncProgress", status: next }).catch(() => {
     });
   }
-  async function restoreResultBadge() {
+  async function withProgressTimer(makeLabel, fn) {
+    const start = Date.now();
+    await setStatus({ progress: makeLabel(0) });
+    const interval = setInterval(() => {
+      const elapsed = Math.round((Date.now() - start) / 1e3);
+      setStatus({ progress: makeLabel(elapsed) }).catch(() => {
+      });
+    }, 3e3);
     try {
-      const { [UNSEEN_KEY]: unseen } = await chrome.storage.local.get(UNSEEN_KEY);
-      if (unseen) await _paintDot();
-    } catch {
+      return await fn();
+    } finally {
+      clearInterval(interval);
     }
   }
 
-  // src/background/sync-orchestrator.js
-  async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patientOverride, dateRange, dateRangeLabel }) {
+  // src/background/sync-orchestrator.ts
+  async function runNhiApiSync({
+    tabId,
+    mode,
+    backend,
+    syncApiKey,
+    nhiBase,
+    patientOverride,
+    dateRange,
+    dateRangeLabel
+  }) {
     resetCancelled();
     const BASE = nhiBase || `https://${NHI_HOST}`;
     if (!patientOverride) {
@@ -6228,9 +6274,7 @@
     }
     _markPhase("procedures-detail");
     const chronicRowIds = /* @__PURE__ */ new Set();
-    const chronicIdx = NHI_API_ENDPOINTS.findIndex(
-      (e) => e.name === "chronic_prescriptions"
-    );
+    const chronicIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "chronic_prescriptions");
     if (chronicIdx >= 0 && settled[chronicIdx].status === "fulfilled") {
       const visits = settled[chronicIdx].value.rawList || [];
       if (visits.length > 0) {
@@ -6306,7 +6350,8 @@
         }
       }
       if (items.length === 0) continue;
-      (byType[ep.page_type] = byType[ep.page_type] || []).push(...items);
+      byType[ep.page_type] = byType[ep.page_type] || [];
+      byType[ep.page_type].push(...items);
     }
     const maskEnabled = await isMaskEnabled();
     if (maskEnabled && patientOverride.name) {
@@ -6396,69 +6441,29 @@
       localFilename: _localFilename
     });
     await showResultBadge(total);
-    if (mode !== "local") try {
-      await postSyncLog(backend, syncApiKey, {
-        status: errors.length ? "partial" : "success",
-        patient_id: patientOverride.id_no || "",
-        // /sync/log lands in the dashboard's sync-history row. Only
-        // mask when the user has opted in — otherwise dashboard sees
-        // the raw name they typed (consistent with "民眾自用" default).
-        patient_name: maskEnabled ? maskName(patientOverride.name || "") : patientOverride.name || "",
-        total,
-        breakdown,
-        date_range: dateRangeLabel || "",
-        elapsed_ms: _elapsedMs,
-        started_at: new Date(_t0).toISOString(),
-        errors
-      });
-    } catch (e) {
-      console.warn("[NHI sync] failed to write history log:", e);
-    }
+    if (mode !== "local")
+      try {
+        await postSyncLog(backend, syncApiKey, {
+          status: errors.length ? "partial" : "success",
+          patient_id: patientOverride.id_no || "",
+          // /sync/log lands in the dashboard's sync-history row. Only
+          // mask when the user has opted in — otherwise dashboard sees
+          // the raw name they typed (consistent with "民眾自用" default).
+          patient_name: maskEnabled ? maskName(patientOverride.name || "") : patientOverride.name || "",
+          total,
+          breakdown,
+          date_range: dateRangeLabel || "",
+          elapsed_ms: _elapsedMs,
+          started_at: new Date(_t0).toISOString(),
+          errors
+        });
+      } catch (e) {
+        console.warn("[NHI sync] failed to write history log:", e);
+      }
     setActiveSyncCtx(null);
   }
 
-  // src/background/storage-migration.js
-  async function migrateSyncToLocal() {
-    try {
-      const synced = await chrome.storage.sync.get(SYNC_KEYS_TO_MIGRATE);
-      const present = Object.fromEntries(
-        Object.entries(synced).filter(([, v]) => v !== void 0)
-      );
-      if (Object.keys(present).length === 0) return;
-      const local = await chrome.storage.local.get(Object.keys(present));
-      const toWrite = Object.fromEntries(
-        Object.entries(present).filter(([k]) => local[k] === void 0)
-      );
-      if (Object.keys(toWrite).length > 0) {
-        await chrome.storage.local.set(toWrite);
-      }
-      await chrome.storage.sync.remove(Object.keys(present));
-    } catch {
-    }
-  }
-  async function sweepStaleLocalKeys() {
-    try {
-      const all = await chrome.storage.local.get(null);
-      const stale = Object.keys(all).filter(
-        (k) => k === "pendingFhirBundle" || k.startsWith("__sampleBody_")
-      );
-      if (stale.length) await chrome.storage.local.remove(stale);
-    } catch {
-    }
-  }
-  async function sweepPendingBundleIfStale() {
-    try {
-      const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-      if (!pending) return;
-      const age = Date.now() - (pending.generatedAt || 0);
-      if (age > PENDING_BUNDLE_TTL_MS) {
-        await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
-      }
-    } catch {
-    }
-  }
-
-  // src/background.js
+  // src/background.ts
   chrome.runtime.onInstalled.addListener(async () => {
     await migrateSyncToLocal();
     await sweepStaleLocalKeys();

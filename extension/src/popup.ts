@@ -15,23 +15,7 @@
 //     popup has no automated test coverage; this file is the wiring
 //     source of truth). Each handler delegates to an imported function.
 
-import {
-  NHI_LANDING,
-  NHI_LOGIN_URL,
-  PENDING_BUNDLE_KEY,
-  STANDALONE_SMART_APP_URL,
-} from "./popup/constants.js";
-import { els } from "./popup/els.js";
-import { state } from "./popup/state.js";
-import { getActiveTab, isNhiTab } from "./popup/utils.js";
-import {
-  clearPatientOverride,
-  loadMaskNameEnabled,
-  loadPatientOverride,
-  onMaskNameToggle,
-  refreshOverrideSummary,
-  savePatientOverride,
-} from "./popup/patient-form.js";
+import { clearPendingBundle, downloadPendingBundle, refreshPendingBundle } from "./popup/bundle.js";
 import {
   loadBackendModeEnabled,
   loadBackendUrl,
@@ -42,9 +26,31 @@ import {
   testBackendConnection,
 } from "./popup/connection.js";
 import {
-  _refreshLocalBundleState,
-  pushLocalBundleToBackend,
-} from "./popup/data-state.js";
+  NHI_LANDING,
+  NHI_LOGIN_URL,
+  PENDING_BUNDLE_KEY,
+  STANDALONE_SMART_APP_URL,
+} from "./popup/constants.js";
+import { _refreshLocalBundleState, pushLocalBundleToBackend } from "./popup/data-state.js";
+import { els } from "./popup/els.js";
+import {
+  clearPatientOverride,
+  loadMaskNameEnabled,
+  loadPatientOverride,
+  onMaskNameToggle,
+  refreshOverrideSummary,
+  savePatientOverride,
+} from "./popup/patient-form.js";
+import { state } from "./popup/state.js";
+import {
+  applySyncStatus,
+  refreshSyncStatusFromBackground,
+  setStatus,
+  stopSync,
+} from "./popup/status.js";
+import { apiSyncNhi, launch, onSmartAppUrlChange } from "./popup/sync-client.js";
+import { _hideHelpTooltip, _showHelpTooltip } from "./popup/tooltip.js";
+import { getActiveTab, isNhiTab } from "./popup/utils.js";
 import {
   _initWizard,
   _maybeAutoAdvance,
@@ -52,30 +58,15 @@ import {
   _refreshWizardUi,
   _setActiveStep,
 } from "./popup/wizard.js";
-import {
-  applySyncStatus,
-  refreshSyncStatusFromBackground,
-  setStatus,
-  stopSync,
-} from "./popup/status.js";
-import {
-  clearPendingBundle,
-  downloadPendingBundle,
-  refreshPendingBundle,
-} from "./popup/bundle.js";
-import { apiSyncNhi, launch, onSmartAppUrlChange } from "./popup/sync-client.js";
-import { _hideHelpTooltip, _showHelpTooltip } from "./popup/tooltip.js";
 
 async function init() {
-  document.getElementById("version").textContent =
-    "v" + chrome.runtime.getManifest().version;
+  document.getElementById("version").textContent = `v${chrome.runtime.getManifest().version}`;
 
   // Opening the popup counts as "seeing" any completed sync — clear the
   // red result badge on the toolbar icon (set by the SW on sync done).
   chrome.runtime.sendMessage({ type: "markSyncSeen" }).catch(() => {});
 
-  document.getElementById("login-ok-next")
-    ?.addEventListener("click", () => _setActiveStep(2));
+  document.getElementById("login-ok-next")?.addEventListener("click", () => _setActiveStep(2));
 
   await loadMaskNameEnabled();
 
@@ -296,11 +287,11 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 // Delegated help-tooltip hover handlers — works for icons added after
 // popup load too (e.g. when mode toggle reveals backend-only fields).
 document.addEventListener("mouseover", (e) => {
-  const icon = e.target.closest?.(".help-icon");
+  const icon = (e.target as HTMLElement).closest?.(".help-icon");
   if (icon) _showHelpTooltip(icon);
 });
 document.addEventListener("mouseout", (e) => {
-  const icon = e.target.closest?.(".help-icon");
+  const icon = (e.target as HTMLElement).closest?.(".help-icon");
   if (icon) _hideHelpTooltip();
 });
 
@@ -310,7 +301,7 @@ els.stopBtn.addEventListener("click", stopSync);
 els.ovSaveBtn.addEventListener("click", savePatientOverride);
 els.ovClearBtn.addEventListener("click", clearPatientOverride);
 [els.ovName, els.ovBirthDate, els.ovGender].forEach((el) =>
-  el.addEventListener("input", refreshOverrideSummary)
+  el.addEventListener("input", refreshOverrideSummary),
 );
 els.launchBtn.addEventListener("click", launch);
 

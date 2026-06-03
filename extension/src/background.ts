@@ -14,22 +14,27 @@
 // entry point at src/background.js (not src/background/index.js) means
 // manifest.json + build.mjs need no change.
 
-import { CANCEL_ERROR, PENDING_BUNDLE_SWEEP_ALARM, SESSION_EXPIRED_ERROR, STORAGE_KEY } from "./background/constants.js";
+import { checkNhiLoginState } from "./background/auth.js";
+import { deletePartialPatientData } from "./background/backend-upload.js";
+import { clearResultBadge, restoreResultBadge } from "./background/badge.js";
+import {
+  CANCEL_ERROR,
+  PENDING_BUNDLE_SWEEP_ALARM,
+  SESSION_EXPIRED_ERROR,
+  STORAGE_KEY,
+} from "./background/constants.js";
+import {
+  migrateSyncToLocal,
+  sweepPendingBundleIfStale,
+  sweepStaleLocalKeys,
+} from "./background/storage-migration.js";
+import { runNhiApiSync } from "./background/sync-orchestrator.js";
 import {
   getActiveSyncCtx,
   requestCancel,
   setActiveSyncCtx,
   setStatus,
 } from "./background/sync-state.js";
-import { checkNhiLoginState } from "./background/auth.js";
-import { deletePartialPatientData } from "./background/backend-upload.js";
-import { runNhiApiSync } from "./background/sync-orchestrator.js";
-import {
-  migrateSyncToLocal,
-  sweepPendingBundleIfStale,
-  sweepStaleLocalKeys,
-} from "./background/storage-migration.js";
-import { clearResultBadge, restoreResultBadge } from "./background/badge.js";
 
 chrome.runtime.onInstalled.addListener(async () => {
   await migrateSyncToLocal();
@@ -64,27 +69,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender?.id !== chrome.runtime.id) return;
   if (msg?.type === "startNhiApiSync") {
     runNhiApiSync(msg.payload).then(
-      () => { try { sendResponse({ ok: true }); } catch {} },
+      () => {
+        try {
+          sendResponse({ ok: true });
+        } catch {}
+      },
       async (e) => {
         if (e?.message === CANCEL_ERROR) {
-          try { sendResponse({ ok: true, cancelled: true }); } catch {}
+          try {
+            sendResponse({ ok: true, cancelled: true });
+          } catch {}
           return;
         }
         if (e?.message === SESSION_EXPIRED_ERROR) {
           await chrome.storage.local.set({
             syncStatus: {
               running: false,
-              progress: "🔒 健保存摺登入逾時 — 請回到健保存摺分頁重新登入，然後再按「取得健保存摺資料」",
+              progress:
+                "🔒 健保存摺登入逾時 — 請回到健保存摺分頁重新登入，然後再按「取得健保存摺資料」",
               phase: "session_expired",
-              ts: Date.now(), completed: Date.now(),
+              ts: Date.now(),
+              completed: Date.now(),
             },
           });
-          try { sendResponse({ ok: false, expired: true }); } catch {}
+          try {
+            sendResponse({ ok: false, expired: true });
+          } catch {}
           return;
         }
         console.error("runNhiApiSync failed", e);
         await setStatus({ running: false, progress: `❌ ${e.message}`, phase: "error" });
-        try { sendResponse({ ok: false, error: e.message }); } catch {}
+        try {
+          sendResponse({ ok: false, error: e.message });
+        } catch {}
       },
     );
     return true;
@@ -121,12 +138,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       })();
     }
     setActiveSyncCtx(null);
-    try { sendResponse({ ok: true }); } catch {}
+    try {
+      sendResponse({ ok: true });
+    } catch {}
     return true;
   }
   if (msg?.type === "getSyncStatus") {
     chrome.storage.local.get(STORAGE_KEY).then((data) => sendResponse(data[STORAGE_KEY] || null));
-    return true;  // async response
+    return true; // async response
   }
   if (msg?.type === "clearSyncStatus") {
     chrome.storage.local.remove(STORAGE_KEY).then(() => sendResponse({ ok: true }));
@@ -136,14 +155,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Popup was opened — the user has "seen" any completed result, so
     // drop the toolbar badge + its persisted flag.
     clearResultBadge().then(() => {
-      try { sendResponse({ ok: true }); } catch {}
+      try {
+        sendResponse({ ok: true });
+      } catch {}
     });
     return true;
   }
   if (msg?.type === "checkNhiLogin") {
     checkNhiLoginState(msg.tabId).then(
-      (state) => { try { sendResponse({ loggedIn: state }); } catch {} },
-      () => { try { sendResponse({ loggedIn: null }); } catch {} },
+      (state) => {
+        try {
+          sendResponse({ loggedIn: state });
+        } catch {}
+      },
+      () => {
+        try {
+          sendResponse({ loggedIn: null });
+        } catch {}
+      },
     );
     return true;
   }

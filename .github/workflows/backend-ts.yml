@@ -41,6 +41,12 @@ jobs:
           DATABASE_FILE: /tmp/ci.db
         run: npx tsx src/core/migrate.ts
 
+      - name: Type-check (extension)
+        run: npm run typecheck --workspace extension
+
+      - name: Lint (extension, biome)
+        run: npm run lint --workspace extension
+
       - name: Test (extension adapters via vitest)
         run: npm run test --workspace extension
 

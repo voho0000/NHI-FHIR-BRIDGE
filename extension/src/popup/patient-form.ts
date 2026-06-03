@@ -3,18 +3,14 @@
 // fills these once and they're sent with every upload call until cleared.
 
 import { maskName } from "@nhi-fhir-bridge/mapper";
+import { refreshPendingBundle } from "./bundle.js";
 import { PENDING_BUNDLE_KEY } from "./constants.js";
+import { _renderDataState, checkBackendPatient } from "./data-state.js";
 import { els } from "./els.js";
 import { state } from "./state.js";
-import { _displayId, _generateAutoPatientId, currentMode } from "./utils.js";
-import {
-  _markStep2Confirmed,
-  _maybeAutoAdvance,
-  _refreshButtonStates,
-} from "./wizard.js";
-import { _renderDataState, checkBackendPatient } from "./data-state.js";
-import { refreshPendingBundle } from "./bundle.js";
 import { setStatus } from "./status.js";
+import { _displayId, _generateAutoPatientId, currentMode } from "./utils.js";
+import { _markStep2Confirmed, _maybeAutoAdvance, _refreshButtonStates } from "./wizard.js";
 
 // id_no is no longer a UI field, so getPatientOverride() (sync, called
 // in many hot paths) can't read it from the form. Cache it here from
@@ -40,9 +36,7 @@ export async function loadPatientOverride() {
   // A stored override with both required fields counts as "step 2
   // already confirmed" — returning user shouldn't be forced to click
   // ✓ 確定 again to advance the wizard.
-  _markStep2Confirmed(
-    !!(patientOverride?.gender && patientOverride?.birth_date),
-  );
+  _markStep2Confirmed(!!(patientOverride?.gender && patientOverride?.birth_date));
   // Patient panel is now always-expanded (step 2 owns its own page);
   // the previous collapse-when-confirmed behaviour was a leftover from
   // the single-scroll layout.
@@ -59,7 +53,8 @@ export function getPatientOverride() {
   const birth_date = els.ovBirthDate.value.trim();
   const gender = els.ovGender.value;
   if (!_storedIdNo && !name && !birth_date && !gender) return null;
-  const out = {};
+  // Phase-1 migration: incrementally-built override record.
+  const out: any = {};
   if (_storedIdNo) out.id_no = _storedIdNo;
   if (name) out.name = name;
   if (birth_date) out.birth_date = birth_date;
@@ -90,7 +85,7 @@ export function validateBirthDate() {
   if (!el) return null;
   // Chrome's native date input: partial entry (just year, just yyyy-mm)
   // surfaces here even though .value is "".
-  if (el.validity && el.validity.badInput) {
+  if (el.validity?.badInput) {
     return "生日請填完整年月日";
   }
   const s = (el.value || "").trim();
@@ -100,7 +95,7 @@ export function validateBirthDate() {
   if (!s) return "請填生日";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "生日請填完整年月日";
   const [y, m, d] = s.split("-").map(Number);
-  const dt = new Date(s + "T00:00:00Z");
+  const dt = new Date(`${s}T00:00:00Z`);
   if (
     Number.isNaN(dt.getTime()) ||
     dt.getUTCFullYear() !== y ||
@@ -190,19 +185,21 @@ export async function savePatientOverride() {
   // Build the override directly so we don't depend on
   // getPatientOverride's null-return — the required-field path above
   // has already validated what matters.
-  const ov = {
+  // Phase-1 migration: id_no is added below.
+  const ov: any = {
     name: els.ovName.value.trim() || null,
     birth_date: els.ovBirthDate.value.trim(),
     gender: els.ovGender.value,
   };
+  // Drop the key entirely (not set undefined) so the stored override stays clean.
+  // biome-ignore lint/performance/noDelete: intentional key removal, see above
   if (!ov.name) delete ov.name;
   // Read previous stored override so we can:
   //   1. Detect whether the user is editing the SAME person (re-save)
   //      or has switched to a DIFFERENT person.
   //   2. Decide whether to reuse the previously stored id_no
   //      (placeholder OR real cid) or mint a fresh one.
-  const prevStored = (await chrome.storage.local.get("patientOverride"))
-    .patientOverride;
+  const prevStored = (await chrome.storage.local.get("patientOverride")).patientOverride;
 
   // Identity-change detection runs on the user-editable identity fields
   // (name / gender / birth_date). id_no is auto-generated / auto-fetched
@@ -214,11 +211,11 @@ export async function savePatientOverride() {
   //                  reference ranges for labs
   //   - birth_date:  same person can't have two DOBs
   const _norm = (v) => (v == null ? "" : String(v));
-  const patientChanged = !!prevStored && (
-    _norm(prevStored.name) !== _norm(ov.name) ||
-    _norm(prevStored.gender) !== _norm(ov.gender) ||
-    _norm(prevStored.birth_date) !== _norm(ov.birth_date)
-  );
+  const patientChanged =
+    !!prevStored &&
+    (_norm(prevStored.name) !== _norm(ov.name) ||
+      _norm(prevStored.gender) !== _norm(ov.gender) ||
+      _norm(prevStored.birth_date) !== _norm(ov.birth_date));
 
   // id_no policy:
   //   • Same person (just re-saving the same identity) → reuse prev
@@ -249,9 +246,7 @@ export async function savePatientOverride() {
     //    keep showing "✅ 取得完成 · A 的 81 筆…"
     // 3. drop the in-popup latest-status snapshot
     await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {});
-    await chrome.runtime
-      .sendMessage({ type: "clearSyncStatus" })
-      .catch(() => {});
+    await chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {});
     state.latestStatus = null;
     setStatus("", null);
     // 4. Reset in-memory caches that _renderDataState reads. Without

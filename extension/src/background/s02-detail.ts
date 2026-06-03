@@ -21,7 +21,7 @@ export function classFromS02Detail(body) {
   const main = pickS02MainRow(body);
   if (!main) return null;
   const tn = String(main.hosp_DATA_TYPE_NAME || "");
-  if (tn.includes("急")) return "EMER";  // 急診
+  if (tn.includes("急")) return "EMER"; // 急診
   if (tn.includes("住院")) return "IMP";
   // 西醫 / 中醫 / 牙醫 / 藥局 all default to AMB
   return "AMB";

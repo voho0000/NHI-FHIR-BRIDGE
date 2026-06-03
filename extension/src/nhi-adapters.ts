@@ -18,7 +18,7 @@ export function rocToISO(rocDate) {
   if (!rocDate) return "";
   const m = String(rocDate).match(/^(\d{2,3})[/.-](\d{1,2})[/.-](\d{1,2})/);
   if (!m) return "";
-  const y = parseInt(m[1], 10) + 1911;
+  const y = Number.parseInt(m[1], 10) + 1911;
   return `${y}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
 }
 
@@ -28,7 +28,7 @@ export function isoToROC(isoDate) {
   if (!isoDate) return "";
   const m = String(isoDate).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (!m) return "";
-  const y = parseInt(m[1], 10) - 1911;
+  const y = Number.parseInt(m[1], 10) - 1911;
   if (y < 1) return ""; // pre-民國 dates make no sense to NHI
   return `${y}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`;
 }
@@ -69,7 +69,7 @@ function _cleanLabName(s) {
   if (s === null || s === undefined) return "";
   return String(s)
     .trim()
-    .replace(/[,，;；]+\s*$/, "")  // trailing 半形 / 全形 punctuation
+    .replace(/[,，;；]+\s*$/, "") // trailing 半形 / 全形 punctuation
     .trim();
 }
 
@@ -89,9 +89,7 @@ function _cleanLabName(s) {
 // missing (older rows / endpoints that don't carry it).
 export function adaptLabItem(item) {
   if (!item || typeof item !== "object") return null;
-  const date = rocToISO(
-    item.reaL_INSPECT_DATE || item.real_inspect_date || item.funC_DATE,
-  );
+  const date = rocToISO(item.reaL_INSPECT_DATE || item.real_inspect_date || item.funC_DATE);
   const value = item.assaY_VALUE;
   if (!date || value === undefined || value === null || value === "") return null;
   // Display name fallback chain (all normalized for trailing punctuation):
@@ -102,9 +100,10 @@ export function adaptLabItem(item) {
   // off mid-word ("PC Sugar 飯後 ..."), which is worse than a trailing-
   // comma cosmetic issue. ordeR_NAME is the last-resort Chinese formal
   // label.
-  const fullName = _cleanLabName(item.assaY_ITEM_NAME)
-                || _cleanLabName(item.order_shortname)
-                || _cleanLabName(item.ordeR_NAME);
+  const fullName =
+    _cleanLabName(item.assaY_ITEM_NAME) ||
+    _cleanLabName(item.order_shortname) ||
+    _cleanLabName(item.ordeR_NAME);
   const orderCode = String(item.ordeR_CODE || "").trim();
   return {
     date,
@@ -187,7 +186,7 @@ export function adaptMedicationFromDetail(drug, visit, options) {
   // (IHKE3307S01 list → IHKE3306S02 detail). When true, the mapper
   // attaches courseOfTherapyType=continuous. Defaults false so OPD /
   // inpatient / 藥局 acute prescriptions stay unchanged.
-  const is_chronic = !!(options && options.is_chronic);
+  const is_chronic = !!options?.is_chronic;
   // NHI 藥品基本資料庫 ships bilingual `中文||English` on three fields
   // we surface — drug_name, act (藥理分類), icd9cm_CODE_CNAME. v0.8.0
   // keeps both halves so the mapper can put 繁中 into CodeableConcept
@@ -195,8 +194,7 @@ export function adaptMedicationFromDetail(drug, visit, options) {
   // canonical). drug.drug_name2 / visit.icd9cm_CODE_CNAME2 are NHI's
   // own Chinese-only convenience fields — prefer them when present,
   // else fall back to the Chinese half of the bilingual field.
-  const drug_name_zh =
-    drug.drug_name2 || drug.druG_NAME2 || pickChinese(rawDrugName);
+  const drug_name_zh = drug.drug_name2 || drug.druG_NAME2 || pickChinese(rawDrugName);
   const rawIndication = visit?.icd9cm_CODE_CNAME || visit?.icd9cm_name || "";
   // icd9cm_CODE_CNAME wraps each half as "<code>/<text>" — strip the
   // leading "<code>/" so downstream doesn't double-print the code when
@@ -263,7 +261,9 @@ export function adaptMedicationFromDetail(drug, visit, options) {
 
 // Stub kept for the endpoint registry — IHKE3306S01 list never has drugs,
 // so we always return null and rely on the 2-step detail fetch above.
-export function adaptMedication() { return null; }
+export function adaptMedication() {
+  return null;
+}
 
 // Stub for the IHKE3307S01 慢性處方箋 list. The list rows have no drug
 // payload; drugs come via the 2-step fan-out into IHKE3306S02 with
@@ -271,13 +271,17 @@ export function adaptMedication() { return null; }
 // background.js). Returning null here ensures the generic loop emits
 // nothing from this endpoint — the fan-out is where the marked
 // MedicationRequest resources are produced.
-export function adaptChronicListStub() { return null; }
+export function adaptChronicListStub() {
+  return null;
+}
 
 // Same shape as adaptMedication: IHKE3408S01 (imaging list) only carries
 // order-level data; the actual report narrative comes from the IHKE3408S02
 // detail fan-out (see adaptImagingReportFromDetail). Returning null from
 // the list adapter ensures no half-formed DiagnosticReports leak through.
-export function adaptImagingListStub() { return null; }
+export function adaptImagingListStub() {
+  return null;
+}
 
 // IHKE3209S01 (重大傷病) — NHI's officially-vetted catastrophic-illness
 // registry. Each row is a serious chronic condition (cancer, autoimmune,
@@ -344,7 +348,7 @@ export function adaptAdultPreventive(row) {
   // "adult-preventive" so downstream FHIR consumers can identify the
   // origin programme via Observation.meta.tag (separate from the
   // sync-page-type / sync-run-id sync-tracking tags).
-  function push(display, value, unit, refRange, category, code) {
+  function push(display, value, unit, refRange, category?, code?) {
     if (value === undefined || value === null) return;
     const v = String(value).trim();
     // Em-dash "—" (U+2014) is NHI's sentinel "no data" marker — drop.
@@ -380,10 +384,20 @@ export function adaptAdultPreventive(row) {
   push("Body Weight", row.weight, "kg", "", "vital-signs");
   push("BMI", row.bmi, "kg/m2", "", "vital-signs");
   push("Waist Circumference", row.waistline, "cm", "", "vital-signs");
-  push("Systolic Blood Pressure", row.basE_SBP, "mmHg",
-       row.bloD_PRESS_RESULT_TEXT || "", "vital-signs");
-  push("Diastolic Blood Pressure", row.basE_EBP, "mmHg",
-       row.bloD_PRESS_RESULT_TEXT || "", "vital-signs");
+  push(
+    "Systolic Blood Pressure",
+    row.basE_SBP,
+    "mmHg",
+    row.bloD_PRESS_RESULT_TEXT || "",
+    "vital-signs",
+  );
+  push(
+    "Diastolic Blood Pressure",
+    row.basE_EBP,
+    "mmHg",
+    row.bloD_PRESS_RESULT_TEXT || "",
+    "vital-signs",
+  );
   // All chemistry / hep panel rows pin the NHI 醫令碼 so findLoinc takes
   // the NHI_TO_LOINC direct-lookup path — bypasses the keyword search
   // entirely. Mapping cross-verified against three sources: the NHI UI
@@ -391,24 +405,29 @@ export function adaptAdultPreventive(row) {
   // names, and the existing NHI_TO_LOINC table comments.
   //
   // Lipid panel
-  push("Cholesterol",   row.cho,     "mg/dL", "", "laboratory", "09001C");  // → LOINC 2093-3
-  push("Triglyceride",  row.bloD_TG, "mg/dL", "", "laboratory", "09004C");  // → LOINC 2571-8
-  push("HDL",           row.hdl,     "mg/dL", "", "laboratory", "09043C");  // → LOINC 2085-9
-  push("LDL",           row.ldl,     "mg/dL", "", "laboratory", "09044C");  // → LOINC 13457-7 (calc)
+  push("Cholesterol", row.cho, "mg/dL", "", "laboratory", "09001C"); // → LOINC 2093-3
+  push("Triglyceride", row.bloD_TG, "mg/dL", "", "laboratory", "09004C"); // → LOINC 2571-8
+  push("HDL", row.hdl, "mg/dL", "", "laboratory", "09043C"); // → LOINC 2085-9
+  push("LDL", row.ldl, "mg/dL", "", "laboratory", "09044C"); // → LOINC 13457-7 (calc)
   // Liver function
-  push("SGOT (AST)",    row.sgot,    "U/L", row.lF_DIAG_RESULT_TEXT || "", "laboratory", "09025C");  // → LOINC 1920-8
-  push("SGPT (ALT)",    row.sgpt,    "U/L", row.lF_DIAG_RESULT_TEXT || "", "laboratory", "09026C");  // → LOINC 1742-6
+  push("SGOT (AST)", row.sgot, "U/L", row.lF_DIAG_RESULT_TEXT || "", "laboratory", "09025C"); // → LOINC 1920-8
+  push("SGPT (ALT)", row.sgpt, "U/L", row.lF_DIAG_RESULT_TEXT || "", "laboratory", "09026C"); // → LOINC 1742-6
   // Fasting glucose
-  push("Glu-AC",        row.s_09005C, "mg/dL",
-       row.s_09005C_DIAG_RESULT_TEXT || "", "laboratory", "09005C");        // → LOINC 1558-6
+  push(
+    "Glu-AC",
+    row.s_09005C,
+    "mg/dL",
+    row.s_09005C_DIAG_RESULT_TEXT || "",
+    "laboratory",
+    "09005C",
+  ); // → LOINC 1558-6
   // Renal function — `urinE_BUN` is NHI's misleading field name; the
   // value IS serum BUN (Blood Urea Nitrogen), not a urine test.
-  push("BUN",           row.urinE_BUN,   "mg/dL", "", "laboratory", "09002C");  // → LOINC 3094-0
-  push("Creatinine",    row.bloD_CREAT,  "mg/dL", "", "laboratory", "09015C");  // → LOINC 2160-0
+  push("BUN", row.urinE_BUN, "mg/dL", "", "laboratory", "09002C"); // → LOINC 3094-0
+  push("Creatinine", row.bloD_CREAT, "mg/dL", "", "laboratory", "09015C"); // → LOINC 2160-0
   // eGFR — derived from Creatinine, no own NHI 醫令碼. Display keyword
   // "egfr" resolves to LOINC 33914-3 via findLoinc.
-  push("eGFR",          row.egfr,        "mL/min/1.73m2",
-       row.rF_DIAG_RESULT_TEXT || "");
+  push("eGFR", row.egfr, "mL/min/1.73m2", row.rF_DIAG_RESULT_TEXT || "");
   // Urine Protein dipstick — qualitative ("-" / "±" / "1+" ...).
   // urinE_PROTEIN is the status code, urinE_PROTEIN_TEXT is the
   // displayable result (passed as value). The specific NHI 醫令碼 for
@@ -424,7 +443,7 @@ export function adaptAdultPreventive(row) {
   //   14051C → LOINC 13955-0 (HCV antibody, Serum or Plasma)
   // History: regressed in v0.6.3, fix lost until v0.6.5; NHI 醫令碼
   // pinning added v0.6.6 + v0.6.8.
-  push("HBsAg",    row.hbsaG_TEXT   || "", "", row.hbV_RESULT_TEXT || "", "laboratory", "14032C");
+  push("HBsAg", row.hbsaG_TEXT || "", "", row.hbV_RESULT_TEXT || "", "laboratory", "14032C");
   push("Anti-HCV", row.antI_HCV_TEXT || "", "", row.hcV_RESULT_TEXT || "", "laboratory", "14051C");
   // Uric acid (blood) — `uriC_ACID` field. NHI 醫令碼 09013C → LOINC
   // 3084-1 (Urate Mass/vol S/P).
@@ -438,15 +457,14 @@ export function adaptAdultPreventive(row) {
   //     adult preventive screening (the 尿液檢查 section only shows
   //     尿液蛋白質). Always empty / "-" in observed payloads. Legacy
   //     schema field with no clinical reality — do NOT emit.
-  push("Uric Acid",     row.uriC_ACID,   "mg/dL", "", "laboratory", "09013C");
+  push("Uric Acid", row.uriC_ACID, "mg/dL", "", "laboratory", "09013C");
   // Metabolic syndrome screening — value is an interpretation string
   // ('正常' / '異常，建議：請洽詢醫師'), not a number. The mapper's
   // _try_parse_quantity will return None and it falls through to
   // valueString. No mapped LOINC keyword (yet) so this lands as an
   // Observation with code.text only; downstream consumers can still
   // surface it under the patient's screening section by code.text.
-  push("代謝症候群篩檢 (Metabolic Syndrome Screening)",
-       row.metA_SYNDR_RESULT_TEXT, "", "");
+  push("代謝症候群篩檢 (Metabolic Syndrome Screening)", row.metA_SYNDR_RESULT_TEXT, "", "");
   return out;
 }
 
@@ -468,10 +486,10 @@ export function adaptInpatientEncounter(item, options) {
   // detail fan-out so the mapper produces English coding.display +
   // multiple reasonCode entries — same contract as adaptEncounterFromMedExpense.
   const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
-  const s02Primary = options && options.primary_diagnosis;
-  const icdCode =
-    (s02Primary && s02Primary.code) || item.icd9cm_CODE || item.icd9cm_code || "";
-  let icdName, icdName_zh;
+  const s02Primary = options?.primary_diagnosis;
+  const icdCode = s02Primary?.code || item.icd9cm_CODE || item.icd9cm_code || "";
+  let icdName: string;
+  let icdName_zh: string;
   if (s02Primary && (s02Primary.name_en || s02Primary.name_zh)) {
     icdName = s02Primary.name_en || s02Primary.name_zh;
     icdName_zh = s02Primary.name_zh || s02Primary.name_en;
@@ -498,9 +516,7 @@ export function adaptInpatientEncounter(item, options) {
     reason_zh: icdName_zh ? (icdCode ? `${icdCode} ${icdName_zh}` : icdName_zh) : "",
     reason_code: icdCode,
     secondary_diagnoses:
-      options && Array.isArray(options.secondary_diagnoses)
-        ? options.secondary_diagnoses
-        : [],
+      options && Array.isArray(options.secondary_diagnoses) ? options.secondary_diagnoses : [],
     hospital: item.hosp_ABBR || item.hosp_abbr || "",
     row_id: item.row_ID || item.row_id || "",
   };
@@ -562,26 +578,21 @@ export function adaptEncounterFromMedExpense(item, classHint, options) {
   // patients, which used to leave Encounter.reasonCode[0].coding[0]
   // .display in 中文 (wrong audience — that field is the clinical
   // English per the v0.8.0 bilingual contract).
-  const s02Primary = options && options.primary_diagnosis;
+  const s02Primary = options?.primary_diagnosis;
   const icdCode =
-    (s02Primary && s02Primary.code) ||
-    item.icD9CM_CODE ||
-    item.icd9cm_CODE ||
-    item.icd9cm_code ||
-    "";
-  let icdName, icdName_zh;
+    s02Primary?.code || item.icD9CM_CODE || item.icd9cm_CODE || item.icd9cm_code || "";
+  let icdName: string;
+  let icdName_zh: string;
   if (s02Primary && (s02Primary.name_en || s02Primary.name_zh)) {
     icdName = s02Primary.name_en || s02Primary.name_zh;
     icdName_zh = s02Primary.name_zh || s02Primary.name_en;
   } else {
-    const rawIcdName =
-      item.icD9CM_CODE_CNAME || item.icd9cm_CODE_CNAME || item.icd9cm_name || "";
+    const rawIcdName = item.icD9CM_CODE_CNAME || item.icd9cm_CODE_CNAME || item.icd9cm_name || "";
     icdName = stripIcdPrefix(pickEnglish(rawIcdName));
     icdName_zh = stripIcdPrefix(pickChinese(rawIcdName));
   }
   const hospital = item.hosP_ABBR || item.hosp_ABBR || item.hosp_abbr || "";
-  const isPharmacy =
-    (options && options.pharmacy === true) || /藥局|藥房/.test(hospital);
+  const isPharmacy = (options && options.pharmacy === true) || /藥局|藥房/.test(hospital);
   // class defaults to AMB; IHKE3303S02 detail fan-out may override to
   // EMER / IMP based on hosp_DATA_TYPE_NAME (急診 / 住院).
   // Derive (kind, channel) independently — see header comment.
@@ -620,9 +631,7 @@ export function adaptEncounterFromMedExpense(item, classHint, options) {
     // NHI data). Empty array when caller didn't fetch detail or NHI
     // returned no secondaries.
     secondary_diagnoses:
-      options && Array.isArray(options.secondary_diagnoses)
-        ? options.secondary_diagnoses
-        : [],
+      options && Array.isArray(options.secondary_diagnoses) ? options.secondary_diagnoses : [],
     hospital,
     // Pass through for the eventual IHKE3303S02 detail fetch (Phase B).
     row_id: item.roW_ID || item.row_id || "",
@@ -658,9 +667,7 @@ export function adaptImmunization(item) {
   // parens like "(O/O_BA.1)(批號035E22A)" — only the 批號 one is the lot.
   const lotMatch = rawName.match(/[（(]\s*批號\s*([^)）]+?)\s*[)）]/);
   const lotNumber = lotMatch ? lotMatch[1].trim() : "";
-  const cleanName = rawName
-    .replace(/[（(]\s*批號\s*[^)）]+\s*[)）]/, "")
-    .trim();
+  const cleanName = rawName.replace(/[（(]\s*批號\s*[^)）]+\s*[)）]/, "").trim();
   return {
     date,
     vaccine_name: cleanName || rawName,
@@ -675,8 +682,7 @@ export function adaptImmunization(item) {
 export function adaptAllergy(item) {
   if (!item || typeof item !== "object") return null;
   const allergen =
-    item.allergen_name || item.alleR_NAME || item.medname ||
-    item.druG_NAME || item.allergen || "";
+    item.allergen_name || item.alleR_NAME || item.medname || item.druG_NAME || item.allergen || "";
   if (!allergen) return null;
   return {
     recorded_date: rocToISO(item.funC_DATE || item.recorD_DATE || ""),
@@ -695,7 +701,9 @@ export function adaptAllergy(item) {
 // (analogous to IHKE3408S01 imaging list → S02 detail). We do a 2-step
 // fan-out from the list's row_ID; the list adapter therefore returns
 // null and the real work happens in adaptProcedureFromDetail below.
-export function adaptProcedureListStub() { return null; }
+export function adaptProcedureListStub() {
+  return null;
+}
 
 // IHKE3308S02 (處置/手術 detail) shape (per row in ihke3308S02_main_data):
 //   {rowid, main_tit ("105/09/23 ~ 105/09/26｜住院" or "105/01/14｜門診"),
@@ -732,14 +740,10 @@ export function adaptProcedureListStub() { return null; }
 //     as 施作: lines so SMART apps can show the NHI billing breakdown.
 export function adaptProcedureFromDetail(item) {
   if (!item || typeof item !== "object") return null;
-  const subList = Array.isArray(item.sp_IHKE3308S04_data_list)
-    ? item.sp_IHKE3308S04_data_list
-    : [];
+  const subList = Array.isArray(item.sp_IHKE3308S04_data_list) ? item.sp_IHKE3308S04_data_list : [];
   // exe_S_DATE format is "115/09/23||2026/09/23"; rocToISO already
   // matches the first ROC segment, so feeding the whole string works.
-  const exeDate = subList.length > 0
-    ? (subList[0].exe_S_DATE || subList[0].exe_s_date || "")
-    : "";
+  const exeDate = subList.length > 0 ? subList[0].exe_S_DATE || subList[0].exe_s_date || "" : "";
   const date = rocToISO(exeDate || item.func_DATE || item.func_date || "");
   // op_CODE_CNAME is "<CODE>/<中文>||<CODE>/<English>". Take the
   // English half, strip the leading "<CODE>/" so the display reads
@@ -755,10 +759,9 @@ export function adaptProcedureFromDetail(item) {
   if (!date || !display) return null;
 
   const reasonCode = item.icd9cm_CODE || item.icd9cm_code || "";
-  const reasonName =
-    (pickEnglish(item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || "") || "")
-      .replace(/^[A-Z0-9]+\//, "")
-      .trim();
+  const reasonName = (pickEnglish(item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || "") || "")
+    .replace(/^[A-Z0-9]+\//, "")
+    .trim();
   const noteParts = [];
   if (reasonName) {
     noteParts.push(reasonCode ? `Reason: ${reasonCode} ${reasonName}` : `Reason: ${reasonName}`);
@@ -822,9 +825,13 @@ export function adaptProcedureFromDetail(item) {
 export function adaptImagingReportFromDetail(item) {
   if (!item || typeof item !== "object") return null;
   const date = rocToISO(
-    item.real_INSPECT_DATE || item.real_inspect_date ||
-    item.main_tit || item.main_TIT ||
-    item.func_DATE || item.func_date || "",
+    item.real_INSPECT_DATE ||
+      item.real_inspect_date ||
+      item.main_tit ||
+      item.main_TIT ||
+      item.func_DATE ||
+      item.func_date ||
+      "",
   );
   const display = pickEnglish(item.order_NAME || item.order_name || "");
   const conclusion = (item.desc || "").trim();

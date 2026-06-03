@@ -5,22 +5,18 @@
 // banner via the DOM API (no innerHTML → no XSS); applySyncStatus
 // re-attaches to an in-flight sync and drives the live-elapsed ticker.
 
+import { _refreshLocalBundleState, checkBackendPatient } from "./data-state.js";
 import { els } from "./els.js";
 import { state } from "./state.js";
 import { _fmtElapsed, currentMode } from "./utils.js";
-import {
-  _refreshButtonStates,
-  _refreshResultZone,
-  _setActiveStep,
-} from "./wizard.js";
-import { _refreshLocalBundleState, checkBackendPatient } from "./data-state.js";
+import { _refreshButtonStates, _refreshResultZone, _setActiveStep } from "./wizard.js";
 
 // Latest status snapshot lives in state.latestStatus — keeping it lets
 // the live-elapsed ticker repaint the same progress text with an updated
 // `[Ns]` prefix every second without spamming chrome.storage from the SW.
 let _elapsedTickerId = null;
 
-export function setStatus(text, kind, breakdown, errors, action) {
+export function setStatus(text, kind?, breakdown?, errors?, action?) {
   // Build with DOM API — avoids innerHTML / XSS risk.
   // breakdown is an array of mixed entries:
   //   - phase timings prefixed with "⏱"  → 階段耗時
@@ -33,7 +29,7 @@ export function setStatus(text, kind, breakdown, errors, action) {
   els.status.className = kind || "";
   els.status.textContent = "";
   const hasErrors = Array.isArray(errors) && errors.length > 0;
-  if (!text && !(breakdown && breakdown.length) && !hasErrors) return;
+  if (!text && !breakdown?.length && !hasErrors) return;
 
   // Header row: status text + dismiss button (only when sync not
   // running, so the user can declutter the popup once they're done
@@ -58,9 +54,7 @@ export function setStatus(text, kind, breakdown, errors, action) {
       // its sibling stale-result wipe — drop SW-side persisted
       // syncStatus, drop popup-side cached _latestStatus, then
       // re-render empty.
-      chrome.runtime
-        .sendMessage({ type: "clearSyncStatus" })
-        .catch(() => {});
+      chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {});
       state.latestStatus = null;
       setStatus("", null);
     });
@@ -82,7 +76,7 @@ export function setStatus(text, kind, breakdown, errors, action) {
     els.status.appendChild(actionBtn);
   }
 
-  if ((breakdown && breakdown.length) || hasErrors) {
+  if (breakdown?.length || hasErrors) {
     const bd = breakdown || [];
     const phaseRows = bd.filter((b) => b.startsWith("⏱"));
     const otherRows = bd.filter((b) => !b.startsWith("⏱"));
@@ -205,7 +199,7 @@ function _renderStatus() {
     const elapsed = Date.now() - status.started;
     text = `⏱ ${_fmtElapsed(elapsed)} · ${text}`;
   }
-  const kind = status.running ? "info" : (status.phase === "error" ? "error" : "success");
+  const kind = status.running ? "info" : status.phase === "error" ? "error" : "success";
   const breakdown = status.running ? null : status.breakdown;
   const errors = status.running ? null : status.errors;
   // Phase-specific CTA: after the bundle hits disk, surface a button

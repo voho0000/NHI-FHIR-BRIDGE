@@ -20,11 +20,11 @@
 import { derivePatientId } from "@nhi-fhir-bridge/mapper";
 import { PENDING_BUNDLE_KEY } from "./constants.js";
 import { els } from "./els.js";
-import { state } from "./state.js";
-import { _fmtRelative, _fmtTimeShort, currentMode } from "./utils.js";
 import { getPatientOverride } from "./patient-form.js";
-import { _refreshButtonStates } from "./wizard.js";
+import { state } from "./state.js";
 import { setStatus } from "./status.js";
+import { _fmtRelative, _fmtTimeShort, currentMode } from "./utils.js";
+import { _refreshButtonStates } from "./wizard.js";
 
 export function _renderDataState() {
   // Section only visible in backend mode (handled by .backend-only CSS),
@@ -52,8 +52,7 @@ export function _renderDataState() {
   // Quiet "✓ 已同步" hint sits under the download button when in-sync —
   // gives the user a tiny acknowledgement instead of total silence.
   if (els.syncStatusHint) els.syncStatusHint.hidden = !inSync;
-  const nothingToShow =
-    state.backendPatient.state === "present" && (!localMatches || inSync);
+  const nothingToShow = state.backendPatient.state === "present" && (!localMatches || inSync);
   if (nothingToShow) {
     els.dataStateSection.hidden = true;
     return;
@@ -95,8 +94,7 @@ export function _renderDataState() {
   if (localMatches) {
     els.localStateRow.hidden = false;
     els.localState.className = "state-value ok";
-    els.localState.textContent =
-      `✓ ${state.localBundle.count} 筆 · ${_fmtRelative(state.localBundle.generatedAt)}產生`;
+    els.localState.textContent = `✓ ${state.localBundle.count} 筆 · ${_fmtRelative(state.localBundle.generatedAt)}產生`;
   } else {
     els.localStateRow.hidden = true;
   }
@@ -112,8 +110,7 @@ export function _renderDataState() {
 }
 
 export async function _refreshLocalBundleState() {
-  const { [PENDING_BUNDLE_KEY]: pending } =
-    await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+  const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
   state.localBundle = pending
     ? {
         exists: true,
@@ -148,12 +145,14 @@ export async function checkBackendPatient() {
     const pr = await fetch(`${url}/fhir/Patient/${encodeURIComponent(fhirPid)}`, { headers });
     if (pr.status === 404) {
       state.backendPatient = { state: "absent", count: 0, lastUpdated: null };
-      _renderDataState(); _refreshButtonStates();
+      _renderDataState();
+      _refreshButtonStates();
       return;
     }
     if (!pr.ok) {
       state.backendPatient = { state: "fail", count: 0, lastUpdated: null };
-      _renderDataState(); _refreshButtonStates();
+      _renderDataState();
+      _refreshButtonStates();
       return;
     }
     const patient = await pr.json();
@@ -166,14 +165,17 @@ export async function checkBackendPatient() {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 5000);
       const er = await fetch(`${url}/fhir/export?patient=${encodeURIComponent(fhirPid)}`, {
-        headers, signal: ctrl.signal,
+        headers,
+        signal: ctrl.signal,
       });
       clearTimeout(timer);
       if (er.ok) {
         const bundle = await er.json();
         if (Array.isArray(bundle.entry)) count = bundle.entry.length;
       }
-    } catch { /* leave count = 0; not fatal */ }
+    } catch {
+      /* leave count = 0; not fatal */
+    }
     state.backendPatient = { state: "present", count, lastUpdated };
   } catch (_e) {
     state.backendPatient = { state: "fail", count: 0, lastUpdated: null };
@@ -194,11 +196,12 @@ export async function pushLocalBundleToBackend() {
   els.pushLocalBtn.disabled = true;
   els.pushLocalBtn.textContent = "傳送中…";
   try {
-    const { [PENDING_BUNDLE_KEY]: pending } =
-      await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
     if (!pending?.json) throw new Error("no local bundle");
     const r = await fetch(`${url}/fhir/import`, {
-      method: "POST", headers, body: pending.json,
+      method: "POST",
+      headers,
+      body: pending.json,
     });
     if (!r.ok) {
       const text = await r.text();

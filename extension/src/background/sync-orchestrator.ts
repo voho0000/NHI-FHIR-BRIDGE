@@ -23,17 +23,11 @@ import {
   adaptInpatientEncounter,
 } from "../nhi-adapters.js";
 import { ENDPOINT_LABEL_ZH, NHI_API_ENDPOINTS } from "../nhi-endpoints.js";
-import { CANCEL_ERROR, DEBUG_STASH_BODY_SAMPLES, NHI_HOST } from "./constants.js";
-import {
-  isCancelled,
-  resetCancelled,
-  setActiveSyncCtx,
-  setStatus,
-  withProgressTimer,
-} from "./sync-state.js";
 import { maybeFetchPatientIdFromNhi } from "./auth.js";
-import { applyDateRangeToPath, isMaskEnabled, replaceNameDeep } from "./patient-override.js";
-import { adaptSettledLists, fetchNhiListsInTab } from "./nhi-list-fetch.js";
+import { exportPatientBundle, postStructured, postSyncLog } from "./backend-upload.js";
+import { clearResultBadge, showResultBadge } from "./badge.js";
+import { assembleLocalBundle, stashFhirBundle } from "./bundle.js";
+import { CANCEL_ERROR, DEBUG_STASH_BODY_SAMPLES, NHI_HOST } from "./constants.js";
 import {
   fetchChronicMedicationDetails,
   fetchEncounterDetails,
@@ -42,16 +36,31 @@ import {
   fetchMedicationDetails,
   fetchProcedureDetails,
 } from "./nhi-detail-fetchers.js";
+import { adaptSettledLists, fetchNhiListsInTab } from "./nhi-list-fetch.js";
+import { applyDateRangeToPath, isMaskEnabled, replaceNameDeep } from "./patient-override.js";
 import {
   classFromS02Detail,
   primaryIcdFromS02Detail,
   secondaryIcdsFromS02Detail,
 } from "./s02-detail.js";
-import { assembleLocalBundle, stashFhirBundle } from "./bundle.js";
-import { exportPatientBundle, postStructured, postSyncLog } from "./backend-upload.js";
-import { clearResultBadge, showResultBadge } from "./badge.js";
+import {
+  isCancelled,
+  resetCancelled,
+  setActiveSyncCtx,
+  setStatus,
+  withProgressTimer,
+} from "./sync-state.js";
 
-export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patientOverride, dateRange, dateRangeLabel }) {
+export async function runNhiApiSync({
+  tabId,
+  mode,
+  backend,
+  syncApiKey,
+  nhiBase,
+  patientOverride,
+  dateRange,
+  dateRangeLabel,
+}) {
   resetCancelled();
   const BASE = nhiBase || `https://${NHI_HOST}`;
 
@@ -60,7 +69,9 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
       syncStatus: {
         running: false,
         progress: "⛔ 請先到「② 您的資料」填寫資料後再試",
-        phase: "error", ts: Date.now(), completed: Date.now(),
+        phase: "error",
+        ts: Date.now(),
+        completed: Date.now(),
       },
     });
     return;
@@ -95,8 +106,13 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
     _phaseStart = now;
   };
   await setStatus({
-    running: true, progress: "🚀 開始取得健保存摺資料…", phase: "init",
-    started: _t0, totalResources: 0, host: NHI_HOST, errors: [],
+    running: true,
+    progress: "🚀 開始取得健保存摺資料…",
+    phase: "init",
+    started: _t0,
+    totalResources: 0,
+    host: NHI_HOST,
+    errors: [],
   });
   // Drop any unseen-result badge from a previous run so the toolbar dot
   // reflects THIS sync once it finishes (and isn't a stale leftover while
@@ -282,9 +298,7 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
   // row is fetched exactly once. Chronic drugs get is_chronic=true →
   // MedicationRequest.courseOfTherapyType=continuous.
   const chronicRowIds = new Set();
-  const chronicIdx = NHI_API_ENDPOINTS.findIndex(
-    (e) => e.name === "chronic_prescriptions",
-  );
+  const chronicIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "chronic_prescriptions");
   if (chronicIdx >= 0 && settled[chronicIdx].status === "fulfilled") {
     const visits = settled[chronicIdx].value.rawList || [];
     if (visits.length > 0) {
@@ -326,7 +340,10 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
               : `📥 取得 ${remaining} 筆用藥明細…（已 ${sec} 秒）`,
           () =>
             fetchMedicationDetails({
-              tabId, baseUrl: BASE, visits, skipRowIds: chronicRowIds,
+              tabId,
+              baseUrl: BASE,
+              visits,
+              skipRowIds: chronicRowIds,
             }),
         );
         settled[medIdx].value.items = drugItems;
@@ -380,7 +397,8 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
       } catch {}
     }
     if (items.length === 0) continue;
-    (byType[ep.page_type] = byType[ep.page_type] || []).push(...items);
+    byType[ep.page_type] = byType[ep.page_type] || [];
+    byType[ep.page_type].push(...items);
   }
 
   // Mask gate is read fresh per sync — defaults OFF per the discussion
@@ -400,7 +418,7 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
   if (mode === "local") {
     if (isCancelled()) throw new Error(CANCEL_ERROR);
     await setStatus({ progress: "🧬 轉換為健康紀錄檔…", totalResources: 0 });
-    let bundle;
+    let bundle: any;
     try {
       bundle = assembleLocalBundle(byType, patientOverride, maskEnabled);
     } catch (e) {
@@ -423,10 +441,11 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
     // see the same value the user opted into. Items themselves were
     // already scrubbed above (byType pass), so this just covers the
     // override-derived Patient.
-    const uploadOverride = maskEnabled && patientOverride.name
-      ? { ...patientOverride, name: maskName(patientOverride.name) }
-      : patientOverride;
-    for (const [page_type, items] of Object.entries(byType)) {
+    const uploadOverride =
+      maskEnabled && patientOverride.name
+        ? { ...patientOverride, name: maskName(patientOverride.name) }
+        : patientOverride;
+    for (const [page_type, items] of Object.entries(byType as Record<string, any[]>)) {
       if (isCancelled()) throw new Error(CANCEL_ERROR);
       await setStatus({
         progress: `⬆️ 上傳 ${ENDPOINT_LABEL_ZH[page_type] ?? page_type}（${items.length} 筆）…`,
@@ -482,9 +501,10 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
   // Format elapsed wall-clock time: seconds (1 dp) for short syncs,
   // "mm:ss" once we cross the minute mark so the popup status stays readable.
   const _elapsedMs = Date.now() - _t0;
-  const _elapsedStr = _elapsedMs < 60_000
-    ? `${(_elapsedMs / 1000).toFixed(1)}s`
-    : `${Math.floor(_elapsedMs / 60_000)}m${Math.round((_elapsedMs % 60_000) / 1000)}s`;
+  const _elapsedStr =
+    _elapsedMs < 60_000
+      ? `${(_elapsedMs / 1000).toFixed(1)}s`
+      : `${Math.floor(_elapsedMs / 60_000)}m${Math.round((_elapsedMs % 60_000) / 1000)}s`;
   // No more "檔案已備妥…" tail — the 📥 download button sits right
   // below the status, so saying "點下方按鈕" is just noise.
   const _localTail = "";
@@ -504,13 +524,11 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
   //     respond with empty arrays);
   //   - the user truly has no records in the selected date range.
   // Either way the actionable next step is "重新登入 NHI 再試一次".
-  let _summaryLine;
+  let _summaryLine: string;
   if (errors.length) {
     _summaryLine = `⚠️ 取得完成 · ${_successVerb} ${total} 筆健康紀錄，${errors.length} 項失敗（${_elapsedStr}）${_localTail}`;
   } else if (total === 0) {
-    _summaryLine =
-      `⚠️ 取得完成但沒抓到任何資料（${_elapsedStr}）— ` +
-      `健保存摺 session 可能過期，請回該分頁重新登入；或拉長「日期範圍」再試。`;
+    _summaryLine = `⚠️ 取得完成但沒抓到任何資料（${_elapsedStr}）— 健保存摺 session 可能過期，請回該分頁重新登入；或拉長「日期範圍」再試。`;
   } else {
     _summaryLine = `✅ 取得完成 · ${_successVerb} ${total} 筆健康紀錄（${_elapsedStr}）${_localTail}`;
   }
@@ -539,25 +557,26 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
   // can show when/who/how-long/what/range. Skipped in local mode (there
   // is no backend). Wrapped + swallowed so a logging failure never
   // propagates back to the user-facing sync status.
-  if (mode !== "local") try {
-    await postSyncLog(backend, syncApiKey, {
-      status: errors.length ? "partial" : "success",
-      patient_id: patientOverride.id_no || "",
-      // /sync/log lands in the dashboard's sync-history row. Only
-      // mask when the user has opted in — otherwise dashboard sees
-      // the raw name they typed (consistent with "民眾自用" default).
-      patient_name: maskEnabled
-        ? maskName(patientOverride.name || "")
-        : patientOverride.name || "",
-      total,
-      breakdown,
-      date_range: dateRangeLabel || "",
-      elapsed_ms: _elapsedMs,
-      started_at: new Date(_t0).toISOString(),
-      errors,
-    });
-  } catch (e) {
-    console.warn("[NHI sync] failed to write history log:", e);
-  }
+  if (mode !== "local")
+    try {
+      await postSyncLog(backend, syncApiKey, {
+        status: errors.length ? "partial" : "success",
+        patient_id: patientOverride.id_no || "",
+        // /sync/log lands in the dashboard's sync-history row. Only
+        // mask when the user has opted in — otherwise dashboard sees
+        // the raw name they typed (consistent with "民眾自用" default).
+        patient_name: maskEnabled
+          ? maskName(patientOverride.name || "")
+          : patientOverride.name || "",
+        total,
+        breakdown,
+        date_range: dateRangeLabel || "",
+        elapsed_ms: _elapsedMs,
+        started_at: new Date(_t0).toISOString(),
+        errors,
+      });
+    } catch (e) {
+      console.warn("[NHI sync] failed to write history log:", e);
+    }
   setActiveSyncCtx(null);
 }
