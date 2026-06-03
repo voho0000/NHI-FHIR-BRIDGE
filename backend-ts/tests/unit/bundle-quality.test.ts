@@ -488,9 +488,7 @@ describe("CI Layer 1.1 — no panel LOINC on routable Observation", () => {
     // default 57021-8.
     const bundle = buildSampleBundle();
     const segs = walkObservations(bundle).filter((o) =>
-      (o.code.coding ?? []).some(
-        (c: any) => c.system === "http://loinc.org" && c.code === "770-8",
-      ),
+      (o.code.coding ?? []).some((c: any) => c.system === "http://loinc.org" && c.code === "770-8"),
     );
     expect(segs.length).toBeGreaterThan(0);
     for (const seg of segs) {
@@ -509,9 +507,7 @@ describe("CI Layer 1.1 — no panel LOINC on routable Observation", () => {
     // under 08004C must route to 718-7, NOT panel default 4544-3.
     const bundle = buildSampleBundle();
     const hgb = walkObservations(bundle).filter((o) =>
-      (o.code.coding ?? []).some(
-        (c: any) => c.system === "http://loinc.org" && c.code === "718-7",
-      ),
+      (o.code.coding ?? []).some((c: any) => c.system === "http://loinc.org" && c.code === "718-7"),
     );
     expect(hgb.length).toBeGreaterThan(0);
     for (const o of hgb) {
@@ -3220,16 +3216,26 @@ describe("CI v0.13.1 — LOINC-based dedup key", () => {
   test("CBC MCV A+B (EN 'MCV' vs CJK '平均紅血球容積') → 1 obs (was 2 in v0.13.0)", () => {
     const items = [
       {
-        order_code: "08011C", code: "08011C", display: "MCV",
-        value: 92.2, unit: "fL", date: "2026-01-14",
-        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        order_code: "08011C",
+        code: "08011C",
+        display: "MCV",
+        value: 92.2,
+        unit: "fL",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "全套血液檢查Ｉ（八項）",
         reference_range: "[80][100]",
         nhi_source_channel: "A",
       },
       {
-        order_code: "08011C", code: "08011C", display: "平均紅血球容積",
-        value: 92.2, unit: "fL", date: "2026-01-14",
-        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        order_code: "08011C",
+        code: "08011C",
+        display: "平均紅血球容積",
+        value: 92.2,
+        unit: "fL",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "全套血液檢查Ｉ（八項）",
         reference_range: "[無][無]",
         nhi_source_channel: "B",
       },
@@ -3252,15 +3258,25 @@ describe("CI v0.13.1 — LOINC-based dedup key", () => {
   test("CBC MCH A+B ('MCH' vs '紅血球色素') → 1 obs — display variants route via PANEL_LOINC_MAP to same LOINC", () => {
     const items = [
       {
-        order_code: "08011C", code: "08011C", display: "MCH",
-        value: 29.7, unit: "pg/Cell", date: "2026-01-14",
-        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        order_code: "08011C",
+        code: "08011C",
+        display: "MCH",
+        value: 29.7,
+        unit: "pg/Cell",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "全套血液檢查Ｉ（八項）",
         nhi_source_channel: "A",
       },
       {
-        order_code: "08011C", code: "08011C", display: "紅血球色素",
-        value: 29.7, unit: "pg/Cell", date: "2026-01-14",
-        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        order_code: "08011C",
+        code: "08011C",
+        display: "紅血球色素",
+        value: 29.7,
+        unit: "pg/Cell",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "全套血液檢查Ｉ（八項）",
         nhi_source_channel: "B",
       },
     ];
@@ -3282,15 +3298,25 @@ describe("CI v0.13.1 — LOINC-based dedup key", () => {
     // analyte. MUST keep both.
     const items = [
       {
-        order_code: "08011C", code: "08011C", display: "Hb",
-        value: 13.1, unit: "g/dL", date: "2026-01-14",
-        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        order_code: "08011C",
+        code: "08011C",
+        display: "Hb",
+        value: 13.1,
+        unit: "g/dL",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "全套血液檢查Ｉ（八項）",
         nhi_source_channel: "A",
       },
       {
-        order_code: "08011C", code: "08011C", display: "WBC",
-        value: 13.1, unit: "g/dL", date: "2026-01-14",  // contrived shared value/unit
-        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        order_code: "08011C",
+        code: "08011C",
+        display: "WBC",
+        value: 13.1,
+        unit: "g/dL",
+        date: "2026-01-14", // contrived shared value/unit
+        hospital: "長庚嘉義",
+        order_name: "全套血液檢查Ｉ（八項）",
         nhi_source_channel: "B",
       },
     ];
@@ -3307,16 +3333,26 @@ describe("CI v0.13.1 — LOINC-based dedup key", () => {
     // regardless of display, same as v0.12.5 behavior.
     const items = [
       {
-        order_code: "09013C", code: "09013C", display: "Uric Acid (B)",
-        value: 6.3, unit: "mg/dL", date: "2025-07-15",
-        hospital: "長庚嘉義", order_name: "尿酸",
+        order_code: "09013C",
+        code: "09013C",
+        display: "Uric Acid (B)",
+        value: 6.3,
+        unit: "mg/dL",
+        date: "2025-07-15",
+        hospital: "長庚嘉義",
+        order_name: "尿酸",
         reference_range: "[2.3][7.0]",
         nhi_source_channel: "A",
       },
       {
-        order_code: "09013C", code: "09013C", display: "尿酸",
-        value: 6.3, unit: "mg/dL", date: "2025-07-15",
-        hospital: "長庚嘉義", order_name: "尿酸",
+        order_code: "09013C",
+        code: "09013C",
+        display: "尿酸",
+        value: 6.3,
+        unit: "mg/dL",
+        date: "2025-07-15",
+        hospital: "長庚嘉義",
+        order_name: "尿酸",
         reference_range: "[無][無]",
         nhi_source_channel: "B",
       },
@@ -3333,15 +3369,25 @@ describe("CI v0.13.1 — LOINC-based dedup key", () => {
     // deduped. Correct because they're the same unresolved analyte.
     const items = [
       {
-        order_code: "08011C", code: "08011C", display: "Unknown EN Display",
-        value: 42, unit: "%", date: "2026-01-14",
-        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        order_code: "08011C",
+        code: "08011C",
+        display: "Unknown EN Display",
+        value: 42,
+        unit: "%",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "全套血液檢查Ｉ（八項）",
         nhi_source_channel: "A",
       },
       {
-        order_code: "08011C", code: "08011C", display: "未知中文項目",
-        value: 42, unit: "%", date: "2026-01-14",
-        hospital: "長庚嘉義", order_name: "全套血液檢查Ｉ（八項）",
+        order_code: "08011C",
+        code: "08011C",
+        display: "未知中文項目",
+        value: 42,
+        unit: "%",
+        date: "2026-01-14",
+        hospital: "長庚嘉義",
+        order_name: "全套血液檢查Ｉ（八項）",
         nhi_source_channel: "B",
       },
     ];
@@ -3368,9 +3414,16 @@ describe("CI v0.13.1 — LOINC-based dedup key", () => {
 // Urine). These tests lock the parity: each EN/CJK pair → same LOINC → 1 obs.
 describe("CI v0.13.1 — urinalysis EN/CJK alias parity (06013C)", () => {
   const mkUrine = (display: string, value: string, chan: string, rr: string) => ({
-    order_code: "06013C", code: "06013C", display, value, unit: "",
-    date: "2026-01-14", hospital: "長庚嘉義",
-    order_name: "尿生化檢查", reference_range: rr, nhi_source_channel: chan,
+    order_code: "06013C",
+    code: "06013C",
+    display,
+    value,
+    unit: "",
+    date: "2026-01-14",
+    hospital: "長庚嘉義",
+    order_name: "尿生化檢查",
+    reference_range: rr,
+    nhi_source_channel: chan,
   });
 
   const routeLoinc = (display: string): string | undefined => {
@@ -3378,8 +3431,7 @@ describe("CI v0.13.1 — urinalysis EN/CJK alias parity (06013C)", () => {
       [mkUrine(display, "X", "A", "[Negative]")],
       PATIENT_ID,
     ).filter((r) => r.resourceType === "Observation") as any[];
-    return obs[0]?.code?.coding?.find((c: any) => /loinc\.org/.test(c.system))
-      ?.code;
+    return obs[0]?.code?.coding?.find((c: any) => /loinc\.org/.test(c.system))?.code;
   };
 
   test("濁度 routes to 5767-9 (same as Turbidity), not panel default 24356-8", () => {
@@ -3406,10 +3458,7 @@ describe("CI v0.13.1 — urinalysis EN/CJK alias parity (06013C)", () => {
       ["CREA(U)(半定量)", "肌酸酐(尿液)(半定量)", "100"],
     ];
     for (const [en, cjk, val] of pairs) {
-      const items = [
-        mkUrine(en, val, "A", "[ref]"),
-        mkUrine(cjk, val, "B", "[無]"),
-      ];
+      const items = [mkUrine(en, val, "A", "[ref]"), mkUrine(cjk, val, "B", "[無]")];
       const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
         (r) => r.resourceType === "Observation",
       ) as any[];
@@ -3437,13 +3486,7 @@ describe("CI v0.13.1 — urinalysis EN/CJK alias parity (06013C)", () => {
 // groups always hit the preserve branch, and stableId still uses the raw unit
 // so same-source A+A / B+B rows stay distinct downstream.
 describe("CI v0.13.1 — unit-agnostic cross-channel dedup", () => {
-  const mkRow = (
-    display: string,
-    value: string,
-    unit: string,
-    chan: string,
-    rr: string,
-  ) => ({
+  const mkRow = (display: string, value: string, unit: string, chan: string, rr: string) => ({
     order_code: "06013C",
     code: "06013C",
     display,
@@ -3464,10 +3507,7 @@ describe("CI v0.13.1 — unit-agnostic cross-channel dedup", () => {
       ["pH", "酸鹼值", "6.5", "無"],
     ];
     for (const [en, cjk, val, bUnit] of cases) {
-      const items = [
-        mkRow(en, val, "", "A", "[ref]"),
-        mkRow(cjk, val, bUnit, "B", "[無]"),
-      ];
+      const items = [mkRow(en, val, "", "A", "[ref]"), mkRow(cjk, val, bUnit, "B", "[無]")];
       const obs = mapObservationsGrouped(items, PATIENT_ID).filter(
         (r) => r.resourceType === "Observation",
       ) as any[];
@@ -3503,9 +3543,8 @@ describe("CI v0.13.1 — unit-agnostic cross-channel dedup", () => {
     expect(obs).toHaveLength(1);
     expect(obs[0].valueQuantity?.unit).toBe("mg/dL");
     expect(
-      obs[0].meta?.tag?.find(
-        (t: any) => t.system === "http://nhi-fhir-bridge/nhi-source-channel",
-      )?.code,
+      obs[0].meta?.tag?.find((t: any) => t.system === "http://nhi-fhir-bridge/nhi-source-channel")
+        ?.code,
     ).toBe("A");
   });
 
@@ -3554,9 +3593,7 @@ describe("CI v0.13 — CBC obs.code.text canonicalization", () => {
       (r) => r.resourceType === "Observation",
     ) as any;
     expect(o.code.text).toBe("Hb");
-    const loinc = (o.code.coding ?? []).find(
-      (c: any) => c.system === "http://loinc.org",
-    )?.code;
+    const loinc = (o.code.coding ?? []).find((c: any) => c.system === "http://loinc.org")?.code;
     expect(loinc).toBe("718-7");
   });
 
@@ -3619,9 +3656,7 @@ describe("CI v0.13 — CBC obs.code.text canonicalization", () => {
       (r) => r.resourceType === "Observation",
     ) as any;
     // Display routes to a Band LOINC, not panel default — clean.
-    const loinc = (o.code.coding ?? []).find(
-      (c: any) => c.system === "http://loinc.org",
-    )?.code;
+    const loinc = (o.code.coding ?? []).find((c: any) => c.system === "http://loinc.org")?.code;
     // Verify NOT panel default 6690-2 (WBC count = 08011C umbrella).
     expect(loinc).not.toBe("6690-2");
     // Whatever band LOINC it routes to, if it happens to be in
@@ -3672,11 +3707,8 @@ describe("CI v0.13 — CBC obs.code.text canonicalization", () => {
       (r) => r.resourceType === "Observation",
     ) as any[];
     // Clean-matched row: canonical text "Hb".
-    const hb = obs.find(
-      (o) =>
-        (o.code.coding ?? []).some(
-          (c: any) => c.system === "http://loinc.org" && c.code === "718-7",
-        ),
+    const hb = obs.find((o) =>
+      (o.code.coding ?? []).some((c: any) => c.system === "http://loinc.org" && c.code === "718-7"),
     );
     expect(hb).toBeDefined();
     expect(hb.code.text).toBe("Hb");
@@ -3950,55 +3982,97 @@ describe("CI v0.13 — specimen.display fix (尿酸 / BUN / urine creatinine)", 
     type Case = { code: string; display: string; expectSpec: string | null; note?: string };
     const expectations: Case[] = [
       // ── 06xxx — Urinalysis ──────────────────────────
-      { code: "06013C", display: "Color",        expectSpec: "Urine", note: "ambiguous display, NHI prefix wins" },
-      { code: "06013C", display: "pH",           expectSpec: "Urine", note: "ambiguous display, NHI prefix wins" },
-      { code: "06013C", display: "尿糖",         expectSpec: "Urine", note: "display URINE marker agrees" },
-      { code: "06013C", display: "蛋白",         expectSpec: "Urine", note: "bare 蛋白 no marker, NHI prefix wins" },
+      {
+        code: "06013C",
+        display: "Color",
+        expectSpec: "Urine",
+        note: "ambiguous display, NHI prefix wins",
+      },
+      {
+        code: "06013C",
+        display: "pH",
+        expectSpec: "Urine",
+        note: "ambiguous display, NHI prefix wins",
+      },
+      { code: "06013C", display: "尿糖", expectSpec: "Urine", note: "display URINE marker agrees" },
+      {
+        code: "06013C",
+        display: "蛋白",
+        expectSpec: "Urine",
+        note: "bare 蛋白 no marker, NHI prefix wins",
+      },
 
       // ── 08xxx — CBC / hematology ────────────────────
-      { code: "08003C", display: "Hb",           expectSpec: "Blood" },
-      { code: "08004C", display: "HCT",          expectSpec: "Blood" },
-      { code: "08011C", display: "Hb",           expectSpec: "Blood" },
-      { code: "08011C", display: "WBC",          expectSpec: "Blood" },
-      { code: "08013C", display: "Segment",      expectSpec: "Blood" },
-      { code: "08036C", display: "APTT",         expectSpec: "Blood" },
+      { code: "08003C", display: "Hb", expectSpec: "Blood" },
+      { code: "08004C", display: "HCT", expectSpec: "Blood" },
+      { code: "08011C", display: "Hb", expectSpec: "Blood" },
+      { code: "08011C", display: "WBC", expectSpec: "Blood" },
+      { code: "08013C", display: "Segment", expectSpec: "Blood" },
+      { code: "08036C", display: "APTT", expectSpec: "Blood" },
 
       // ── 09xxx — Chemistry (mostly blood) ────────────
-      { code: "09001C", display: "Cholesterol",  expectSpec: "Blood" },
-      { code: "09002C", display: "BUN",          expectSpec: "Blood", note: "v0.12.6 silent bug — order_name 血中尿素氮" },
-      { code: "09005C", display: "Glucose AC",   expectSpec: "Blood" },
-      { code: "09013C", display: "Uric Acid",    expectSpec: "Blood", note: "v0.12.6 silent bug — order_name 尿酸" },
-      { code: "09013C", display: "尿酸",         expectSpec: "Blood", note: "bare 尿 substring must NOT trigger Urine" },
+      { code: "09001C", display: "Cholesterol", expectSpec: "Blood" },
+      {
+        code: "09002C",
+        display: "BUN",
+        expectSpec: "Blood",
+        note: "v0.12.6 silent bug — order_name 血中尿素氮",
+      },
+      { code: "09005C", display: "Glucose AC", expectSpec: "Blood" },
+      {
+        code: "09013C",
+        display: "Uric Acid",
+        expectSpec: "Blood",
+        note: "v0.12.6 silent bug — order_name 尿酸",
+      },
+      {
+        code: "09013C",
+        display: "尿酸",
+        expectSpec: "Blood",
+        note: "bare 尿 substring must NOT trigger Urine",
+      },
       { code: "09013C", display: "Uric Acid (B)", expectSpec: "Blood" },
-      { code: "09015C", display: "Crea",         expectSpec: "Blood", note: "serum creatinine default" },
-      { code: "09015C", display: "肌酸酐(尿液)", expectSpec: "Urine", note: "LIS-shipped urine override on blood-default code" },
-      { code: "09016C", display: "Urine Crea",   expectSpec: "Urine", note: "NHI explicit-override code for urine creatinine" },
-      { code: "09021C", display: "Na",           expectSpec: "Blood" },
-      { code: "09140C", display: "Sugar",        expectSpec: "Blood" },
+      { code: "09015C", display: "Crea", expectSpec: "Blood", note: "serum creatinine default" },
+      {
+        code: "09015C",
+        display: "肌酸酐(尿液)",
+        expectSpec: "Urine",
+        note: "LIS-shipped urine override on blood-default code",
+      },
+      {
+        code: "09016C",
+        display: "Urine Crea",
+        expectSpec: "Urine",
+        note: "NHI explicit-override code for urine creatinine",
+      },
+      { code: "09021C", display: "Na", expectSpec: "Blood" },
+      { code: "09140C", display: "Sugar", expectSpec: "Blood" },
 
       // ── 11xxx — Blood typing ───────────────────────
-      { code: "11001C", display: "ABO",          expectSpec: "Blood" },
-      { code: "11003C", display: "Rh(D)",        expectSpec: "Blood" },
+      { code: "11001C", display: "ABO", expectSpec: "Blood" },
+      { code: "11003C", display: "Rh(D)", expectSpec: "Blood" },
 
       // ── 12xxx — Immunology / tumor markers ────────
-      { code: "12007C", display: "AFP",          expectSpec: "Blood" },
-      { code: "12021C", display: "CEA",          expectSpec: "Blood" },
-      { code: "12053C", display: "ANA",          expectSpec: "Blood" },
-      { code: "12081C", display: "PSA",          expectSpec: "Blood" },
+      { code: "12007C", display: "AFP", expectSpec: "Blood" },
+      { code: "12021C", display: "CEA", expectSpec: "Blood" },
+      { code: "12053C", display: "ANA", expectSpec: "Blood" },
+      { code: "12081C", display: "PSA", expectSpec: "Blood" },
     ];
 
     const violations: string[] = [];
     for (const c of expectations) {
-      const items = [{
-        order_code: c.code,
-        code: c.code,
-        display: c.display,
-        value: 1,
-        unit: "",
-        date: "2026-05-30",
-        hospital: "Test Hospital",
-        order_name: c.display,
-      }];
+      const items = [
+        {
+          order_code: c.code,
+          code: c.code,
+          display: c.display,
+          value: 1,
+          unit: "",
+          date: "2026-05-30",
+          hospital: "Test Hospital",
+          order_name: c.display,
+        },
+      ];
       const obs = mapObservationsGrouped(items, PATIENT_ID).find(
         (r) => r.resourceType === "Observation",
       ) as any;
@@ -4021,8 +4095,7 @@ describe("CI v0.13 — specimen.display fix (尿酸 / BUN / urine creatinine)", 
       // Single aggregated failure so all violations show in one CI run,
       // not a flurry of fail/pass cycles.
       throw new Error(
-        `Silent-bug specimen invariant FAILED — ${violations.length} mismatches:\n` +
-          violations.map((v) => `  • ${v}`).join("\n"),
+        `Silent-bug specimen invariant FAILED — ${violations.length} mismatches:\n${violations.map((v) => `  • ${v}`).join("\n")}`,
       );
     }
   });
