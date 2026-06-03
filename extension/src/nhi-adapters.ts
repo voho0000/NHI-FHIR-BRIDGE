@@ -33,6 +33,20 @@ export function isoToROC(isoDate) {
   return `${y}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`;
 }
 
+// NHI 我參與的照護計畫 (IHKE3213S01) ships its dates as 民國年月日 with
+// Chinese delimiters — "113年6月13日" — instead of the slash/dot/dash form
+// every other endpoint uses. rocToISO only understands the delimited form,
+// so parse the 年/月/日 shape here. Falls back to rocToISO for any row that
+// happens to ship the delimited form, and returns "" for empty / garbage.
+export function rocChineseToISO(rocDate) {
+  if (!rocDate) return "";
+  const s = String(rocDate).trim();
+  const m = s.match(/(\d{2,3})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/);
+  if (!m) return rocToISO(s);
+  const y = Number.parseInt(m[1], 10) + 1911;
+  return `${y}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+}
+
 // NHI bilingual fields use "中文||English" — clinicians scan English faster,
 // so prefer that side. If there's no `||` we just return the input trimmed.
 export function pickEnglish(s) {
@@ -676,6 +690,57 @@ export function adaptImmunization(item) {
     // NHI's source-of-record marker; preserved on the resource as
     // performer-org context (疾病管制署 = Taiwan CDC).
     source: item.source || "",
+  };
+}
+
+// IHKE3213S01 (我參與的照護計畫) — NHI case-management / 衛教 programmes
+// the patient is enrolled in (e.g. Pre-ESRD 病人照護與衛教計畫, 初期慢性
+// 腎病追蹤). Each `myplan[]` row → a FHIR CarePlan. This is the closest
+// 健康存摺 equivalent to a structured plan of care.
+//
+// IMPORTANT — list-extraction quirk: the IHKE3213S01 page_load response
+// carries SEVERAL data arrays (physiology / bloodsugar / bloodlipid widget
+// data alongside the `myplan` care-plan list). extractList() merges every
+// data array and tags each item with __section. So this adapter is called
+// on NON-care-plan rows too. We key off `mhbt_name` (the 計畫名稱, present
+// only on myplan rows) and return null for everything else — robust
+// regardless of __section ordering.
+//
+// Payload shape (live capture 2026-06-03):
+//   myplan: [
+//     { mhbt_name:  "末期腎臟病前期（Pre-ESRD）之病人照護與衛教計畫", ← 計畫名稱
+//       mhbt_memo:  "對慢性腎臟病之高危險群進行個案管理…",            ← 計畫說明
+//       hosp_id:    "1339060017",
+//       hosp_abbr:  "中國北港醫",
+//       case_date:  "113年6月13日",   ← 收案日 (民國年月日, 中文分隔)
+//       close_date: "",               ← 結案日 (空 = 仍在進行)
+//       prgcode:    null,             ← 計畫代碼 (有時為 NHI 程式代號)
+//       hospurl:    "https://info.nhi.gov.tw/…" }
+//   ]
+//
+// status: close_date 空 → "active"；有結案日 → "completed". NHI only lists
+// real enrolments (no planned / cancelled), so those are the only states.
+// Faithful-transport: bridge derives status from close_date presence only;
+// title / memo / dates / hospital pass through verbatim.
+export function adaptCarePlan(item) {
+  if (!item || typeof item !== "object") return null;
+  const title = String(item.mhbt_name || item.mhbT_NAME || "").trim();
+  if (!title) return null; // not a myplan row (physiology / bloodsugar / …)
+  const start = rocChineseToISO(item.case_date || item.casE_DATE || "");
+  const end = rocChineseToISO(item.close_date || item.closE_DATE || "");
+  return {
+    title,
+    description: String(item.mhbt_memo || item.mhbT_MEMO || "").trim(),
+    period_start: start,
+    period_end: end,
+    // A 結案日 means the programme has ended.
+    status: end ? "completed" : "active",
+    hospital: String(item.hosp_abbr || item.hosP_ABBR || "").trim(),
+    hospital_id: String(item.hosp_id || item.hosP_ID || "").trim(),
+    // NHI programme code, when present (e.g. "IHKE3505S01"). `prgcode` is
+    // often null — `|| ""` collapses null/undefined cleanly. Surfaced as a
+    // CarePlan.category coding downstream.
+    program_code: String(item.prgcode || item.prgCode || item.prgCODE || "").trim(),
   };
 }
 

@@ -11,6 +11,8 @@ describe("LIST_HANDLERS dispatch table", () => {
     "diagnostic_reports",
     "procedures",
     "encounters",
+    "immunizations",
+    "care_plans",
   ];
 
   test("covers every page_type the extension can produce", () => {

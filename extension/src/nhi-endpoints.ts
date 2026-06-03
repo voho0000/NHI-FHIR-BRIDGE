@@ -15,6 +15,7 @@
 import {
   adaptAdultPreventive,
   adaptAllergy,
+  adaptCarePlan,
   adaptCatastrophicIllness,
   adaptChronicListStub,
   adaptEncounterFromMedExpense,
@@ -46,6 +47,7 @@ export const ENDPOINT_LABEL_ZH = {
   other_labs: "檢驗",
   catastrophic_illness: "重大傷病",
   immunizations: "疫苗",
+  care_plans: "照護計畫",
 };
 
 // page_type → backend page_type string used by mappers.
@@ -197,5 +199,17 @@ export const NHI_API_ENDPOINTS = [
     path: "/api/ihke3000/ihke3203s01/SP_IHKE3203S01",
     page_type: "immunizations",
     adapt: adaptImmunization,
+  },
+  // IHKE3213S01 (我參與的照護計畫) — NHI case-management / 衛教 programme
+  // enrolments. Each myplan[] row → a FHIR CarePlan. The page_load
+  // response also carries physiology / bloodsugar / bloodlipid widget
+  // arrays; adaptCarePlan keys off mhbt_name so only the care-plan rows
+  // produce resources (extractList merges all data arrays). No date-range
+  // param — NHI returns the patient's full enrolment history.
+  {
+    name: "care_plans",
+    path: "/api/ihke3000/IHKE3213S01/page_load",
+    page_type: "care_plans",
+    adapt: adaptCarePlan,
   },
 ];

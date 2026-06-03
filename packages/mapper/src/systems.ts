@@ -60,6 +60,19 @@ export const ENCOUNTER_KIND_SYSTEM =
 export const ENCOUNTER_CHANNEL_SYSTEM =
   "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-channel";
 
+// ── Bridge-defined CarePlan programme code (v0.14.0+) ────────────────
+//
+// NHI 我參與的照護計畫 (IHKE3213S01) rows carry an optional `prgcode`
+// (e.g. "IHKE3505S01") identifying the NHI case-management programme.
+// There's no published terminology for these, so we surface them under
+// a bridge-defined CodeSystem on CarePlan.category[].coding[].system —
+// self-describing, doesn't collide with clinical category codes, and
+// queryable without owning a real NHI OID. The programme NAME itself
+// rides on CarePlan.title (verbatim from NHI), so consumers that don't
+// recognise the code still get the human-readable label.
+export const NHI_CARE_PLAN_PROGRAM =
+  "https://nhi-fhir-bridge.github.io/CodeSystem/nhi-care-plan-program";
+
 // ── International code systems ───────────────────────────────────────
 
 export const LOINC = "http://loinc.org";

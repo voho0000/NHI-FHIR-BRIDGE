@@ -22,6 +22,7 @@ import { dirname, resolve } from "node:path";
 import {
   adaptAdultPreventive,
   adaptAllergy,
+  adaptCarePlan,
   adaptCatastrophicIllness,
   adaptChronicListStub,
   adaptEncounterFromMedExpense,
@@ -36,6 +37,7 @@ import {
   isoToROC,
   pickChinese,
   pickEnglish,
+  rocChineseToISO,
   rocToISO,
 } from "../src/nhi-adapters.ts";
 
@@ -67,6 +69,36 @@ describe("rocToISO", () => {
     expect(rocToISO("")).toBe("");
     expect(rocToISO("not a date")).toBe("");
     expect(rocToISO("2025-05-22")).toBe(""); // already ISO — not our format
+  });
+});
+
+describe("rocChineseToISO", () => {
+  test("parses 民國年月日 with Chinese delimiters", () => {
+    expect(rocChineseToISO("113年6月13日")).toBe("2024-06-13");
+    expect(rocChineseToISO("106年10月3日")).toBe("2017-10-03");
+  });
+
+  test("zero-pads single-digit month / day", () => {
+    expect(rocChineseToISO("113年6月3日")).toBe("2024-06-03");
+  });
+
+  test("tolerates whitespace around delimiters", () => {
+    expect(rocChineseToISO(" 113 年 6 月 13 日 ")).toBe("2024-06-13");
+  });
+
+  test("missing trailing 日 still parses", () => {
+    expect(rocChineseToISO("113年6月13")).toBe("2024-06-13");
+  });
+
+  test("falls back to slash/dash ROC form", () => {
+    expect(rocChineseToISO("114/05/22")).toBe("2025-05-22");
+  });
+
+  test("empty / unparseable → empty string", () => {
+    expect(rocChineseToISO("")).toBe("");
+    expect(rocChineseToISO(null)).toBe("");
+    expect(rocChineseToISO(undefined)).toBe("");
+    expect(rocChineseToISO("尚未收案")).toBe("");
   });
 });
 
@@ -1194,6 +1226,71 @@ describe("adaptImmunization", () => {
       expect(r.hospital).toBe("臺北榮民總醫院");
       expect(r.source).toBe("疾病管制署");
     }
+  });
+});
+
+// ── adaptCarePlan — IHKE3213S01 (我參與的照護計畫) ─────────────────────
+
+describe("adaptCarePlan", () => {
+  test("maps a live Pre-ESRD enrolment (active, no close date)", () => {
+    const r = adaptCarePlan({
+      mhbt_name: "末期腎臟病前期（Pre-ESRD）之病人照護與衛教計畫",
+      mhbt_memo: "對慢性腎臟病之高危險群進行個案管理，以期早期發現。",
+      hosp_id: "1339060017",
+      hosp_abbr: "中國北港醫",
+      case_date: "113年6月13日",
+      close_date: "",
+      prgcode: null,
+      hospurl: "https://info.nhi.gov.tw/inae1000/inae1000s03?id=1339060017",
+    });
+    expect(r).toEqual({
+      title: "末期腎臟病前期（Pre-ESRD）之病人照護與衛教計畫",
+      description: "對慢性腎臟病之高危險群進行個案管理，以期早期發現。",
+      period_start: "2024-06-13",
+      period_end: "",
+      status: "active",
+      hospital: "中國北港醫",
+      hospital_id: "1339060017",
+      program_code: "",
+    });
+  });
+
+  test("close_date present → status completed + period_end set", () => {
+    const r = adaptCarePlan({
+      mhbt_name: "初期慢性腎病追蹤",
+      case_date: "106年10月3日",
+      close_date: "108年10月3日",
+      prgcode: "IHKE3505S01",
+      hosp_abbr: "中國北港醫",
+    });
+    expect(r.status).toBe("completed");
+    expect(r.period_start).toBe("2017-10-03");
+    expect(r.period_end).toBe("2019-10-03");
+    expect(r.program_code).toBe("IHKE3505S01");
+  });
+
+  test("null prgcode collapses to empty string (not 'null')", () => {
+    const r = adaptCarePlan({ mhbt_name: "X", case_date: "113年6月13日", prgcode: null });
+    expect(r.program_code).toBe("");
+  });
+
+  test("rejects non-myplan widget rows (no mhbt_name)", () => {
+    // The IHKE3213S01 page_load also carries physiology / bloodsugar /
+    // bloodlipid arrays; extractList merges them so this adapter is
+    // called on those rows too. They have no mhbt_name → null.
+    expect(adaptCarePlan({ sbp: "120", dbp: "80", __section: "physiology" })).toBeNull();
+    expect(adaptCarePlan({ ac_sugar: "95", __section: "bloodsugar" })).toBeNull();
+  });
+
+  test("returns null when mhbt_name empty / whitespace", () => {
+    expect(adaptCarePlan({ mhbt_name: "", case_date: "113年6月13日" })).toBeNull();
+    expect(adaptCarePlan({ mhbt_name: "   " })).toBeNull();
+  });
+
+  test("returns null on null / non-object input", () => {
+    expect(adaptCarePlan(null)).toBeNull();
+    expect(adaptCarePlan(undefined)).toBeNull();
+    expect(adaptCarePlan("string")).toBeNull();
   });
 });
 

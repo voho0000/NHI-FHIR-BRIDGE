@@ -9,6 +9,7 @@
  */
 
 export * from "./allergy";
+export * from "./careplan";
 export * from "./condition";
 export * from "./diagnostic-report";
 export * from "./dispatch";

@@ -42,6 +42,7 @@ export const LOCAL_PAGE_TYPE_ORDER = [
   "diagnostic_reports",
   "procedures",
   "immunizations",
+  "care_plans",
 ];
 
 // One-time migration from chrome.storage.sync → chrome.storage.local.
