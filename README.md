@@ -391,7 +391,6 @@ NHI-FHIR-BRIDGE/                     # npm workspaces monorepo
 ├── CHANGELOG.md                     # 每版改了什麼（民眾友善版）
 ├── SECURITY.md                      # 安全弱點通報窗口
 ├── docker-compose.yml               # backend-ts + frontend
-├── docker-compose.python.yml        # 舊 Python backend（保留參考用）
 └── .env.example
 ```
 
