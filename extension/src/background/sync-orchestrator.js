@@ -49,6 +49,7 @@ import {
 } from "./s02-detail.js";
 import { assembleLocalBundle, stashFhirBundle } from "./bundle.js";
 import { exportPatientBundle, postStructured, postSyncLog } from "./backend-upload.js";
+import { clearResultBadge, showResultBadge } from "./badge.js";
 
 export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patientOverride, dateRange, dateRangeLabel }) {
   resetCancelled();
@@ -97,6 +98,10 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
     running: true, progress: "🚀 開始取得健保存摺資料…", phase: "init",
     started: _t0, totalResources: 0, host: NHI_HOST, errors: [],
   });
+  // Drop any unseen-result badge from a previous run so the toolbar dot
+  // reflects THIS sync once it finishes (and isn't a stale leftover while
+  // the new run is in progress).
+  await clearResultBadge();
 
   // Step 1: fetch all endpoints in PARALLEL inside the NHI tab. Inject
   // the ISO date range into each endpoint that supports it; skipped
@@ -524,6 +529,11 @@ export async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase,
     mode,
     localFilename: _localFilename,
   });
+
+  // Paint a red dot on the toolbar icon so a user who closed the popup
+  // still sees fresh records are waiting. Cleared when they next open the
+  // popup (markSyncSeen). A 0-resource finish shows no dot.
+  await showResultBadge(total);
 
   // Best-effort: write a Sync History row to the backend so the dashboard
   // can show when/who/how-long/what/range. Skipped in local mode (there

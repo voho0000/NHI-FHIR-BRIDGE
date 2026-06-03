@@ -70,6 +70,10 @@ async function init() {
   document.getElementById("version").textContent =
     "v" + chrome.runtime.getManifest().version;
 
+  // Opening the popup counts as "seeing" any completed sync — clear the
+  // red result badge on the toolbar icon (set by the SW on sync done).
+  chrome.runtime.sendMessage({ type: "markSyncSeen" }).catch(() => {});
+
   document.getElementById("login-ok-next")
     ?.addEventListener("click", () => _setActiveStep(2));
 

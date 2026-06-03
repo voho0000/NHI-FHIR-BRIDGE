@@ -29,6 +29,7 @@ import {
   sweepPendingBundleIfStale,
   sweepStaleLocalKeys,
 } from "./background/storage-migration.js";
+import { clearResultBadge, restoreResultBadge } from "./background/badge.js";
 
 chrome.runtime.onInstalled.addListener(async () => {
   await migrateSyncToLocal();
@@ -41,8 +42,14 @@ chrome.runtime.onInstalled.addListener(async () => {
 // paths where onInstalled doesn't fire).
 chrome.runtime.onStartup?.addListener?.(() => {
   migrateSyncToLocal();
+  // Re-apply an unseen-result badge that a browser restart would
+  // otherwise drop (the MV3 worker starts with no in-memory state).
+  restoreResultBadge();
 });
 migrateSyncToLocal();
+// Top-level too — covers SW reloads where onStartup doesn't fire (mirrors
+// the migrateSyncToLocal() belt-and-suspenders call above).
+restoreResultBadge();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Security audit #6: only accept messages originating from THIS
@@ -123,6 +130,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg?.type === "clearSyncStatus") {
     chrome.storage.local.remove(STORAGE_KEY).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg?.type === "markSyncSeen") {
+    // Popup was opened — the user has "seen" any completed result, so
+    // drop the toolbar badge + its persisted flag.
+    clearResultBadge().then(() => {
+      try { sendResponse({ ok: true }); } catch {}
+    });
     return true;
   }
   if (msg?.type === "checkNhiLogin") {

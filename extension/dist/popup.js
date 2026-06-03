@@ -2856,6 +2856,8 @@
   // src/popup.js
   async function init() {
     document.getElementById("version").textContent = "v" + chrome.runtime.getManifest().version;
+    chrome.runtime.sendMessage({ type: "markSyncSeen" }).catch(() => {
+    });
     document.getElementById("login-ok-next")?.addEventListener("click", () => _setActiveStep(2));
     await loadMaskNameEnabled();
     await _refreshLocalBundleState();

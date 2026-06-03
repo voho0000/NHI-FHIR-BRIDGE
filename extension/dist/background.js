@@ -6006,6 +6006,71 @@
     return { filename, bytes: json.length };
   }
 
+  // src/background/badge.js
+  var UNSEEN_KEY = "unseenSyncResult";
+  var ICON_SIZES = [16, 32, 48];
+  var DOT_COLOR = "#d70015";
+  var RING_COLOR = "#ffffff";
+  var PLAIN_ICON_PATH = {
+    16: "icons/icon-16.png",
+    32: "icons/icon-32.png",
+    48: "icons/icon-48.png"
+  };
+  async function _buildDottedIcon(size) {
+    const url = chrome.runtime.getURL(`icons/icon-${size}.png`);
+    const blob = await (await fetch(url)).blob();
+    const bmp = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(size, size);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bmp, 0, 0, size, size);
+    const r = Math.max(3, Math.round(size * 0.17));
+    const ring = Math.max(1, Math.round(size * 0.05));
+    const cx = size - r;
+    const cy = r;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+    ctx.fillStyle = RING_COLOR;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r - ring, 0, 2 * Math.PI);
+    ctx.fillStyle = DOT_COLOR;
+    ctx.fill();
+    return ctx.getImageData(0, 0, size, size);
+  }
+  async function _paintDot() {
+    try {
+      const imageData = {};
+      for (const s of ICON_SIZES) imageData[s] = await _buildDottedIcon(s);
+      await chrome.action.setIcon({ imageData });
+    } catch {
+    }
+  }
+  async function showResultBadge(count) {
+    const n = Number(count) || 0;
+    if (n <= 0) {
+      await clearResultBadge();
+      return;
+    }
+    await chrome.storage.local.set({ [UNSEEN_KEY]: true }).catch(() => {
+    });
+    await _paintDot();
+  }
+  async function clearResultBadge() {
+    try {
+      await chrome.action.setIcon({ path: PLAIN_ICON_PATH });
+    } catch {
+    }
+    await chrome.storage.local.remove(UNSEEN_KEY).catch(() => {
+    });
+  }
+  async function restoreResultBadge() {
+    try {
+      const { [UNSEEN_KEY]: unseen } = await chrome.storage.local.get(UNSEEN_KEY);
+      if (unseen) await _paintDot();
+    } catch {
+    }
+  }
+
   // src/background/sync-orchestrator.js
   async function runNhiApiSync({ tabId, mode, backend, syncApiKey, nhiBase, patientOverride, dateRange, dateRangeLabel }) {
     resetCancelled();
@@ -6044,6 +6109,7 @@
       host: NHI_HOST,
       errors: []
     });
+    await clearResultBadge();
     const fetchSpec = NHI_API_ENDPOINTS.map((ep) => {
       const path = ep.supportsDateRange ? applyDateRangeToPath(ep.path, dateRange) : ep.path;
       return { name: ep.name, url: BASE + path, method: "GET" };
@@ -6329,6 +6395,7 @@
       mode,
       localFilename: _localFilename
     });
+    await showResultBadge(total);
     if (mode !== "local") try {
       await postSyncLog(backend, syncApiKey, {
         status: errors.length ? "partial" : "success",
@@ -6398,8 +6465,10 @@
   });
   chrome.runtime.onStartup?.addListener?.(() => {
     migrateSyncToLocal();
+    restoreResultBadge();
   });
   migrateSyncToLocal();
+  restoreResultBadge();
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (sender?.id !== chrome.runtime.id) return;
     if (msg?.type === "startNhiApiSync") {
@@ -6480,6 +6549,15 @@
     }
     if (msg?.type === "clearSyncStatus") {
       chrome.storage.local.remove(STORAGE_KEY).then(() => sendResponse({ ok: true }));
+      return true;
+    }
+    if (msg?.type === "markSyncSeen") {
+      clearResultBadge().then(() => {
+        try {
+          sendResponse({ ok: true });
+        } catch {
+        }
+      });
       return true;
     }
     if (msg?.type === "checkNhiLogin") {

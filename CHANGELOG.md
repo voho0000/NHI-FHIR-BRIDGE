@@ -3,6 +3,31 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.13.4 重點 — 2026-06-03
+
+**🔴 工具列圖示紅點提示 — 同步完成有抓到資料時，圖示右上角浮出小紅點**
+
+使用者需求：同步完成後就算關掉 popup，也能在 Chrome 工具列圖示上看到「有新資料」的提示（像手機 App 的通知點），點開 popup 後紅點消失。
+
+行為：
+- 同步成功且**有抓到資料**（count > 0）時，service worker 在圖示右上角疊一個白圈紅點（iOS 風格 `#d70015`，半徑為圖示的 0.17、白色細外框 0.05）
+- 同步完成但**沒抓到任何資料**（count ≤ 0）時，**不顯示**紅點
+- 打開 popup 即視為「已看過」→ popup 送 `markSyncSeen`，SW 還原原始圖示並清除旗標
+- 開始新一次同步時先清掉殘留的舊紅點
+
+實作（`extension/src/background/badge.js`，新模組）：
+- 用 MV3 worker 內建的 `OffscreenCanvas` + `createImageBitmap` 在執行期把紅點合成到既有圖示上，再以 `chrome.action.setIcon` 換上 — **不需額外 PNG 資產**、不需新權限（`action` manifest key 已足夠）
+- 圖示替換屬瀏覽器端 UI：SW 自行 unload 後仍在，但**整個瀏覽器重啟不會留存** → 持久化 `unseenSyncResult` 布林旗標，SW 重新喚醒時（`restoreResultBadge`）重新套用，紅點得以撐過瀏覽器重啟，直到使用者打開 popup 為止
+
+接線：
+- `sync-orchestrator.js`：`phase: "init"` 後 `clearResultBadge()`、`phase: "done"` 後 `showResultBadge(total)`
+- `background.js`（SW 入口）：新增 `markSyncSeen` 訊息 handler（→ `clearResultBadge`）、`onStartup` / top-level 呼叫 `restoreResultBadge()`
+- `popup.js`：`init` 開頭送 `markSyncSeen`
+
+**零 mapper / FHIR 輸出變更。** 驗證：`node build.mjs` 綠、extension 168 tests 綠。
+
+---
+
 ## 0.13.3 重點 — 2026-06-03
 
 **🧹 內部重構 — 拆分 `popup.js`（零行為變更）**
