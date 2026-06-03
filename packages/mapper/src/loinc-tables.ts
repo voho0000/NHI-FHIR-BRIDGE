@@ -65,11 +65,16 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "09065B": "90991-1", // 蛋白電泳分析 — panel LOINC (sub-rows
   // routed via DISPLAY_FIRST_CODES + PANEL_LOINC_MAP since v0.10.0;
   // this entry is fallback for empty display)
-  // 12028B / 12029B IgM (serum, immunodiffusion / nephelometry) — previously
-  // both mapped to LOINC 14002-0 which is actually 'IgM [Units/volume] in
-  // Cord blood' (neonatal specimen, verified loinc.org/14002-0/). Wrong
-  // specimen for an adult serum order. Leaving unmapped; falls through to
-  // NHI-code-only coding. See docs/LOINC_AUDIT_2026_05_19.md.
+  // 12028B (免疫擴散法) / 12029B (免疫比濁法) IgM — previously both mapped to
+  // LOINC 14002-0 which is actually 'IgM [Units/volume] in Cord blood'
+  // (neonatal specimen, verified loinc.org/14002-0/); that was removed in
+  // the 2026-05-19 audit. v0.13.5 (SMART app dev report 2026-06-03, Bug B):
+  // now mapped to 2472-9, verified as 'IgM [Mass/volume] in Serum or Plasma'
+  // (Component=IgM, Property=MCnc, System=Ser/Plas, Method NULL → method-
+  // independent, covers both immunodiffusion + nephelometry) — loinc.org/
+  // 2472-9/ 2026-06-03. Symmetric with IgG 12025B→2465-3, IgA 12027B→2458-8.
+  "12028B": "2472-9", // IgM 免疫擴散法 — Mass/vol S/P
+  "12029B": "2472-9", // IgM 免疫比濁法 — Mass/vol S/P
   "12103B": "95801-7", // 免疫電泳分析
   "12160B": "15189-4", // IgG κ/λ
   "12171B": "17351-8", // 抗嗜中性球細胞質抗體 (ANCA)
@@ -131,10 +136,23 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "09027C": "6768-6", // ALK-P — Alkaline phosphatase Activity S/P
   "09031C": "2324-2", // γ-GT — Gamma glutamyl transferase Activity S/P
   "09035C": "2500-7", // TIBC — Iron binding capacity Mass/vol S/P
-  // 09037C 血氨 — previously mapped to LOINC 1827-5 which is actually
-  // 'Alpha 1 antitrypsin MS [Mass/volume] in Serum or Plasma' (verified
-  // loinc.org/1827-5/). Wrong analyte entirely. Leaving unmapped; falls
-  // through to NHI-code-only coding. See docs/LOINC_AUDIT_2026_05_19.md.
+  // 09037C 血氨 (Ammonia) — previously mapped to LOINC 1827-5 which is
+  // actually 'Alpha 1 antitrypsin MS [Mass/volume] in Serum or Plasma'
+  // (verified loinc.org/1827-5/); that was removed in the 2026-05-19 audit.
+  // v0.13.5 (SMART app dev report 2026-06-03, Bug B): now mapped. NOTE the
+  // bug report's suggested 1827-1 does NOT exist in LOINC (verified
+  // loinc.org/1827-1/ → "code does not exist"; likely a typo off the old
+  // 1827-5). Ammonia is ALWAYS plasma (never serum — NH3 analytic
+  // stability), so System=Plas is settled; mass-vs-molar depends on the
+  // lab's reported unit:
+  //   22763-7  Ammonia [Mass/volume] in Plasma  (MCnc, µg/dL — default)
+  //   16362-6  Ammonia [Moles/volume] in Plasma (SCnc, µmol/L)
+  // Both verified at loinc.org 2026-06-03. Default is the µg/dL mass form
+  // (台灣傳統 / 台北榮總 慣用單位); observation.ts ammoniaLoincFix() switches
+  // to the molar LOINC when the row's unit is µmol/L, so the LOINC's
+  // property class always matches the shipped unit (avoids the v0.12.0
+  // Free T4 LOINC↔unit-mismatch class).
+  "09037C": "22763-7", // 血氨 (Ammonia) — Mass/vol Plasma; molar unit → 16362-6 via ammoniaLoincFix
   "09064C": "3040-3", // Lipase — Activity S/P
   "09059B": "14118-4", // Lactate — Mass/vol Plasma
   // ── Hematology extras ─────────────────────────────
@@ -185,7 +203,16 @@ export const NHI_TO_LOINC: Record<string, string> = {
   // bills hs-CRP it will land on a different code (e.g. 12189C).
   "12015C": "1988-5", // CRP — C reactive protein Mass/vol S/P
   "12053C": "5048-4", // ANA — Antinuclear Ab Titer S/P
-  "12056B": "16124-0", // Anti-mitochondrial Ab S/P
+  // 12056B 抗粒線體抗體 (AMA) — previously mapped to LOINC 16124-0 which is
+  // actually 'Cryptococcus sp Ab [Titer] in Serum' (隱球菌抗體, a fungal
+  // serology — verified loinc.org/16124-0/ 2026-06-03). Completely wrong
+  // analyte: AMA is the key marker for primary biliary cholangitis (PBC),
+  // NOT an infection marker. Bug reported by SMART app dev 2026-06-03
+  // (嘉基 12056B, value '1:20(-)' → wrongly classified as 黴菌血清學).
+  // 20483-4 verified as the canonical AMA titer LOINC (Component=
+  // Mitochondria Ab, Property=Titr, System=Ser, Scale=SemiQn, Method NULL
+  // → method-independent, fits the titer value) — loinc.org/20483-4/.
+  "12056B": "20483-4", // 抗粒線體抗體 (AMA) — Mitochondria Ab [Titer] Serum
   // ── Urinalysis ────────────────────────────────────
   "06012C": "5778-6", // Urine appearance — Color
   "06013C": "24356-8", // 尿生化 panel — Urinalysis macroscopic panel
@@ -1621,7 +1648,11 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "5292-8": "Reagin Ab [Presence] in Serum by VDRL",
   "15189-4":
     "Kappa light chains/Lambda light chains [Mass Ratio] in Serum",
-  "16124-0": "Cryptococcus sp Ab [Titer] in Serum",
+  // 16124-0 (Cryptococcus sp Ab) removed — it was only referenced by the
+  // buggy 12056B mapping (see NHI_TO_LOINC); no NHI code legitimately maps
+  // to it (12069B Cryptococcus Ag is left unmapped). 20483-4 is its
+  // replacement: the correct AMA titer LOINC now used by 12056B.
+  "20483-4": "Mitochondria Ab [Titer] in Serum",
   "17351-8": "Neutrophil cytoplasmic Ab [Presence] in Serum",
   "20584-9": "Leukocytes [#/volume] in Specimen by Automated count",
   "47286-0": "Differential panel - Bone marrow",
@@ -1639,11 +1670,16 @@ export const LOINC_DISPLAY: Record<string, string> = {
   // Chemistry (general)
   "1927-3": "Base excess in Venous blood by calculation",
   "1995-0": "Calcium.ionized [Moles/volume] in Serum or Plasma",
+  // Ammonia (NHI 09037C) — both forms carried so LOINC_DISPLAY stays in
+  // sync whichever ammoniaLoincFix() selects based on the row's unit.
+  "22763-7": "Ammonia [Mass/volume] in Plasma",
+  "16362-6": "Ammonia [Moles/volume] in Plasma",
   "14563-1":
     "Hemoglobin [Presence] in Stool from gastrointestinal --1st specimen",
   "2276-4": "Ferritin [Mass/volume] in Serum or Plasma",
   "2458-8": "IgA [Mass/volume] in Serum or Plasma",
   "2465-3": "IgG [Mass/volume] in Serum or Plasma",
+  "2472-9": "IgM [Mass/volume] in Serum or Plasma",
   "2500-7": "Iron binding capacity [Mass/volume] in Serum or Plasma",
   "2692-2": "Osmolality of Serum or Plasma", // typo fix from 2692-7
   "2777-1": "Phosphate [Mass/volume] in Serum or Plasma",

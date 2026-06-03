@@ -779,15 +779,56 @@ describe("findLoinc", () => {
     expect(findLoinc("13013C", "TB Culture")).not.toBe("31952-5");
   });
 
-  test("Ammonia (NHI 09037C) does NOT map to 1827-5 (Alpha 1 antitrypsin)", () => {
-    expect(findLoinc("09037C", "Ammonia")).not.toBe("1827-5");
+  test("AMA (NHI 12056B) maps to 20483-4 (Mitochondria Ab Titer), NOT 16124-0 (Cryptococcus Ab)", () => {
+    // v0.13.5 Bug A (SMART app dev report 2026-06-03): 12056B 抗粒線體抗體
+    // was mapped to 16124-0 'Cryptococcus sp Ab [Titer] in Serum' (隱球菌,
+    // fungal serology — verified loinc.org/16124-0/). AMA is the PBC marker,
+    // not an infection marker. 20483-4 = 'Mitochondria Ab [Titer] in Serum'
+    // (Component=Mitochondria Ab, Property=Titr — verified loinc.org/20483-4/).
+    expect(findLoinc("12056B", "粒線體抗體")).toBe("20483-4");
+    expect(findLoinc("12056B", "粒線體抗體")).not.toBe("16124-0");
   });
 
-  test("IgM 單向免疫擴散 (NHI 12028B) does NOT map to 14002-0 (IgM in Cord blood)", () => {
+  test("Ammonia (NHI 09037C) maps to 22763-7 (Mass/vol Plasma) by default, NOT 1827-5", () => {
+    // v0.13.5 Bug B: 09037C was unmapped (old buggy mapping 1827-5 = Alpha 1
+    // antitrypsin). Default LOINC is the µg/dL mass form 22763-7
+    // (loinc.org/22763-7/). findLoinc is unit-unaware so returns the default;
+    // the molar switch is exercised in the mapObservation tests below.
+    expect(findLoinc("09037C", "Ammonia")).toBe("22763-7");
+    expect(findLoinc("09037C", "Ammonia")).not.toBe("1827-5");
+    // Bug report's suggested 1827-1 is an invalid (non-existent) LOINC code.
+    expect(findLoinc("09037C", "Ammonia")).not.toBe("1827-1");
+  });
+
+  test("Ammonia ammoniaLoincFix: µg/dL → 22763-7 (mass), µmol/L → 16362-6 (molar)", () => {
+    // Unit-aware fix so the LOINC's property class always matches the
+    // shipped unit (avoids the Free T4 LOINC↔unit-mismatch bug class).
+    const massObs = mapObservation(
+      { code: "09037C", display: "Ammonia", value: "45", unit: "ug/dL", date: "2025-12-09" },
+      PATIENT_ID,
+    );
+    const massLoinc = massObs?.code?.coding?.find(
+      (c: { system: string; code: string }) => c.system === "http://loinc.org",
+    )?.code;
+    expect(massLoinc).toBe("22763-7");
+
+    const molarObs = mapObservation(
+      { code: "09037C", display: "Ammonia", value: "32", unit: "umol/L", date: "2025-12-09" },
+      PATIENT_ID,
+    );
+    const molarLoinc = molarObs?.code?.coding?.find(
+      (c: { system: string; code: string }) => c.system === "http://loinc.org",
+    )?.code;
+    expect(molarLoinc).toBe("16362-6");
+  });
+
+  test("IgM 單向免疫擴散 (NHI 12028B) maps to 2472-9 (IgM Mass/vol S/P), NOT 14002-0 (Cord blood)", () => {
+    expect(findLoinc("12028B", "IgM")).toBe("2472-9");
     expect(findLoinc("12028B", "IgM")).not.toBe("14002-0");
   });
 
-  test("IgM 免疫比濁法 (NHI 12029B) does NOT map to 14002-0 (IgM in Cord blood)", () => {
+  test("IgM 免疫比濁法 (NHI 12029B) maps to 2472-9 (IgM Mass/vol S/P), NOT 14002-0 (Cord blood)", () => {
+    expect(findLoinc("12029B", "IgM")).toBe("2472-9");
     expect(findLoinc("12029B", "IgM")).not.toBe("14002-0");
   });
 

@@ -1550,6 +1550,35 @@ function urineProteinLoincFix(
   return URINE_PROTEIN_QUALITATIVE_LOINC;
 }
 
+// ── Ammonia mass-vs-molar routing (v0.13.5) ──────────────────────────
+// SMART app dev report 2026-06-03 (Bug B): NHI 09037C 血氨 had no LOINC.
+// Ammonia is always plasma, but it ships in two unit families and each
+// has its own LOINC (verified loinc.org 2026-06-03):
+//   22763-7  Ammonia [Mass/volume]  in Plasma — MCnc, µg/dL
+//   16362-6  Ammonia [Moles/volume] in Plasma — SCnc, µmol/L
+// NHI_TO_LOINC defaults 09037C → 22763-7 (µg/dL, 台灣傳統/台北榮總 慣用).
+// This fix promotes to the molar LOINC when the row's unit is molar
+// (µmol/L etc) so the LOINC's property class matches the shipped unit —
+// the same LOINC↔unit-consistency discipline as the v0.12.0 Free T4
+// audit. Same structural-fix pattern as urineProteinLoincFix: patient
+// value/unit untouched; only the LOINC swaps between two correct
+// same-analyte codes. No-op for any other LOINC.
+const AMMONIA_MASS_LOINC = "22763-7";
+const AMMONIA_MOLAR_LOINC = "16362-6";
+// Matches "µmol/L", "umol/L", "μmol/L", "mcmol/L", "mmol/L" — any
+// per-litre molar unit. Mass units (µg/dL / mg/dL) contain no "mol".
+const AMMONIA_MOLAR_UNIT_RE = /mol\s*\/\s*l/i;
+
+function ammoniaLoincFix(
+  loinc: string | null,
+  rawUnit: unknown,
+): string | null {
+  if (loinc !== AMMONIA_MASS_LOINC) return loinc;
+  const u = String(rawUnit ?? "").trim();
+  if (AMMONIA_MOLAR_UNIT_RE.test(u)) return AMMONIA_MOLAR_LOINC;
+  return AMMONIA_MASS_LOINC;
+}
+
 // ── Map single Observation (non-grouped path) ────────────────────────
 
 export function mapObservation(
@@ -1582,6 +1611,8 @@ export function mapObservation(
   loinc = structuralLoincFix(loinc, raw.unit);
   // v0.12.2: urine protein scale routing — see urineProteinLoincFix() docstring
   loinc = urineProteinLoincFix(loinc, value, raw.unit);
+  // v0.13.5: ammonia mass-vs-molar LOINC per unit — see ammoniaLoincFix() docstring
+  loinc = ammoniaLoincFix(loinc, raw.unit);
 
   const resource: Record<string, any> = {
     resourceType: "Observation",
@@ -1817,6 +1848,9 @@ function buildObservation(
   // scale routing — quantitative mg/dL values get 2888-6 (Qn LOINC),
   // qualitative / combined values stay on 20454-5 (Ord LOINC).
   loinc = urineProteinLoincFix(loinc, value, raw.unit);
+  // v0.13.5 (SMART app dev report 2026-06-03 Bug B): ammonia mass-vs-molar
+  // LOINC per the row's unit — see ammoniaLoincFix() docstring.
+  loinc = ammoniaLoincFix(loinc, raw.unit);
 
   const catCode = raw.category || "laboratory";
   const CAT_DISPLAY: Record<string, string> = {
