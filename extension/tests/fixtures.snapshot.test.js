@@ -41,6 +41,7 @@ describe("adapter fixture snapshots", () => {
         "date": "2025-05-22",
         "display": "FINGER SUGAR",
         "hospital": "長庚嘉義",
+        "item_name": "FINGER SUGAR",
         "nhi_source_channel": "A",
         "nhi_source_channel_name": "特約醫事機構不定期上傳",
         "nhi_visit_date": "2025-05-18",

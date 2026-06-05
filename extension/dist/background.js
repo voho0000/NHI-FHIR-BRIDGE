@@ -620,6 +620,9 @@
       return s.slice(0, 2) + char.repeat(s.length - 4) + s.slice(-2);
     return s;
   }
+  function normalizeNarrativeForDedup(s) {
+    return (s ?? "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+  }
   function maskName(name) {
     const trimmed = (name ?? "").trim();
     if (!trimmed || trimmed === "Unknown")
@@ -858,12 +861,13 @@
     return false;
   }
   function _conclusionFingerprint(s) {
+    const norm = normalizeNarrativeForDedup(s);
     let h = 5381;
-    const cap = Math.min(s.length, 16384);
+    const cap = Math.min(norm.length, 16384);
     for (let i = 0; i < cap; i++) {
-      h = (h << 5) + h + s.charCodeAt(i) | 0;
+      h = (h << 5) + h + norm.charCodeAt(i) | 0;
     }
-    return `${h >>> 0}:${s.length}`;
+    return `${h >>> 0}:${norm.length}`;
   }
   function mapDiagnosticReport(raw, patientId) {
     const conclusion = (raw.conclusion ?? "").trim();
@@ -4311,6 +4315,27 @@
     }
     return out;
   }
+  function pickFullerLabel(a, b) {
+    const aa = (a ?? "").trim();
+    const bb = (b ?? "").trim();
+    if (!aa)
+      return bb;
+    if (!bb)
+      return aa;
+    const aCjk = cjkChars2(aa);
+    const bCjk = cjkChars2(bb);
+    if (aCjk > 0 && bCjk === 0)
+      return aa;
+    if (bCjk > 0 && aCjk === 0)
+      return bb;
+    return bb.length > aa.length ? bb : aa;
+  }
+  function pickFullerItemName(rows) {
+    let best = "";
+    for (const r of rows)
+      best = pickFullerLabel(best, String(r.item_name ?? ""));
+    return best;
+  }
   function dedupNhiCrossChannelPairs(items) {
     const groups = /* @__PURE__ */ new Map();
     const order = [];
@@ -4342,6 +4367,12 @@
         (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "B"
       );
       if (aRows.length > 0 && bRows.length > 0) {
+        const bItemName = pickFullerItemName(bRows);
+        if (bItemName) {
+          for (const a of aRows) {
+            a.item_name = pickFullerLabel(String(a.item_name ?? ""), bItemName);
+          }
+        }
         out.push(...aRows);
       } else {
         out.push(...group);
@@ -4571,11 +4602,29 @@
       code: visitDate
     });
   }
-  function resolveObsCodeText(loinc, code, display, cleanMatch) {
+  function resolveHumanLabel(opts) {
+    const { loincShortText, code, itemName, orderName, display, fallback } = opts;
+    const item = (itemName ?? "").trim();
+    const order = (orderName ?? "").trim();
+    const disp = (display ?? "").trim();
+    const itemCjk = cjkChars2(item) > 0 ? item : "";
+    const orderCjk = cjkChars2(order) > 0 ? order : "";
+    return loincShortText || NHI_CODE_PANEL_NAME[code] || itemCjk || orderCjk || item || order || disp || fallback;
+  }
+  function resolveObsCodeText(loinc, code, display, cleanMatch, itemName) {
     const shortTextAllowed = !!loinc && !!LOINC_SHORT_TEXT[loinc] && (!CBC_CANONICAL_TEXT_LOINCS.has(loinc) || cleanMatch);
     const shortText = shortTextAllowed && loinc ? LOINC_SHORT_TEXT[loinc] : void 0;
     return normalizeFullwidth(
-      shortText || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab"
+      resolveHumanLabel({
+        loincShortText: shortText,
+        code,
+        itemName,
+        // orderName intentionally omitted — the per-obs path must keep raw
+        // display (mis-tag canary), not the panel-level 醫令名. See
+        // resolveHumanLabel docstring.
+        display,
+        fallback: "Unknown Lab"
+      })
     );
   }
   function urineProteinLoincFix(loinc, rawValue, rawUnit) {
@@ -4604,6 +4653,7 @@
   }
   function mapObservation(raw, patientId) {
     const display = raw.display || raw.code || "";
+    const itemName = String(raw.item_name ?? "");
     const code = raw.code || "";
     if (looksLikeQcControl(String(display)))
       return null;
@@ -4644,7 +4694,7 @@
         ),
         // v0.11.9 / v0.11.10 / v0.13: see resolveObsCodeText() — CBC LOINCs
         // gate on cleanMatch, others keep "always SHORT_TEXT" behaviour.
-        text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch)
+        text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch, itemName)
       },
       subject: { reference: `Patient/${patientId}` }
     };
@@ -4750,6 +4800,7 @@
       return bpObs;
     }
     const display = raw.display || raw.code || "";
+    const itemName = String(raw.item_name ?? "");
     const code = (panelCode ? String(panelCode) : "") || raw.order_code || raw.code || "";
     const value = raw.value;
     const interp = (raw.interpretation ?? "").toString().toLowerCase();
@@ -4826,7 +4877,7 @@
         //   4. "Unknown Lab" sentinel
         // v0.11.10: normalizeFullwidth() applied so fullwidth ASCII chars
         // (e.g. 09099C 「心肌旋轉蛋白Ｉ」) become halfwidth in our label.
-        text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch)
+        text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch, itemName)
       },
       subject: { reference: `Patient/${patientId}` }
     };
@@ -4945,7 +4996,15 @@
       let panelTitle;
       if (deduped.length === 1) {
         const singleDisplay = deduped[0].display ?? "";
-        panelTitle = loincShortText || NHI_CODE_PANEL_NAME[groupCodeStr] || orderName || singleDisplay || groupCodeStr;
+        const singleItemName = String(deduped[0].item_name ?? "");
+        panelTitle = resolveHumanLabel({
+          loincShortText,
+          code: groupCodeStr,
+          itemName: singleItemName,
+          orderName: orderName ?? void 0,
+          display: singleDisplay,
+          fallback: groupCodeStr
+        });
       } else {
         const allSameAnalyte = !DISPLAY_FIRST_CODES.has(groupCodeStr);
         panelTitle = allSameAnalyte && loincShortText || orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || groupCodeStr;
@@ -5144,8 +5203,36 @@
         }
         merged.push(winner);
       }
-      const narrativeOnly = merged.filter(isNarrativeOnly);
-      const imageItems = merged.filter(hasFrames);
+      const collapsedMerged = [];
+      const keptNarr = [];
+      for (const it of merged) {
+        if (!isNarrativeOnly(it)) {
+          collapsedMerged.push(it);
+          continue;
+        }
+        const norm = normalizeNarrativeForDedup(it.conclusion ?? "");
+        let foldedIn = false;
+        for (const kept of keptNarr) {
+          const prevNorm = kept.norm;
+          const prefixRelated = norm.length > 0 && prevNorm.length > 0 && (norm === prevNorm || norm.startsWith(prevNorm) || prevNorm.startsWith(norm));
+          if (!prefixRelated)
+            continue;
+          const prev = collapsedMerged[kept.idx];
+          const takeNew = norm.length > prevNorm.length || norm.length === prevNorm.length && (it.conclusion?.length ?? 0) > (prev.conclusion?.length ?? 0);
+          if (takeNew) {
+            collapsedMerged[kept.idx] = it;
+            kept.norm = norm;
+          }
+          foldedIn = true;
+          break;
+        }
+        if (!foldedIn) {
+          keptNarr.push({ idx: collapsedMerged.length, norm });
+          collapsedMerged.push(it);
+        }
+      }
+      const narrativeOnly = collapsedMerged.filter(isNarrativeOnly);
+      const imageItems = collapsedMerged.filter(hasFrames);
       if (narrativeOnly.length === 1 && imageItems.length === 1) {
         const narr = narrativeOnly[0];
         const img = imageItems[0];
@@ -5158,12 +5245,12 @@
           }
         }
         out.push(img);
-        for (const it of merged) {
+        for (const it of collapsedMerged) {
           if (it !== narr && it !== img)
             out.push(it);
         }
       } else {
-        out.push(...merged);
+        out.push(...collapsedMerged);
       }
     }
     function contentSignatureOf(item) {
@@ -5782,6 +5869,20 @@
       date,
       order_code: orderCode,
       order_name: item.ordeR_NAME || "",
+      // v0.17 (2026-06-06): the 檢驗檢查項目名稱 (hospital test-item name),
+      // surfaced SEPARATELY from `display` so it can drive the human label
+      // (CodeableConcept.text) WITHOUT touching `display` — which is what
+      // findLoinc / specimen / canonical routing key off. NHI ships this
+      // Chinese item name on the B (定期上傳) channel for some panels where
+      // the A (不定期上傳) channel carries an English shorthand. Real case
+      // (patient report 2026-06-06): CMV serology 14004B has
+      //   ordeR_NAME      = "巨大細胞病毒抗體  酵素免疫法"  (醫令名 / order name)
+      //   assaY_ITEM_NAME = "巨細胞病毒IgG抗體"            (the test actually run)
+      // The downstream label resolver prefers a Chinese 檢驗項目名稱 over the
+      // broader 醫令名 so SMART apps show "巨細胞病毒IgG抗體", not the order
+      // name. `display` keeps its existing fallback chain (assaY_ITEM_NAME →
+      // order_shortname → ordeR_NAME) so LOINC routing is unchanged.
+      item_name: _cleanLabName(item.assaY_ITEM_NAME) || "",
       // Prefer the NHI 醫令碼 ("09140C") as the FHIR coding code so the
       // downstream observation mapper routes it under NHI_MEDICAL_ORDER_
       // CODE system. SMART apps group lab tests by coding code; using

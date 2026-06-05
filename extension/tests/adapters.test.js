@@ -252,6 +252,12 @@ describe("adaptLabItem", () => {
       date: "2025-05-22",
       order_code: "09140C",
       order_name: "血液及體液葡萄糖-餐後",
+      // v0.17: 檢驗檢查項目名稱 (assaY_ITEM_NAME), surfaced separately from
+      // `display` to drive CodeableConcept.text without affecting LOINC
+      // routing. Here it equals display (English shorthand); for CMV
+      // serology the B channel carries a Chinese name that wins over the
+      // 醫令名.
+      item_name: "FINGER SUGAR",
       // code is the NHI 醫令碼 (stable across hospitals), display is
       // the cleaned hospital free-text label.
       code: "09140C",

@@ -963,6 +963,31 @@ function filterLabRows(rawItems: any[]): Record<string, any>[] {
 // data validity with its own clinical reasoning, but must mirror NHI
 // 健康存摺 UI's per-measurement semantics — A+B same-measurement pairs
 // are NHI's structural duplicate and must be deduped at the bridge."
+// v0.17 (2026-06-06): pick the "fuller" of two human labels for the
+// 檢驗檢查項目名稱 carry across an A+B cross-channel collapse. NHI ships
+// the English test shorthand on one channel and the Chinese 檢驗項目名稱
+// on another; the Chinese form is the better CodeableConcept.text. Rule:
+// a label that carries CJK beats one that does not; if both (or neither)
+// carry CJK, the longer (more complete) string wins. Mirrors the user's
+// 2026-06-06 decision "取較完整的中文項目名".
+function pickFullerLabel(a: string | undefined, b: string | undefined): string {
+  const aa = (a ?? "").trim();
+  const bb = (b ?? "").trim();
+  if (!aa) return bb;
+  if (!bb) return aa;
+  const aCjk = cjkChars(aa);
+  const bCjk = cjkChars(bb);
+  if (aCjk > 0 && bCjk === 0) return aa;
+  if (bCjk > 0 && aCjk === 0) return bb;
+  return bb.length > aa.length ? bb : aa;
+}
+
+function pickFullerItemName(rows: Record<string, any>[]): string {
+  let best = "";
+  for (const r of rows) best = pickFullerLabel(best, String(r.item_name ?? ""));
+  return best;
+}
+
 function dedupNhiCrossChannelPairs(
   items: Record<string, any>[],
 ): Record<string, any>[] {
@@ -1070,6 +1095,20 @@ function dedupNhiCrossChannelPairs(
     // (numeric refRange more clinically useful), drop all B rows.
     // This handles 1A+1B / 2A+2B / 3A+3B / 2A+1B / 1A+2B uniformly.
     if (aRows.length > 0 && bRows.length > 0) {
+      // v0.17 (2026-06-06): before discarding the B rows, salvage their
+      // 檢驗檢查項目名稱. NHI routinely ships the English test shorthand on
+      // channel A and the Chinese 檢驗項目名稱 on channel B (CMV serology
+      // 14004B / 14048B / 12184C). We keep A (its numeric refRange is more
+      // clinically useful) but the Chinese item name is the better human
+      // label, so carry the fuller item_name from the dropped B rows onto
+      // every surviving A row. LABEL ONLY — value / unit / refRange /
+      // display are untouched (display still drives LOINC routing).
+      const bItemName = pickFullerItemName(bRows);
+      if (bItemName) {
+        for (const a of aRows) {
+          a.item_name = pickFullerLabel(String(a.item_name ?? ""), bItemName);
+        }
+      }
       out.push(...aRows);
     } else {
       // Pure A or pure B (no cross-channel) → preserve all rows. Same-
@@ -1513,11 +1552,69 @@ function appendNhiVisitDateTag(
  * Other LOINCs (non-CBC) keep the v0.11.10 "always use SHORT_TEXT when
  * present" behaviour — no change.
  */
+/**
+ * Single source of truth for the human-facing free-text lab label
+ * (CodeableConcept.text). Shared by resolveObsCodeText (per-Observation)
+ * and the grouped single-obs panelTitle so the two never drift
+ * (CLAUDE.md rule #7). Returns the RAW chosen label — callers apply
+ * normalizeFullwidth themselves (coding.display must stay catalog-verbatim
+ * per FHIR R4, so only .text gets normalized).
+ *
+ * Precedence (first non-empty wins):
+ *   1. loincShortText — clean clinical short name (TSH/Hb/...), already
+ *      gated upstream on cleanMatch for CBC LOINCs.
+ *   2. NHI_CODE_PANEL_NAME[code] — curated catalog override (ABO/RH/抗體).
+ *   3. CJK itemName — the 檢驗檢查項目名稱 (hospital test-item name) when it
+ *      carries Chinese. Surfaces e.g. CMV "巨細胞病毒IgG抗體" ahead of the
+ *      broader 醫令名 order_name "巨大細胞病毒抗體 酵素免疫法" (user decision
+ *      2026-06-06: 顯示檢驗檢查項目名稱優先於醫囑名稱).
+ *   4. CJK orderName — the NHI 醫令名 (e.g. chemistry "鉀") ONLY when the
+ *      caller opts in by passing orderName. Preserves the v0.11.11 win of
+ *      the Chinese 鉀/鈉 over the English LIS shorthand "K"/"Na": an
+ *      ASCII-only itemName must NOT displace a Chinese order name.
+ *   5. itemName → orderName → display — last-resort free text.
+ *   6. fallback — caller-supplied sentinel ("Unknown Lab" / NHI code).
+ *
+ * Why orderName is opt-in (not always consulted): the per-Observation
+ * path (resolveObsCodeText) must NOT substitute the panel-level 醫令名 for
+ * an unrecognised display, or it would paper over the v0.11.9 Bug 6
+ * mis-tag canary — a path-C CBC row's raw display must survive to
+ * obs.code.text so a mislabel is visible to bundle auditors. Only the
+ * single-obs panel-title path (which legitimately labels with the NHI
+ * catalog name) passes orderName.
+ */
+function resolveHumanLabel(opts: {
+  loincShortText?: string;
+  code: string;
+  itemName?: string;
+  orderName?: string;
+  display?: string;
+  fallback: string;
+}): string {
+  const { loincShortText, code, itemName, orderName, display, fallback } = opts;
+  const item = (itemName ?? "").trim();
+  const order = (orderName ?? "").trim();
+  const disp = (display ?? "").trim();
+  const itemCjk = cjkChars(item) > 0 ? item : "";
+  const orderCjk = cjkChars(order) > 0 ? order : "";
+  return (
+    loincShortText ||
+    NHI_CODE_PANEL_NAME[code] ||
+    itemCjk ||
+    orderCjk ||
+    item ||
+    order ||
+    disp ||
+    fallback
+  );
+}
+
 function resolveObsCodeText(
   loinc: string | null,
   code: string,
   display: string,
   cleanMatch: boolean,
+  itemName?: string,
 ): string {
   const shortTextAllowed =
     !!loinc &&
@@ -1525,7 +1622,16 @@ function resolveObsCodeText(
     (!CBC_CANONICAL_TEXT_LOINCS.has(loinc) || cleanMatch);
   const shortText = shortTextAllowed && loinc ? LOINC_SHORT_TEXT[loinc] : undefined;
   return normalizeFullwidth(
-    shortText || NHI_CODE_PANEL_NAME[code] || display || "Unknown Lab",
+    resolveHumanLabel({
+      loincShortText: shortText,
+      code,
+      itemName,
+      // orderName intentionally omitted — the per-obs path must keep raw
+      // display (mis-tag canary), not the panel-level 醫令名. See
+      // resolveHumanLabel docstring.
+      display,
+      fallback: "Unknown Lab",
+    }),
   );
 }
 
@@ -1586,6 +1692,8 @@ export function mapObservation(
   patientId: string,
 ): Record<string, any> | null {
   const display = raw.display || raw.code || "";
+  // v0.17: 檢驗檢查項目名稱 (label-only) — prefer-CJK over 醫令名. See adapter.
+  const itemName = String(raw.item_name ?? "");
   const code = raw.code || "";
   // v0.11.1: skip QC control rows in single-row path too.
   if (looksLikeQcControl(String(display))) return null;
@@ -1639,7 +1747,7 @@ export function mapObservation(
       ),
       // v0.11.9 / v0.11.10 / v0.13: see resolveObsCodeText() — CBC LOINCs
       // gate on cleanMatch, others keep "always SHORT_TEXT" behaviour.
-      text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch),
+      text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch, itemName),
     },
     subject: { reference: `Patient/${patientId}` },
   };
@@ -1775,6 +1883,9 @@ function buildObservation(
   }
 
   const display = raw.display || raw.code || "";
+  // v0.17: the 檢驗檢查項目名稱 (label-only; see adapter). May have been
+  // upgraded to the fuller Chinese form during cross-channel A+B collapse.
+  const itemName = String(raw.item_name ?? "");
   const code = (panelCode ? String(panelCode) : "") || raw.order_code || raw.code || "";
   const value = raw.value;
   const interp = (raw.interpretation ?? "").toString().toLowerCase();
@@ -1910,7 +2021,7 @@ function buildObservation(
       //   4. "Unknown Lab" sentinel
       // v0.11.10: normalizeFullwidth() applied so fullwidth ASCII chars
       // (e.g. 09099C 「心肌旋轉蛋白Ｉ」) become halfwidth in our label.
-      text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch),
+      text: resolveObsCodeText(loinc, code, display, lookup.cleanMatch, itemName),
     },
     subject: { reference: `Patient/${patientId}` },
   };
@@ -2086,12 +2197,24 @@ function groupByOrderCode(
     let panelTitle: string;
     if (deduped.length === 1) {
       const singleDisplay = deduped[0]!.display ?? "";
-      panelTitle =
-        loincShortText ||
-        NHI_CODE_PANEL_NAME[groupCodeStr] ||
-        orderName ||
-        singleDisplay ||
-        groupCodeStr;
+      // v0.17 (2026-06-06): route through the shared resolveHumanLabel so
+      // the single-obs DR title and obs.code.text use the SAME precedence
+      // (CLAUDE.md rule #7). This inserts a CJK 檢驗檢查項目名稱 (item_name)
+      // ahead of the 醫令名 orderName: CMV serology 14004B now titles
+      // "巨細胞病毒IgG抗體" (the test run) instead of "巨大細胞病毒抗體
+      // 酵素免疫法" (the order name). An ASCII-only item_name still does NOT
+      // displace a Chinese orderName, so chemistry "鉀" (display "K") is
+      // unchanged. loincShortText / NHI_CODE_PANEL_NAME stay top of
+      // precedence so TSH / Hb / ABO / RH titles are unaffected.
+      const singleItemName = String(deduped[0]!.item_name ?? "");
+      panelTitle = resolveHumanLabel({
+        loincShortText,
+        code: groupCodeStr,
+        itemName: singleItemName,
+        orderName: orderName ?? undefined,
+        display: singleDisplay,
+        fallback: groupCodeStr,
+      });
     } else {
       // Multi-row panel: only let LOINC_SHORT_TEXT win when the panel
       // is in DISPLAY_FIRST_CODES (= panel with multiple SAME-LOINC

@@ -123,6 +123,20 @@ export function adaptLabItem(item) {
     date,
     order_code: orderCode,
     order_name: item.ordeR_NAME || "",
+    // v0.17 (2026-06-06): the 檢驗檢查項目名稱 (hospital test-item name),
+    // surfaced SEPARATELY from `display` so it can drive the human label
+    // (CodeableConcept.text) WITHOUT touching `display` — which is what
+    // findLoinc / specimen / canonical routing key off. NHI ships this
+    // Chinese item name on the B (定期上傳) channel for some panels where
+    // the A (不定期上傳) channel carries an English shorthand. Real case
+    // (patient report 2026-06-06): CMV serology 14004B has
+    //   ordeR_NAME      = "巨大細胞病毒抗體  酵素免疫法"  (醫令名 / order name)
+    //   assaY_ITEM_NAME = "巨細胞病毒IgG抗體"            (the test actually run)
+    // The downstream label resolver prefers a Chinese 檢驗項目名稱 over the
+    // broader 醫令名 so SMART apps show "巨細胞病毒IgG抗體", not the order
+    // name. `display` keeps its existing fallback chain (assaY_ITEM_NAME →
+    // order_shortname → ordeR_NAME) so LOINC routing is unchanged.
+    item_name: _cleanLabName(item.assaY_ITEM_NAME) || "",
     // Prefer the NHI 醫令碼 ("09140C") as the FHIR coding code so the
     // downstream observation mapper routes it under NHI_MEDICAL_ORDER_
     // CODE system. SMART apps group lab tests by coding code; using

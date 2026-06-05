@@ -4544,3 +4544,194 @@ describe("CI v0.16 — 出院病摘 DocumentReference invariants", () => {
     expect(doc!.context.encounter[0].reference).toBe(expectedRef);
   });
 });
+
+// ── CI v0.17 — 檢驗檢查項目名稱 (assaY_ITEM_NAME) wins over 醫令名 ───────────
+//
+// Bug found 2026-06-06 (patient lab report): three CMV serology tests
+// surfaced their NHI 醫令名 (ordeR_NAME) in the bundle's human label
+// instead of the 檢驗檢查項目名稱 (the test the lab actually ran):
+//   14004B  showed "巨大細胞病毒抗體  酵素免疫法"  want "巨細胞病毒IgG抗體"
+//   14048B  showed "巨細胞病毒核抗原抗體"          want "巨細胞病毒IgM抗體"
+//   12184C  showed "去氧核糖核酸類定量擴增試驗"     want "巨細胞病毒DNA 定量檢測"
+//
+// Two compounding causes:
+//   (1) These rows ship as NHI A+B cross-channel pairs — channel A carries
+//       an English shorthand item name, channel B the Chinese 檢驗項目名稱.
+//       dedupNhiCrossChannelPairs keeps A (numeric refRange) and dropped B,
+//       discarding the Chinese name. v0.17 carries the fuller (CJK) B
+//       item_name onto the surviving A row before B is dropped.
+//   (2) The single-obs DR title preferred orderName (醫令名) over the row
+//       label. v0.17 routes the title through resolveHumanLabel, which puts
+//       a CJK item_name AHEAD of orderName.
+//
+// User decisions 2026-06-06:
+//   • code.text 來源 = 項目名稱優先 (item name preferred over 醫令名)
+//   • A/B 標籤取捨 = 取較完整的中文項目名 (keep the fuller Chinese item name)
+//
+// Faithful-transport / FHIR R4 rule #1: only the free-form .text changes —
+// coding[nhi].display stays the NHI catalog 醫令名 verbatim.
+describe("CI v0.17 — 檢驗檢查項目名稱 surfaced over 醫令名 (CMV serology bug)", () => {
+  function cmvPair(opts: {
+    code: string;
+    orderName: string;
+    enItem: string;
+    cjkItem: string;
+    value: string;
+  }) {
+    const base = {
+      order_code: opts.code,
+      code: opts.code,
+      order_name: opts.orderName,
+      value: opts.value,
+      unit: "",
+      date: "2026-02-08",
+      hospital: "長庚嘉義",
+      category: "LAB",
+    };
+    // Channel A: English shorthand item name + numeric-ish channel.
+    const a = {
+      ...base,
+      display: opts.enItem,
+      item_name: opts.enItem,
+      nhi_source_channel: "A",
+      nhi_source_channel_name: "特約醫事機構不定期上傳",
+    };
+    // Channel B: Chinese 檢驗項目名稱.
+    const b = {
+      ...base,
+      display: opts.cjkItem,
+      item_name: opts.cjkItem,
+      nhi_source_channel: "B",
+      nhi_source_channel_name: "特約醫事機構定期上傳",
+    };
+    return [a, b];
+  }
+
+  function nhiCodingDisplay(res: any): string | undefined {
+    return (res.code?.coding as any[] | undefined)?.find((c) =>
+      String(c?.system ?? "").includes("medical-order-code"),
+    )?.display;
+  }
+
+  test.each([
+    {
+      code: "14004B",
+      orderName: "巨大細胞病毒抗體  酵素免疫法",
+      enItem: "CMV IgG Ab",
+      cjkItem: "巨細胞病毒IgG抗體",
+      value: "陰性",
+    },
+    {
+      code: "14048B",
+      orderName: "巨細胞病毒核抗原抗體",
+      enItem: "CMV IgM Ab",
+      cjkItem: "巨細胞病毒IgM抗體",
+      value: "陰性",
+    },
+    {
+      code: "12184C",
+      orderName: "去氧核糖核酸類定量擴增試驗",
+      enItem: "CMV DNA quant",
+      cjkItem: "巨細胞病毒DNA 定量檢測",
+      value: "< 137",
+    },
+  ])(
+    "$code A+B pair → one obs, code.text = Chinese 檢驗項目名稱 (not 醫令名)",
+    ({ code, orderName, enItem, cjkItem, value }) => {
+      const items = cmvPair({ code, orderName, enItem, cjkItem, value });
+      const all = mapObservationsGrouped(items, PATIENT_ID);
+      const obs = all.filter((r) => r.resourceType === "Observation") as any[];
+      const drs = all.filter((r) => r.resourceType === "DiagnosticReport") as any[];
+
+      // Cross-channel A+B collapsed to a single measurement.
+      expect(obs).toHaveLength(1);
+      expect(drs).toHaveLength(1);
+
+      // The human label is the Chinese 檢驗檢查項目名稱, carried over from
+      // the dropped B row.
+      expect(obs[0].code.text).toBe(cjkItem);
+      expect(drs[0].code.text).toBe(cjkItem);
+
+      // FHIR R4 rule #1: coding[nhi].display stays the catalog 醫令名.
+      expect(nhiCodingDisplay(obs[0])).toBe(orderName);
+      expect(nhiCodingDisplay(drs[0])).toBe(orderName);
+    },
+  );
+
+  test("order independence — B-first then A still yields Chinese label on the kept A row", () => {
+    const [a, b] = cmvPair({
+      code: "14004B",
+      orderName: "巨大細胞病毒抗體  酵素免疫法",
+      enItem: "CMV IgG Ab",
+      cjkItem: "巨細胞病毒IgG抗體",
+      value: "陰性",
+    });
+    const obs = mapObservationsGrouped([b, a], PATIENT_ID).filter(
+      (r) => r.resourceType === "Observation",
+    ) as any[];
+    expect(obs).toHaveLength(1);
+    expect(obs[0].code.text).toBe("巨細胞病毒IgG抗體");
+  });
+
+  // GUARD 1 — curated NHI_CODE_PANEL_NAME (ABO/RH) must NOT regress: it
+  // stays AHEAD of a CJK item_name in the precedence, so even a Chinese
+  // item_name cannot displace the catalog panel name.
+  test("GUARD: ABO 11001C / RH 11003C panel titles unchanged even with a CJK item_name", () => {
+    const items = [
+      {
+        order_code: "11001C",
+        code: "11001C",
+        display: "血型鑑定",
+        item_name: "血型", // CJK — must NOT win over NHI_CODE_PANEL_NAME
+        value: "B",
+        unit: "",
+        date: "2026-02-08",
+        hospital: "長庚嘉義",
+        order_name: "ABO血型測定檢驗",
+      },
+      {
+        order_code: "11003C",
+        code: "11003C",
+        display: "血型鑑定",
+        item_name: "Rh 因子", // CJK-containing — must NOT win either
+        value: "+",
+        unit: "",
+        date: "2026-02-08",
+        hospital: "長庚嘉義",
+        order_name: "RH（D）型檢驗",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const byNhi = (c: string) =>
+      all.find(
+        (r) =>
+          r.resourceType === "Observation" &&
+          (r.code?.coding as any[]).some((cd: any) => cd.code === c),
+      ) as any;
+    expect(byNhi("11001C").code.text).toBe("ABO血型測定檢驗");
+    expect(byNhi("11003C").code.text).toBe("RH(D)型檢驗"); // halfwidth (normalized)
+  });
+
+  // GUARD 2 — chemistry "鉀" (Chinese 醫令名) must still win over the English
+  // LIS shorthand. An ASCII-only item_name does NOT displace a CJK orderName.
+  test("GUARD: chemistry 09022C K — Chinese 醫令名 '鉀' still wins over English item_name", () => {
+    const items = [
+      {
+        order_code: "09022C",
+        code: "09022C",
+        display: "K",
+        item_name: "K", // English LIS shorthand
+        value: "4.0",
+        unit: "mmol/L",
+        date: "2026-02-08",
+        hospital: "長庚嘉義",
+        order_name: "鉀",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const dr = all.find((r) => r.resourceType === "DiagnosticReport") as any;
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    expect(obs.code.text).toBe("鉀");
+    expect(dr.code.text).toBe("鉀");
+  });
+});
