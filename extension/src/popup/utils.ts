@@ -80,6 +80,33 @@ export function _displayId(idNo) {
   return maskId(idNo);
 }
 
+// Age (in years, anniversary-based) from an ISO yyyy-mm-dd birth date.
+// Surfaced in the step-2 patient preview so the user sees a richer
+// confirmation of what they typed before moving on. Returns null on
+// invalid input or implausible age (<0 or >150) so the caller can omit
+// the segment instead of showing "NaN歲" / "999歲".
+export function _ageFromBirthDate(iso) {
+  if (!iso || typeof iso !== "string") return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+  if (age < 0 || age > 150) return null;
+  return age;
+}
+
+// FHIR R4 administrative-gender code → display Chinese for the
+// patient preview line. Anything outside the known set returns "" so
+// the caller can omit the segment cleanly.
+export function _genderZh(code) {
+  if (code === "male") return "男";
+  if (code === "female") return "女";
+  if (code === "other") return "其他";
+  return "";
+}
+
 // Convert a backend URL → the origin-pattern Chrome wants for permission
 // requests. "http://192.168.1.5:8010" → "http://192.168.1.5:8010/*".
 // Returns null when the URL isn't parseable so the caller can short-circuit.

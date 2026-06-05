@@ -92,7 +92,10 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
   const out: T[] = [];
   for (const group of groups.values()) {
     if (group.length === 1) {
-      out.push(group[0]);
+      // Non-null: length-1 guarantee. Backend tsconfig has
+      // noUncheckedIndexedAccess so `group[0]` widens to `T | undefined`
+      // until we tell TS the length check rules out undefined.
+      out.push(group[0]!);
       continue;
     }
 
@@ -103,7 +106,7 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
       const frames = framesOf(it);
       const h =
         frames.length > 0
-          ? frameContentHash(frames[0])
+          ? frameContentHash(frames[0]!)
           : `__empty_${emptySentinel++}`;
       const arr = byHash.get(h);
       if (arr) arr.push(it);
@@ -114,7 +117,7 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
     const merged: T[] = [];
     for (const bucket of byHash.values()) {
       if (bucket.length === 1) {
-        merged.push(bucket[0]);
+        merged.push(bucket[0]!);
         continue;
       }
       // Multiple items with same content → merge.
@@ -148,8 +151,11 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
     const imageItems = merged.filter(hasFrames);
 
     if (narrativeOnly.length === 1 && imageItems.length === 1) {
-      const narr = narrativeOnly[0];
-      const img = imageItems[0];
+      // Non-null on both: length-1 guarantee from the surrounding
+      // condition; backend's noUncheckedIndexedAccess setting would
+      // otherwise widen each to `T | undefined`.
+      const narr = narrativeOnly[0]!;
+      const img = imageItems[0]!;
       // Fill in fields img is missing FROM narr. Don't overwrite
       // anything img already has — img is authoritative because it
       // ships the actual JPGs + the iplCaseSeqNo we used to fetch them.

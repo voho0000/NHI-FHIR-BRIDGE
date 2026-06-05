@@ -9,7 +9,13 @@ import { _renderDataState, checkBackendPatient } from "./data-state.js";
 import { els } from "./els.js";
 import { state } from "./state.js";
 import { setStatus } from "./status.js";
-import { _displayId, _generateAutoPatientId, currentMode } from "./utils.js";
+import {
+  _ageFromBirthDate,
+  _displayId,
+  _generateAutoPatientId,
+  _genderZh,
+  currentMode,
+} from "./utils.js";
 import { _markStep2Confirmed, _maybeAutoAdvance, _refreshButtonStates } from "./wizard.js";
 
 // id_no is no longer a UI field, so getPatientOverride() (sync, called
@@ -118,10 +124,25 @@ export function refreshOverrideSummary() {
     els.ovSummary.textContent = "未設定";
     if (card) card.dataset.state = "empty";
   } else {
-    // Name (mask toggle: 民眾自用 預設關 = 真名 / multi-patient demo
-    // 開啟 = 遮罩) + masked real cid when available. Auto-placeholder
-    // is suppressed via _displayId.
+    // Build the summary as 「name · age · gender · masked-cid」 — each
+    // optional segment skips itself when the underlying field is
+    // unset / invalid, so the line stays clean while users are still
+    // filling in step 2. Live-refreshed on every input event via
+    // popup.ts's [ovName, ovBirthDate, ovGender]-input listener.
+    //
+    //   _maybeMask: respects the mask-name toggle (demo: 陳O明)
+    //   _ageFromBirthDate: anniversary years, null on parse failure
+    //   _genderZh: maps FHIR code → 男/女/其他
+    //   _displayId: half-masks the real cid, hides auto-placeholders
     const parts = [_maybeMask(ov.name)];
+    if (ov.birth_date) {
+      const age = _ageFromBirthDate(ov.birth_date);
+      if (age != null) parts.push(`${age}歲`);
+    }
+    if (ov.gender) {
+      const g = _genderZh(ov.gender);
+      if (g) parts.push(g);
+    }
     const idLabel = _displayId(ov.id_no);
     if (idLabel) parts.push(idLabel);
     summaryText = parts.join("  ·  ");

@@ -1757,6 +1757,30 @@
       return "";
     return maskId(idNo);
   }
+  function _ageFromBirthDate(iso) {
+    if (!iso || typeof iso !== "string")
+      return null;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime()))
+      return null;
+    const now = /* @__PURE__ */ new Date();
+    let age = now.getFullYear() - d.getFullYear();
+    const m = now.getMonth() - d.getMonth();
+    if (m < 0 || m === 0 && now.getDate() < d.getDate())
+      age--;
+    if (age < 0 || age > 150)
+      return null;
+    return age;
+  }
+  function _genderZh(code) {
+    if (code === "male")
+      return "\u7537";
+    if (code === "female")
+      return "\u5973";
+    if (code === "other")
+      return "\u5176\u4ED6";
+    return "";
+  }
   function _originPatternFor(url) {
     try {
       const u = new URL(url);
@@ -2364,6 +2388,16 @@
         card.dataset.state = "empty";
     } else {
       const parts = [_maybeMask(ov.name)];
+      if (ov.birth_date) {
+        const age = _ageFromBirthDate(ov.birth_date);
+        if (age != null)
+          parts.push(`${age}\u6B72`);
+      }
+      if (ov.gender) {
+        const g = _genderZh(ov.gender);
+        if (g)
+          parts.push(g);
+      }
       const idLabel = _displayId(ov.id_no);
       if (idLabel)
         parts.push(idLabel);
