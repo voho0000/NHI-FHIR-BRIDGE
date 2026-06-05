@@ -4453,9 +4453,9 @@ describe("CI v0.14 — imaging JPEG opt-in: DiagnosticReport.presentedForm", () 
 // human auditing the bundle.
 describe("CI v0.16 — 出院病摘 DocumentReference invariants", () => {
   const SAMPLE_HTML =
-    `<head xmlns:IHK="urn:hl7-org:v3"><style>.x{}</style></head>` +
-    `<body><table><tr><td><b>記錄日期時間：</b></td><td>2025-05-23</td></tr></table>` +
-    `<table><tr><td><b>住院摘要</b></td><td>Discharged stable.</td></tr></table></body>`;
+    '<head xmlns:IHK="urn:hl7-org:v3"><style>.x{}</style></head>' +
+    "<body><table><tr><td><b>記錄日期時間：</b></td><td>2025-05-23</td></tr></table>" +
+    "<table><tr><td><b>住院摘要</b></td><td>Discharged stable.</td></tr></table></body>";
 
   const baseRaw = {
     html: SAMPLE_HTML,

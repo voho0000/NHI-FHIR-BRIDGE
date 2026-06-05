@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  LOINC_DISPLAY,
   LIST_HANDLERS,
+  LOINC_DISPLAY,
   mapDischargeSummaryDocRef,
   stableId,
 } from "@nhi-fhir-bridge/mapper";
@@ -87,18 +87,12 @@ describe("mapDischargeSummaryDocRef", () => {
 
   test("date falls back to discharge date when HTML has no 記錄日期時間", () => {
     const htmlNoRecordDate = SAMPLE_HTML.replace(/記錄日期時間[：:][^<]*/, "");
-    const r = mapDischargeSummaryDocRef(
-      { ...BASE_RAW, html: htmlNoRecordDate },
-      PID,
-    );
+    const r = mapDischargeSummaryDocRef({ ...BASE_RAW, html: htmlNoRecordDate }, PID);
     expect(r!.date).toBe("2025-05-22T00:00:00+08:00");
   });
 
   test("explicit record_date overrides any extraction", () => {
-    const r = mapDischargeSummaryDocRef(
-      { ...BASE_RAW, record_date: "2025-06-01" },
-      PID,
-    );
+    const r = mapDischargeSummaryDocRef({ ...BASE_RAW, record_date: "2025-06-01" }, PID);
     expect(r!.date).toBe("2025-06-01T00:00:00+08:00");
   });
 
@@ -123,9 +117,7 @@ describe("mapDischargeSummaryDocRef", () => {
 
   test("attachment.title includes 出院病摘 + hospital + period", () => {
     const r = mapDischargeSummaryDocRef(BASE_RAW, PID);
-    expect(r!.content[0].attachment.title).toBe(
-      "出院病摘 — 長庚嘉義 2025-05-18~2025-05-22",
-    );
+    expect(r!.content[0].attachment.title).toBe("出院病摘 — 長庚嘉義 2025-05-18~2025-05-22");
   });
 
   test("custodian is the hospital display name", () => {
@@ -155,9 +147,7 @@ describe("mapDischargeSummaryDocRef", () => {
   });
 
   test("returns null when admission_date is missing (no Encounter anchor possible)", () => {
-    expect(
-      mapDischargeSummaryDocRef({ ...BASE_RAW, admission_date: "" }, PID),
-    ).toBeNull();
+    expect(mapDischargeSummaryDocRef({ ...BASE_RAW, admission_date: "" }, PID)).toBeNull();
   });
 
   test("stable ID is deterministic across runs for the same row_id", () => {

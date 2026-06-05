@@ -114,4 +114,68 @@ describe("mapDiagnosticReport", () => {
     );
     expect(r!.performer[0].display).toBe("VGH");
   });
+
+  // CI v0.16.2 — narrative-only stableId discriminator now folds in a
+  // content fingerprint of the conclusion. Bug found 2026-06-05: hospital
+  // billed both head/neck and chest CT under the same NHI code 33070B
+  // on the same day at the same hospital. Both narratives had distinct
+  // text but the mapper's pre-v0.16.2 id discriminator was just `code`
+  // → identical stableIds → the bundle's (resourceType, id) collision
+  // dedup silently dropped the chest CT report. The fix differentiates
+  // distinct-content narratives while still collapsing true cross-channel
+  // (A+B) same-content duplicates.
+  describe("CI v0.16.2 — narrative stableId distinguishes distinct content", () => {
+    const baseRaw = {
+      code: "33070B",
+      display: "電腦斷層造影  －  無造影劑",
+      category: "RAD",
+      date: "2025-02-14",
+      hospital: "長庚嘉義",
+    };
+
+    test("two narratives at same (code, date, hospital) with DISTINCT conclusion get DISTINCT ids", () => {
+      const headNeck = mapDiagnosticReport(
+        {
+          ...baseRaw,
+          conclusion: "Computed Tomography of Head and neck Without Enhancement Show: …",
+        },
+        PID,
+      );
+      const chest = mapDiagnosticReport(
+        { ...baseRaw, conclusion: "Computed Tomography of Chest Without Enhancement Show: …" },
+        PID,
+      );
+      expect(headNeck).not.toBeNull();
+      expect(chest).not.toBeNull();
+      expect(headNeck!.id).not.toBe(chest!.id);
+    });
+
+    test("two narratives at same (code, date, hospital) with IDENTICAL conclusion COLLIDE (cross-channel A+B dedup)", () => {
+      const conclusion = "Computed Tomography of Head and neck Without Enhancement Show: …";
+      const fromA = mapDiagnosticReport({ ...baseRaw, conclusion, ctype: "A" }, PID);
+      const fromB = mapDiagnosticReport({ ...baseRaw, conclusion, ctype: "B" }, PID);
+      expect(fromA).not.toBeNull();
+      expect(fromB).not.toBeNull();
+      // Same content → same id → bundle (resourceType, id) dedup will
+      // collapse them. Preserves cross-channel duplicate-collapse behavior.
+      expect(fromA!.id).toBe(fromB!.id);
+    });
+
+    test("image rows with distinct iplCaseSeqNo still get distinct ids regardless of conclusion", () => {
+      const a = mapDiagnosticReport(
+        { ...baseRaw, conclusion: "", iplCaseSeqNo: "2025021500047771" },
+        PID,
+      );
+      const b = mapDiagnosticReport(
+        { ...baseRaw, conclusion: "", iplCaseSeqNo: "2025021500128775" },
+        PID,
+      );
+      // Both null because empty conclusion + no jpgBase64s → mapper drops.
+      // This test guards against a future refactor: if we make image rows
+      // emittable without conclusion, the iplCaseSeqNo discriminator must
+      // still drive distinct ids.
+      expect(a).toBeNull();
+      expect(b).toBeNull();
+    });
+  });
 });

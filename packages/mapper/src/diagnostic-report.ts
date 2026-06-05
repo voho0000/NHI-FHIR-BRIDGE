@@ -33,6 +33,27 @@ function looksLikeLabValueOnly(conclusion: string): boolean {
   return false;
 }
 
+// Cheap deterministic fingerprint over the FIRST 16 KB of a narrative
+// conclusion. Used in mapDiagnosticReport's stableId discriminator for
+// narrative-only rows: two reports with byte-identical conclusions
+// share a fingerprint (so true cross-channel A+B duplicates still
+// dedup on the bundle's id-collision pass), but distinct conclusions
+// — e.g. head/neck CT vs chest CT at the same hospital under the
+// same NHI code on the same day — diverge.
+//
+// djb2 over JS char codes + total length suffix. False positives are
+// statistically negligible for narrative-length strings; we don't
+// need cryptographic strength because the worst-case wrong dedup is
+// a single dropped DR that re-emits on next sync.
+function _conclusionFingerprint(s: string): string {
+  let h = 5381;
+  const cap = Math.min(s.length, 16384);
+  for (let i = 0; i < cap; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  }
+  return `${h >>> 0}:${s.length}`;
+}
+
 export function mapDiagnosticReport(
   raw: Record<string, any>,
   patientId: string,
@@ -68,12 +89,34 @@ export function mapDiagnosticReport(
       ? systems.LOINC
       : systems.HIS_LOCAL_REPORT_CODE;
 
-  // stableId hash includes ipl_CASE_SEQ_NO when present so two image-only
-  // rows that share (code, date) but have different NHI imaging cases
-  // (e.g. front + lateral X-ray under the same order_CODE 32001C) don't
-  // collapse to one DR. Falls back to display when ipl absent (preserves
-  // backwards-compat for narrative-only rows).
-  const idDiscriminator = raw.iplCaseSeqNo ? `${code || display}|${raw.iplCaseSeqNo}` : code || display;
+  // stableId hash includes a discriminator beyond (code, date):
+  //
+  //   Image rows (iplCaseSeqNo present): use the NHI case seq —
+  //   uniquely identifies the imaging case so front + lateral X-ray
+  //   under the same order_CODE 32001C don't collapse.
+  //
+  //   Narrative-only rows (no iplCaseSeqNo): use a short content
+  //   fingerprint of the conclusion text (v0.16.2). Without this,
+  //   two narratives that share (code, date, hospital) but describe
+  //   different exams — e.g. a head/neck CT report (33070B, A
+  //   channel) and a chest CT report (33070B, B channel) the
+  //   hospital uploads under the same NHI code on the same day —
+  //   produce identical stableIds and the second one is silently
+  //   dropped by the bundle's id-collision dedup. Same-content
+  //   narratives (true cross-channel A+B duplicates of the same
+  //   report) still collide on the conclusion hash and dedup as
+  //   before; only distinct-content cases gain new ids.
+  //
+  //   Fallback to bare code+date when neither field is present (legacy
+  //   adapter outputs from before imaging support).
+  let idDiscriminator: string;
+  if (raw.iplCaseSeqNo) {
+    idDiscriminator = `${code || display}|${raw.iplCaseSeqNo}`;
+  } else if (conclusion) {
+    idDiscriminator = `${code || display}|${_conclusionFingerprint(conclusion)}`;
+  } else {
+    idDiscriminator = code || display;
+  }
 
   const resource: Record<string, any> = {
     resourceType: "DiagnosticReport",

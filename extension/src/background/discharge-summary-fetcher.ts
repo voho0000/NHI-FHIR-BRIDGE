@@ -130,7 +130,7 @@ export async function fetchDischargeSummaryHtmls({
   const results: Array<{ rowId: string; html?: string }> = (result as any)?.results || [];
   const map = new Map<string, string>();
   for (const r of results) {
-    if (r && r.rowId && typeof r.html === "string" && r.html.length > 0) {
+    if (r?.rowId && typeof r.html === "string" && r.html.length > 0) {
       map.set(r.rowId, r.html);
     }
   }

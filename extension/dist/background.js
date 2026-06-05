@@ -857,6 +857,14 @@
       return true;
     return false;
   }
+  function _conclusionFingerprint(s) {
+    let h = 5381;
+    const cap = Math.min(s.length, 16384);
+    for (let i = 0; i < cap; i++) {
+      h = (h << 5) + h + s.charCodeAt(i) | 0;
+    }
+    return `${h >>> 0}:${s.length}`;
+  }
   function mapDiagnosticReport(raw, patientId) {
     const conclusion = (raw.conclusion ?? "").trim();
     const rawJpgs = Array.isArray(raw.jpgBase64s) ? raw.jpgBase64s.filter((s) => typeof s === "string" && s.length > 0) : typeof raw.jpgBase64 === "string" && raw.jpgBase64.length > 0 ? [raw.jpgBase64] : [];
@@ -870,7 +878,14 @@
     const code = raw.code;
     const systemHint = raw.system ?? "";
     const system = typeof systemHint === "string" && systemHint.toUpperCase() === "LOINC" ? LOINC : HIS_LOCAL_REPORT_CODE;
-    const idDiscriminator = raw.iplCaseSeqNo ? `${code || display}|${raw.iplCaseSeqNo}` : code || display;
+    let idDiscriminator;
+    if (raw.iplCaseSeqNo) {
+      idDiscriminator = `${code || display}|${raw.iplCaseSeqNo}`;
+    } else if (conclusion) {
+      idDiscriminator = `${code || display}|${_conclusionFingerprint(conclusion)}`;
+    } else {
+      idDiscriminator = code || display;
+    }
     const resource = {
       resourceType: "DiagnosticReport",
       id: stableId(patientId, idDiscriminator, raw.date ?? ""),
@@ -7773,7 +7788,7 @@
     const results = result?.results || [];
     const map = /* @__PURE__ */ new Map();
     for (const r of results) {
-      if (r && r.rowId && typeof r.html === "string" && r.html.length > 0) {
+      if (r?.rowId && typeof r.html === "string" && r.html.length > 0) {
         map.set(r.rowId, r.html);
       }
     }

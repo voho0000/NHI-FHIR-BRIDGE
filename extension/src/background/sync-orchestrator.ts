@@ -81,10 +81,10 @@ function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
     const timer = setTimeout(done, timeoutMs);
   });
 }
+import { rocToISO } from "../nhi-adapters.js";
 import { fetchDischargeSummaryHtmls } from "./discharge-summary-fetcher.js";
 import { adaptSettledLists, fetchNhiListsInTab } from "./nhi-list-fetch.js";
 import { applyDateRangeToPath, isMaskEnabled, replaceNameDeep } from "./patient-override.js";
-import { rocToISO } from "../nhi-adapters.js";
 import {
   classFromS02Detail,
   pickS02MainRow,
@@ -1044,7 +1044,9 @@ export async function runNhiApiSync({
   // (one per inpatient row with has_XML="Y" — the count was already
   // surfaced as a sub-line on the 住院 breakdown row).
   if (dischargeSummaryItems.length > 0) {
+    // biome-ignore lint/complexity/useLiteralKeys: byType is typed as {}; bracket notation works around inference gap
     byType["document_references"] = byType["document_references"] || [];
+    // biome-ignore lint/complexity/useLiteralKeys: see above
     byType["document_references"].push(...dischargeSummaryItems);
   }
 
