@@ -95,6 +95,11 @@ export const LOCAL_PAGE_TYPE_ORDER = [
   "procedures",
   "immunizations",
   "care_plans",
+  // 出院病摘 — emitted after the inpatient detail fan-out in the
+  // orchestrator. Sits at the end so encounters/observations linking
+  // has settled before DocumentReference's context.encounter is
+  // dereferenced by validators.
+  "document_references",
 ];
 
 // One-time migration from chrome.storage.sync → chrome.storage.local.

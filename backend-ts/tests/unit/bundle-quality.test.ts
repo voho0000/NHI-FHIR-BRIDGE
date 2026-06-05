@@ -41,8 +41,11 @@ import {
   PANEL_LOINC_MAP,
   findLoinc,
   mapDiagnosticReport,
+  mapDischargeSummaryDocRef,
+  mapEncounter,
   mapMedicationsDedup,
   mapObservationsGrouped,
+  stableId,
 } from "@nhi-fhir-bridge/mapper";
 
 const PATIENT_ID = "A123456789";
@@ -4439,5 +4442,105 @@ describe("CI v0.14 — imaging JPEG opt-in: DiagnosticReport.presentedForm", () 
     expect(drA).not.toBeNull();
     expect(drB).not.toBeNull();
     expect(drA?.id).not.toBe(drB?.id);
+  });
+});
+
+// ── CI v0.16 — 出院病摘 DocumentReference invariants ────────────────
+// Silent-bug class (per CLAUDE.md rule 8): wrong Encounter back-ref
+// would leave the document orphaned in SMART apps — FHIR validates,
+// nothing crashes, but the document doesn't appear under the inpatient
+// visit. Lock the relationship down in CI rather than relying on a
+// human auditing the bundle.
+describe("CI v0.16 — 出院病摘 DocumentReference invariants", () => {
+  const SAMPLE_HTML =
+    `<head xmlns:IHK="urn:hl7-org:v3"><style>.x{}</style></head>` +
+    `<body><table><tr><td><b>記錄日期時間：</b></td><td>2025-05-23</td></tr></table>` +
+    `<table><tr><td><b>住院摘要</b></td><td>Discharged stable.</td></tr></table></body>`;
+
+  const baseRaw = {
+    html: SAMPLE_HTML,
+    row_id: "AAOZsAAIBAALXDJAAH",
+    hospital: "長庚嘉義",
+    admission_date: "2025-05-18",
+    discharge_date: "2025-05-22",
+  };
+
+  test("DocumentReference.context.encounter matches the Encounter mintEncounter would produce for the same admission", () => {
+    // Same inputs that the orchestrator would feed mapEncounter via
+    // adaptInpatientEncounter. If the two stable-ID algorithms ever
+    // diverge, the document goes orphan and SMART apps stop finding it
+    // under the encounter — exactly the silent-bug class the rule 8
+    // CI-gate practice was written to catch.
+    const enc = mapEncounter(
+      {
+        date: "2025-05-18",
+        end_date: "2025-05-22",
+        class: "IMP",
+        hospital: "長庚嘉義",
+      },
+      PATIENT_ID,
+    );
+    const doc = mapDischargeSummaryDocRef(baseRaw, PATIENT_ID);
+    expect(doc).not.toBeNull();
+    expect(doc!.context.encounter[0].reference).toBe(`Encounter/${enc.id}`);
+  });
+
+  test("LOINC 18842-5 round-trips through LOINC_DISPLAY", () => {
+    const doc = mapDischargeSummaryDocRef(baseRaw, PATIENT_ID);
+    const coding = doc!.type.coding[0];
+    expect(coding.code).toBe("18842-5");
+    expect(coding.display).toBe(LOINC_DISPLAY["18842-5"]);
+  });
+
+  test("attachment.data round-trips Chinese narrative without mojibake", () => {
+    // The browser-side btoa requires the encodeURIComponent → unescape
+    // dance to handle multi-byte CJK. Node's Buffer path is happier
+    // but we test both indirectly via the round-trip.
+    const doc = mapDischargeSummaryDocRef(baseRaw, PATIENT_ID);
+    const decoded = Buffer.from(doc!.content[0].attachment.data, "base64").toString("utf8");
+    expect(decoded).toBe(SAMPLE_HTML);
+    expect(decoded).toContain("住院摘要");
+    expect(decoded).toContain("記錄日期時間");
+  });
+
+  test("status=current, type/category/subject all present (FHIR R4 required-shape)", () => {
+    const doc = mapDischargeSummaryDocRef(baseRaw, PATIENT_ID);
+    // current is the FHIR R4 default for active in-use documents
+    expect(doc!.status).toBe("current");
+    expect(doc!.type.coding[0].code).toBe("18842-5");
+    expect(doc!.category[0].coding[0].code).toBe("clinical-note");
+    expect(doc!.subject.reference).toBe(`Patient/${PATIENT_ID}`);
+    expect(doc!.content[0].attachment.contentType).toBe("text/html");
+    expect(typeof doc!.content[0].attachment.data).toBe("string");
+    expect(doc!.content[0].attachment.data.length).toBeGreaterThan(0);
+  });
+
+  test("identifier carries the NHI row_ID for re-sync correlation", () => {
+    const doc = mapDischargeSummaryDocRef(baseRaw, PATIENT_ID);
+    expect(doc!.identifier?.[0]?.system).toBe("http://nhi-fhir-bridge/nhi-inpatient-row");
+    expect(doc!.identifier?.[0]?.value).toBe("AAOZsAAIBAALXDJAAH");
+  });
+
+  test("id is independent of (hospital, date) — two rows from same visit don't collide", () => {
+    const a = mapDischargeSummaryDocRef(baseRaw, PATIENT_ID);
+    const b = mapDischargeSummaryDocRef({ ...baseRaw, row_id: "AAOOTHERROW" }, PATIENT_ID);
+    // Same admission_date / hospital → SAME encounter ID (correct):
+    expect(a!.context.encounter[0].reference).toBe(b!.context.encounter[0].reference);
+    // …but the documents themselves are distinct (correct, defends
+    // the multi-reading principle if NHI ever ships two summaries
+    // for one stay — e.g. an amendment).
+    expect(a!.id).not.toBe(b!.id);
+  });
+
+  test("stableId helper recomputes the same encounter ref consumers will use externally", () => {
+    // Belt-and-suspenders: a downstream consumer that wants to find
+    // "the DocumentReference for this Encounter" must be able to
+    // recompute the same encounter ID from (pid, date, class, hosp).
+    // Re-asserting the mintEncounter recipe inline so a future refactor
+    // of mapEncounter's stableId inputs surfaces here, not silently in
+    // production.
+    const doc = mapDischargeSummaryDocRef(baseRaw, PATIENT_ID);
+    const expectedRef = `Encounter/${stableId(PATIENT_ID, "2025-05-18", "IMP", "長庚嘉義")}`;
+    expect(doc!.context.encounter[0].reference).toBe(expectedRef);
   });
 });

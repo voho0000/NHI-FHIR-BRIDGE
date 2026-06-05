@@ -1502,6 +1502,13 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "4544-3": "Hematocrit [Volume Fraction] of Blood by Automated count",
   "57021-8": "CBC W Auto Differential panel - Blood",
   "24317-0": "Hemogram and platelets WO differential panel - Blood",
+  // ── Clinical Documents ───────────────────────────
+  // v0.16+ (2026-06-05): discharge summary DocumentReference.type.
+  // Verified at loinc.org/18842-5/ — Component=Discharge summary note,
+  // Class=DOC.ONTOLOGY, Scale=Doc, Status=Active. Long Common Name is
+  // simply "Discharge summary" (no setting/role qualifier — code is
+  // the universal document-type entry across all care settings).
+  "18842-5": "Discharge summary",
   // ── Chemistry / liver / renal ────────────────────
   "1920-8":
     "Aspartate aminotransferase [Enzymatic activity/volume] in Serum or Plasma",

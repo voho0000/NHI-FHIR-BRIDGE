@@ -497,7 +497,12 @@
     "diagnostic_reports",
     "procedures",
     "immunizations",
-    "care_plans"
+    "care_plans",
+    // 出院病摘 — emitted after the inpatient detail fan-out in the
+    // orchestrator. Sits at the end so encounters/observations linking
+    // has settled before DocumentReference's context.encounter is
+    // dereferenced by validators.
+    "document_references"
   ];
   var SYNC_KEYS_TO_MIGRATE = [
     "backendUrl",
@@ -915,6 +920,137 @@
           title
         };
       });
+    }
+    return resource;
+  }
+
+  // ../packages/mapper/src/document-reference.ts
+  var import_js_sha12 = __toESM(require_sha1(), 1);
+  var LOINC2 = "http://loinc.org";
+  var LOINC_DISCHARGE_SUMMARY = "18842-5";
+  var LOINC_DISCHARGE_SUMMARY_DISPLAY = "Discharge summary";
+  var DOC_CATEGORY_SYSTEM = "http://hl7.org/fhir/us/core/CodeSystem/us-core-documentreference-category";
+  function getNodeBuffer() {
+    const g = globalThis;
+    if (g && g.Buffer && typeof g.Buffer.from === "function")
+      return g.Buffer;
+    return null;
+  }
+  function utf8ToBase64(s) {
+    const NodeBuffer = getNodeBuffer();
+    if (NodeBuffer) {
+      return NodeBuffer.from(s, "utf8").toString("base64");
+    }
+    return btoa(unescape(encodeURIComponent(s)));
+  }
+  function sha1OfHtml(html) {
+    return (0, import_js_sha12.sha1)(html);
+  }
+  function extractRecordDateIso(html) {
+    const m = html.match(/記錄日期時間[：:][^0-9]*(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (!m)
+      return null;
+    const yyyy = m[1];
+    const mm = String(m[2]).padStart(2, "0");
+    const dd = String(m[3]).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  function buildAttachment(html, title) {
+    const data = utf8ToBase64(html);
+    return {
+      contentType: "text/html",
+      language: "zh-TW",
+      data,
+      title,
+      // FHIR R4 Attachment.size: "Number of bytes of content (if url
+      // provided)" — the binary length, NOT the base64-string length.
+      // For UTF-8 HTML this is the encoded byte count.
+      size: (() => {
+        const NodeBuffer = getNodeBuffer();
+        return NodeBuffer ? NodeBuffer.byteLength(html, "utf8") : new Blob([html]).size;
+      })(),
+      hash: sha1OfHtml(html)
+    };
+  }
+  function mapDischargeSummaryDocRef(raw, patientId) {
+    const html = String(raw?.html ?? "");
+    if (!html || html.length < 10)
+      return null;
+    const admissionDate = String(raw?.admission_date ?? "");
+    const dischargeDate = String(raw?.discharge_date ?? "");
+    if (!admissionDate)
+      return null;
+    const hospital = String(raw?.hospital ?? "").trim();
+    const rowId2 = String(raw?.row_id ?? "").trim();
+    const recordDate = String(raw?.record_date ?? "").trim() || extractRecordDateIso(html) || dischargeDate || admissionDate;
+    const encounterId = stableId(patientId, admissionDate, "IMP", hospital);
+    const id = stableId(
+      patientId,
+      "discharge-summary",
+      rowId2 || `${hospital}|${admissionDate}|${dischargeDate}`
+    );
+    const periodLabel = admissionDate && dischargeDate ? `${admissionDate}~${dischargeDate}` : admissionDate;
+    const title = hospital ? `\u51FA\u9662\u75C5\u6458 \u2014 ${hospital} ${periodLabel}` : `\u51FA\u9662\u75C5\u6458 ${periodLabel}`;
+    const resource = {
+      resourceType: "DocumentReference",
+      id,
+      meta: {
+        versionId: "1",
+        source: "nhi-fhir-bridge/scraper",
+        // bridge-namespaced tag mirrors v0.12.3 nhi-source-channel and
+        // v0.15 nhi-imaging-row patterns. Informational; FHIR R4 spec
+        // says applications not aware of the tag system MUST ignore it.
+        tag: [
+          {
+            system: "http://nhi-fhir-bridge/nhi-source",
+            code: "ihke3309-getxml"
+          }
+        ]
+      },
+      status: "current",
+      type: {
+        coding: [
+          {
+            system: LOINC2,
+            code: LOINC_DISCHARGE_SUMMARY,
+            display: LOINC_DISCHARGE_SUMMARY_DISPLAY
+          }
+        ],
+        text: "\u51FA\u9662\u75C5\u6458"
+      },
+      category: [
+        {
+          coding: [
+            {
+              system: DOC_CATEGORY_SYSTEM,
+              code: "clinical-note",
+              display: "Clinical Note"
+            }
+          ]
+        }
+      ],
+      subject: { reference: `Patient/${patientId}` },
+      date: `${recordDate}T00:00:00+08:00`,
+      content: [
+        {
+          attachment: buildAttachment(html, title)
+        }
+      ],
+      context: {
+        encounter: [{ reference: `Encounter/${encounterId}` }],
+        period: {
+          start: `${admissionDate}T00:00:00+08:00`,
+          ...dischargeDate ? { end: `${dischargeDate}T23:59:59+08:00` } : {}
+        }
+      }
+    };
+    if (hospital) {
+      resource.custodian = { display: hospital };
+    }
+    if (rowId2) {
+      resource.identifier = [
+        { system: "http://nhi-fhir-bridge/nhi-inpatient-row", value: rowId2 }
+      ];
     }
     return resource;
   }
@@ -2904,6 +3040,13 @@
     "4544-3": "Hematocrit [Volume Fraction] of Blood by Automated count",
     "57021-8": "CBC W Auto Differential panel - Blood",
     "24317-0": "Hemogram and platelets WO differential panel - Blood",
+    // ── Clinical Documents ───────────────────────────
+    // v0.16+ (2026-06-05): discharge summary DocumentReference.type.
+    // Verified at loinc.org/18842-5/ — Component=Discharge summary note,
+    // Class=DOC.ONTOLOGY, Scale=Doc, Status=Active. Long Common Name is
+    // simply "Discharge summary" (no setting/role qualifier — code is
+    // the universal document-type entry across all care settings).
+    "18842-5": "Discharge summary",
     // ── Chemistry / liver / renal ────────────────────
     "1920-8": "Aspartate aminotransferase [Enzymatic activity/volume] in Serum or Plasma",
     "1742-6": "Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma",
@@ -4904,7 +5047,12 @@
     procedures: [mapProcedure, "procedures"],
     encounters: [mapEncounter, "encounters"],
     immunizations: [mapImmunization, "immunizations"],
-    care_plans: [mapCarePlan, "care_plans"]
+    care_plans: [mapCarePlan, "care_plans"],
+    // 出院病摘 (NHI IHKE3309S02/getxml) — DocumentReference carrying the
+    // NHI-rendered HTML verbatim. One row per inpatient stay with
+    // has_XML=Y. See document-reference.ts for the faithful-transport
+    // rationale.
+    document_references: [mapDischargeSummaryDocRef, "document_references"]
   };
   var GROUP_HANDLERS = {
     observations: mapObservationsGrouped,
@@ -7545,6 +7693,93 @@
     return raceTimeout(sweepPendingImaging(baseUrl, patientId), timeoutMs, "sweep");
   }
 
+  // src/background/discharge-summary-fetcher.ts
+  async function fetchDischargeSummaryHtmls({
+    tabId,
+    baseUrl,
+    candidates
+  }) {
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      return /* @__PURE__ */ new Map();
+    }
+    const reqs = candidates.filter((c) => c?.rowId);
+    if (reqs.length === 0)
+      return /* @__PURE__ */ new Map();
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async (base, items) => {
+        const token = sessionStorage.getItem("token");
+        if (!token)
+          return { error: "SESSION_EXPIRED" };
+        if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
+          return { error: "SESSION_EXPIRED" };
+        }
+        const auth = `Bearer ${token}`;
+        async function fetchOne(rowId2, ctype) {
+          const url = `${base}/api/ihke3000/IHKE3309S02/getxml?crid=${encodeURIComponent(rowId2)}&ctype=${encodeURIComponent(ctype || "3")}`;
+          const ac = new AbortController();
+          const t = setTimeout(() => ac.abort(), 2e4);
+          try {
+            const r = await fetch(url, {
+              method: "GET",
+              credentials: "same-origin",
+              signal: ac.signal,
+              headers: { Accept: "application/json", Authorization: auth }
+            });
+            clearTimeout(t);
+            if (r.status === 401 || r.status === 403)
+              return { error: "SESSION_EXPIRED" };
+            if (!r.ok)
+              return { error: `HTTP ${r.status}` };
+            const body = await r.json();
+            const html = body && typeof body.file_name === "string" && body.file_name.length > 0 ? body.file_name : null;
+            if (!html)
+              return { error: "no html in body" };
+            return { html };
+          } catch (e) {
+            clearTimeout(t);
+            return { error: e?.name === "AbortError" ? "timeout 20s" : String(e?.message || e) };
+          }
+        }
+        const out = new Array(items.length);
+        let next = 0;
+        const CONC = 3;
+        async function worker() {
+          while (next < items.length) {
+            const i = next++;
+            await new Promise((r) => setTimeout(r, Math.random() * 50));
+            const item = items[i];
+            if (!item)
+              continue;
+            const res = await fetchOne(item.rowId, item.ctype);
+            if ("html" in res && typeof res.html === "string") {
+              out[i] = { rowId: item.rowId, html: res.html };
+            } else {
+              out[i] = { rowId: item.rowId, error: res.error || "unknown" };
+            }
+          }
+        }
+        const ws = [];
+        for (let w = 0; w < CONC && w < items.length; w++)
+          ws.push(worker());
+        await Promise.all(ws);
+        return { results: out };
+      },
+      args: [baseUrl, reqs]
+    });
+    if (result?.error === "SESSION_EXPIRED") {
+      throw new Error(SESSION_EXPIRED_ERROR);
+    }
+    const results = result?.results || [];
+    const map = /* @__PURE__ */ new Map();
+    for (const r of results) {
+      if (r && r.rowId && typeof r.html === "string" && r.html.length > 0) {
+        map.set(r.rowId, r.html);
+      }
+    }
+    return map;
+  }
+
   // src/background/nhi-list-fetch.ts
   async function fetchNhiListsInTab(tabId, fetchSpec) {
     let settledRaw;
@@ -7877,6 +8112,10 @@
       }
     }
     _markPhase("encounter-detail");
+    const dischargeSummaryItems = [];
+    let dischargeCandidates = 0;
+    let dischargeFetched = 0;
+    let dischargeFetchFailed = 0;
     const inpIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "inpatient");
     if (inpIdx >= 0 && settled[inpIdx].status === "fulfilled") {
       const visits = settled[inpIdx].value.rawList || [];
@@ -7887,6 +8126,7 @@
             () => fetchInpatientDetails({ tabId, baseUrl: BASE, visits })
           );
           const reAdapted = [];
+          const dischargeCandidatesRaw = [];
           for (let i = 0; i < visits.length; i++) {
             const detail = detailMap?.get(i) || null;
             const primaryDiagnosis = primaryIcdFromS02Detail(detail);
@@ -7897,9 +8137,57 @@
             });
             if (it)
               reAdapted.push(it);
+            const mainRow = pickS02MainRow(detail);
+            const hasXml = String(mainRow?.has_XML || mainRow?.has_xml || "").toUpperCase() === "Y";
+            if (!hasXml)
+              continue;
+            const v = visits[i];
+            const rowId2 = String(v?.row_ID || v?.row_id || v?.roW_ID || "");
+            if (!rowId2)
+              continue;
+            dischargeCandidatesRaw.push({
+              rowId: rowId2,
+              // ctype=3 (住院) — same value the detail page_load uses.
+              // Hardcoded because IHKE3309S02 only returns data for ctype=3
+              // and the modal's "查看檔案" link always sends t=3.
+              ctype: "3",
+              hospital: String(v?.hosp_ABBR || v?.hosp_abbr || ""),
+              admissionDate: rocToISO(v?.in_DATE || v?.func_DATE || "") || "",
+              dischargeDate: rocToISO(v?.out_DATE || "") || ""
+            });
           }
           settled[inpIdx].value.items = reAdapted;
           settled[inpIdx].value.raw_count = reAdapted.length;
+          dischargeCandidates = dischargeCandidatesRaw.length;
+          if (dischargeCandidatesRaw.length > 0) {
+            try {
+              const htmlMap = await withProgressTimer(
+                (sec) => sec === 0 ? `\u{1F4E5} \u53D6\u5F97 ${dischargeCandidatesRaw.length} \u4EFD\u51FA\u9662\u75C5\u6458\u2026` : `\u{1F4E5} \u53D6\u5F97 ${dischargeCandidatesRaw.length} \u4EFD\u51FA\u9662\u75C5\u6458\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
+                () => fetchDischargeSummaryHtmls({
+                  tabId,
+                  baseUrl: BASE,
+                  candidates: dischargeCandidatesRaw.map(({ rowId: rowId2, ctype }) => ({ rowId: rowId2, ctype }))
+                })
+              );
+              for (const cand of dischargeCandidatesRaw) {
+                const html = htmlMap.get(cand.rowId);
+                if (!html) {
+                  dischargeFetchFailed++;
+                  continue;
+                }
+                dischargeFetched++;
+                dischargeSummaryItems.push({
+                  html,
+                  row_id: cand.rowId,
+                  hospital: cand.hospital,
+                  admission_date: cand.admissionDate,
+                  discharge_date: cand.dischargeDate
+                });
+              }
+            } catch (e) {
+              errors.push(`discharge summary: ${e?.message || e}`);
+            }
+          }
         } catch (e) {
           errors.push(`inpatient detail: ${e.message}`);
         }
@@ -8293,10 +8581,20 @@
         } catch {
         }
       }
+      if (ep.name === "inpatient" && dischargeCandidates > 0) {
+        const parts = [`${dischargeFetched}/${dischargeCandidates} \u51FA\u9662\u75C5\u6458`];
+        if (dischargeFetchFailed > 0)
+          parts.push(`${dischargeFetchFailed} \u6293\u53D6\u5931\u6557`);
+        breakdown.push(`\u3000${parts.join(" / ")}`);
+      }
       if (items.length === 0)
         continue;
       byType[ep.page_type] = byType[ep.page_type] || [];
       byType[ep.page_type].push(...items);
+    }
+    if (dischargeSummaryItems.length > 0) {
+      byType["document_references"] = byType["document_references"] || [];
+      byType["document_references"].push(...dischargeSummaryItems);
     }
     const drBucket = byType.diagnostic_reports;
     if (Array.isArray(drBucket) && drBucket.length > 0) {

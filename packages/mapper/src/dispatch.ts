@@ -9,6 +9,7 @@ import { mapAllergyIntolerance } from "./allergy";
 import { mapCarePlan } from "./careplan";
 import { mapCondition } from "./condition";
 import { mapDiagnosticReport } from "./diagnostic-report";
+import { mapDischargeSummaryDocRef } from "./document-reference";
 import { mapEncounter } from "./encounter";
 import { mapImmunization } from "./immunization";
 import { mapMedicationRequest, mapMedicationsDedup } from "./medication";
@@ -37,6 +38,11 @@ export const LIST_HANDLERS: Record<string, [PerRowMapper, string]> = {
   encounters: [mapEncounter, "encounters"],
   immunizations: [mapImmunization, "immunizations"],
   care_plans: [mapCarePlan, "care_plans"],
+  // 出院病摘 (NHI IHKE3309S02/getxml) — DocumentReference carrying the
+  // NHI-rendered HTML verbatim. One row per inpatient stay with
+  // has_XML=Y. See document-reference.ts for the faithful-transport
+  // rationale.
+  document_references: [mapDischargeSummaryDocRef, "document_references"],
 };
 
 /**

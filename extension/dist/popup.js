@@ -596,6 +596,9 @@
     return chars[0] + "O".repeat(chars.length - 2) + chars[chars.length - 1];
   }
 
+  // ../packages/mapper/src/document-reference.ts
+  var import_js_sha12 = __toESM(require_sha1(), 1);
+
   // ../packages/mapper/src/loinc-tables.ts
   var CBC_COMPONENT_KEYS = {
     // Hemoglobin — variant CJK 血色素 / 血紅蛋白 added v0.11.4 audit

@@ -13,6 +13,7 @@ export * from "./careplan";
 export * from "./condition";
 export * from "./diagnostic-report";
 export * from "./dispatch";
+export * from "./document-reference";
 export * from "./encounter";
 export * from "./helpers";
 export * from "./imaging-dedup";

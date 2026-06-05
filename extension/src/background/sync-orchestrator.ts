@@ -81,10 +81,13 @@ function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
     const timer = setTimeout(done, timeoutMs);
   });
 }
+import { fetchDischargeSummaryHtmls } from "./discharge-summary-fetcher.js";
 import { adaptSettledLists, fetchNhiListsInTab } from "./nhi-list-fetch.js";
 import { applyDateRangeToPath, isMaskEnabled, replaceNameDeep } from "./patient-override.js";
+import { rocToISO } from "../nhi-adapters.js";
 import {
   classFromS02Detail,
+  pickS02MainRow,
   primaryIcdFromS02Detail,
   secondaryIcdsFromS02Detail,
 } from "./s02-detail.js";
@@ -278,6 +281,16 @@ export async function runNhiApiSync({
   // diagnostically richer than OPD). Without this fan-out, inpatient
   // FHIR Encounters have Chinese-only reasonCode display and no
   // secondary diagnoses at all.
+  // dischargeSummaryItems is hoisted so the post-aggregation step
+  // (byType.document_references) sees it regardless of which branch
+  // populated it. Lives at outer scope so an empty inpatient list
+  // still hits the breakdown loop with a stable variable.
+  const dischargeSummaryItems: Record<string, any>[] = [];
+  // Sub-metrics surfaced under the 住院 breakdown line so users see
+  // why some inpatient rows didn't produce DocumentReferences.
+  let dischargeCandidates = 0;
+  let dischargeFetched = 0;
+  let dischargeFetchFailed = 0;
   const inpIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "inpatient");
   if (inpIdx >= 0 && settled[inpIdx].status === "fulfilled") {
     const visits = settled[inpIdx].value.rawList || [];
@@ -291,6 +304,16 @@ export async function runNhiApiSync({
           () => fetchInpatientDetails({ tabId, baseUrl: BASE, visits }),
         );
         const reAdapted = [];
+        // Build the discharge-summary candidate list during the same
+        // visit walk that runs the encounter re-adaptation, so the
+        // S02-detail body is iterated only once per row.
+        const dischargeCandidatesRaw: Array<{
+          rowId: string;
+          ctype: string;
+          hospital: string;
+          admissionDate: string;
+          dischargeDate: string;
+        }> = [];
         for (let i = 0; i < visits.length; i++) {
           const detail = detailMap?.get(i) || null;
           const primaryDiagnosis = primaryIcdFromS02Detail(detail);
@@ -300,9 +323,67 @@ export async function runNhiApiSync({
             secondary_diagnoses: secondaryDiagnoses,
           });
           if (it) reAdapted.push(it);
+          // 出院病摘 candidacy gate — `has_XML` on the S02 detail body
+          // is NHI's signal that a discharge summary HTML document is
+          // available for this row via /getxml. `has_PDF` is a parallel
+          // signal for PDF rendering — v0.16 intentionally HTML-only.
+          const mainRow = pickS02MainRow(detail);
+          const hasXml = String(mainRow?.has_XML || mainRow?.has_xml || "").toUpperCase() === "Y";
+          if (!hasXml) continue;
+          const v = visits[i];
+          const rowId = String(v?.row_ID || v?.row_id || v?.roW_ID || "");
+          if (!rowId) continue;
+          dischargeCandidatesRaw.push({
+            rowId,
+            // ctype=3 (住院) — same value the detail page_load uses.
+            // Hardcoded because IHKE3309S02 only returns data for ctype=3
+            // and the modal's "查看檔案" link always sends t=3.
+            ctype: "3",
+            hospital: String(v?.hosp_ABBR || v?.hosp_abbr || ""),
+            admissionDate: rocToISO(v?.in_DATE || v?.func_DATE || "") || "",
+            dischargeDate: rocToISO(v?.out_DATE || "") || "",
+          });
         }
         settled[inpIdx].value.items = reAdapted;
         settled[inpIdx].value.raw_count = reAdapted.length;
+        dischargeCandidates = dischargeCandidatesRaw.length;
+
+        // Fan-out for the actual HTML payloads. Runs after the visit
+        // walk above is fully synchronous so detail-body parsing /
+        // candidate identification is never raced by the network step.
+        if (dischargeCandidatesRaw.length > 0) {
+          try {
+            const htmlMap = await withProgressTimer(
+              (sec) =>
+                sec === 0
+                  ? `📥 取得 ${dischargeCandidatesRaw.length} 份出院病摘…`
+                  : `📥 取得 ${dischargeCandidatesRaw.length} 份出院病摘…（已 ${sec} 秒）`,
+              () =>
+                fetchDischargeSummaryHtmls({
+                  tabId,
+                  baseUrl: BASE,
+                  candidates: dischargeCandidatesRaw.map(({ rowId, ctype }) => ({ rowId, ctype })),
+                }),
+            );
+            for (const cand of dischargeCandidatesRaw) {
+              const html = htmlMap.get(cand.rowId);
+              if (!html) {
+                dischargeFetchFailed++;
+                continue;
+              }
+              dischargeFetched++;
+              dischargeSummaryItems.push({
+                html,
+                row_id: cand.rowId,
+                hospital: cand.hospital,
+                admission_date: cand.admissionDate,
+                discharge_date: cand.dischargeDate,
+              });
+            }
+          } catch (e: any) {
+            errors.push(`discharge summary: ${e?.message || e}`);
+          }
+        }
       } catch (e) {
         errors.push(`inpatient detail: ${e.message}`);
       }
@@ -943,9 +1024,28 @@ export async function runNhiApiSync({
         });
       } catch {}
     }
+    // 出院病摘 sub-line under the 住院 endpoint. Mirrors the imaging
+    // JPG-stats secondary line (no full-width colon → wraps cleanly as
+    // a plain row). Always shown when there were inpatient rows so the
+    // user can see "0 已抓 / N 候選" when none succeeded, not silence.
+    if (ep.name === "inpatient" && dischargeCandidates > 0) {
+      const parts: string[] = [`${dischargeFetched}/${dischargeCandidates} 出院病摘`];
+      if (dischargeFetchFailed > 0) parts.push(`${dischargeFetchFailed} 抓取失敗`);
+      breakdown.push(`　${parts.join(" / ")}`);
+    }
     if (items.length === 0) continue;
     byType[ep.page_type] = byType[ep.page_type] || [];
     byType[ep.page_type].push(...items);
+  }
+
+  // 出院病摘 — separate page_type fed by the inpatient detail step
+  // above. Items skip the breakdown loop's settled-endpoint reading
+  // because they don't belong to a NHI list endpoint of their own
+  // (one per inpatient row with has_XML="Y" — the count was already
+  // surfaced as a sub-line on the 住院 breakdown row).
+  if (dischargeSummaryItems.length > 0) {
+    byType["document_references"] = byType["document_references"] || [];
+    byType["document_references"].push(...dischargeSummaryItems);
   }
 
   // v0.15+: collapse multi-channel NHI duplicates of the same imaging
