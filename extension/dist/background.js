@@ -6405,9 +6405,8 @@
       const listIplSeq = String(
         listRow?.ipL_CASE_SEQ_NO ?? listRow?.ipl_CASE_SEQ_NO ?? listRow?.IPL_CASE_SEQ_NO ?? ""
       );
-      const oriType = String(listRow?.ori_TYPE ?? listRow?.ori_type ?? "");
       const hasReadyBytes = status === "1" && !!listIplSeq && listIplSeq !== "-";
-      const needsTrigger = oriType === "E" && status === "A";
+      const needsTrigger = status === "A";
       const isCandidate = hasReadyBytes || needsTrigger;
       for (const visit of main) {
         const adapted = adaptImagingReportFromDetail(visit, ctx);
@@ -7247,15 +7246,11 @@
       const oriInList = oriTypeByRid.get(rid);
       if (oriInList === void 0) {
         evictKeys.add(`${p.rid}|${p.ctype}`);
-        continue;
-      }
-      if (oriInList !== "E") {
-        evictKeys.add(`${p.rid}|${p.ctype}`);
       }
     }
     if (evictKeys.size > 0) {
       console.info(
-        `[sweep] auto-evicting ${evictKeys.size} stale pending entries (shadow channels / missing from list)`
+        `[sweep] auto-evicting ${evictKeys.size} stale pending entries (rid missing from current list)`
       );
       try {
         await removePendingImaging(patientId, evictKeys);

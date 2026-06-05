@@ -1780,36 +1780,26 @@ export async function sweepPendingImaging(
       rowsWithSeq++;
     }
   }
-  // Auto-evict only on unrecoverable conditions (rule of conservative
-  // eviction — don't drop entries that NHI MIGHT process):
-  //   1. rid resolves to non-E channel (narrative-only by design)
-  //   2. rid is missing from the current list entirely (rolled off)
-  // We deliberately DO NOT evict E-channel entries that have a
-  // status=1 sibling in the same study group — even though many of
-  // those are ghost duplicates (10/12 in a live patient probe), some
-  // are legitimate same-day repeat scans (氣胸 follow-up, ICU daily
-  // X-ray, AP+lateral views). The list endpoint can't distinguish
-  // them. Instead, we let stuck-retry kick in (re-trigger after 10
-  // min), let content-based dedup in `dedupImagingItems` collapse
-  // true duplicates post-fetch, and let the 8-day pending-stash TTL
-  // clean up entries NHI ultimately refuses to process.
+  // Auto-evict pending entries whose rid is no longer in the current
+  // list at all — those rows have rolled off NHI's window and aren't
+  // recoverable. Channel-based eviction (the old "rid resolves to
+  // non-E → drop") was removed in v0.15.5 because the candidate gate
+  // no longer filters by channel either. If a pending entry's rid is
+  // still in list, it's a legitimate in-flight prep regardless of
+  // channel — let stuck-retry attempt re-trigger and content dedup
+  // handle the rest. 8-day pending-stash TTL is the upper bound.
   const evictKeys = new Set<string>();
   for (const p of pending) {
     const rid = String(p.rid);
     const oriInList = oriTypeByRid.get(rid);
     if (oriInList === undefined) {
       evictKeys.add(`${p.rid}|${p.ctype}`);
-      continue;
     }
-    if (oriInList !== "E") {
-      evictKeys.add(`${p.rid}|${p.ctype}`);
-    }
-    // E channel + in list: keep. Let stuck-retry attempt re-trigger
-    // and content dedup handle the rest.
+    // rid present in list (any channel): keep.
   }
   if (evictKeys.size > 0) {
     console.info(
-      `[sweep] auto-evicting ${evictKeys.size} stale pending entries (shadow channels / missing from list)`,
+      `[sweep] auto-evicting ${evictKeys.size} stale pending entries (rid missing from current list)`,
     );
     try {
       await removePendingImaging(patientId, evictKeys);

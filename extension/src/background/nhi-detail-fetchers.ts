@@ -319,38 +319,45 @@ export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
     // POST endpoint, Vue click flow, and DOM-scan all working
     // correctly. They were just attempting the wrong rows.
     //
-    // ori_TYPE upload-channel labels (revised 2026-06-05 v0.15.4 after
-    // F10375XXXX patient counter-example):
+    // ori_TYPE is an UPLOAD-CHANNEL label only — A=不定期上傳 / B=定期
+    // 上傳 / E=影像上傳. It does NOT predict whether a row carries an
+    // image. Bridge's image-candidacy decision is driven entirely by
+    // jpG_STATUS (revised 2026-06-05 v0.15.5):
     //
-    //   A → "特約醫事機構不定期上傳" (on-demand upload)
-    //   B → "特約醫事機構定期上傳"   (scheduled upload)
-    //   E → "特約醫事機構影像上傳"   (image upload)
+    //   "1" + seq populated → fetch bytes (any channel)
+    //   "A"                 → trigger for prep (any channel)
+    //   "2"                 → no image, skip
     //
-    // Earlier v0.15 builds assumed A/B never carry images. That came
-    // from the first probe patient where all image-ready rows happened
-    // to be ori=E. F10375XXXX disproved it: 3 status=1 × A rows with
-    // valid ipL_CASE_SEQ_NO (16-digit seq) + populated imG_SIZE —
-    // perfectly fetchable cached images, dropped silently because
-    // bridge's gate required ori=E.
+    // History of the rule's evolution:
+    //   v0.14: trigger ALL status=A rows (correct in retrospect, just
+    //          didn't have rownum fix so most triggers silent-failed).
+    //   v0.15.0-v0.15.3: gated trigger to ori=E only — assumed A/B
+    //          status=A rows were "phantoms" (no image source) because
+    //          the first probe patient had 6 such rows that stayed at
+    //          status=A after triggers. The phantoms-stuck-at-A signal
+    //          turned out to be the rownum bug (POST body hard-coded
+    //          "-3" instead of per-row rownum), not a channel issue.
+    //   v0.15.4: F10375XXXX patient had 3 status=1 × ori=A rows with
+    //          valid 16-digit seq + imG_SIZE — fetchable images dropped
+    //          silently because v0.15.0's gate required ori=E. Fix
+    //          dropped the channel filter from the READY-BYTES gate.
+    //   v0.15.5: drop channel filter from the TRIGGER gate too. If some
+    //          status=A rows genuinely turn out to be phantoms (NHI's
+    //          /add returns no-op), bridge's post-verify check catches
+    //          it: status stays "A" → outcome "direct-api-silent-fail"
+    //          → not stashed → shows under 健康存摺拒收 in breakdown.
+    //          Wasted cost ~2s/phantom-row, capped by the 90s trigger
+    //          loop wall-clock budget.
     //
-    // Corrected rules:
-    //   - "This row has ready cached bytes": status=1 + listIplSeq
-    //     populated. This is the AUTHORITATIVE signal of fetchability,
-    //     independent of upload channel. A and B status=1 rows are
-    //     fetched same as E.
-    //   - "This row can be triggered for prep": ori=E AND status=A.
-    //     Trigger (/IHKE3408S02/add) only works for E — A/B status=A
-    //     rows are phantom narratives with no image source for NHI to
-    //     prep from (the previous patient had 6 such phantom rows that
-    //     stayed status=A indefinitely after triggers).
-    //   - status=2 (any channel): no image, skip.
+    // ori_TYPE is still used as a discriminator in the shape signature
+    // for re-keying recovery (see refreshSeqMapAndShapeMap) — that's a
+    // matching-precision concern, not a candidacy one.
     //
-    // Narrative DR emission still runs on ALL rows regardless of
-    // channel/status — handled by adaptImagingReportFromDetail above.
-    // The candidate gate below only affects byte-fetching candidacy.
-    const oriType = String(listRow?.ori_TYPE ?? listRow?.ori_type ?? "");
+    // Narrative DR emission runs on ALL rows regardless — handled by
+    // adaptImagingReportFromDetail above. The candidate gate below
+    // only affects byte-fetching / trigger candidacy.
     const hasReadyBytes = status === "1" && !!listIplSeq && listIplSeq !== "-";
-    const needsTrigger = oriType === "E" && status === "A";
+    const needsTrigger = status === "A";
     const isCandidate = hasReadyBytes || needsTrigger;
     for (const visit of main) {
       const adapted = adaptImagingReportFromDetail(visit, ctx);
