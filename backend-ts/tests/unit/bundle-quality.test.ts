@@ -4434,14 +4434,8 @@ describe("CI v0.14 — imaging JPEG opt-in: DiagnosticReport.presentedForm", () 
       jpgBase64s: [TINY_JPEG_B64],
       imageOnly: true,
     };
-    const drA = mapDiagnosticReport(
-      { ...baseRaw, iplCaseSeqNo: "2026052532001001" },
-      PATIENT_ID,
-    );
-    const drB = mapDiagnosticReport(
-      { ...baseRaw, iplCaseSeqNo: "2026052532001002" },
-      PATIENT_ID,
-    );
+    const drA = mapDiagnosticReport({ ...baseRaw, iplCaseSeqNo: "2026052532001001" }, PATIENT_ID);
+    const drB = mapDiagnosticReport({ ...baseRaw, iplCaseSeqNo: "2026052532001002" }, PATIENT_ID);
     expect(drA).not.toBeNull();
     expect(drB).not.toBeNull();
     expect(drA?.id).not.toBe(drB?.id);
