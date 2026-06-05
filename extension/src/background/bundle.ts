@@ -118,8 +118,19 @@ export function assembleLocalBundle(byType, patientOverride, maskEnabled) {
 // Net PHI window is bounded by whichever comes first; the disk-vs-
 // session distinction matters less when the user is downloading the
 // file to disk anyway.
-export async function stashFhirBundle(bundle, patientId, dateRange) {
-  // Filename: nhi-{pid}-{startYYYYMMDD}-{endYYYYMMDD}.json
+export async function stashFhirBundle(
+  bundle,
+  patientId,
+  dateRange,
+  // v0.15.1+: opt-in suffix so the file's name signals whether the
+  // bundle includes JPG attachments. The two filename shapes diverge
+  // dramatically in size (with-img: 30-70 MB, without: <5 MB), and
+  // a SMART app dev or IRB reviewer can't tell from filename alone
+  // whether `presentedForm` arrays should be expected. Caller (orches-
+  // trator) passes through `fetchImagingEnabled` from the popup toggle.
+  fetchImagingEnabled = false,
+) {
+  // Filename: nhi-{pid}-{startYYYYMMDD}-{endYYYYMMDD}-v{version}[-img].json
   // When no explicit dateRange (NHI default = 近 1 年), synthesize today-1y → today.
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
@@ -150,7 +161,13 @@ export async function stashFhirBundle(bundle, patientId, dateRange) {
   // shape) and bug triage. chrome.runtime.getManifest() reads from the
   // bundled manifest.json — guaranteed available in an MV3 SW.
   const version = chrome.runtime.getManifest()?.version || "unknown";
-  const filename = `nhi-${safePid}-${s}-${e}-v${version}.json`;
+  // "-img" suffix when the user opted into JPG fetching. Without
+  // the toggle, the bundle has only narrative DRs (no presentedForm
+  // attachments). Helpful for the user differentiating successive
+  // downloads on disk, and for app devs / IRB reviewers to spot at
+  // a glance whether the file will be ~50× heavier than usual.
+  const imgSuffix = fetchImagingEnabled ? "-img" : "";
+  const filename = `nhi-${safePid}-${s}-${e}-v${version}${imgSuffix}.json`;
   const json = JSON.stringify(bundle, null, 2);
   const bytes = json.length;
 

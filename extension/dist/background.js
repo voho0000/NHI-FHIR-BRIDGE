@@ -6162,7 +6162,7 @@
       }))
     };
   }
-  async function stashFhirBundle(bundle, patientId, dateRange) {
+  async function stashFhirBundle(bundle, patientId, dateRange, fetchImagingEnabled = false) {
     const now = /* @__PURE__ */ new Date();
     const pad = (n) => String(n).padStart(2, "0");
     const fmt = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
@@ -6181,7 +6181,8 @@
       e = fmt(now);
     }
     const version = chrome.runtime.getManifest()?.version || "unknown";
-    const filename = `nhi-${safePid}-${s}-${e}-v${version}.json`;
+    const imgSuffix = fetchImagingEnabled ? "-img" : "";
+    const filename = `nhi-${safePid}-${s}-${e}-v${version}${imgSuffix}.json`;
     const json = JSON.stringify(bundle, null, 2);
     const bytes = json.length;
     await chrome.storage.local.set({
@@ -8211,7 +8212,12 @@
         total = bundle.entry.length;
         await setStatus({ progress: `\u{1F4BE} \u6E96\u5099 ${total} \u7B46\u5065\u5EB7\u8CC7\u6599\u2026`, totalResources: total });
         try {
-          const dl = await stashFhirBundle(bundle, patientOverride.id_no, dateRange);
+          const dl = await stashFhirBundle(
+            bundle,
+            patientOverride.id_no,
+            dateRange,
+            fetchImagingEnabled
+          );
           _localFilename = dl.filename;
         } catch (e) {
           errors.push(`stash bundle: ${e.message}`);
@@ -8237,7 +8243,12 @@
         try {
           await setStatus({ progress: "\u{1F4E6} \u6574\u7406\u4F3A\u670D\u5668\u4E0A\u7684\u5B8C\u6574\u8CC7\u6599\u2026", totalResources: total });
           const bundle = await exportPatientBundle(backend, syncApiKey, patientOverride.id_no);
-          const dl = await stashFhirBundle(bundle, patientOverride.id_no, dateRange);
+          const dl = await stashFhirBundle(
+            bundle,
+            patientOverride.id_no,
+            dateRange,
+            fetchImagingEnabled
+          );
           _localFilename = dl.filename;
           if (Array.isArray(bundle.entry) && bundle.entry.length > 0) {
             total = bundle.entry.length;
@@ -8255,7 +8266,16 @@
     const _phaseLines = _phases.map((p) => `\u23F1 ${p.name}=${(p.ms / 1e3).toFixed(1)}s`);
     const _fullBreakdown = [...breakdown, ..._phaseLines];
     const _waitingCount = imgIdx >= 0 && settled[imgIdx].status === "fulfilled" ? settled[imgIdx].value.jpegTriggeredWaitingCount ?? 0 : 0;
-    const _waitingTail = _waitingCount > 0 ? `\uFF08\u5065\u5EB7\u5B58\u647A\u6B63\u5728\u6E96\u5099 ${_waitingCount} \u5F35\u5F71\u50CF\uFF0C\u8ACB\u904E 5\u201310 \u5206\u9418\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\uFF09` : "";
+    const _fetchFailCount = imgIdx >= 0 && settled[imgIdx].status === "fulfilled" ? settled[imgIdx].value.jpegFetchFailedCount ?? 0 : 0;
+    let _imagingTail = "";
+    if (_waitingCount > 0 && _fetchFailCount > 0) {
+      _imagingTail = `\uFF08\u5065\u5EB7\u5B58\u647A\u6B63\u5728\u6E96\u5099 ${_waitingCount} \u5F35\u5F71\u50CF\u3001\u53E6 ${_fetchFailCount} \u5F35\u5F71\u50CF\u56E0\u7DB2\u8DEF\u554F\u984C\u672A\u6293\u5230\uFF0C\u8ACB\u904E 5\u201310 \u5206\u9418\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\uFF09`;
+    } else if (_waitingCount > 0) {
+      _imagingTail = `\uFF08\u5065\u5EB7\u5B58\u647A\u6B63\u5728\u6E96\u5099 ${_waitingCount} \u5F35\u5F71\u50CF\uFF0C\u8ACB\u904E 5\u201310 \u5206\u9418\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\uFF09`;
+    } else if (_fetchFailCount > 0) {
+      _imagingTail = `\uFF08${_fetchFailCount} \u5F35\u5F71\u50CF\u56E0\u7DB2\u8DEF\u554F\u984C\u672A\u6293\u5230\uFF0C\u8ACB\u518D\u6309\u4E00\u6B21\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u6293\uFF09`;
+    }
+    const _waitingTail = _imagingTail;
     let _summaryLine;
     if (errors.length) {
       _summaryLine = `\u26A0\uFE0F \u53D6\u5F97\u5B8C\u6210 \xB7 ${_successVerb} ${total} \u7B46\u5065\u5EB7\u7D00\u9304\uFF0C${errors.length} \u9805\u5931\u6557\uFF08${_elapsedStr}\uFF09${_localTail}${_waitingTail}`;

@@ -1029,7 +1029,12 @@ export async function runNhiApiSync({
       total = bundle.entry.length;
       await setStatus({ progress: `💾 準備 ${total} 筆健康資料…`, totalResources: total });
       try {
-        const dl = await stashFhirBundle(bundle, patientOverride.id_no, dateRange);
+        const dl = await stashFhirBundle(
+          bundle,
+          patientOverride.id_no,
+          dateRange,
+          fetchImagingEnabled,
+        );
         _localFilename = dl.filename;
       } catch (e) {
         errors.push(`stash bundle: ${e.message}`);
@@ -1075,7 +1080,12 @@ export async function runNhiApiSync({
         // Pass the same dateRange the user picked through so the
         // downloaded filename reflects "最近 3 年" → 2023-2026 instead
         // of always synthesizing today-1y → today.
-        const dl = await stashFhirBundle(bundle, patientOverride.id_no, dateRange);
+        const dl = await stashFhirBundle(
+          bundle,
+          patientOverride.id_no,
+          dateRange,
+          fetchImagingEnabled,
+        );
         _localFilename = dl.filename;
         // Align reported count with local mode: bundle.entry.length
         // includes the Patient resource (which the per-page-type POST
@@ -1138,10 +1148,39 @@ export async function runNhiApiSync({
   // prep typically takes 5–10 min; re-sync after that picks the
   // newly-ready rows up via the normal cache-hit path AND lets sync-
   // time sweep clear the pending stash for any rows that finished.
-  const _waitingTail =
-    _waitingCount > 0
-      ? `（健康存摺正在準備 ${_waitingCount} 張影像，請過 5–10 分鐘後再按「取得健康存摺資料」即可補齊）`
-      : "";
+  //
+  // fetch-failed rows are a DIFFERENT actionable case (added v0.15.1
+  // after user feedback): the row IS ready at NHI (status=1, seq
+  // populated) but the bytes didn't make it across — typically a
+  // network blip on slow links even after the batch+retry mitigation.
+  // These rows don't go into the pending stash (they're not
+  // triggered-waiting), so the next sync's normal cached-row fetch
+  // path will retry from scratch. Telling the user that means they
+  // don't have to wait the 5-10 min that the prep case requires —
+  // they can re-press immediately when network improves.
+  const _fetchFailCount =
+    imgIdx >= 0 && settled[imgIdx].status === "fulfilled"
+      ? (settled[imgIdx].value.jpegFetchFailedCount ?? 0)
+      : 0;
+  // Both cases asking the user to re-sync are surfaced as ONE
+  // consolidated trailing parenthetical when at least one is non-zero;
+  // wording adapts to which case(s) apply. Single tail avoids the
+  // long-summary-line wrapping that two separate (…) suffixes would
+  // produce.
+  let _imagingTail = "";
+  if (_waitingCount > 0 && _fetchFailCount > 0) {
+    _imagingTail =
+      `（健康存摺正在準備 ${_waitingCount} 張影像、` +
+      `另 ${_fetchFailCount} 張影像因網路問題未抓到，` +
+      `請過 5–10 分鐘後再按「取得健康存摺資料」即可補齊）`;
+  } else if (_waitingCount > 0) {
+    _imagingTail = `（健康存摺正在準備 ${_waitingCount} 張影像，請過 5–10 分鐘後再按「取得健康存摺資料」即可補齊）`;
+  } else if (_fetchFailCount > 0) {
+    _imagingTail = `（${_fetchFailCount} 張影像因網路問題未抓到，請再按一次「取得健康存摺資料」即可補抓）`;
+  }
+  // Keep the old _waitingTail name for backward compatibility with
+  // the assignment at _summaryLine — _imagingTail subsumes it.
+  const _waitingTail = _imagingTail;
 
   let _summaryLine: string;
   if (errors.length) {
