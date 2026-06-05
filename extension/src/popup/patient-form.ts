@@ -245,7 +245,7 @@ export async function savePatientOverride() {
     // 2. drop the SW's last sync status so the result zone doesn't
     //    keep showing "✅ 取得完成 · A 的 81 筆…"
     // 3. drop the in-popup latest-status snapshot
-    await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {});
+    await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
     await chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {});
     state.latestStatus = null;
     setStatus("", null);

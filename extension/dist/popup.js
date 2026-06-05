@@ -531,6 +531,7 @@
     syncStatusHint: byId("sync-status-hint"),
     maskNameEnabled: byId("mask-name-enabled"),
     backendModeEnabled: byId("backend-mode-enabled"),
+    fetchImagingEnabled: byId("fetch-imaging-enabled"),
     openNhiSection: byId("open-nhi-section"),
     openNhiBtn: byId("open-nhi-btn"),
     nhiNeedsLoginSection: byId("nhi-needs-login-section"),
@@ -552,18 +553,24 @@
   }
   function maskId(id, char = "*") {
     const s = (id ?? "").trim();
-    if (!s) return s;
-    if (/^[A-Z][12]\d{8}$/.test(s)) return s.slice(0, 6) + char.repeat(4);
-    if (s.startsWith("auto-")) return s;
-    if (s.length > 6) return s.slice(0, 2) + char.repeat(s.length - 4) + s.slice(-2);
+    if (!s)
+      return s;
+    if (/^[A-Z][12]\d{8}$/.test(s))
+      return s.slice(0, 6) + char.repeat(4);
+    if (s.startsWith("auto-"))
+      return s;
+    if (s.length > 6)
+      return s.slice(0, 2) + char.repeat(s.length - 4) + s.slice(-2);
     return s;
   }
   function maskName(name) {
     const trimmed = (name ?? "").trim();
-    if (!trimmed || trimmed === "Unknown") return trimmed;
+    if (!trimmed || trimmed === "Unknown")
+      return trimmed;
     if (/\s/.test(trimmed)) {
       const parts = trimmed.split(/\s+/);
-      if (parts.length === 1) return parts[0];
+      if (parts.length === 1)
+        return parts[0];
       const first = parts[0];
       const last = parts[parts.length - 1];
       if (parts.length === 2) {
@@ -574,8 +581,10 @@
       return [first, ...middles, last].join(" ");
     }
     const chars = Array.from(trimmed);
-    if (chars.length <= 1) return trimmed;
-    if (chars.length === 2) return `${chars[0]}O`;
+    if (chars.length <= 1)
+      return trimmed;
+    if (chars.length === 2)
+      return `${chars[0]}O`;
     return chars[0] + "O".repeat(chars.length - 2) + chars[chars.length - 1];
   }
 
@@ -1418,7 +1427,8 @@
   // ../packages/mapper/src/observation.ts
   function isAsciiOnly(s) {
     for (let i = 0; i < s.length; i++) {
-      if (s.charCodeAt(i) > 127) return false;
+      if (s.charCodeAt(i) > 127)
+        return false;
     }
     return true;
   }
@@ -1683,7 +1693,8 @@
 
   // src/popup/utils.ts
   function isNhiTab(url) {
-    if (!url) return false;
+    if (!url)
+      return false;
     try {
       const u = typeof url === "string" ? new URL(url) : url;
       return /myhealthbank\.nhi\.gov\.tw/.test(u.hostname);
@@ -1696,30 +1707,40 @@
     return tab;
   }
   function currentMode() {
-    for (const r of els.modeRadios()) if (r.checked) return r.value;
+    for (const r of els.modeRadios())
+      if (r.checked)
+        return r.value;
     return DEFAULT_MODE;
   }
   function _fmtTimeShort(iso) {
-    if (!iso) return "";
+    if (!iso)
+      return "";
     const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
+    if (Number.isNaN(d.getTime()))
+      return "";
     const pad = (n) => String(n).padStart(2, "0");
     return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
   function _fmtRelative(ms) {
     const diff = Date.now() - ms;
-    if (diff < 6e4) return `${Math.max(1, Math.round(diff / 1e3))} \u79D2\u524D`;
-    if (diff < 36e5) return `${Math.round(diff / 6e4)} \u5206\u9418\u524D`;
-    if (diff < 864e5) return `${Math.round(diff / 36e5)} \u5C0F\u6642\u524D`;
+    if (diff < 6e4)
+      return `${Math.max(1, Math.round(diff / 1e3))} \u79D2\u524D`;
+    if (diff < 36e5)
+      return `${Math.round(diff / 6e4)} \u5206\u9418\u524D`;
+    if (diff < 864e5)
+      return `${Math.round(diff / 36e5)} \u5C0F\u6642\u524D`;
     return _fmtTimeShort(new Date(ms).toISOString());
   }
   function _fmtBytes(n) {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1024)
+      return `${n} B`;
+    if (n < 1024 * 1024)
+      return `${(n / 1024).toFixed(1)} KB`;
     return `${(n / (1024 * 1024)).toFixed(2)} MB`;
   }
   function _fmtElapsed(ms) {
-    if (ms < 6e4) return `${Math.floor(ms / 1e3)}s`;
+    if (ms < 6e4)
+      return `${Math.floor(ms / 1e3)}s`;
     return `${Math.floor(ms / 6e4)}m${Math.round(ms % 6e4 / 1e3)}s`;
   }
   function _stepNumGlyph(n) {
@@ -1732,7 +1753,8 @@
     return `auto-${hex}`;
   }
   function _displayId(idNo) {
-    if (!idNo || idNo.startsWith("auto-")) return "";
+    if (!idNo || idNo.startsWith("auto-"))
+      return "";
     return maskId(idNo);
   }
   function _originPatternFor(url) {
@@ -1746,7 +1768,8 @@
   function _isSafeSmartAppUrl(s) {
     try {
       const u = new URL(s);
-      if (u.protocol === "https:") return true;
+      if (u.protocol === "https:")
+        return true;
       if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) {
         return true;
       }
@@ -1786,26 +1809,35 @@
     }
   }
   function _refreshWizardUi() {
-    if (!els.wizardStepper) return;
+    if (!els.wizardStepper)
+      return;
     const lis = els.wizardStepper.querySelectorAll("li[data-step]");
     for (const li of lis) {
       const n = Number(li.dataset.step);
       const isActive = n === state.activeStep;
       const isDone = _isStepDone(n);
-      if (isActive) li.setAttribute("aria-current", "true");
-      else li.removeAttribute("aria-current");
-      if (isDone) li.dataset.done = "true";
-      else delete li.dataset.done;
+      if (isActive)
+        li.setAttribute("aria-current", "true");
+      else
+        li.removeAttribute("aria-current");
+      if (isDone)
+        li.dataset.done = "true";
+      else
+        delete li.dataset.done;
     }
     const onNhi = !els.syncApiBtn.dataset.offNhi;
     const loggedIn = els.syncApiBtn.dataset.nhiLoggedIn !== "no";
-    if (els.openNhiSection) els.openNhiSection.hidden = onNhi;
-    if (els.nhiNeedsLoginSection) els.nhiNeedsLoginSection.hidden = !onNhi || loggedIn;
-    if (els.loginOkSection) els.loginOkSection.hidden = !(onNhi && loggedIn);
+    if (els.openNhiSection)
+      els.openNhiSection.hidden = onNhi;
+    if (els.nhiNeedsLoginSection)
+      els.nhiNeedsLoginSection.hidden = !onNhi || loggedIn;
+    if (els.loginOkSection)
+      els.loginOkSection.hidden = !(onNhi && loggedIn);
     _refreshResultZone();
   }
   function _refreshResultZone() {
-    if (!els.resultZone) return;
+    if (!els.resultZone)
+      return;
     const hasStatus = (els.status?.textContent ?? "").trim() !== "";
     const dataStateShown = els.dataStateSection && !els.dataStateSection.hidden;
     const bundleShown = els.pendingBundle && !els.pendingBundle.hidden;
@@ -1827,17 +1859,24 @@
     }
   }
   function _maybeAutoAdvance() {
-    if (state.activeStep === 1 && _isStepDone(1)) _setActiveStep(2);
-    else if (state.activeStep === 2 && _isStepDone(2)) _setActiveStep(3);
+    if (state.activeStep === 1 && _isStepDone(1))
+      _setActiveStep(2);
+    else if (state.activeStep === 2 && _isStepDone(2))
+      _setActiveStep(3);
   }
   function _initWizard() {
-    if (state.wizardInitialized) return;
+    if (state.wizardInitialized)
+      return;
     state.wizardInitialized = true;
     let start;
-    if (!_isStepDone(1)) start = 1;
-    else if (!_isStepDone(2)) start = 2;
-    else if (!_isStepDone(3)) start = 3;
-    else start = 4;
+    if (!_isStepDone(1))
+      start = 1;
+    else if (!_isStepDone(2))
+      start = 2;
+    else if (!_isStepDone(3))
+      start = 3;
+    else
+      start = 4;
     _setActiveStep(start, { silent: true });
     for (const li of els.wizardStepper.querySelectorAll("li[data-step]")) {
       li.addEventListener("click", () => _setActiveStep(Number(li.dataset.step)));
@@ -1874,7 +1913,8 @@
       inlineMsg = "";
       tooltipReason = "\u5F8C\u7AEF\u5C1A\u672A\u9023\u7DDA";
     }
-    if (jumpTo) tooltipReason = `\u56DE ${_stepNumGlyph(jumpTo.step)} ${jumpTo.label}\uFF1A${inlineMsg}`;
+    if (jumpTo)
+      tooltipReason = `\u56DE ${_stepNumGlyph(jumpTo.step)} ${jumpTo.label}\uFF1A${inlineMsg}`;
     const syncRunning = state.latestStatus?.running === true;
     els.syncApiBtn.disabled = syncRunning || tooltipReason !== "";
     els.syncApiBtn.title = syncRunning ? "" : tooltipReason;
@@ -1898,12 +1938,14 @@
         }
       }
     }
-    if (els.stopBtn) els.stopBtn.hidden = !syncRunning;
+    if (els.stopBtn)
+      els.stopBtn.hidden = !syncRunning;
     const ov = getPatientOverride();
     const haveBackendPatient = state.backendPatient.state === "present";
     els.launchBtn.disabled = !(currentMode() === "backend" && state.connState === "ok" && !!ov?.id_no && haveBackendPatient);
     els.launchBtn.title = currentMode() !== "backend" ? "\u8ACB\u5207\u5230\u300C\u{1F3E5} \u672C\u6A5F\u4F3A\u670D\u5668 (\u9032\u968E)\u300D\u6A21\u5F0F" : state.connState !== "ok" ? "\u5F8C\u7AEF\u5C1A\u672A\u9023\u7DDA" : !ov?.id_no ? "\u8ACB\u56DE\u5230\u300C\u2461 \u60A8\u7684\u8CC7\u6599\u300D\u586B\u5BEB\u8CC7\u6599" : !haveBackendPatient ? "\u672C\u6A5F\u4F3A\u670D\u5668\u9084\u6C92\u6709\u9019\u4F4D\u7684\u8CC7\u6599 \u2014 \u5148\u6309\u300C\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u300D\u6216\u4E0B\u65B9\u300C\u628A\u9019\u6B21\u8CC7\u6599\u50B3\u5230\u672C\u6A5F\u4F3A\u670D\u5668\u300D" : "";
-    if (state.wizardInitialized) _refreshWizardUi();
+    if (state.wizardInitialized)
+      _refreshWizardUi();
   }
 
   // src/popup/status.ts
@@ -1912,7 +1954,8 @@
     els.status.className = kind || "";
     els.status.textContent = "";
     const hasErrors = Array.isArray(errors) && errors.length > 0;
-    if (!text && !breakdown?.length && !hasErrors) return;
+    if (!text && !breakdown?.length && !hasErrors)
+      return;
     const header = document.createElement("div");
     header.className = "status-header";
     const textSpan = document.createElement("span");
@@ -2025,16 +2068,19 @@
       }
       els.status.appendChild(details);
     }
-    if (state.wizardInitialized) _refreshResultZone();
+    if (state.wizardInitialized)
+      _refreshResultZone();
   }
   async function refreshSyncStatusFromBackground() {
     const status = await chrome.runtime.sendMessage({ type: "getSyncStatus" }).catch(() => null);
-    if (!status) return;
+    if (!status)
+      return;
     applySyncStatus(status);
   }
   function _renderStatus() {
     const status = state.latestStatus;
-    if (!status) return;
+    if (!status)
+      return;
     let text = status.progress || "(sync \u9032\u884C\u4E2D)";
     text = text.replace(/\s*[—-]\s*接著至\s*④.*$/u, "").trim();
     if (status.running && status.started) {
@@ -2054,10 +2100,13 @@
     setStatus(text, kind, breakdown, errors, action);
   }
   function applySyncStatus(status) {
-    if (!status) return;
+    if (!status)
+      return;
+    const prev = state.latestStatus;
     state.latestStatus = status;
     _renderStatus();
-    if (state.wizardInitialized && state.activeStep !== 3) {
+    const isIncrementalUpdate = prev?.phase === "done" && status.phase === "done" && !status.running && !prev.running;
+    if (state.wizardInitialized && state.activeStep !== 3 && !isIncrementalUpdate) {
       _setActiveStep(3, { silent: true });
     }
     if (status.running) {
@@ -2075,7 +2124,8 @@
       }
       _refreshButtonStates();
       _refreshLocalBundleState();
-      if (currentMode() === "backend" && state.connState === "ok") checkBackendPatient();
+      if (currentMode() === "backend" && state.connState === "ok")
+        checkBackendPatient();
     }
   }
   async function stopSync() {
@@ -2100,12 +2150,14 @@
     const ov = getPatientOverride();
     if (currentMode() !== "backend" || !ov?.id_no) {
       els.dataStateSection.hidden = true;
-      if (els.syncStatusHint) els.syncStatusHint.hidden = true;
+      if (els.syncStatusHint)
+        els.syncStatusHint.hidden = true;
       return;
     }
     const localMatches = state.localBundle.exists && state.localBundle.patientId === ov.id_no;
     const inSync = state.backendPatient.state === "present" && localMatches && state.backendPatient.count === state.localBundle.count;
-    if (els.syncStatusHint) els.syncStatusHint.hidden = !inSync;
+    if (els.syncStatusHint)
+      els.syncStatusHint.hidden = !inSync;
     const nothingToShow = state.backendPatient.state === "present" && (!localMatches || inSync);
     if (nothingToShow) {
       els.dataStateSection.hidden = true;
@@ -2200,7 +2252,8 @@
         clearTimeout(timer);
         if (er.ok) {
           const bundle = await er.json();
-          if (Array.isArray(bundle.entry)) count = bundle.entry.length;
+          if (Array.isArray(bundle.entry))
+            count = bundle.entry.length;
         }
       } catch {
       }
@@ -2213,7 +2266,8 @@
   }
   async function pushLocalBundleToBackend() {
     const ov = getPatientOverride();
-    if (!ov?.id_no || !state.localBundle.exists || state.localBundle.patientId !== ov.id_no) return;
+    if (!ov?.id_no || !state.localBundle.exists || state.localBundle.patientId !== ov.id_no)
+      return;
     const url = els.backendUrl.value.trim().replace(/\/$/, "");
     const key = els.syncApiKey.value.trim();
     const headers = {
@@ -2223,8 +2277,9 @@
     els.pushLocalBtn.disabled = true;
     els.pushLocalBtn.textContent = "\u50B3\u9001\u4E2D\u2026";
     try {
-      const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-      if (!pending?.json) throw new Error("no local bundle");
+      const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+      if (!pending?.json)
+        throw new Error("no local bundle");
       const r = await fetch(`${url}/fhir/import`, {
         method: "POST",
         headers,
@@ -2262,31 +2317,41 @@
     const name = els.ovName.value.trim();
     const birth_date = els.ovBirthDate.value.trim();
     const gender = els.ovGender.value;
-    if (!_storedIdNo && !name && !birth_date && !gender) return null;
+    if (!_storedIdNo && !name && !birth_date && !gender)
+      return null;
     const out = {};
-    if (_storedIdNo) out.id_no = _storedIdNo;
-    if (name) out.name = name;
-    if (birth_date) out.birth_date = birth_date;
-    if (gender) out.gender = gender;
+    if (_storedIdNo)
+      out.id_no = _storedIdNo;
+    if (name)
+      out.name = name;
+    if (birth_date)
+      out.birth_date = birth_date;
+    if (gender)
+      out.gender = gender;
     return out;
   }
   function validateBirthDate() {
     const el = els.ovBirthDate;
-    if (!el) return null;
+    if (!el)
+      return null;
     if (el.validity?.badInput) {
       return "\u751F\u65E5\u8ACB\u586B\u5B8C\u6574\u5E74\u6708\u65E5";
     }
     const s = (el.value || "").trim();
-    if (!s) return "\u8ACB\u586B\u751F\u65E5";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "\u751F\u65E5\u8ACB\u586B\u5B8C\u6574\u5E74\u6708\u65E5";
+    if (!s)
+      return "\u8ACB\u586B\u751F\u65E5";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s))
+      return "\u751F\u65E5\u8ACB\u586B\u5B8C\u6574\u5E74\u6708\u65E5";
     const [y, m, d] = s.split("-").map(Number);
     const dt = /* @__PURE__ */ new Date(`${s}T00:00:00Z`);
     if (Number.isNaN(dt.getTime()) || dt.getUTCFullYear() !== y || dt.getUTCMonth() + 1 !== m || dt.getUTCDate() !== d) {
       return "\u751F\u65E5\u4E0D\u662F\u6709\u6548\u65E5\u671F";
     }
     const now = /* @__PURE__ */ new Date();
-    if (dt.getTime() > now.getTime()) return "\u751F\u65E5\u4E0D\u80FD\u662F\u672A\u4F86";
-    if (y < 1900) return "\u751F\u65E5\u5E74\u4EFD\u592A\u65E9\uFF0C\u8ACB\u78BA\u8A8D";
+    if (dt.getTime() > now.getTime())
+      return "\u751F\u65E5\u4E0D\u80FD\u662F\u672A\u4F86";
+    if (y < 1900)
+      return "\u751F\u65E5\u5E74\u4EFD\u592A\u65E9\uFF0C\u8ACB\u78BA\u8A8D";
     return null;
   }
   function refreshOverrideSummary() {
@@ -2295,31 +2360,40 @@
     let summaryText = "";
     if (!ov || !ov.name) {
       els.ovSummary.textContent = "\u672A\u8A2D\u5B9A";
-      if (card) card.dataset.state = "empty";
+      if (card)
+        card.dataset.state = "empty";
     } else {
       const parts = [_maybeMask(ov.name)];
       const idLabel = _displayId(ov.id_no);
-      if (idLabel) parts.push(idLabel);
+      if (idLabel)
+        parts.push(idLabel);
       summaryText = parts.join("  \xB7  ");
       els.ovSummary.textContent = `\u2713 ${summaryText}`;
-      if (card) card.dataset.state = "filled";
+      if (card)
+        card.dataset.state = "filled";
     }
     if (els.activePatient && els.activePatientValue) {
       const showActive = state.step2Confirmed && !!summaryText;
       els.activePatient.hidden = !showActive;
-      if (showActive) els.activePatientValue.textContent = summaryText;
+      if (showActive)
+        els.activePatientValue.textContent = summaryText;
     }
     _refreshButtonStates();
     _renderDataState();
     refreshPendingBundle();
     _clearStaleSyncStatus(getPatientOverride());
-    if (currentMode() === "backend" && state.connState === "ok") checkBackendPatient();
+    if (currentMode() === "backend" && state.connState === "ok")
+      checkBackendPatient();
   }
   function _clearStaleSyncStatus(ov) {
-    if (!state.latestStatus) return;
-    if (state.latestStatus.running) return;
-    if (!state.latestStatus.histno) return;
-    if (ov?.id_no === state.latestStatus.histno) return;
+    if (!state.latestStatus)
+      return;
+    if (state.latestStatus.running)
+      return;
+    if (!state.latestStatus.histno)
+      return;
+    if (ov?.id_no === state.latestStatus.histno)
+      return;
     state.latestStatus = null;
     setStatus("", null);
     chrome.storage.local.remove("syncStatus").catch(() => {
@@ -2347,7 +2421,8 @@
       birth_date: els.ovBirthDate.value.trim(),
       gender: els.ovGender.value
     };
-    if (!ov.name) delete ov.name;
+    if (!ov.name)
+      delete ov.name;
     const prevStored = (await chrome.storage.local.get("patientOverride")).patientOverride;
     const _norm = (v) => v == null ? "" : String(v);
     const patientChanged = !!prevStored && (_norm(prevStored.name) !== _norm(ov.name) || _norm(prevStored.gender) !== _norm(ov.gender) || _norm(prevStored.birth_date) !== _norm(ov.birth_date));
@@ -2359,7 +2434,7 @@
     _storedIdNo = ov.id_no;
     await chrome.storage.local.set({ patientOverride: ov });
     if (patientChanged) {
-      await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {
+      await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {
       });
       await chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {
       });
@@ -2371,7 +2446,8 @@
     _markStep2Confirmed(true);
     refreshOverrideSummary();
     _refreshButtonStates();
-    if (state.wizardInitialized) _maybeAutoAdvance();
+    if (state.wizardInitialized)
+      _maybeAutoAdvance();
     const idLabel = _displayId(ov.id_no);
     const tail = idLabel ? ` \xB7 ${idLabel}` : "";
     setStatus(`\u2705 \u75C5\u4EBA\u8EAB\u4EFD\u5DF2\u8A18\u4F4F\uFF1A${_maybeMask(ov.name)}${tail}`, "success");
@@ -2390,7 +2466,8 @@
   async function loadMaskNameEnabled() {
     const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
     _maskNameEnabled = maskNameEnabled === true;
-    if (els.maskNameEnabled) els.maskNameEnabled.checked = _maskNameEnabled;
+    if (els.maskNameEnabled)
+      els.maskNameEnabled.checked = _maskNameEnabled;
   }
   function _maybeMask(name) {
     return _maskNameEnabled ? maskName(name) : name || "";
@@ -2403,16 +2480,22 @@
 
   // src/popup/bundle.ts
   async function refreshPendingBundle() {
-    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-    if (!pending || !pending.json) {
+    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+    console.info(
+      "[popup] refreshPendingBundle:",
+      pending ? `${((pending.bytes || 0) / 1024 / 1024).toFixed(2)} MB, generatedAt=${pending.generatedAt ? new Date(pending.generatedAt).toLocaleTimeString() : "(none)"}, lastPatchedAt=${pending.lastPatchedAt ? new Date(pending.lastPatchedAt).toLocaleTimeString() : "(none)"}` : "(no pending bundle)"
+    );
+    if (!pending) {
       els.pendingBundle.hidden = true;
-      if (state.wizardInitialized) _refreshResultZone();
+      if (state.wizardInitialized)
+        _refreshResultZone();
       return;
     }
     const ov = getPatientOverride();
     if (ov?.id_no && pending.patientId && pending.patientId !== ov.id_no) {
       els.pendingBundle.hidden = true;
-      if (state.wizardInitialized) _refreshResultZone();
+      if (state.wizardInitialized)
+        _refreshResultZone();
       return;
     }
     els.pendingBundle.hidden = false;
@@ -2422,14 +2505,23 @@
       els.bundleFilename.title = pending.filename;
     }
     if (els.bundleSizeage) {
-      els.bundleSizeage.textContent = `${_fmtBytes(pending.bytes || 0)}${ago ? ` \xB7 ${ago}` : ""}`;
+      const parts = [_fmtBytes(pending.bytes || 0)];
+      if (ago)
+        parts.push(ago);
+      els.bundleSizeage.textContent = parts.join(" \xB7 ");
     }
-    if (state.wizardInitialized) _refreshResultZone();
+    if (els.downloadBundleBtn) {
+      els.downloadBundleBtn.hidden = !pending.json;
+      els.downloadBundleBtn.textContent = "\u4E0B\u8F09\u5065\u5EB7\u7D00\u9304\u6A94";
+    }
+    if (state.wizardInitialized)
+      _refreshResultZone();
   }
   async function _transitionStatusToDownloaded(bytes) {
     try {
       const { syncStatus } = await chrome.storage.local.get("syncStatus");
-      if (!syncStatus || syncStatus.phase === "downloaded") return;
+      if (!syncStatus || syncStatus.phase === "downloaded")
+        return;
       const total = syncStatus.totalResources ?? 0;
       const sizeStr = bytes ? ` \xB7 ${_fmtBytes(bytes)}` : "";
       const next = {
@@ -2443,8 +2535,9 @@
     }
   }
   async function downloadPendingBundle() {
-    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-    if (!pending) return;
+    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+    if (!pending || !pending.json)
+      return;
     const blob = new Blob([pending.json], { type: "application/fhir+json" });
     const url = URL.createObjectURL(blob);
     let downloadId = null;
@@ -2463,10 +2556,11 @@
       return;
     }
     const _onChange = (delta) => {
-      if (delta.id !== downloadId) return;
+      if (delta.id !== downloadId)
+        return;
       const final = delta.state?.current;
       if (final === "complete") {
-        chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {
+        chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {
         });
         chrome.downloads.onChanged.removeListener(_onChange);
         _transitionStatusToDownloaded(pending.bytes);
@@ -2478,7 +2572,7 @@
     setTimeout(() => URL.revokeObjectURL(url), 5e3);
   }
   async function clearPendingBundle() {
-    await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
+    await chrome.storage.local.remove(PENDING_BUNDLE_KEY);
     await refreshPendingBundle();
     state.latestStatus = null;
     setStatus("", null);
@@ -2524,9 +2618,11 @@
   };
   function _renderConnBanner() {
     const banner = els.connBanner;
-    if (!banner) return;
+    if (!banner)
+      return;
     banner.dataset.state = state.connState;
-    if (els.connSection) els.connSection.dataset.state = state.connState;
+    if (els.connSection)
+      els.connSection.dataset.state = state.connState;
     const label = _CONN_LABELS[state.connState];
     els.connMsg.textContent = typeof label === "function" ? label() : label;
     els.connRetryBtn.hidden = state.connState !== "fail";
@@ -2538,17 +2634,21 @@
       els.connHelp.innerHTML = "";
     }
     const isOk = state.connState === "ok";
-    if (els.connSection) els.connSection.hidden = isOk;
+    if (els.connSection)
+      els.connSection.hidden = isOk;
     if (els.connMini) {
       els.connMini.hidden = !isOk;
-      if (isOk) els.connMini.title = `\u5DF2\u9023\u7DDA \u2014 ${els.backendUrl.value.trim()}`;
+      if (isOk)
+        els.connMini.title = `\u5DF2\u9023\u7DDA \u2014 ${els.backendUrl.value.trim()}`;
     }
   }
   async function ensureBackendPermission(backendUrl) {
     const pattern = _originPatternFor(backendUrl);
-    if (!pattern) return { ok: false, reason: `Backend URL \u7121\u6CD5\u89E3\u6790: ${backendUrl}` };
+    if (!pattern)
+      return { ok: false, reason: `Backend URL \u7121\u6CD5\u89E3\u6790: ${backendUrl}` };
     const already = await chrome.permissions.contains({ origins: [pattern] });
-    if (already) return { ok: true };
+    if (already)
+      return { ok: true };
     let granted;
     try {
       granted = await chrome.permissions.request({ origins: [pattern] });
@@ -2603,7 +2703,8 @@
     }
     _renderConnBanner();
     _refreshButtonStates();
-    if (currentMode() === "backend") checkBackendPatient();
+    if (currentMode() === "backend")
+      checkBackendPatient();
     return state.connState === "ok";
   }
   async function loadBackendModeEnabled() {
@@ -2617,12 +2718,14 @@
     document.body.dataset.backendEnabled = enabled ? "true" : "false";
     await chrome.storage.local.set({ backendModeEnabled: enabled });
     if (enabled) {
-      for (const r of els.modeRadios()) r.checked = r.value === "backend";
+      for (const r of els.modeRadios())
+        r.checked = r.value === "backend";
       document.body.dataset.mode = "backend";
       await chrome.storage.local.set({ syncMode: "backend" });
       testBackendConnection();
     } else {
-      for (const r of els.modeRadios()) r.checked = r.value === "local";
+      for (const r of els.modeRadios())
+        r.checked = r.value === "local";
       document.body.dataset.mode = "local";
       await chrome.storage.local.set({ syncMode: "local" });
       state.connState = "unknown";
@@ -2637,7 +2740,8 @@
     const { syncMode } = await chrome.storage.local.get("syncMode");
     const backendEnabled = document.body.dataset.backendEnabled === "true";
     const mode = backendEnabled && syncMode === "backend" ? "backend" : DEFAULT_MODE;
-    for (const r of els.modeRadios()) r.checked = r.value === mode;
+    for (const r of els.modeRadios())
+      r.checked = r.value === mode;
     document.body.dataset.mode = mode;
     if (mode === "backend") {
       await testBackendConnection();
@@ -2665,17 +2769,33 @@
   function onBackendUrlChange() {
     chrome.storage.local.set({ backendUrl: els.backendUrl.value.trim() });
     els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
-    if (currentMode() === "backend") testBackendConnection();
+    if (currentMode() === "backend")
+      testBackendConnection();
+  }
+
+  // src/popup/imaging-toggle.ts
+  async function loadFetchImagingEnabled() {
+    const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
+    if (els.fetchImagingEnabled) {
+      els.fetchImagingEnabled.checked = fetchImagingEnabled === true;
+    }
+  }
+  async function onFetchImagingToggle() {
+    await chrome.storage.local.set({
+      fetchImagingEnabled: els.fetchImagingEnabled.checked === true
+    });
   }
 
   // src/popup/sync-client.ts
   async function isOnNhiLoginPage(tabId, url) {
-    if (url?.pathname && /IHKE3099/.test(url.pathname)) return true;
+    if (url?.pathname && /IHKE3099/.test(url.pathname))
+      return true;
     try {
       const [{ result }] = await chrome.scripting.executeScript({
         target: { tabId },
         func: () => {
-          if (document.querySelector('input[type="password"]')) return true;
+          if (document.querySelector('input[type="password"]'))
+            return true;
           const text = (document.body?.innerText || "").trim();
           const phrases = [
             "\u8ACB\u4F7F\u7528\u5065\u4FDD\u5361",
@@ -2761,7 +2881,8 @@
         nhiBase: "https://myhealthbank.nhi.gov.tw",
         patientOverride: ov,
         dateRange,
-        dateRangeLabel
+        dateRangeLabel,
+        fetchImagingEnabled: els.fetchImagingEnabled?.checked === true
       }
     }).catch(() => {
     });
@@ -2792,7 +2913,8 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ patient_id: patientId })
       });
-      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+      if (!res.ok)
+        throw new Error(`${res.status}: ${await res.text()}`);
       const { launch: launch2 } = await res.json();
       const params = new URLSearchParams({ iss: `${backend}/fhir`, launch: launch2 });
       const sep = smartAppLaunch.includes("?") ? "&" : "?";
@@ -2830,12 +2952,14 @@
     const viewportW = document.documentElement.clientWidth;
     const viewportH = document.documentElement.clientHeight;
     let left = iconRect.left + iconRect.width / 2 - tipRect.width / 2;
-    if (left < VIEWPORT_MARGIN) left = VIEWPORT_MARGIN;
+    if (left < VIEWPORT_MARGIN)
+      left = VIEWPORT_MARGIN;
     if (left + tipRect.width > viewportW - VIEWPORT_MARGIN) {
       left = viewportW - VIEWPORT_MARGIN - tipRect.width;
     }
     let top = iconRect.top - tipRect.height - 6;
-    if (top < VIEWPORT_MARGIN) top = iconRect.bottom + 6;
+    if (top < VIEWPORT_MARGIN)
+      top = iconRect.bottom + 6;
     if (top + tipRect.height > viewportH - VIEWPORT_MARGIN) {
       top = Math.max(VIEWPORT_MARGIN, viewportH - VIEWPORT_MARGIN - tipRect.height);
     }
@@ -2853,6 +2977,7 @@
     });
     document.getElementById("login-ok-next")?.addEventListener("click", () => _setActiveStep(2));
     await loadMaskNameEnabled();
+    await loadFetchImagingEnabled();
     await _refreshLocalBundleState();
     await loadBackendModeEnabled();
     await loadBackendUrl();
@@ -2867,28 +2992,36 @@
       return;
     }
     const onNhi = isNhiTab(tab.url);
-    if (onNhi) delete els.syncApiBtn.dataset.offNhi;
-    else els.syncApiBtn.dataset.offNhi = "1";
-    if (els.openNhiSection) els.openNhiSection.hidden = onNhi;
+    if (onNhi)
+      delete els.syncApiBtn.dataset.offNhi;
+    else
+      els.syncApiBtn.dataset.offNhi = "1";
+    if (els.openNhiSection)
+      els.openNhiSection.hidden = onNhi;
     state.nhiTabId = onNhi ? tab.id : null;
     if (onNhi && tab.id) {
       chrome.runtime.sendMessage({ type: "checkNhiLogin", tabId: tab.id }).then((resp) => {
         const loggedIn = resp?.loggedIn === true;
-        if (loggedIn) delete els.syncApiBtn.dataset.nhiLoggedIn;
-        else els.syncApiBtn.dataset.nhiLoggedIn = "no";
+        if (loggedIn)
+          delete els.syncApiBtn.dataset.nhiLoggedIn;
+        else
+          els.syncApiBtn.dataset.nhiLoggedIn = "no";
         if (els.nhiNeedsLoginSection) {
           els.nhiNeedsLoginSection.hidden = loggedIn;
         }
         _refreshButtonStates();
-        if (loggedIn && state.wizardInitialized) _maybeAutoAdvance();
+        if (loggedIn && state.wizardInitialized)
+          _maybeAutoAdvance();
       }).catch(() => {
         delete els.syncApiBtn.dataset.nhiLoggedIn;
-        if (els.nhiNeedsLoginSection) els.nhiNeedsLoginSection.hidden = true;
+        if (els.nhiNeedsLoginSection)
+          els.nhiNeedsLoginSection.hidden = true;
         _refreshButtonStates();
       });
     } else {
       delete els.syncApiBtn.dataset.nhiLoggedIn;
-      if (els.nhiNeedsLoginSection) els.nhiNeedsLoginSection.hidden = true;
+      if (els.nhiNeedsLoginSection)
+        els.nhiNeedsLoginSection.hidden = true;
     }
     _refreshButtonStates();
     _initWizard();
@@ -2907,7 +3040,8 @@
   els.pushLocalBtn?.addEventListener("click", pushLocalBundleToBackend);
   els.syncBlockedReason?.addEventListener("click", () => {
     const target = Number(els.syncBlockedReason.dataset.targetStep);
-    if (target >= 1 && target <= 3) _setActiveStep(target);
+    if (target >= 1 && target <= 3)
+      _setActiveStep(target);
   });
   els.openNhiBtn?.addEventListener("click", async () => {
     await chrome.tabs.create({ url: NHI_LANDING });
@@ -2934,17 +3068,21 @@
     chrome.storage.local.set({ syncApiKey: els.syncApiKey.value.trim() });
   });
   els.maskNameEnabled?.addEventListener("change", onMaskNameToggle);
+  els.fetchImagingEnabled?.addEventListener("change", onFetchImagingToggle);
   els.smartAppUrl.addEventListener("change", onSmartAppUrlChange);
   els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);
   els.clearBundleBtn.addEventListener("click", clearPendingBundle);
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "session" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
+    if (area === "local" && PENDING_BUNDLE_KEY in changes)
+      _refreshLocalBundleState();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "session" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
+    if (area === "local" && PENDING_BUNDLE_KEY in changes)
+      refreshPendingBundle();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.patientOverride) loadPatientOverride();
+    if (area === "local" && changes.patientOverride)
+      loadPatientOverride();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.syncStatus) {
@@ -2952,18 +3090,21 @@
     }
   });
   chrome.runtime.onMessage.addListener((msg, sender) => {
-    if (sender?.id !== chrome.runtime.id) return;
+    if (sender?.id !== chrome.runtime.id)
+      return;
     if (msg?.type === "syncProgress") {
       applySyncStatus(msg.status);
     }
   });
   document.addEventListener("mouseover", (e) => {
     const icon = e.target.closest?.(".help-icon");
-    if (icon) _showHelpTooltip(icon);
+    if (icon)
+      _showHelpTooltip(icon);
   });
   document.addEventListener("mouseout", (e) => {
     const icon = e.target.closest?.(".help-icon");
-    if (icon) _hideHelpTooltip();
+    if (icon)
+      _hideHelpTooltip();
   });
   els.syncApiBtn.addEventListener("click", apiSyncNhi);
   els.stopBtn.addEventListener("click", stopSync);

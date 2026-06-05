@@ -30,8 +30,10 @@ import {
 } from "./background/storage-migration.js";
 import { runNhiApiSync } from "./background/sync-orchestrator.js";
 import {
+  getActiveImagingTabId,
   getActiveSyncCtx,
   requestCancel,
+  setActiveImagingTabId,
   setActiveSyncCtx,
   setStatus,
 } from "./background/sync-state.js";
@@ -111,6 +113,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // CANCEL_ERROR at its next isCancelled() check. Storage is already
     // updated by the popup, so we don't touch it here.
     requestCancel();
+    // v0.15+: the imaging trigger runs in a hidden tab via a fire-
+    // and-forget promise that doesn't observe the cancel flag mid-
+    // script. Close the registered hidden tab here so the in-flight
+    // chrome.scripting.executeScript throws → the trigger promise
+    // unwinds → the orchestrator's await resolves to []. Without this,
+    // cancelling during the imaging phase would still leave the
+    // hidden tab open + clicking through Vue, which user observed.
+    const imagingTabId = getActiveImagingTabId();
+    if (imagingTabId != null) {
+      chrome.tabs.remove(imagingTabId).catch(() => {});
+      setActiveImagingTabId(null);
+    }
     // Discard any partial data uploaded so far. The user's stated
     // contract is 'stop = abort, I'll resync from scratch later' — we
     // don't want to leave a half-loaded patient in the FHIR store that
@@ -148,7 +162,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // async response
   }
   if (msg?.type === "clearSyncStatus") {
-    chrome.storage.local.remove(STORAGE_KEY).then(() => sendResponse({ ok: true }));
+    chrome.storage.local
+      .remove(STORAGE_KEY)
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
   if (msg?.type === "markSyncSeen") {
@@ -188,9 +205,11 @@ chrome.alarms.create("sw-keepalive", { periodInMinutes: 0.34 });
 // doesn't keep an in-memory PHI copy around.
 chrome.alarms.create(PENDING_BUNDLE_SWEEP_ALARM, { periodInMinutes: 10 });
 
-chrome.alarms.onAlarm.addListener((alarm) => {
+// Async listener — Chrome 116+ keeps the SW alive for the duration of
+// a returned promise from chrome.alarms.onAlarm.
+chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === PENDING_BUNDLE_SWEEP_ALARM) {
-    sweepPendingBundleIfStale();
+    await sweepPendingBundleIfStale().catch(() => {});
   }
   // sw-keepalive is a no-op; the alarm firing is what keeps the SW alive.
 });

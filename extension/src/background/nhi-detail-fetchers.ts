@@ -263,21 +263,189 @@ export async function fetchChronicMedicationDetails({ tabId, baseUrl, visits }) 
 
 export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
   const reqs = visits
-    .map((v) => ({ row_ID: rowId(v), ctype: v.ori_TYPE || v.ori_type || "A" }))
+    .map((v, listIdx) => ({
+      row_ID: rowId(v),
+      ctype: v.ori_TYPE || v.ori_type || "A",
+      listIdx,
+    }))
     .filter((r) => r.row_ID);
   const results = await fetchDetailsInTab(tabId, baseUrl, reqs, IMAGING_SPEC);
   const reports = [];
-  for (const r of results) {
+  // `jpegCandidates` carries (rid, ctype, iplCaseSeqNo, needsTrigger,
+  // mainMeta) for rows that actually have an image at NHI side.
+  // Decoded jpG_STATUS semantics (probed live 2026-06-03):
+  //   "1" → image ready (imG_SIZE has a value) — fetch immediately
+  //   "2" → image exists but unprepared — POST /add then poll-fetch
+  //   "A" → no image (B-channel narrative-only / archived) — SKIP
+  // Pre-fix iterations sent EVERY detail row through the trigger
+  // pipeline, blasting 184 POSTs at NHI, 71 of which were "A" rows
+  // with no JPG to ever ship — they ate the 3-min timeout for
+  // nothing. Worse, the trigger body shape was wrong (`{crid,ctype}`
+  // instead of NHI's actual `{ipl_CASE_SEQ_NO}`), so EVERY trigger
+  // POST returned 200 OK but the server queued nothing. The 5 images
+  // that survived in early bundles were rows NHI had previously
+  // prepared from another user gesture, not bridge triggers working.
+  // Narrative DR emission is unaffected — those rows still feed
+  // `reports` regardless of jpG_STATUS.
+  const jpegCandidates = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
     if (!r || r.error || !r.body) continue;
     const main = Array.isArray(r.body[IMAGING_SPEC.mainDataKey])
       ? r.body[IMAGING_SPEC.mainDataKey]
       : [];
+    const ctx = { rid: reqs[i]?.row_ID || "", ctype: String(reqs[i]?.ctype || "") };
+    // Read jpG_STATUS + ipL_CASE_SEQ_NO from the LIST row. Both
+    // fields appear on every list row (live-probed), and only the
+    // list-level value is the real case identifier — detail-body's
+    // ipl_CASE_SEQ_NO is "-" until preparation completes. Defensive
+    // casing probes guard against NHI normalising field names later.
+    const listRow: any = visits[reqs[i]?.listIdx ?? -1];
+    const status = String(
+      listRow?.jpG_STATUS ?? listRow?.jpg_STATUS ?? listRow?.JPG_STATUS ?? "",
+    );
+    const listIplSeq = String(
+      listRow?.ipL_CASE_SEQ_NO ??
+        listRow?.ipl_CASE_SEQ_NO ??
+        listRow?.IPL_CASE_SEQ_NO ??
+        "",
+    );
+    // jpG_STATUS values (user-confirmed against NHI UI 2026-06-04):
+    //   "1" → image is ready (cached, fetchable via IHKE3408S03)
+    //   "A" → image is available but unprepared — NEEDS trigger
+    //   "2" → no image at NHI (UI shows "無影像檔")
+    //   ""  → unexpected/missing — defensive skip
+    //
+    // The pre-fix code had A and 2 swapped: it treated "2" as
+    // "needs trigger" and "A" as "no image, skip". As a result
+    // every sync tried to trigger 100+ rows that NHI had no image
+    // for, while the actual triggerable "A" rows got excluded —
+    // hence "0 successful trigger" results all session despite the
+    // POST endpoint, Vue click flow, and DOM-scan all working
+    // correctly. They were just attempting the wrong rows.
+    //
+    // ori_TYPE channel filter (v0.15+, live-probed against NHI
+    // ori_TYPE_NAME field in IHKE3408S02 detail body 2026-06-04):
+    //
+    //   A → "特約醫事機構不定期上傳" (on-demand narrative upload)
+    //         — carries radiology report `desc` text, NO JPGs ever.
+    //   B → "特約醫事機構定期上傳" (scheduled narrative upload)
+    //         — also carries `desc`, NO JPGs ever. A and B are NHI's
+    //         dual-channel narrative pattern (same shape as the lab
+    //         A+B duplicate problem CLAUDE.md describes).
+    //   E → "特約醫事機構影像上傳" (image upload)
+    //         — carries `ipL_CASE_SEQ_NO` → IHKE3408S03 → JPG bytes.
+    //
+    // Image trigger / fetch only makes sense for ori_TYPE=E. Triggering
+    // A/B rows queues nothing on NHI side (they have no image to prep);
+    // ~6 status=A × ori=A "phantom" rows per typical sync would
+    // otherwise be triggered → never produce bytes → stuck in pending
+    // stash until 8-day TTL.
+    //
+    // Cross-tab from a live patient probe (184 rows total):
+    //   status=1 × E: 42  (image ready, cached)
+    //   status=A × E: 30  (image needs trigger)
+    //   status=A × A:  6  (no-image channel mis-marked status=A)
+    //   status=2 × A: 53  (narrative-A row, no image expected)
+    //   status=2 × B: 51  (narrative-B row, no image expected)
+    //
+    // Narrative IHKE3408S02 fetch still runs on ALL rows regardless
+    // — the channel filter only gates image-trigger / image-fetch
+    // candidacy. Narrative DR emission from A/B rows is handled
+    // separately by adaptImagingReportFromDetail above.
+    const oriType = String(listRow?.ori_TYPE ?? listRow?.ori_type ?? "");
+    const isImageChannel = oriType === "E";
+    const isCandidate = isImageChannel && (status === "1" || status === "A");
+    const needsTrigger = isImageChannel && status === "A";
     for (const visit of main) {
-      const adapted = adaptImagingReportFromDetail(visit);
+      const adapted = adaptImagingReportFromDetail(visit, ctx);
       if (adapted) reports.push(adapted);
+      if (!isCandidate) continue;
+      jpegCandidates.push({
+        rid: ctx.rid,
+        ctype: ctx.ctype,
+        iplCaseSeqNo: listIplSeq,
+        needsTrigger,
+        // Index of this row in the IHKE3408S01 list response. NHI's
+        // Vue list page renders one 詳細資料 button per row in the
+        // same order — so detailBtns[listIdx] in the DOM is THIS
+        // row's button. The Vue-click trigger flow uses this to
+        // avoid having to introspect Vue's list component state.
+        listIdx: reqs[i]?.listIdx ?? -1,
+        // mainMeta fed into adaptImageOnlyReportFromMeta when the
+        // narrative path returns null but the JPG fetcher succeeds —
+        // AND used as the shape-match key in pollFetchImagingJpegs to
+        // recover bytes after NHI re-keys the rid post-prep.
+        //
+        // CRITICAL: shape-match keys (date / orderCode / hospital)
+        // MUST come from the S01 list row (listRow) — NOT from the
+        // S02 detail body (visit) — because the shapeMap built during
+        // the in-loop list refresh ALSO uses S01 fields. If we
+        // source mainMeta from S02 and S01 happens to format the
+        // same value differently (e.g. hospital name short vs full,
+        // date with/without leading zeros), shape match silently fails
+        // for that row and bridge wrongly leaves it as triggered-waiting.
+        // Verified live 2026-06-05: 2/7 cap=Infinity triggers ended up
+        // waiting despite NHI having prep'd them, because S02's hospital
+        // / date / code values mismatched S01's. Visit (S02) fallback
+        // covers the rare case where listRow doesn't have a field.
+        mainMeta: {
+          date:
+            listRow?.real_INSPECT_DATE ||
+            listRow?.real_inspect_date ||
+            visit.real_INSPECT_DATE ||
+            visit.real_inspect_date ||
+            visit.main_tit ||
+            visit.main_TIT ||
+            visit.func_DATE ||
+            visit.func_date ||
+            "",
+          orderCode:
+            listRow?.order_CODE ||
+            listRow?.order_code ||
+            visit.order_CODE ||
+            visit.order_code ||
+            "",
+          orderName:
+            listRow?.order_NAME ||
+            listRow?.order_name ||
+            visit.order_NAME ||
+            visit.order_name ||
+            "",
+          hospital:
+            listRow?.hosp_ABBR ||
+            listRow?.hosp_abbr ||
+            visit.hosp_ABBR ||
+            visit.hosp_abbr ||
+            "",
+          assayUploadDate: visit.assay_UPLOAD_DATE || "",
+          funcDate: visit.func_DATE || visit.func_date || "",
+          radiMsv: visit.radi_MSV || visit.radi_msv || "",
+          imgSize: visit.img_SIZE || visit.img_size || "",
+        },
+        // Whether the narrative adapter produced a DR for this row.
+        // When false AND we later land jpgBase64 → synthesize an
+        // image-only DR via adaptImageOnlyReportFromMeta.
+        hasNarrativeReport: !!adapted,
+      });
     }
   }
-  return reports;
+
+  // No pre-trigger intra-E dedup. NHI can ship multiple E rows for the
+  // same (date, hospital, code) for two distinct reasons:
+  //   - GHOST DUPLICATE: hospital re-uploaded the same scan; NHI prep
+  //     processes only one row, others stay status=A forever
+  //   - LEGITIMATE MULTI-SCAN: same-day repeat imaging (氣胸 follow-up,
+  //     ICU daily X-ray, AP+lateral views under the same NHI code)
+  //
+  // We CAN'T distinguish these from the list endpoint alone (both look
+  // identical: one E row status=1 + one E row status=A). The only
+  // reliable signal is the actual JPG content. So we let all E rows
+  // flow through here; downstream `dedupImagingItems` (mapper) compares
+  // base64 content hashes post-fetch and merges only true duplicates.
+  // Ghosts that NHI never prepares eventually clear via the 8-day
+  // pending-stash TTL.
+  return { reports, jpegCandidates };
 }
 
 export async function fetchProcedureDetails({ tabId, baseUrl, visits }) {

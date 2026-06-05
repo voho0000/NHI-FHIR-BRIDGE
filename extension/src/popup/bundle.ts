@@ -1,10 +1,15 @@
 // ── Pending FHIR Bundle (local-mode result) ──────────────────────────
 //
-// Background stashes the generated Bundle into chrome.storage.session
-// under `pendingFhirBundle` (auto-clears when the browser closes — see
-// security audit #5). Popup renders a download button. User must click
-// to actually trigger chrome.downloads.download — the file never hits
-// the disk unsolicited.
+// v0.14+ flow: the SW auto-triggers the native Save As dialog at sync
+// completion via an offscreen document (see background/bundle.ts). The
+// popup's role here narrows to:
+//   1. Read the metadata record from chrome.storage.local and surface
+//      filename + size + ✓ / ✕ status to the user.
+//   2. Offer a "再儲存一次" button ONLY when the auto-save was cancelled
+//      or errored — in that case the SW also stashed the JSON itself so
+//      the popup can re-trigger chrome.downloads.download.
+// chrome.storage.session is no longer used for this slot — bundles can
+// exceed its 10 MB ceiling once imaging is enabled.
 
 import { PENDING_BUNDLE_KEY } from "./constants.js";
 import { els } from "./els.js";
@@ -15,15 +20,24 @@ import { _fmtBytes, _fmtRelative } from "./utils.js";
 import { _refreshResultZone } from "./wizard.js";
 
 export async function refreshPendingBundle() {
-  const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-  if (!pending || !pending.json) {
+  const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+  // Diagnostic log so we can verify the popup is reacting to SW-side
+  // hot-patches (bg poll writes new bundle.bytes → onChanged fires →
+  // popup should re-read + re-render). Remove once verified.
+  console.info(
+    "[popup] refreshPendingBundle:",
+    pending
+      ? `${((pending.bytes || 0) / 1024 / 1024).toFixed(2)} MB, generatedAt=${pending.generatedAt ? new Date(pending.generatedAt).toLocaleTimeString() : "(none)"}, lastPatchedAt=${pending.lastPatchedAt ? new Date(pending.lastPatchedAt).toLocaleTimeString() : "(none)"}`
+      : "(no pending bundle)",
+  );
+  if (!pending) {
     els.pendingBundle.hidden = true;
     if (state.wizardInitialized) _refreshResultZone();
     return;
   }
   // If the user has switched override to a different patient, the
-  // stashed bundle is for the *previous* patient. Hide it so they
-  // can't accidentally download the wrong file. The bundle stays in
+  // stashed record is for the *previous* patient. Hide it so they
+  // can't accidentally re-save the wrong file. The record stays in
   // storage; re-entering the matching override will surface it again.
   const ov = getPatientOverride();
   if (ov?.id_no && pending.patientId && pending.patientId !== ov.id_no) {
@@ -32,15 +46,23 @@ export async function refreshPendingBundle() {
     return;
   }
   els.pendingBundle.hidden = false;
-  // Filename + sizeage live in separate sibling elements in the new
-  // single-panel layout so we just update each directly.
   const ago = pending.generatedAt ? _fmtRelative(pending.generatedAt) : "";
   if (els.bundleFilename) {
     els.bundleFilename.textContent = pending.filename;
     els.bundleFilename.title = pending.filename;
   }
   if (els.bundleSizeage) {
-    els.bundleSizeage.textContent = `${_fmtBytes(pending.bytes || 0)}${ago ? ` · ${ago}` : ""}`;
+    const parts = [_fmtBytes(pending.bytes || 0)];
+    if (ago) parts.push(ago);
+    els.bundleSizeage.textContent = parts.join(" · ");
+  }
+  // Always show the download button when a pending bundle exists.
+  // SW no longer auto-saves; the user is the only path to disk and
+  // the popup click is what Chrome accepts for the saveAs:true
+  // dialog (which gives the user control over file location).
+  if (els.downloadBundleBtn) {
+    els.downloadBundleBtn.hidden = !pending.json;
+    els.downloadBundleBtn.textContent = "下載健康紀錄檔";
   }
   if (state.wizardInitialized) _refreshResultZone();
 }
@@ -67,8 +89,8 @@ async function _transitionStatusToDownloaded(bytes) {
 }
 
 export async function downloadPendingBundle() {
-  const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
-  if (!pending) return;
+  const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+  if (!pending || !pending.json) return;
   const blob = new Blob([pending.json], { type: "application/fhir+json" });
   const url = URL.createObjectURL(blob);
   let downloadId = null;
@@ -94,9 +116,9 @@ export async function downloadPendingBundle() {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     return;
   }
-  // Wipe the session-stashed copy once the download actually starts.
+  // Wipe the locally-stashed copy once the download actually starts.
   // The file is now on the user's disk under their chosen path —
-  // keeping a duplicate in chrome.storage.session is pure PHI surface.
+  // keeping a duplicate in chrome.storage.local is pure PHI surface.
   // We listen for the download's terminal state (complete or interrupted)
   // before wiping, so a half-written file followed by a retry still has
   // something to fall back on. Belt-and-suspenders only — TTL sweep in
@@ -105,7 +127,7 @@ export async function downloadPendingBundle() {
     if (delta.id !== downloadId) return;
     const final = delta.state?.current;
     if (final === "complete") {
-      chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {});
+      chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
       chrome.downloads.onChanged.removeListener(_onChange);
       // Transition the sync status banner from "✅ 取得完成" to
       // "✅ 已下載" so users who close + reopen the popup (or just
@@ -125,7 +147,7 @@ export async function downloadPendingBundle() {
 }
 
 export async function clearPendingBundle() {
-  await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
+  await chrome.storage.local.remove(PENDING_BUNDLE_KEY);
   await refreshPendingBundle();
   // Clearing the download is the user's "I'm done with this result"
   // gesture — wipe the completion status banner too so the result zone

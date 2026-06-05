@@ -57,6 +57,7 @@ export const els = {
   syncStatusHint: byId("sync-status-hint"),
   maskNameEnabled: byId("mask-name-enabled"),
   backendModeEnabled: byId("backend-mode-enabled"),
+  fetchImagingEnabled: byId("fetch-imaging-enabled"),
   openNhiSection: byId("open-nhi-section"),
   openNhiBtn: byId("open-nhi-btn"),
   nhiNeedsLoginSection: byId("nhi-needs-login-section"),

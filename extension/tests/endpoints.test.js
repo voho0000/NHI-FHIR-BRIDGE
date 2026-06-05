@@ -90,8 +90,21 @@ describe("NHI endpoint registry", () => {
       offenders,
       `detail URLs using NHI UI param style (?rid=&t=) instead of API style (?crid=&ctype=) — this is exactly the v0.8.4 silent-failure bug: ${offenders.join(", ")}`,
     ).toEqual([]);
+    // Exceptions to the crid+ctype convention — list these by path
+    // pattern. Each entry is a real NHI endpoint with a different
+    // param shape:
+    //   IHKE3408S03   — IPL_CASE_SEQ_NO (imaging JPEG bytes; per
+    //                   NHI-side seq, not row crid)
+    //   ihke3408s01   — s_type+s_sort (the imaging LIST endpoint,
+    //                   re-called from the polling loop to refresh
+    //                   ipL_CASE_SEQ_NO for triggered rows)
+    const detailUrlsCridCtype = detailUrls.filter(
+      (u) =>
+        !/\/IHKE3408S03\/page_load/.test(u) &&
+        !/\/ihke3408s01\/page_load/.test(u),
+    );
     // Positive assertion: every page_load detail URL DOES use crid+ctype.
-    const missing = detailUrls.filter(
+    const missing = detailUrlsCridCtype.filter(
       (u) => !/[?&]crid=/.test(u) || !/[?&]ctype=/.test(u),
     );
     expect(

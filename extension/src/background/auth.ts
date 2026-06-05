@@ -99,7 +99,7 @@ export async function maybeFetchPatientIdFromNhi(tabId, patientOverride) {
     // savePatientOverride when it detects patientChanged.
     const switchedRealPatients = current && !current.startsWith("auto-") && current !== cid;
     if (switchedRealPatients) {
-      await chrome.storage.session.remove(PENDING_BUNDLE_KEY).catch(() => {});
+      await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
     }
   }
   return resolved;

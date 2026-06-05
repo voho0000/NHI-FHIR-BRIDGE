@@ -1506,6 +1506,22 @@
           </select>
         </div>
 
+        <!-- 影像 opt-in. Default OFF: NHI server needs 1-2 min lazy-prepare
+             per first-touch row and each base64 JPG is ~2-3 MB → bundle
+             size and sync time both grow significantly. Users who don't
+             need imaging skip the cost entirely. -->
+        <div class="setting-row imaging-toggle-row">
+          <label class="toggle-row" style="flex:1;margin:0;">
+            <input type="checkbox" id="fetch-imaging-enabled" />
+            <span>抓影像檢查報告（X 光 / 超音波 / 心電圖）</span>
+            <span class="help-icon"
+                  data-tip="勾選後會額外抓 X 光 / 超音波 / 心電圖等 JPG 影像並編進 bundle。背景送出觸發請求給健康存摺，不會切換您的分頁。首次預備 5-10 分鐘；NHI 7 天內快取，下次同步快。預設關閉。">ⓘ</span>
+          </label>
+        </div>
+        <div class="hint imaging-toggle-hint">
+          預設關閉。勾選後背景送觸發請求給健康存摺預備影像（不會切換您的分頁）；首次 5-10 分鐘，之後 7 天內快取大幅加快。bundle 體積會明顯增大（每張影像約 2-3 MB）。
+        </div>
+
         <!-- Backend connection status — only in backend mode. Single
              card; banner row + (when present) help body inside one
              border. data-state mirrors onto the wrapper so the border

@@ -108,6 +108,83 @@ Checklist:
    > "你要考量到這份 fhir json 可能給其他非我開發的 smart app 使用，如果把 dedup 的責任都放在 app 端，會有大問題。你有忠實搬運，但不能明明 UI 顯示只有一筆你抓了兩筆。"
    > (You need to consider this FHIR JSON may be used by other SMART apps I didn't develop. Putting the dedup responsibility entirely on the app side will be a big problem. You're faithful in transport, but you can't fetch 2 rows when the UI clearly only shows 1.)
 
+## NHI imaging ori_TYPE A/B/E channels (added 2026-06-04, v0.15)
+
+**`ori_TYPE` semantics for IHKE3408 imaging endpoint differ from the lab observation A/B pattern.** Verified directly against `https://myhealthbank.nhi.gov.tw/api/ihke3000/IHKE3408S02/page_load?crid=...&ctype=...` 2026-06-04 by reading `ori_TYPE_NAME` field in detail body (NHI's own plain-Chinese label):
+
+- **A** = `特約醫事機構不定期上傳` — narrative report (`desc`), no image. Carries radiology report text + `radi_MSV` (radiation dose).
+- **B** = `特約醫事機構定期上傳` — narrative report (`desc`), no image. Same content shape as A; A and B are the SAME multi-channel duplicate problem as the lab Observation A+B issue, just for imaging narrative.
+- **E** = `特約醫事機構影像上傳` — image upload, has `ipL_CASE_SEQ_NO` → IHKE3408S03 → JPG bytes.
+
+Bridge implementation:
+1. **Trigger candidate gate** (`fetchImagingDetails` in `nhi-detail-fetchers.ts`): `isCandidate = (ori_TYPE === "E") && (jpG_STATUS === "1" || jpG_STATUS === "A")`. A/B rows are excluded from `jpegCandidates` — they will never produce JPGs no matter how many times triggered. Without this gate, ~6 status=A × ori=A "phantom" rows per typical sync get triggered, queue nothing NHI-side, and stay stuck in pending stash forever.
+2. **Narrative emission**: `adaptImagingReportFromDetail` runs on ALL row types (A/B/E) — `desc` text comes from A/B, the channel filter only gates image triggering. A and B `desc` content is dedup-merged via `dedupImagingItems` (see below).
+3. **Sweep auto-evict** (`sweepPendingImaging` in `nhi-imaging-jpeg.ts`): pending entries whose rid resolves to ori_TYPE != "E" in the current list are removed — they're left-over from pre-v0.15 builds that didn't gate by channel.
+4. **Imaging dedup** (`dedupImagingItems` in `packages/mapper/src/imaging-dedup.ts`): groups by (code, date, hospital). Within a group, content-hashes JPG payloads to merge same-content E-rows; folds 1 narrative-only item (A or B `desc`) + 1 image-only item (E with frames) into 1 DR with both narrative + frames.
+
+Live-probed cross-tab on a real patient (184 rows total):
+- status=1 × E: 42  (image ready, cached)
+- status=A × E: 30  (image needs trigger)
+- status=A × A:  6  (no-image channel mis-marked status=A — phantom)
+- status=2 × A: 53  (narrative-A, no image expected)
+- status=2 × B: 51  (narrative-B, no image expected)
+- status=2 × E:  2  (image triggered, NHI preparing)
+
+C/D channels exist in NHI schema but absent from this probe. Treat them defensively the same way as A/B (narrative, no image) unless future evidence contradicts.
+
+## NHI imaging trigger flow — SW-direct fetch protocol (added 2026-06-05, v0.15)
+
+**v0.15 replaced the hidden-tab Vue-click trigger with a service-worker direct fetch.** ~10× faster (~2s/row vs ~10-15s/row), no tab side effects, no DOM races, no Vue introspection. Verified live 2026-06-05 via Chrome MCP sniffing on a fresh-case patient + multiple full syncs.
+
+### Three-step protocol per row
+
+1. `GET /api/ihke3000/IHKE3408S02/page_load?crid=<rid>&ctype=<ctype>` — establishes NHI's server-side "current row" context AND returns the row's `rownum` (per-row sentinel).
+2. `POST /api/ihke3000/IHKE3408S02/add` body `{"ipl_CASE_SEQ_NO": "<rownum from step 1>"}` — queues NHI's lazy prep.
+3. (verification) `GET …/page_load` again — row's `jpg_STATUS` should flip `"A"` → `"0"` (preparing).
+
+### Critical gotcha: `ipl_CASE_SEQ_NO` is the row's **`rownum`**, not a fixed sentinel
+
+The very first Chrome MCP sniff in Part B captured a single row whose `rownum` happened to be `"-3"`. v0.15 initially hard-coded `"-3"` as the POST body's `ipl_CASE_SEQ_NO` for every row, thinking it was a universal sentinel. Result: NHI's `add` handler returned `{"status":"Y","message":"申請載入影像檔時發生錯誤。"}` for every other row — silent reject with literal error in the message body. Verified live: row `AAtEGaABMAAJummAAn` → rownum `"-10"`, row `AAtEGaABMAAJumRAAE` → rownum `"-7"`, row `AAtEGaABMAAJumRAAC` → rownum `"-5"`. ALL DIFFERENT.
+
+Fix: extract `setupResp.body.ihke3408S02_main_data[0].rownum` from step 1's response and put THAT into the POST body. With matching rownum, the same direct-API path that previously failed succeeds reliably.
+
+### `status` field in `/add` response is NOT a success indicator
+
+NHI's `/add` response is `{"status":"Y","message":"..."}` on BOTH accept and reject:
+- Accept: `{"status":"Y","message":"已申請載入影像檔。"}`
+- Reject (rownum mismatch): `{"status":"Y","message":"申請載入影像檔時發生錯誤。"}`
+
+`status:"Y"` is a fixed contract field — DO NOT trust it. The only reliable acceptance signal is step 3's verification (status flipped A→0).
+
+### NHI re-keys row_ID after prep completes — shape-based fallback match
+
+**After NHI finishes preparing a triggered row, it DELETES the original status=A row (with rid like `AAtEGa…`) and CREATES a brand-new row with status=1 and a DIFFERENT rid (like `AAAyWRAF3AAFB…`).** Verified live 2026-06-05: 3 rids I triggered yesterday via MCP were entirely absent from today's list dump; all status=1 × E rows in today's list had a different rid prefix family from the status=A × E rows.
+
+Bridge implication: direct rid lookup in poll-fetch's list refresh NEVER finds the rid we triggered. The triggered row appears as `triggered-waiting` even after NHI completed prep and bytes are fetchable under the new rid.
+
+Mitigation (`pollFetchImagingJpegs` in `nhi-imaging-jpeg.ts`):
+1. **`refreshSeqMapAndShapeMap()`** builds BOTH a `rid → seq` map AND a shape map keyed by `(order_CODE | real_INSPECT_DATE | hosp_ABBR | ori_TYPE)` → list of `{rid, seq}` for current status=1 × E rows.
+2. **`consumedRids` set** is seeded with all already-cached candidates' rids so the shape fallback doesn't redirect a triggered row's match to a rid the direct-fetch path is already using.
+3. **`resolveSeqForReq()`** tries direct rid match first; on miss, looks up the row's shape in shapeMap and picks the first un-consumed candidate. Mutates consumedRids on success so sibling triggered rows with the same shape don't collide.
+4. Both the poll loop AND final-attempt block use the same resolution function.
+
+### mainMeta MUST be sourced from the LIST row, not the S02 detail body
+
+Shape match compares `mainMeta` field values against shapeMap field values built from the S01 list refresh. If `mainMeta` is sourced from S02 detail (`visit`), field values can differ from S01 (hospital short name vs full name, date format, code with/without "C" suffix) → shape signature mismatch → row stuck in `triggered-waiting`.
+
+Verified live 2026-06-05: cap=Infinity with 7 triggered rows → 5 shape-matched successfully, 2 missed because their S02 detail's `hosp_ABBR` value didn't match S01's `hosp_ABBR` for the same logical exam. Fix: `fetchImagingDetails` sources `mainMeta.date / orderCode / orderName / hospital` from `listRow` first, `visit` (S02 detail) only as fallback for rare missing fields.
+
+### Slow-network resilience: batched concurrency + retry
+
+20+ parallel S03 fetches with 1-3 MB each saturate slow links → individual fetches hit the 30s timeout. Verified live 2026-06-05 (user on weak signal): 20/20 ready candidates → 10 succeeded, 10 fetch-failed. Fix:
+
+- **`runBatched(items, 5, fn)`**: chunks items into windows of 5, processes each window with Promise.all internally, awaits before next window. Caps in-flight bandwidth share.
+- **`fetchJpgWithRetry(seqNo, 2)`**: 2 attempts with 1.5s backoff. Retries on transient errors only: `timeout`, `HTTP 5xx`, `HTTP 429`, `Failed to fetch`, `NetworkError`, or 200-OK-but-empty-pics. Does NOT retry on `SESSION_EXPIRED` (let outer handle) or `HTTP 4xx` (deterministic). Step A (cached rows) uses retry because failures here are unrecoverable in the current sync; Step C (poll loop) uses batching only — poll has natural retry via multiple cycles.
+
+Same `runBatched(5)` applied to SW-side `sweepPendingImaging` (previous-sync recovery).
+
+Same patient + sync after the fix: 20/20 cached succeeded, 0 fetch-failed, total sync time 1m41s (was 1m47s with 10 failures — slightly FASTER because batching avoids the network thrashing of 20-parallel saturation).
+
 ## NHI multi-channel upload — A vs B (added 2026-05-29, v0.12.3)
 
 **NHI 健保存摺 ships separate raw rows per upload channel for the same measurement.** Verified directly against `https://myhealthbank.nhi.gov.tw/api/ihke3000/ihke3409s01/page_load` 2026-05-29 — of 113 dup pairs in user's v0.12.1 bundle, 92 were NHI-side A+B pairs, not bridge transformer artifacts.

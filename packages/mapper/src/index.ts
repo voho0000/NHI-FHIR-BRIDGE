@@ -15,6 +15,7 @@ export * from "./diagnostic-report";
 export * from "./dispatch";
 export * from "./encounter";
 export * from "./helpers";
+export * from "./imaging-dedup";
 // v0.12.0: export LOINC tables so CI invariant tests can walk them.
 export {
   NHI_TO_LOINC,

@@ -14,14 +14,42 @@ export const CANCEL_ERROR = "__SYNC_CANCELLED__";
 // re-login and retry instead of timing out on every remaining page.
 export const SESSION_EXPIRED_ERROR = "__SESSION_EXPIRED__";
 
-// Local mode stashes the assembled Bundle in chrome.storage.session under a
-// single slot. Why session (not local) — security audit #5: PHI in
-// chrome.storage.local survives browser restarts indefinitely; the
-// MV3-native chrome.storage.session is wiped automatically when the browser
-// closes, drastically shrinking the disk-resident PHI window.
+// v0.14+: bundle slot moved from chrome.storage.session (10 MB ceiling
+// that imaging blew past) to chrome.storage.local with the
+// unlimitedStorage permission. Happy-path stash is metadata-only because
+// the SW auto-triggers chrome.downloads.download via an offscreen doc
+// at sync completion — only cancel/error paths keep the JSON for retry.
+// TTL sweep (PENDING_BUNDLE_TTL_MS) and explicit clear gestures bound
+// the PHI window in the same way the session-storage approach did.
 export const PENDING_BUNDLE_KEY = "pendingFhirBundle";
 export const PENDING_BUNDLE_TTL_MS = 60 * 60 * 1000; // 1 hour
 export const PENDING_BUNDLE_SWEEP_ALARM = "pending-bundle-sweep";
+
+// v0.15: per-patient "imaging triggered but base64 not yet fetched"
+// stash. Survives across syncs so a row triggered but timed out in
+// sync #1 is re-attempted at the start of sync #2 (by then the NHI
+// 7-day cache has the base64 ready, so fetch is immediate). Keyed by
+// patient ID so multiple-account users don't cross-contaminate.
+// Cleared per-row as the seq arrives + base64 is fetched. TTL bounds
+// the staleness window (NHI cache is 7 days; we use 8 for safety
+// margin — after which the trigger is presumed to have rolled off and
+// the row will be re-triggered next sync if still candidate).
+export const PENDING_IMAGING_KEY_PREFIX = "nhiImagingPending:";
+export const PENDING_IMAGING_TTL_MS = 8 * 24 * 60 * 60 * 1000; // 8 days
+
+// v0.15+: Bearer token snapshot saved at sync end so the SW can do
+// direct fetch calls to NHI during background polling, without going
+// through chrome.scripting on a visible tab (which proved unreliable —
+// tab throttling, discards, and Vue conflicts caused hangs).
+//
+// TTL: NHI bearer tokens probably expire in 15-30 min; treat anything
+// older than 30 min as stale and trigger session-expired path.
+export const NHI_BEARER_TOKEN_KEY = "nhiBearerToken";
+export const NHI_BEARER_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 min
+
+// Note: imaging background polling constants removed v0.15 (post-
+// bg-poll architecture). The chrome.alarms-driven polling that
+// auto-patched the bundle is gone; users re-sync manually instead.
 
 // Debug toggle for the per-endpoint "first body sample" stash used to
 // diagnose adapter mismatches (raw_count > 0 but adapted_count == 0).

@@ -40,6 +40,9 @@ frontend/.next/
 .idea/
 *.swp
 
+# Claude Code local settings (per-clone, not shared)
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -67,10 +67,12 @@ describe("adapter fixture snapshots", () => {
       1. No apparent ICH
       2. Senile cortical atrophy and cerebral small vessel disease.
       3. Pan-paranasal sinusitis.",
+        "ctype": "",
         "date": "2026-01-14",
         "display": "電腦斷層造影  －  無造影劑",
         "hospital": "長庚嘉義",
         "issued": "2026-02-24",
+        "rid": "",
         "system": "",
       }
     `);

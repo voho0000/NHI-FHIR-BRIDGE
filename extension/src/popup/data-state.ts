@@ -196,7 +196,7 @@ export async function pushLocalBundleToBackend() {
   els.pushLocalBtn.disabled = true;
   els.pushLocalBtn.textContent = "傳送中…";
   try {
-    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
     if (!pending?.json) throw new Error("no local bundle");
     const r = await fetch(`${url}/fhir/import`, {
       method: "POST",

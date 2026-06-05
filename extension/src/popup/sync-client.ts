@@ -127,6 +127,7 @@ export async function apiSyncNhi() {
         patientOverride: ov,
         dateRange,
         dateRangeLabel,
+        fetchImagingEnabled: els.fetchImagingEnabled?.checked === true,
       },
     })
     .catch(() => {});

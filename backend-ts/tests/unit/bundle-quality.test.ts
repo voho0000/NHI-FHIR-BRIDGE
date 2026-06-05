@@ -40,6 +40,7 @@ import {
   NHI_TO_LOINC,
   PANEL_LOINC_MAP,
   findLoinc,
+  mapDiagnosticReport,
   mapMedicationsDedup,
   mapObservationsGrouped,
 } from "@nhi-fhir-bridge/mapper";
@@ -4218,5 +4219,231 @@ describe("CI v0.13 — NHI 就醫日期 (funC_DATE) surfaced as meta.tag", () =>
     );
     expect(visitTag).toBeDefined();
     expect(visitTag.code).toBe("2026-05-25");
+  });
+});
+
+// ── CI v0.14 — imaging JPEG opt-in → DiagnosticReport.presentedForm
+//
+// Background: popup "抓影像" toggle (OFF by default) drives the bridge
+// to trigger / poll / fetch IHKE3408S03 base64 JPGs. The mapper layer
+// gets a `jpgBase64` field on the raw item and emits presentedForm
+// per FHIR R4 Attachment. The risks this section gates:
+//   1. Toggle OFF (jpgBase64 absent) must produce zero presentedForm
+//      side-effects on existing narrative-only rows — backwards-compat.
+//   2. Toggle ON + valid JPG must produce contentType="image/jpeg",
+//      data === base64, size === computed-from-base64-length, title set.
+//   3. Image-only rows (conclusion empty, jpgBase64 present) must
+//      still emit a DR — otherwise the X-ray / endoscopy / ultrasound
+//      with no typed report is silently dropped.
+//   4. Lab rows without conclusion AND without jpgBase64 still drop
+//      (no clinical content to emit).
+//   5. ipl_CASE_SEQ_NO disambiguates two image-only rows that share
+//      (code, date) — without it the stableId collision would collapse
+//      two distinct NHI imaging cases (e.g. front + lateral X-ray
+//      under one order_CODE) into a single DR.
+//
+// 1×1 transparent JPEG, base64-encoded — smallest valid sample. SOI
+// marker FF D8 FF survives the round-trip so attachment-bytes consumers
+// can magic-byte check.
+const TINY_JPEG_B64 =
+  "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAr/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/wD/Z";
+
+describe("CI v0.14 — imaging JPEG opt-in: DiagnosticReport.presentedForm", () => {
+  test("narrative row WITHOUT jpgBase64 → backwards-compat (no presentedForm)", () => {
+    const dr = mapDiagnosticReport(
+      {
+        date: "2026-02-05",
+        code: "19009C",
+        display: "Abdominal Echo, F/U",
+        category: "RAD",
+        conclusion: "Sonar Diagnosis: Fatty liver Gallbladder sludge",
+        hospital: "嘉基醫院",
+        issued: "2026-03-26",
+      },
+      PATIENT_ID,
+    );
+    expect(dr).not.toBeNull();
+    expect(dr?.conclusion).toBe("Sonar Diagnosis: Fatty liver Gallbladder sludge");
+    expect(dr?.presentedForm).toBeUndefined();
+  });
+
+  test("narrative row WITH single jpgBase64s → DR has both conclusion AND presentedForm", () => {
+    const dr = mapDiagnosticReport(
+      {
+        date: "2026-02-05",
+        code: "19009C",
+        display: "Abdominal Echo, F/U",
+        category: "RAD",
+        conclusion: "Sonar Diagnosis: Fatty liver",
+        hospital: "嘉基醫院",
+        issued: "2026-03-26",
+        jpgBase64s: [TINY_JPEG_B64],
+        iplCaseSeqNo: "2026020512345678",
+      },
+      PATIENT_ID,
+    );
+    expect(dr).not.toBeNull();
+    expect(dr?.conclusion).toBe("Sonar Diagnosis: Fatty liver");
+    expect(dr?.presentedForm).toHaveLength(1);
+    expect(dr?.presentedForm[0].contentType).toBe("image/jpeg");
+    expect(dr?.presentedForm[0].data).toBe(TINY_JPEG_B64);
+    // Single-frame: title stays the raw display (no "frame N/M" suffix).
+    expect(dr?.presentedForm[0].title).toBe("Abdominal Echo, F/U");
+    // size = floor(base64-length * 3 / 4) — inverse of base64 expansion.
+    const expectedSize = Math.floor((TINY_JPEG_B64.length * 3) / 4);
+    expect(dr?.presentedForm[0].size).toBe(expectedSize);
+    // Decoded magic bytes = JPEG SOI (FF D8 FF). Bridge does not transcode.
+    const binFirst3 = Buffer.from(TINY_JPEG_B64, "base64").subarray(0, 3);
+    expect(binFirst3[0]).toBe(0xff);
+    expect(binFirst3[1]).toBe(0xd8);
+    expect(binFirst3[2]).toBe(0xff);
+  });
+
+  test("multi-frame study (CT/US) → one presentedForm per frame with 'frame n/N' titles", () => {
+    // 19009C 腹部超音波 ships 10 frames per row, 33070B 腦 CT ships 10
+    // too (probed live 2026-06-03). Pre-fix iteration only kept pics[0],
+    // losing ~80% of the clinical content. The mapper must emit one
+    // attachment per frame with a 'frame N/M' suffix so apps can show
+    // which frame is which without counting.
+    const frames = [TINY_JPEG_B64, TINY_JPEG_B64, TINY_JPEG_B64];
+    const dr = mapDiagnosticReport(
+      {
+        date: "2026-02-05",
+        code: "19009C",
+        display: "Abdominal Echo",
+        category: "RAD",
+        conclusion: "",
+        hospital: "嘉基醫院",
+        jpgBase64s: frames,
+        iplCaseSeqNo: "2026020512345678",
+        imageOnly: true,
+      },
+      PATIENT_ID,
+    );
+    expect(dr).not.toBeNull();
+    expect(dr?.presentedForm).toHaveLength(3);
+    expect(dr?.presentedForm[0].title).toBe("Abdominal Echo (frame 1/3)");
+    expect(dr?.presentedForm[1].title).toBe("Abdominal Echo (frame 2/3)");
+    expect(dr?.presentedForm[2].title).toBe("Abdominal Echo (frame 3/3)");
+    for (const attachment of dr?.presentedForm ?? []) {
+      expect(attachment.contentType).toBe("image/jpeg");
+      expect(attachment.data).toBe(TINY_JPEG_B64);
+    }
+  });
+
+  test("legacy raw.jpgBase64 (singular, deprecated) still works for backwards compat", () => {
+    // Older callers (pre-v0.14.1) or test fixtures may pass the
+    // singular field. Mapper accepts both shapes so a partial migration
+    // doesn't drop data on the floor.
+    const dr = mapDiagnosticReport(
+      {
+        date: "2026-05-25",
+        code: "32001C",
+        display: "Chest X-Ray",
+        category: "RAD",
+        conclusion: "",
+        hospital: "長庚嘉義",
+        jpgBase64: TINY_JPEG_B64,
+        iplCaseSeqNo: "2026052532001001",
+        imageOnly: true,
+      },
+      PATIENT_ID,
+    );
+    expect(dr).not.toBeNull();
+    expect(dr?.presentedForm).toHaveLength(1);
+    expect(dr?.presentedForm[0].data).toBe(TINY_JPEG_B64);
+  });
+
+  test("image-only row (conclusion empty + jpgBase64s present) → DR emitted with presentedForm only", () => {
+    // The 32001C 胸腔 X-ray case: NHI ships no narrative `desc`, so
+    // adaptImagingReportFromDetail would return null. With opt-in
+    // imaging enabled, adaptImageOnlyReportFromMeta synthesises a raw
+    // item with conclusion="" + jpgBase64s. The mapper must still emit
+    // a DR — without this branch the X-ray disappears entirely.
+    const dr = mapDiagnosticReport(
+      {
+        date: "2026-05-25",
+        code: "32001C",
+        display: "Chest X-Ray",
+        category: "RAD",
+        conclusion: "",
+        hospital: "長庚嘉義",
+        jpgBase64s: [TINY_JPEG_B64],
+        iplCaseSeqNo: "2026052532001001",
+        imageOnly: true,
+      },
+      PATIENT_ID,
+    );
+    expect(dr).not.toBeNull();
+    expect(dr?.conclusion).toBeUndefined();
+    expect(dr?.presentedForm).toHaveLength(1);
+    expect(dr?.presentedForm[0].data).toBe(TINY_JPEG_B64);
+  });
+
+  test("row with no conclusion AND no jpgBase64s → still dropped (no clinical content)", () => {
+    // Defensive: a malformed imaging detail body (NHI gave us nothing)
+    // must drop, not emit an empty DR. Without this assertion we'd
+    // silently flood the bundle with content-free DRs.
+    const dr = mapDiagnosticReport(
+      {
+        date: "2026-05-25",
+        code: "32001C",
+        display: "Chest X-Ray",
+        category: "RAD",
+        conclusion: "",
+        hospital: "長庚嘉義",
+        // no jpgBase64s, no imageOnly flag
+      },
+      PATIENT_ID,
+    );
+    expect(dr).toBeNull();
+  });
+
+  test("empty jpgBase64s array AND empty conclusion → dropped (no clinical content)", () => {
+    // Mirror the above for the array shape. Defensive: a fetcher
+    // that returned no frames but populated [] (e.g. transient
+    // network error) must still drop the row.
+    const dr = mapDiagnosticReport(
+      {
+        date: "2026-05-25",
+        code: "32001C",
+        display: "Chest X-Ray",
+        category: "RAD",
+        conclusion: "",
+        hospital: "長庚嘉義",
+        jpgBase64s: [],
+        imageOnly: true,
+      },
+      PATIENT_ID,
+    );
+    expect(dr).toBeNull();
+  });
+
+  test("two image-only rows sharing (code, date) get distinct ids via ipl_CASE_SEQ_NO", () => {
+    // Front + lateral X-ray under the same order_CODE 32001C on the
+    // same day — without ipl_CASE_SEQ_NO in the stableId hash both
+    // would collapse to one DR, losing one of the images. Bridge must
+    // produce TWO DRs with distinct ids.
+    const baseRaw = {
+      date: "2026-05-25",
+      code: "32001C",
+      display: "Chest X-Ray",
+      category: "RAD",
+      conclusion: "",
+      hospital: "長庚嘉義",
+      jpgBase64s: [TINY_JPEG_B64],
+      imageOnly: true,
+    };
+    const drA = mapDiagnosticReport(
+      { ...baseRaw, iplCaseSeqNo: "2026052532001001" },
+      PATIENT_ID,
+    );
+    const drB = mapDiagnosticReport(
+      { ...baseRaw, iplCaseSeqNo: "2026052532001002" },
+      PATIENT_ID,
+    );
+    expect(drA).not.toBeNull();
+    expect(drB).not.toBeNull();
+    expect(drA?.id).not.toBe(drB?.id);
   });
 });

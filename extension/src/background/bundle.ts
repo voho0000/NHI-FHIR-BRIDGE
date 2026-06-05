@@ -1,7 +1,7 @@
 // Local-mode bundle assembly + stash. Runs the same mappers the backend
 // runs over the per-page_type items, dedups + links the resulting
 // resources, wraps them in a FHIR collection Bundle, and stashes it in
-// chrome.storage.session for the popup's download button.
+// chrome.storage.local for the popup's download button.
 
 import {
   GROUP_HANDLERS,
@@ -90,25 +90,34 @@ export function assembleLocalBundle(byType, patientOverride, maskEnabled) {
   };
 }
 
-// Local mode stashes the assembled Bundle in chrome.storage.session
+// Local mode stashes the assembled Bundle in chrome.storage.local
 // under a single "pendingFhirBundle" slot. The popup shows a download
 // button when this slot is non-empty; the actual chrome.downloads.download
-// call happens from the popup (in response to a user click) so the file
-// doesn't appear in the Downloads bar uninvited.
+// call happens from the popup (in response to a user click) so:
+//   - The file doesn't appear in the Downloads bar uninvited.
+//   - The popup click satisfies Chrome's user-gesture requirement
+//     for saveAs:true dialogs (background SW calls don't qualify;
+//     v0.14 tried offscreen workarounds but they fail silently for
+//     >10 MB bundles via chrome.runtime.sendMessage size limits).
 //
-// Why session (not local) — security audit #5: PHI persisted in
-// chrome.storage.local survives browser restarts indefinitely. The
-// MV3-native chrome.storage.session is wiped automatically when the
-// browser closes, drastically shrinking the disk-resident PHI window.
+// Why local (was session pre-v0.14) — chrome.storage.session has a
+// hard 10 MB quota that MV3 does NOT allow extensions to raise. v0.14
+// "抓影像" opt-in inlines base64 JPGs into the bundle (each ~2-3 MB);
+// even modest imaging sets blow past 10 MB and the stash silently
+// fails with "Session storage quota bytes exceeded". chrome.storage
+// .local + "unlimitedStorage" permission removes the ceiling entirely.
 //
-// Additionally:
-//   - Single slot means a new sync overwrites the previous pending bundle.
-//   - The popup's downloadPendingBundle wipes the slot the moment the
-//     user-initiated download completes.
-//   - A periodic chrome.alarms sweep (PENDING_BUNDLE_TTL_MS) wipes the
-//     slot if the user leaves a sync sitting unconsumed for an hour.
-// chrome.storage.session default quota is 10 MB; a typical NHI sync is
-// well under 2 MB.
+// Security trade-off (was audit #5: session = wipe-on-close): bundles
+// now survive browser restarts, EXACTLY THE SAME WAY the downloaded
+// .json file on the user's disk does. The bundle is also wiped when:
+//   - The user clicks the download button (downloadPendingBundle).
+//   - The user clicks the clear button (clearPendingBundle).
+//   - The TTL sweep fires (chrome.alarms / PENDING_BUNDLE_TTL_MS) —
+//     usually within ~1 hour of an unconsumed sync.
+//   - A new sync overwrites the previous slot.
+// Net PHI window is bounded by whichever comes first; the disk-vs-
+// session distinction matters less when the user is downloading the
+// file to disk anyway.
 export async function stashFhirBundle(bundle, patientId, dateRange) {
   // Filename: nhi-{pid}-{startYYYYMMDD}-{endYYYYMMDD}.json
   // When no explicit dateRange (NHI default = 近 1 年), synthesize today-1y → today.
@@ -143,14 +152,31 @@ export async function stashFhirBundle(bundle, patientId, dateRange) {
   const version = chrome.runtime.getManifest()?.version || "unknown";
   const filename = `nhi-${safePid}-${s}-${e}-v${version}.json`;
   const json = JSON.stringify(bundle, null, 2);
-  await chrome.storage.session.set({
+  const bytes = json.length;
+
+  // Stash JSON + metadata to chrome.storage.local. unlimitedStorage
+  // manifest permission lifts the per-extension quota so imaging
+  // bundles (25 MB+) fit comfortably. The popup's "下載健康紀錄檔"
+  // button reads this slot, creates a Blob URL, and triggers
+  // chrome.downloads.download with saveAs:true — the popup click is
+  // the user gesture Chrome requires for the Save As dialog. The SW
+  // does NOT auto-download (the offscreen workaround we tried in an
+  // earlier v0.14 iteration was unreliable for >10 MB bundles).
+  await chrome.storage.local.set({
     [PENDING_BUNDLE_KEY]: {
       filename,
+      bytes,
       json,
-      bytes: json.length,
       generatedAt: Date.now(),
       patientId: patientId || null,
     },
   });
-  return { filename, bytes: json.length };
+  return { filename, bytes };
 }
+
+// Note: hotPatchPendingBundle removed v0.15 (post-bg-poll architecture).
+// The chrome.alarms-driven background polling that auto-patched the
+// stashed bundle was removed — replaced by a user-driven "press sync
+// again in 5–10 min" prompt. The nhi-imaging-row meta.tag is still
+// emitted by the mapper (in case we re-introduce auto-patch later)
+// but nothing in the bridge currently consumes it.

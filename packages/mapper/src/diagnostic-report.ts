@@ -38,10 +38,25 @@ export function mapDiagnosticReport(
   patientId: string,
 ): Record<string, any> | null {
   const conclusion = ((raw.conclusion ?? "") as string).trim();
-  if (!conclusion) return null;
+  // raw.jpgBase64s is the canonical multi-frame field (v0.14.x+):
+  // CT / ultrasound studies ship many frames per row; X-ray / single-
+  // shot exams ship one. Accept raw.jpgBase64 (singular, deprecated)
+  // as a backwards-compat shim so existing callers / tests don't break.
+  const rawJpgs: string[] = Array.isArray(raw.jpgBase64s)
+    ? (raw.jpgBase64s as string[]).filter((s) => typeof s === "string" && s.length > 0)
+    : typeof raw.jpgBase64 === "string" && raw.jpgBase64.length > 0
+      ? [raw.jpgBase64]
+      : [];
+
+  // Image-only rows (popup "抓影像" opt-in) have no narrative but
+  // still represent a clinical event — the attachments ARE the report.
+  // Without this branch the v0.13 imaging adapter would drop the row
+  // because conclusion is empty. Lab rows without conclusion AND
+  // without images still drop as before (no clinical content).
+  if (!conclusion && rawJpgs.length === 0) return null;
 
   const catKeyRaw = String(raw.category ?? "").toUpperCase();
-  if (catKeyRaw === "LAB" && looksLikeLabValueOnly(conclusion)) {
+  if (catKeyRaw === "LAB" && conclusion && looksLikeLabValueOnly(conclusion)) {
     return null;
   }
 
@@ -53,9 +68,16 @@ export function mapDiagnosticReport(
       ? systems.LOINC
       : systems.HIS_LOCAL_REPORT_CODE;
 
+  // stableId hash includes ipl_CASE_SEQ_NO when present so two image-only
+  // rows that share (code, date) but have different NHI imaging cases
+  // (e.g. front + lateral X-ray under the same order_CODE 32001C) don't
+  // collapse to one DR. Falls back to display when ipl absent (preserves
+  // backwards-compat for narrative-only rows).
+  const idDiscriminator = raw.iplCaseSeqNo ? `${code || display}|${raw.iplCaseSeqNo}` : code || display;
+
   const resource: Record<string, any> = {
     resourceType: "DiagnosticReport",
-    id: stableId(patientId, code || display, raw.date ?? ""),
+    id: stableId(patientId, idDiscriminator, raw.date ?? ""),
     meta: { versionId: "1", source: "nhi-fhir-bridge/scraper" },
     status: raw.status ?? "final",
     subject: { reference: `Patient/${patientId}` },
@@ -63,8 +85,8 @@ export function mapDiagnosticReport(
       coding: [{ system, code: code || display, display }],
       text: display,
     },
-    conclusion,
   };
+  if (conclusion) resource.conclusion = conclusion;
 
   const catEntry = CATEGORY_MAP[catKeyRaw];
   if (catEntry) {
@@ -84,6 +106,51 @@ export function mapDiagnosticReport(
   const hospital = ((raw.hospital ?? "") as string).trim();
   if (hospital) {
     resource.performer = [{ display: hospital }];
+  }
+
+  // NHI imaging row tag (v0.15+): bridge-internal routing identifier
+  // that lets the SW background poll find this exact DR later via
+  // bundle.entry walk → meta.tag matching, without having to recompute
+  // stableId from the raw item. Only emitted when raw provides both
+  // rid (crid of the IHKE3408 row) and ctype (ori_TYPE; A/B/C/...) —
+  // these are bridge-side identifiers, not patient PHI.
+  //
+  // Per FHIR R4 spec, apps not aware of the tag system MUST ignore the
+  // tag (Meta.tag is informational). Downstream SMART apps that don't
+  // implement bridge-specific hot-patch behavior pass through unchanged.
+  if (raw.rid && raw.ctype) {
+    resource.meta.tag = [
+      {
+        system: "http://nhi-fhir-bridge/nhi-imaging-row",
+        code: `${raw.rid}|${raw.ctype}`,
+      },
+    ];
+  }
+
+  // presentedForm: per FHIR R4 spec, an Attachment array that
+  // "represents the clinical content of the report". For NHI imaging
+  // JPGs this is the patient-visible rendering of the X-ray / CT /
+  // ultrasound the 健康存摺 UI shows. CT and ultrasound studies ship
+  // many frames per row (probed 19009C=10, 33070B=10); X-rays ship 1.
+  // Bytes come straight from the IHKE3408S03 base64 payload — bridge
+  // does not transcode. Size derives from base64 overhead inverse
+  // (every 4 base64 chars ≈ 3 binary bytes).
+  if (rawJpgs.length > 0) {
+    resource.presentedForm = rawJpgs.map((b64, i) => {
+      const size = Math.floor((b64.length * 3) / 4);
+      // Multi-frame studies get "<display> (frame n/N)" titles so a
+      // SMART app rendering the list has something useful to display
+      // for each attachment without having to count. Single-frame
+      // studies keep the raw display untouched.
+      const title =
+        rawJpgs.length > 1 ? `${display} (frame ${i + 1}/${rawJpgs.length})` : display;
+      return {
+        contentType: "image/jpeg",
+        data: b64,
+        size,
+        title,
+      };
+    });
   }
 
   return resource;

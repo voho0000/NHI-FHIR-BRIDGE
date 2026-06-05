@@ -45,20 +45,19 @@ export async function sweepStaleLocalKeys() {
   } catch {}
 }
 
-// PHI TTL sweep (security audit #5): even though pendingFhirBundle now
-// lives in chrome.storage.session (auto-cleared on browser close) and
-// downloadPendingBundle wipes it on user-initiated save, a user who
-// completes a sync and then leaves the browser open for hours without
-// downloading would still have an in-memory copy lingering. The 10-min
-// alarm checks the stash's age and drops it once it exceeds
-// PENDING_BUNDLE_TTL_MS (1 hour).
+// PHI TTL sweep (security audit #5): v0.14+ the bundle slot lives in
+// chrome.storage.local with unlimitedStorage (the offscreen-driven Save
+// As flow happens at sync time, so the stash is metadata-only most of
+// the time — only cancel/error keeps the JSON for retry). If the user
+// leaves the popup unconsumed for hours, the 10-min alarm drops the
+// record once it exceeds PENDING_BUNDLE_TTL_MS (1 hour).
 export async function sweepPendingBundleIfStale() {
   try {
-    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
     if (!pending) return;
     const age = Date.now() - (pending.generatedAt || 0);
     if (age > PENDING_BUNDLE_TTL_MS) {
-      await chrome.storage.session.remove(PENDING_BUNDLE_KEY);
+      await chrome.storage.local.remove(PENDING_BUNDLE_KEY);
     }
   } catch {}
 }

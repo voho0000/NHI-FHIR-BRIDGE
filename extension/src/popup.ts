@@ -33,6 +33,7 @@ import {
 } from "./popup/constants.js";
 import { _refreshLocalBundleState, pushLocalBundleToBackend } from "./popup/data-state.js";
 import { els } from "./popup/els.js";
+import { loadFetchImagingEnabled, onFetchImagingToggle } from "./popup/imaging-toggle.js";
 import {
   clearPatientOverride,
   loadMaskNameEnabled,
@@ -69,6 +70,7 @@ async function init() {
   document.getElementById("login-ok-next")?.addEventListener("click", () => _setActiveStep(2));
 
   await loadMaskNameEnabled();
+  await loadFetchImagingEnabled();
 
   // Seed local bundle state from storage so the data-state card is
   // populated as soon as the popup renders (no flash of "未產生").
@@ -234,22 +236,23 @@ els.syncApiKey.addEventListener("change", () => {
   chrome.storage.local.set({ syncApiKey: els.syncApiKey.value.trim() });
 });
 els.maskNameEnabled?.addEventListener("change", onMaskNameToggle);
+els.fetchImagingEnabled?.addEventListener("change", onFetchImagingToggle);
 els.smartAppUrl.addEventListener("change", onSmartAppUrlChange);
 
 // Pending-bundle download / clear buttons.
 els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);
 els.clearBundleBtn.addEventListener("click", clearPendingBundle);
 
-// chrome.storage.onChanged listeners. The pending bundle lives in
-// chrome.storage.session (security audit #5 fix); syncStatus +
-// patientOverride live in local. We keep the two session-bundle
-// listeners separate (data-state vs download UI) so a failure in one
-// path doesn't take the other down.
+// chrome.storage.onChanged listeners. v0.14+ the pending bundle slot
+// moved from chrome.storage.session (10 MB ceiling) to chrome.storage
+// .local with unlimitedStorage permission so imaging bundles fit. We
+// keep the two listeners separate (data-state vs download UI) so a
+// failure in one path doesn't take the other down.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "session" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
+  if (area === "local" && PENDING_BUNDLE_KEY in changes) _refreshLocalBundleState();
 });
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "session" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
+  if (area === "local" && PENDING_BUNDLE_KEY in changes) refreshPendingBundle();
 });
 // Background-side flow can mutate the patientOverride mid-sync — most
 // importantly _maybeFetchPatientIdFromNhi swaps the auto-XXXXXXXX

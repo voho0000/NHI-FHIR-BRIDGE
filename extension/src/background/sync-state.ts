@@ -16,6 +16,14 @@ let _cancelled = false;
 // data without the popup needing to pass it back. Set at the top of
 // runNhiApiSync; cleared on completion (success/failure/cancel).
 let _activeSyncCtx = null;
+// v0.15+: tab id of the currently-open hidden imaging-trigger tab. The
+// orchestrator's imagingPromise runs as fire-and-forget; without this,
+// a user pressing stop mid-sync would still see the hidden tab open
+// and run through the Vue-click flow because the imagingPromise can't
+// observe the cancel flag mid-script. The stopSync handler closes
+// this tab, which makes chrome.scripting.executeScript throw, which
+// unwinds the trigger flow.
+let _activeImagingTabId: number | null = null;
 
 export function isCancelled() {
   return _cancelled;
@@ -31,6 +39,12 @@ export function getActiveSyncCtx() {
 }
 export function setActiveSyncCtx(ctx) {
   _activeSyncCtx = ctx;
+}
+export function getActiveImagingTabId(): number | null {
+  return _activeImagingTabId;
+}
+export function setActiveImagingTabId(tabId: number | null) {
+  _activeImagingTabId = tabId;
 }
 
 export async function setStatus(partial) {

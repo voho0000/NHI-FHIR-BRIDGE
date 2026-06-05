@@ -887,7 +887,14 @@ export function adaptProcedureFromDetail(item) {
 // to the patient as "this report's date" and reflects the sign-off /
 // exam day. func_DATE remains as last resort so a malformed row
 // without main_tit still produces some date instead of being dropped.
-export function adaptImagingReportFromDetail(item) {
+// `ctx` carries the (rid, ctype) the detail was fetched under, so a
+// later imaging-JPEG fan-out can re-key its base64 results back onto
+// the right report. Optional — callers without ctx (legacy tests) leave
+// the fields as empty strings.
+export function adaptImagingReportFromDetail(
+  item,
+  ctx?: { rid?: string; ctype?: string },
+) {
   if (!item || typeof item !== "object") return null;
   const date = rocToISO(
     item.real_INSPECT_DATE ||
@@ -914,5 +921,51 @@ export function adaptImagingReportFromDetail(item) {
     // was finalised in NHI's system — maps to DiagnosticReport.issued.
     // Falls back to None if NHI didn't ship one.
     issued: rocToISO((item.assay_UPLOAD_DATE || "").split(/\s+/)[0]),
+    // Per-row routing keys for the imaging-JPEG opt-in flow. Always
+    // emitted so a post-fetch step can match jpegResults back onto the
+    // exact narrative this came from (multiple rows share order_CODE).
+    rid: ctx?.rid || "",
+    ctype: ctx?.ctype || "",
+  };
+}
+
+// Counterpart to adaptImagingReportFromDetail for image-only rows
+// (desc empty, image attachment present after the trigger/poll flow).
+// Without this path, every image-only DR would silently disappear at
+// the narrative gate above — losing X-ray / endoscopy results that
+// never get a typed text report.
+//
+// `meta` is the raw IHKE3408S02 detail row metadata captured by
+// fetchImagingDetails for every row, not just narrative-bearing ones.
+// mapDiagnosticReport recognises raw.imageOnly + raw.jpgBase64 and
+// emits status="final" without conclusion; presentedForm carries the
+// clinical content the missing narrative would have described.
+export function adaptImageOnlyReportFromMeta(
+  meta: {
+    date?: string;
+    orderCode?: string;
+    orderName?: string;
+    hospital?: string;
+    assayUploadDate?: string;
+    funcDate?: string;
+  },
+  ctx?: { rid?: string; ctype?: string },
+) {
+  if (!meta) return null;
+  const date = rocToISO(meta.date || meta.funcDate || "");
+  const display = pickEnglish(meta.orderName || "");
+  if (!date || !display) return null;
+  return {
+    date,
+    code: meta.orderCode || "",
+    system: "",
+    display,
+    category: "RAD",
+    conclusion: "",
+    hospital: meta.hospital || "",
+    issued: rocToISO((meta.assayUploadDate || "").split(/\s+/)[0]),
+    rid: ctx?.rid || "",
+    ctype: ctx?.ctype || "",
+    imageOnly: true,
   };
 }
