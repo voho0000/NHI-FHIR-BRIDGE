@@ -7626,6 +7626,8 @@
       errors: []
     });
     await clearResultBadge();
+    await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {
+    });
     const fetchSpec = NHI_API_ENDPOINTS.map((ep) => {
       const path = ep.supportsDateRange ? applyDateRangeToPath(ep.path, dateRange) : ep.path;
       return { name: ep.name, url: BASE + path, method: "GET" };

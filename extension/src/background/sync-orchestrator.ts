@@ -28,7 +28,12 @@ import { maybeFetchPatientIdFromNhi } from "./auth.js";
 import { exportPatientBundle, postStructured, postSyncLog } from "./backend-upload.js";
 import { clearResultBadge, showResultBadge } from "./badge.js";
 import { assembleLocalBundle, stashFhirBundle } from "./bundle.js";
-import { CANCEL_ERROR, DEBUG_STASH_BODY_SAMPLES, NHI_HOST } from "./constants.js";
+import {
+  CANCEL_ERROR,
+  DEBUG_STASH_BODY_SAMPLES,
+  NHI_HOST,
+  PENDING_BUNDLE_KEY,
+} from "./constants.js";
 import {
   fetchChronicMedicationDetails,
   fetchEncounterDetails,
@@ -168,6 +173,15 @@ export async function runNhiApiSync({
   // reflects THIS sync once it finishes (and isn't a stale leftover while
   // the new run is in progress).
   await clearResultBadge();
+  // Drop the previous sync's stashed FHIR bundle (the file the popup's
+  // "下載健康紀錄檔" panel was offering). Otherwise during a re-sync the
+  // user sees the OLD filename + size + "X 分鐘前" timestamp underneath
+  // the live progress banner — visually identical to the new one being
+  // built, so it's easy to assume the in-flight sync is already done
+  // and download last-time's stale data. Cleared at sync START (not
+  // sync end) on purpose: at end the new bundle is written into the
+  // same slot, so an end-of-sync clear would race the new write.
+  await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
 
   // Step 1: fetch all endpoints in PARALLEL inside the NHI tab. Inject
   // the ISO date range into each endpoint that supports it; skipped
