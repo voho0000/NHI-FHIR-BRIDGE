@@ -7,7 +7,7 @@
  */
 
 import * as systems from "./systems";
-import { stableId } from "./helpers";
+import { normalizeNarrativeForDedup, stableId } from "./helpers";
 
 const V2_0074 = "http://terminology.hl7.org/CodeSystem/v2-0074";
 
@@ -35,23 +35,48 @@ function looksLikeLabValueOnly(conclusion: string): boolean {
 
 // Cheap deterministic fingerprint over the FIRST 16 KB of a narrative
 // conclusion. Used in mapDiagnosticReport's stableId discriminator for
-// narrative-only rows: two reports with byte-identical conclusions
-// share a fingerprint (so true cross-channel A+B duplicates still
-// dedup on the bundle's id-collision pass), but distinct conclusions
-// — e.g. head/neck CT vs chest CT at the same hospital under the
-// same NHI code on the same day — diverge.
+// narrative-only rows: two reports whose conclusions are equal AFTER
+// whitespace/case normalization share a fingerprint (so true cross-
+// channel A+B duplicates still dedup on the bundle's id-collision
+// pass), but distinct conclusions — e.g. head/neck CT vs chest CT at
+// the same hospital under the same NHI code on the same day — diverge.
 //
-// djb2 over JS char codes + total length suffix. False positives are
-// statistically negligible for narrative-length strings; we don't
+// v0.17.2: fingerprint runs over `normalizeNarrativeForDedup(s)`, not
+// the raw bytes. That normalizer NFKC-folds fullwidth/halfwidth glyphs
+// (NHI ships "S／P" U+FF0F in one channel, "S/P" U+002F in another),
+// strips all whitespace (numbered list rendered "ICH2." vs "ICH 2.",
+// line breaks in different spots), and lowercases. Pre-v0.17.2 the
+// raw-byte hash gave those channel-variants DISTINCT ids → both
+// survived → downstream apps saw a phantom "multi-part CT" group
+// (MediPrisma bug report 2026-06-06, patient P10109XXXX brain CT).
+// Normalizing the hash input collapses pure formatting variants to one
+// id while keeping genuinely distinct exams apart (they differ in real
+// alphanumeric content, not just spacing/fullwidth). Length suffix is
+// computed on the normalized string so byte-variant pairs match there
+// too.
+//
+// Scope note: this fingerprint catches EXACT-equality formatting
+// variants only. TRUNCATED channel uploads (one channel's dictation
+// cut off mid-report → its text is a strict PREFIX of the complete
+// channel's) get DISTINCT fingerprints here and are instead collapsed
+// upstream in imaging-dedup.ts's prefix-merge (which drops the
+// truncated item before it ever reaches this mapper). Keeping the two
+// concerns split is deliberate: the stableId hash must stay a pure
+// equality key, while prefix-superset reasoning needs to compare whole
+// items (and decide which to drop), which only the dedup pass can do.
+//
+// djb2 over JS char codes + normalized-length suffix. False positives
+// are statistically negligible for narrative-length strings; we don't
 // need cryptographic strength because the worst-case wrong dedup is
 // a single dropped DR that re-emits on next sync.
 function _conclusionFingerprint(s: string): string {
+  const norm = normalizeNarrativeForDedup(s);
   let h = 5381;
-  const cap = Math.min(s.length, 16384);
+  const cap = Math.min(norm.length, 16384);
   for (let i = 0; i < cap; i++) {
-    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    h = ((h << 5) + h + norm.charCodeAt(i)) | 0;
   }
-  return `${h >>> 0}:${s.length}`;
+  return `${h >>> 0}:${norm.length}`;
 }
 
 export function mapDiagnosticReport(

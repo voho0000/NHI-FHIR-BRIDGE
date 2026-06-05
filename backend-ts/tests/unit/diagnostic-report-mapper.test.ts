@@ -178,4 +178,102 @@ describe("mapDiagnosticReport", () => {
       expect(b).toBeNull();
     });
   });
+
+  // CI v0.17.2 — the narrative stableId fingerprint must be whitespace-
+  // and case-INSENSITIVE. Bug found 2026-06-06 (MediPrisma report,
+  // patient P10109XXXX): NHI shipped one Brain CT narrative through two
+  // upload channels (ori_TYPE A/B) whose text was identical except for
+  // formatting whitespace — the numbered impression list rendered as
+  // "ICH2." in one channel and "ICH 2." in the other. v0.16.2's raw-byte
+  // fingerprint gave the two channel-variants DISTINCT ids → both
+  // survived → downstream apps saw a phantom "multi-part CT" group. The
+  // v0.17.2 fix normalizes (strips all whitespace + lowercases) the hash
+  // input so channel-variants collapse to one id, WITHOUT merging
+  // genuinely distinct exams (which differ in real alphanumeric content,
+  // not just spacing). This invariant guards BOTH directions.
+  describe("CI v0.17.2 — narrative stableId is whitespace/case-insensitive", () => {
+    const baseRaw = {
+      code: "33070B",
+      display: "電腦斷層造影  －  無造影劑",
+      category: "RAD",
+      date: "2026-01-14",
+      hospital: "長庚嘉義",
+    };
+
+    // The exact divergence from the real bundle: letter→digit spacing in
+    // the numbered impression list ("ICH2." vs "ICH 2.") plus a newline
+    // vs no-newline after the colon.
+    const brainNoSpace =
+      "Computed Tomography of Brain Without Enhancement Show:Method:" +
+      "Axial noncontrast 5 mm sections were obtained.Impression:1.No apparent ICH2." +
+      "Senile cortical atrophy and cerebral small vessel disease.";
+    const brainWithSpace =
+      "Computed Tomography of Brain Without Enhancement Show:\nMethod: " +
+      "Axial noncontrast 5 mm sections were obtained. Impression: 1. No apparent ICH 2. " +
+      "Senile cortical atrophy and cerebral small vessel disease.";
+
+    test("channel-variant narratives differing ONLY in whitespace COLLIDE (same id)", () => {
+      const a = mapDiagnosticReport({ ...baseRaw, conclusion: brainNoSpace }, PID);
+      const b = mapDiagnosticReport({ ...baseRaw, conclusion: brainWithSpace }, PID);
+      expect(a).not.toBeNull();
+      expect(b).not.toBeNull();
+      expect(a!.id).toBe(b!.id);
+    });
+
+    test("case-only difference also collides (same id)", () => {
+      const lower = mapDiagnosticReport(
+        { ...baseRaw, conclusion: "clear lungs. no acute process." },
+        PID,
+      );
+      const upper = mapDiagnosticReport(
+        { ...baseRaw, conclusion: "Clear Lungs. No Acute Process." },
+        PID,
+      );
+      expect(lower!.id).toBe(upper!.id);
+    });
+
+    // NFKC fold (v0.17.2): NHI ships the same glyph fullwidth in one
+    // upload channel and halfwidth in another — fullwidth slash U+FF0F
+    // "S／P" vs ASCII "S/P", fullwidth colon U+FF1A "Chest：Mild" vs
+    // "Chest:Mild", fullwidth ampersand "Ａ＆Ｅ" vs "A&E". These are pure
+    // encoding variants of one report. normalizeNarrativeForDedup runs
+    // NFKC first so they share a fingerprint → same id.
+    test("fullwidth/halfwidth-only difference collides (same id)", () => {
+      const fullwidth = mapDiagnosticReport(
+        { ...baseRaw, conclusion: "S／P operation. Chest：Mild effusion. Ａ＆Ｅ noted." },
+        PID,
+      );
+      const halfwidth = mapDiagnosticReport(
+        { ...baseRaw, conclusion: "S/P operation. Chest:Mild effusion. A&E noted." },
+        PID,
+      );
+      expect(fullwidth).not.toBeNull();
+      expect(halfwidth).not.toBeNull();
+      expect(fullwidth!.id).toBe(halfwidth!.id);
+    });
+
+    test("emitted conclusion stays VERBATIM (normalization is comparison-only, faithful transport)", () => {
+      const a = mapDiagnosticReport({ ...baseRaw, conclusion: brainNoSpace }, PID);
+      expect(a!.conclusion).toBe(brainNoSpace);
+    });
+
+    test("regression guard: distinct body parts still DIVERGE despite normalization", () => {
+      const chest = mapDiagnosticReport(
+        {
+          ...baseRaw,
+          conclusion: "Computed Tomography of Chest Without Enhancement Show: 1. Diffuse patchy …",
+        },
+        PID,
+      );
+      const headNeck = mapDiagnosticReport(
+        {
+          ...baseRaw,
+          conclusion:
+            "Computed Tomography of Head and neck Without Enhancement Show: skull base to upper chest …",
+        },
+        PID,
+      );
+      expect(chest!.id).not.toBe(headNeck!.id);
+    });
+  });
 });

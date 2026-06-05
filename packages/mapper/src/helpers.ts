@@ -80,6 +80,50 @@ export function maskId(id: string | null | undefined, char = "*"): string {
   return s;
 }
 
+/**
+ * Normalize a narrative report body for content-equality comparison.
+ *
+ * NHI's PACS/RIS ships the SAME radiology narrative through different
+ * upload channels (ori_TYPE A=不定期上傳 / B=定期上傳) with cosmetically
+ * different whitespace: the numbered impression list renders as "ICH2."
+ * in one channel and "ICH 2." in another; line breaks land in different
+ * spots; ":" may or may not carry a trailing space. These are byte-
+ * different but describe ONE exam.
+ *
+ * Three folding steps, applied in order:
+ *
+ *   1. NFKC (Unicode compatibility composition). NHI's PACS/RIS emits
+ *      the SAME glyph as full-width or half-width depending on channel:
+ *      "S／P" (U+FF0F fullwidth slash) vs "S/P" (U+002F), "Ａ＆Ｅ" vs
+ *      "A&E", "Chest：Mild" (U+FF1A) vs "Chest:Mild". NFKC folds the
+ *      fullwidth/compatibility forms to their canonical ASCII so these
+ *      channel-variant byte differences compare equal. NFKC is an
+ *      exact-equality fold — it CANNOT merge two genuinely different
+ *      exams (their real alphanumeric content still differs after the
+ *      fold). Verified against a real bundle (P10109XXXX, 2026-06-06):
+ *      adding NFKC dropped residual whitespace/case-only narrative
+ *      clusters 20→10 while chest CT vs head/neck CT (both 33070B) stay
+ *      apart.
+ *   2. Strip ALL whitespace. Collapses the numbered-impression-list
+ *      formatting noise — "ICH2." in one channel vs "ICH 2." in another,
+ *      line breaks in different spots, ":" with/without a trailing space.
+ *   3. Lowercase. Folds case-only channel differences.
+ *
+ * NOTE: this only normalizes the *comparison key*. The emitted
+ * `DiagnosticReport.conclusion` keeps NHI's verbatim text — faithful
+ * transport (CLAUDE.md #6). Used by BOTH the stableId fingerprint and
+ * the imaging-item narrative collapse so the two never drift
+ * (CLAUDE.md #7 — single source of truth for cross-reference logic).
+ *
+ * `\s` in a JS RegExp matches CR/LF/TAB plus Unicode space (incl. the
+ * ideographic space U+3000 and NBSP U+00A0 that CJK reports can carry).
+ * NFKC also folds U+3000 → a regular space, so step 2 catches it either
+ * way.
+ */
+export function normalizeNarrativeForDedup(s: string | null | undefined): string {
+  return (s ?? "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+}
+
 export function maskName(name: string | null | undefined): string {
   const trimmed = (name ?? "").trim();
   if (!trimmed || trimmed === "Unknown") return trimmed;

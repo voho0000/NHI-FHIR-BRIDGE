@@ -34,6 +34,8 @@
 //   - Items missing code/date/hospital — each gets a unique group key
 //     so they never accidentally merge.
 
+import { normalizeNarrativeForDedup } from "./helpers";
+
 /**
  * Cheap content fingerprint for an imaging JPEG base64 string. djb2
  * hash over the first 16 KB of base64 + the total length. Same JPG
@@ -143,12 +145,85 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
       merged.push(winner);
     }
 
+    // Channel-variant narrative collapse (v0.17.2): NHI ships the SAME
+    // radiology narrative through multiple upload channels (ori_TYPE
+    // A/B) with cosmetic differences — byte-different, one exam. The
+    // frame-content bucketing above can't catch these (they have 0
+    // frames → unique empty sentinels), so they'd survive as 2
+    // narrative-only items and the fold below (which needs EXACTLY 1
+    // narrative) would never fire → study stays split as 2 narratives
+    // + 1 image. Collapse them here by normalized conclusion, keeping
+    // the most-complete copy.
+    //
+    // Two collapse relations (both via normalizeNarrativeForDedup, which
+    // NFKC-folds + strips whitespace + lowercases — see helpers.ts):
+    //
+    //   (a) EXACT-equality — pure formatting variants (whitespace, case,
+    //       fullwidth/halfwidth slash). Real bug: brain CT 33070B A/B
+    //       differing only in "ICH2." vs "ICH 2.".
+    //
+    //   (b) STRICT-PREFIX — one channel's upload is TRUNCATED mid-report
+    //       (dictation cut off), so its normalized text is an exact
+    //       prefix of the complete channel's. Real bug: abdomen CT
+    //       33072B 2025-02-08 — channel A ends "…ground glass patc"
+    //       (missing finding #15) while channel B carries the full
+    //       report. Dropping the shorter copy loses ZERO clinical
+    //       content because the longer is a strict superset. Two
+    //       GENUINELY different exams can't be prefixes of each other —
+    //       any differing finding breaks the prefix relation — so this
+    //       can't over-merge distinct studies.
+    //
+    // Winner = the item whose NORMALIZED text is longer (the superset);
+    // ties (equal normalized length, i.e. relation (a)) break toward the
+    // longer RAW conclusion so we keep the richer original formatting.
+    // Genuinely distinct exams under the same (code, date, hospital) —
+    // head/neck CT vs chest CT 33070B — are neither equal nor prefix-
+    // related → NOT collapsed. Shares normalizeNarrativeForDedup with
+    // the mapper's stableId fingerprint so the two routing decisions
+    // never drift (CLAUDE.md #7).
+    const collapsedMerged: T[] = [];
+    const keptNarr: { idx: number; norm: string }[] = [];
+    for (const it of merged) {
+      if (!isNarrativeOnly(it)) {
+        collapsedMerged.push(it);
+        continue;
+      }
+      const norm = normalizeNarrativeForDedup(it.conclusion ?? "");
+      let foldedIn = false;
+      for (const kept of keptNarr) {
+        const prevNorm = kept.norm;
+        // Both non-empty guard: an all-whitespace conclusion normalizes
+        // to "" and "".startsWith(x) / x.startsWith("") would prefix-
+        // match EVERYTHING — never let empty-normalized text merge.
+        const prefixRelated =
+          norm.length > 0 &&
+          prevNorm.length > 0 &&
+          (norm === prevNorm || norm.startsWith(prevNorm) || prevNorm.startsWith(norm));
+        if (!prefixRelated) continue;
+        const prev = collapsedMerged[kept.idx]!;
+        const takeNew =
+          norm.length > prevNorm.length ||
+          (norm.length === prevNorm.length &&
+            (it.conclusion?.length ?? 0) > (prev.conclusion?.length ?? 0));
+        if (takeNew) {
+          collapsedMerged[kept.idx] = it;
+          kept.norm = norm;
+        }
+        foldedIn = true;
+        break;
+      }
+      if (!foldedIn) {
+        keptNarr.push({ idx: collapsedMerged.length, norm });
+        collapsedMerged.push(it);
+      }
+    }
+
     // Post-merge fold: if exactly 1 narrative-only + 1 image-only
     // remain in the merged set, fold narrative's missing fields into
     // image. Handles the common NHI shape where channel A ships
     // narrative + 0 frames and channel B ships 0 narrative + N frames.
-    const narrativeOnly = merged.filter(isNarrativeOnly);
-    const imageItems = merged.filter(hasFrames);
+    const narrativeOnly = collapsedMerged.filter(isNarrativeOnly);
+    const imageItems = collapsedMerged.filter(hasFrames);
 
     if (narrativeOnly.length === 1 && imageItems.length === 1) {
       // Non-null on both: length-1 guarantee from the surrounding
@@ -170,15 +245,15 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
           (img as any)[k] = narrVal;
         }
       }
-      // Keep img + anything else in merged that isn't narr or img.
+      // Keep img + anything else that isn't narr or img.
       out.push(img);
-      for (const it of merged) {
+      for (const it of collapsedMerged) {
         if (it !== narr && it !== img) out.push(it);
       }
     } else {
       // Either multiple narratives, multiple distinct images, or some
       // other shape — keep all (don't risk over-collapsing).
-      out.push(...merged);
+      out.push(...collapsedMerged);
     }
   }
 
