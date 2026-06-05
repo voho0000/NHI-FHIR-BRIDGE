@@ -4997,7 +4997,42 @@
         out.push(...merged);
       }
     }
-    return out;
+    function contentSignatureOf(item) {
+      const frames = framesOf(item);
+      if (frames.length === 0)
+        return null;
+      const hashes = frames.map(frameContentHash).sort();
+      return hashes.join("|");
+    }
+    const finalOut = [];
+    const byContentKey = /* @__PURE__ */ new Map();
+    for (const it of out) {
+      const sig = contentSignatureOf(it);
+      if (!sig) {
+        finalOut.push(it);
+        continue;
+      }
+      const date = String(it.date ?? "");
+      const hospital = String(it.hospital ?? "");
+      if (!date || !hospital) {
+        finalOut.push(it);
+        continue;
+      }
+      const key = `${date}|${hospital}|${sig}`;
+      const existing = byContentKey.get(key);
+      if (!existing) {
+        byContentKey.set(key, { item: it, index: finalOut.length });
+        finalOut.push(it);
+        continue;
+      }
+      const existingCode = String(existing.item.code ?? "");
+      const itCode = String(it.code ?? "");
+      if (itCode < existingCode) {
+        finalOut[existing.index] = it;
+        byContentKey.set(key, { item: it, index: existing.index });
+      }
+    }
+    return finalOut;
   }
   function framesOf(item) {
     if (Array.isArray(item.jpgBase64s)) {

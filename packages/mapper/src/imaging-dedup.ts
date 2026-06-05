@@ -181,7 +181,70 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
       out.push(...merged);
     }
   }
-  return out;
+
+  // ── Cross-code content dedup pass ──────────────────────────────────
+  // Within (date, hospital), if multiple items have byte-identical
+  // frame content but were emitted under DIFFERENT codes, collapse to
+  // one. Real-world case (F10375XXXX 2026-06-05): NHI billing data
+  // contained codes 32022C + 32023C for the same physical pelvis X-ray
+  // study; same hospital uploaded identical JPG bytes under both codes
+  // ("骨盆及髖關節檢查" order_NAME on both). The per-group dedup above
+  // collapses within-code duplicates but keeps these as 2 separate
+  // DiagnosticReports — downstream apps then show the same image
+  // twice, confusing users.
+  //
+  // Safety: this pass collapses ONLY when frame content is byte-equal
+  // (sorted hash signature match). Multi-view exams (AP+lateral of
+  // same study) have distinct frame content → distinct signatures →
+  // NOT collapsed. Same-day repeat scans (氣胸 follow-up X-ray)
+  // captured at different times → distinct content → NOT collapsed.
+  // Only true byte-identical re-uploads under multiple codes collapse.
+  //
+  // Resolution: keep the item whose code sorts smallest (deterministic,
+  // typically the "primary" billing code in NHI's catalogue ordering).
+  // Other codes are dropped from output. Narrative-only items are
+  // never collapsed by this pass — they have no frame content to
+  // compare against.
+  function contentSignatureOf(item: ImagingItem): string | null {
+    const frames = framesOf(item);
+    if (frames.length === 0) return null;
+    const hashes = frames.map(frameContentHash).sort();
+    return hashes.join("|");
+  }
+
+  const finalOut: T[] = [];
+  const byContentKey = new Map<string, { item: T; index: number }>();
+  for (const it of out) {
+    const sig = contentSignatureOf(it);
+    if (!sig) {
+      finalOut.push(it);
+      continue;
+    }
+    const date = String(it.date ?? "");
+    const hospital = String(it.hospital ?? "");
+    if (!date || !hospital) {
+      finalOut.push(it);
+      continue;
+    }
+    const key = `${date}|${hospital}|${sig}`;
+    const existing = byContentKey.get(key);
+    if (!existing) {
+      byContentKey.set(key, { item: it, index: finalOut.length });
+      finalOut.push(it);
+      continue;
+    }
+    // Cross-code content duplicate. Keep the one with the
+    // lexicographically smaller code (deterministic + typically
+    // matches NHI's primary-code convention).
+    const existingCode = String(existing.item.code ?? "");
+    const itCode = String(it.code ?? "");
+    if (itCode < existingCode) {
+      finalOut[existing.index] = it;
+      byContentKey.set(key, { item: it, index: existing.index });
+    }
+    // else: existing wins; drop this duplicate.
+  }
+  return finalOut;
 }
 
 function framesOf(item: ImagingItem): string[] {
