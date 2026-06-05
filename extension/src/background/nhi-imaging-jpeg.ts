@@ -1245,14 +1245,21 @@ export async function pollFetchImagingJpegs(
         return m;
       }
 
-      // Categorise: rows whose trigger failed → skip with that reason.
-      // Ready rows + successfully triggered rows → fetch.
+      // Categorise per row:
+      //   readyIdx     — status=1 in list, valid seq → fetch directly
+      //   preparingIdx — status=0 in list (v0.15.7); NHI prep in flight
+      //                  → optimistic fetch, fall back to waiting
+      //   triggeredIdx — needsTrigger AND trigger succeeded → poll loop
+      //   trigger-failed — needsTrigger AND trigger failed → report only
       const readyIdx: number[] = [];
+      const preparingIdx: number[] = [];
       const triggeredIdx: number[] = [];
       for (let i = 0; i < reqs.length; i++) {
         const r = reqs[i];
         const outc = outcomes[i];
-        if (!r.needsTrigger) {
+        if (r.isPreparing) {
+          preparingIdx.push(i);
+        } else if (!r.needsTrigger) {
           readyIdx.push(i);
         } else if (outc?.ok) {
           triggeredIdx.push(i);
@@ -1262,34 +1269,61 @@ export async function pollFetchImagingJpegs(
         }
       }
 
-      // Step A: fetch ready rows in BATCHED parallel + with per-fetch
-      // retry. Slow networks + 20 simultaneous 1-3 MB downloads were
-      // shown to fail half the cached fetches (user report 2026-06-05).
-      // Batched concurrency caps in-flight bandwidth share; retry
-      // reclaims transient timeouts. These rows already had a valid
-      // iplCaseSeqNo at narrative-detail time (status=1 with imG_SIZE>0),
-      // so the seq we have is good.
-      await runBatched(readyIdx, STEP_A_BATCH_SIZE, async (i) => {
-        const seqNo = reqs[i].iplCaseSeqNo;
+      // Step A: fetch ready + preparing rows in BATCHED parallel + with
+      // per-fetch retry. Slow networks + 20 simultaneous 1-3 MB downloads
+      // were shown to fail half the cached fetches (user report 2026-06-05).
+      // Batched concurrency caps in-flight bandwidth share; retry reclaims
+      // transient timeouts. Cached rows already had a valid iplCaseSeqNo
+      // at narrative-detail time (status=1 with imG_SIZE>0).
+      //
+      // Preparing rows (v0.15.7) share the same fetch path but treat
+      // empty-bytes differently — they're not cached failures, they're
+      // NHI still preparing, so they roll into triggered-waiting (→
+      // 等候健保備齊 in breakdown, → pending stash for next sync).
+      type StepAItem = { i: number; isPreparingRow: boolean };
+      const stepAItems: StepAItem[] = [
+        ...readyIdx.map((i) => ({ i, isPreparingRow: false })),
+        ...preparingIdx.map((i) => ({ i, isPreparingRow: true })),
+      ];
+      await runBatched(stepAItems, STEP_A_BATCH_SIZE, async (it) => {
+        const seqNo = reqs[it.i].iplCaseSeqNo;
         if (!seqNo || seqNo === "-") {
-          out[i].outcome = "fetch-failed";
-          out[i].error = "missing seq for ready row";
+          if (it.isPreparingRow) {
+            // Preparing without a seq → NHI just queued, hasn't allocated.
+            // Mark as waiting; next sync's sweep / cached path picks up.
+            out[it.i].outcome = "triggered-waiting";
+            out[it.i].error = "preparing-no-seq";
+          } else {
+            out[it.i].outcome = "fetch-failed";
+            out[it.i].error = "missing seq for ready row";
+          }
           return;
         }
         const r = await fetchJpgWithRetry(seqNo, STEP_A_RETRY_ATTEMPTS);
         if (r.error === "SESSION_EXPIRED") return;
         if (r.error) {
-          out[i].outcome = "fetch-failed";
-          out[i].error = r.error;
+          if (it.isPreparingRow) {
+            out[it.i].outcome = "triggered-waiting";
+            out[it.i].error = `preparing: ${r.error}`;
+          } else {
+            out[it.i].outcome = "fetch-failed";
+            out[it.i].error = r.error;
+          }
           return;
         }
         if (!r.b64s || r.b64s.length === 0) {
-          out[i].outcome = "fetch-failed";
-          out[i].error = "no base64 in response";
+          if (it.isPreparingRow) {
+            out[it.i].outcome = "triggered-waiting";
+            out[it.i].error = "preparing: no bytes yet";
+          } else {
+            out[it.i].outcome = "fetch-failed";
+            out[it.i].error = "no base64 in response";
+          }
           return;
         }
-        out[i].outcome = "ready";
-        out[i].jpgBase64s = r.b64s;
+        // Either case, bytes landed → "ready" (counted as 已快取).
+        out[it.i].outcome = "ready";
+        out[it.i].jpgBase64s = r.b64s;
       });
 
       // Step B: initial wait window for triggered rows.

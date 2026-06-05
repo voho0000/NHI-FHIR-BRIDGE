@@ -6441,8 +6441,9 @@
         listRow?.ipL_CASE_SEQ_NO ?? listRow?.ipl_CASE_SEQ_NO ?? listRow?.IPL_CASE_SEQ_NO ?? ""
       );
       const hasReadyBytes = status === "1" && !!listIplSeq && listIplSeq !== "-";
+      const isPreparing = status === "0";
       const needsTrigger = status === "A";
-      const isCandidate = hasReadyBytes || needsTrigger;
+      const isCandidate = hasReadyBytes || isPreparing || needsTrigger;
       for (const visit of main) {
         const adapted = adaptImagingReportFromDetail(visit, ctx);
         if (adapted)
@@ -6454,6 +6455,10 @@
           ctype: ctx.ctype,
           iplCaseSeqNo: listIplSeq,
           needsTrigger,
+          // v0.15.7: surfaced so pollFetchImagingJpegs categorises this
+          // row as "preparing" (try fetch, fall back to waiting) instead
+          // of routing it through the cached or trigger paths.
+          isPreparing,
           // Index of this row in the IHKE3408S01 list response. NHI's
           // Vue list page renders one 詳細資料 button per row in the
           // same order — so detailBtns[listIdx] in the DOM is THIS
@@ -6926,11 +6931,14 @@
           return m;
         }
         const readyIdx = [];
+        const preparingIdx = [];
         const triggeredIdx = [];
         for (let i = 0; i < reqs.length; i++) {
           const r = reqs[i];
           const outc = outcomes[i];
-          if (!r.needsTrigger) {
+          if (r.isPreparing) {
+            preparingIdx.push(i);
+          } else if (!r.needsTrigger) {
             readyIdx.push(i);
           } else if (outc?.ok) {
             triggeredIdx.push(i);
@@ -6939,28 +6947,47 @@
             out[i].error = outc?.reason || "unknown";
           }
         }
-        await runBatched(readyIdx, STEP_A_BATCH_SIZE, async (i) => {
-          const seqNo = reqs[i].iplCaseSeqNo;
+        const stepAItems = [
+          ...readyIdx.map((i) => ({ i, isPreparingRow: false })),
+          ...preparingIdx.map((i) => ({ i, isPreparingRow: true }))
+        ];
+        await runBatched(stepAItems, STEP_A_BATCH_SIZE, async (it) => {
+          const seqNo = reqs[it.i].iplCaseSeqNo;
           if (!seqNo || seqNo === "-") {
-            out[i].outcome = "fetch-failed";
-            out[i].error = "missing seq for ready row";
+            if (it.isPreparingRow) {
+              out[it.i].outcome = "triggered-waiting";
+              out[it.i].error = "preparing-no-seq";
+            } else {
+              out[it.i].outcome = "fetch-failed";
+              out[it.i].error = "missing seq for ready row";
+            }
             return;
           }
           const r = await fetchJpgWithRetry(seqNo, STEP_A_RETRY_ATTEMPTS);
           if (r.error === "SESSION_EXPIRED")
             return;
           if (r.error) {
-            out[i].outcome = "fetch-failed";
-            out[i].error = r.error;
+            if (it.isPreparingRow) {
+              out[it.i].outcome = "triggered-waiting";
+              out[it.i].error = `preparing: ${r.error}`;
+            } else {
+              out[it.i].outcome = "fetch-failed";
+              out[it.i].error = r.error;
+            }
             return;
           }
           if (!r.b64s || r.b64s.length === 0) {
-            out[i].outcome = "fetch-failed";
-            out[i].error = "no base64 in response";
+            if (it.isPreparingRow) {
+              out[it.i].outcome = "triggered-waiting";
+              out[it.i].error = "preparing: no bytes yet";
+            } else {
+              out[it.i].outcome = "fetch-failed";
+              out[it.i].error = "no base64 in response";
+            }
             return;
           }
-          out[i].outcome = "ready";
-          out[i].jpgBase64s = r.b64s;
+          out[it.i].outcome = "ready";
+          out[it.i].jpgBase64s = r.b64s;
         });
         const t0 = Date.now();
         if (triggeredIdx.length > 0) {

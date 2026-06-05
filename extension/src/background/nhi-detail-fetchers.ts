@@ -322,11 +322,15 @@ export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
     // ori_TYPE is an UPLOAD-CHANNEL label only — A=不定期上傳 / B=定期
     // 上傳 / E=影像上傳. It does NOT predict whether a row carries an
     // image. Bridge's image-candidacy decision is driven entirely by
-    // jpG_STATUS (revised 2026-06-05 v0.15.5):
+    // jpG_STATUS (revised 2026-06-05 v0.15.5, expanded v0.15.7):
     //
     //   "1" + seq populated → fetch bytes (any channel)
-    //   "A"                 → trigger for prep (any channel)
-    //   "2"                 → no image, skip
+    //   "0" → NHI prep in flight (queue accepted, bytes pending); seq
+    //         may already be populated. Try optimistic fetch (NHI
+    //         occasionally returns bytes before flipping status); fall
+    //         back to triggered-waiting if not ready.
+    //   "A" → trigger for prep (any channel)
+    //   "2" → no image, skip
     //
     // History of the rule's evolution:
     //   v0.14: trigger ALL status=A rows (correct in retrospect, just
@@ -348,6 +352,13 @@ export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
     //          → not stashed → shows under 健康存摺拒收 in breakdown.
     //          Wasted cost ~2s/phantom-row, capped by the 90s trigger
     //          loop wall-clock budget.
+    //   v0.15.7: status=0 entries were invisible — neither cached gate
+    //          nor trigger gate covered them, so 11 in-flight prep rows
+    //          showed as 0 across every breakdown bucket (user saw them
+    //          in raw NHI list, bridge didn't). Added as isPreparing;
+    //          poll-fetch tries optimistic fetch (status race), falls
+    //          back to triggered-waiting so they appear under 等候健保
+    //          備齊 in breakdown.
     //
     // ori_TYPE is still used as a discriminator in the shape signature
     // for re-keying recovery (see refreshSeqMapAndShapeMap) — that's a
@@ -357,8 +368,9 @@ export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
     // adaptImagingReportFromDetail above. The candidate gate below
     // only affects byte-fetching / trigger candidacy.
     const hasReadyBytes = status === "1" && !!listIplSeq && listIplSeq !== "-";
+    const isPreparing = status === "0";
     const needsTrigger = status === "A";
-    const isCandidate = hasReadyBytes || needsTrigger;
+    const isCandidate = hasReadyBytes || isPreparing || needsTrigger;
     for (const visit of main) {
       const adapted = adaptImagingReportFromDetail(visit, ctx);
       if (adapted) reports.push(adapted);
@@ -368,6 +380,10 @@ export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
         ctype: ctx.ctype,
         iplCaseSeqNo: listIplSeq,
         needsTrigger,
+        // v0.15.7: surfaced so pollFetchImagingJpegs categorises this
+        // row as "preparing" (try fetch, fall back to waiting) instead
+        // of routing it through the cached or trigger paths.
+        isPreparing,
         // Index of this row in the IHKE3408S01 list response. NHI's
         // Vue list page renders one 詳細資料 button per row in the
         // same order — so detailBtns[listIdx] in the DOM is THIS
