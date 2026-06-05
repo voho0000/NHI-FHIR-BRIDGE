@@ -108,16 +108,22 @@ Checklist:
    > "你要考量到這份 fhir json 可能給其他非我開發的 smart app 使用，如果把 dedup 的責任都放在 app 端，會有大問題。你有忠實搬運，但不能明明 UI 顯示只有一筆你抓了兩筆。"
    > (You need to consider this FHIR JSON may be used by other SMART apps I didn't develop. Putting the dedup responsibility entirely on the app side will be a big problem. You're faithful in transport, but you can't fetch 2 rows when the UI clearly only shows 1.)
 
-## NHI imaging ori_TYPE A/B/E channels (added 2026-06-04, v0.15)
+## NHI imaging ori_TYPE A/B/E channels (added 2026-06-04, v0.15; revised 2026-06-05 v0.15.4)
 
-**`ori_TYPE` semantics for IHKE3408 imaging endpoint differ from the lab observation A/B pattern.** Verified directly against `https://myhealthbank.nhi.gov.tw/api/ihke3000/IHKE3408S02/page_load?crid=...&ctype=...` 2026-06-04 by reading `ori_TYPE_NAME` field in detail body (NHI's own plain-Chinese label):
+**`ori_TYPE` is an upload-channel label, NOT a content-type label.** Verified directly against `https://myhealthbank.nhi.gov.tw/api/ihke3000/IHKE3408S02/page_load?crid=...&ctype=...` 2026-06-04 by reading `ori_TYPE_NAME` field in detail body (NHI's own plain-Chinese label):
 
-- **A** = `特約醫事機構不定期上傳` — narrative report (`desc`), no image. Carries radiology report text + `radi_MSV` (radiation dose).
-- **B** = `特約醫事機構定期上傳` — narrative report (`desc`), no image. Same content shape as A; A and B are the SAME multi-channel duplicate problem as the lab Observation A+B issue, just for imaging narrative.
-- **E** = `特約醫事機構影像上傳` — image upload, has `ipL_CASE_SEQ_NO` → IHKE3408S03 → JPG bytes.
+- **A** = `特約醫事機構不定期上傳` (on-demand upload).
+- **B** = `特約醫事機構定期上傳` (scheduled upload).
+- **E** = `特約醫事機構影像上傳` (image upload).
 
-Bridge implementation:
-1. **Trigger candidate gate** (`fetchImagingDetails` in `nhi-detail-fetchers.ts`): `isCandidate = (ori_TYPE === "E") && (jpG_STATUS === "1" || jpG_STATUS === "A")`. A/B rows are excluded from `jpegCandidates` — they will never produce JPGs no matter how many times triggered. Without this gate, ~6 status=A × ori=A "phantom" rows per typical sync get triggered, queue nothing NHI-side, and stay stuck in pending stash forever.
+The labels describe HOW the row was uploaded, not WHAT it carries — any channel can hold a narrative `desc` and any channel can hold an image. The CORRECT cached-bytes signal is `jpG_STATUS === "1" + ipL_CASE_SEQ_NO !== "-"`, independent of channel. Earlier v0.15 builds wrongly assumed A/B never carried images and excluded their status=1 rows from byte-fetching — F10375XXXX (2026-06-05) had 3 status=1 × A rows with valid 16-digit seq + populated `imG_SIZE`, dropped silently because of this incorrect gate.
+
+**Trigger is still ori=E only** — the `/IHKE3408S02/add` endpoint queues NHI's lazy prep for image rows, and A/B status=A rows are phantom narratives with no image source to prep from (the original probe patient had 6 status=A × A "phantom" rows that stayed at A indefinitely after triggers). Triggering A/B rows wastes the pending stash slot until the 8-day TTL.
+
+Bridge implementation (corrected v0.15.4):
+1. **Cached-bytes gate** (`fetchImagingDetails` in `nhi-detail-fetchers.ts`): `hasReadyBytes = (jpG_STATUS === "1") && (ipL_CASE_SEQ_NO populated and not "-")`. Independent of `ori_TYPE` — A/B/E all eligible.
+2. **Trigger candidate gate**: `needsTrigger = (ori_TYPE === "E") && (jpG_STATUS === "A")`. Still ori=E only.
+3. **Combined `isCandidate = hasReadyBytes || needsTrigger`** is what `jpegCandidates` collects.
 2. **Narrative emission**: `adaptImagingReportFromDetail` runs on ALL row types (A/B/E) — `desc` text comes from A/B, the channel filter only gates image triggering. A and B `desc` content is dedup-merged via `dedupImagingItems` (see below).
 3. **Sweep auto-evict** (`sweepPendingImaging` in `nhi-imaging-jpeg.ts`): pending entries whose rid resolves to ori_TYPE != "E" in the current list are removed — they're left-over from pre-v0.15 builds that didn't gate by channel.
 4. **Imaging dedup** (`dedupImagingItems` in `packages/mapper/src/imaging-dedup.ts`): groups by (code, date, hospital). Within a group, content-hashes JPG payloads to merge same-content E-rows; folds 1 narrative-only item (A or B `desc`) + 1 image-only item (E with frames) into 1 DR with both narrative + frames.

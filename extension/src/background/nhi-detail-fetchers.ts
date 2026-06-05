@@ -319,39 +319,39 @@ export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
     // POST endpoint, Vue click flow, and DOM-scan all working
     // correctly. They were just attempting the wrong rows.
     //
-    // ori_TYPE channel filter (v0.15+, live-probed against NHI
-    // ori_TYPE_NAME field in IHKE3408S02 detail body 2026-06-04):
+    // ori_TYPE upload-channel labels (revised 2026-06-05 v0.15.4 after
+    // F10375XXXX patient counter-example):
     //
-    //   A → "特約醫事機構不定期上傳" (on-demand narrative upload)
-    //         — carries radiology report `desc` text, NO JPGs ever.
-    //   B → "特約醫事機構定期上傳" (scheduled narrative upload)
-    //         — also carries `desc`, NO JPGs ever. A and B are NHI's
-    //         dual-channel narrative pattern (same shape as the lab
-    //         A+B duplicate problem CLAUDE.md describes).
-    //   E → "特約醫事機構影像上傳" (image upload)
-    //         — carries `ipL_CASE_SEQ_NO` → IHKE3408S03 → JPG bytes.
+    //   A → "特約醫事機構不定期上傳" (on-demand upload)
+    //   B → "特約醫事機構定期上傳"   (scheduled upload)
+    //   E → "特約醫事機構影像上傳"   (image upload)
     //
-    // Image trigger / fetch only makes sense for ori_TYPE=E. Triggering
-    // A/B rows queues nothing on NHI side (they have no image to prep);
-    // ~6 status=A × ori=A "phantom" rows per typical sync would
-    // otherwise be triggered → never produce bytes → stuck in pending
-    // stash until 8-day TTL.
+    // Earlier v0.15 builds assumed A/B never carry images. That came
+    // from the first probe patient where all image-ready rows happened
+    // to be ori=E. F10375XXXX disproved it: 3 status=1 × A rows with
+    // valid ipL_CASE_SEQ_NO (16-digit seq) + populated imG_SIZE —
+    // perfectly fetchable cached images, dropped silently because
+    // bridge's gate required ori=E.
     //
-    // Cross-tab from a live patient probe (184 rows total):
-    //   status=1 × E: 42  (image ready, cached)
-    //   status=A × E: 30  (image needs trigger)
-    //   status=A × A:  6  (no-image channel mis-marked status=A)
-    //   status=2 × A: 53  (narrative-A row, no image expected)
-    //   status=2 × B: 51  (narrative-B row, no image expected)
+    // Corrected rules:
+    //   - "This row has ready cached bytes": status=1 + listIplSeq
+    //     populated. This is the AUTHORITATIVE signal of fetchability,
+    //     independent of upload channel. A and B status=1 rows are
+    //     fetched same as E.
+    //   - "This row can be triggered for prep": ori=E AND status=A.
+    //     Trigger (/IHKE3408S02/add) only works for E — A/B status=A
+    //     rows are phantom narratives with no image source for NHI to
+    //     prep from (the previous patient had 6 such phantom rows that
+    //     stayed status=A indefinitely after triggers).
+    //   - status=2 (any channel): no image, skip.
     //
-    // Narrative IHKE3408S02 fetch still runs on ALL rows regardless
-    // — the channel filter only gates image-trigger / image-fetch
-    // candidacy. Narrative DR emission from A/B rows is handled
-    // separately by adaptImagingReportFromDetail above.
+    // Narrative DR emission still runs on ALL rows regardless of
+    // channel/status — handled by adaptImagingReportFromDetail above.
+    // The candidate gate below only affects byte-fetching candidacy.
     const oriType = String(listRow?.ori_TYPE ?? listRow?.ori_type ?? "");
-    const isImageChannel = oriType === "E";
-    const isCandidate = isImageChannel && (status === "1" || status === "A");
-    const needsTrigger = isImageChannel && status === "A";
+    const hasReadyBytes = status === "1" && !!listIplSeq && listIplSeq !== "-";
+    const needsTrigger = oriType === "E" && status === "A";
+    const isCandidate = hasReadyBytes || needsTrigger;
     for (const visit of main) {
       const adapted = adaptImagingReportFromDetail(visit, ctx);
       if (adapted) reports.push(adapted);

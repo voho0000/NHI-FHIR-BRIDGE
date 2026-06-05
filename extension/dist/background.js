@@ -6406,9 +6406,9 @@
         listRow?.ipL_CASE_SEQ_NO ?? listRow?.ipl_CASE_SEQ_NO ?? listRow?.IPL_CASE_SEQ_NO ?? ""
       );
       const oriType = String(listRow?.ori_TYPE ?? listRow?.ori_type ?? "");
-      const isImageChannel = oriType === "E";
-      const isCandidate = isImageChannel && (status === "1" || status === "A");
-      const needsTrigger = isImageChannel && status === "A";
+      const hasReadyBytes = status === "1" && !!listIplSeq && listIplSeq !== "-";
+      const needsTrigger = oriType === "E" && status === "A";
+      const isCandidate = hasReadyBytes || needsTrigger;
       for (const visit of main) {
         const adapted = adaptImagingReportFromDetail(visit, ctx);
         if (adapted)
