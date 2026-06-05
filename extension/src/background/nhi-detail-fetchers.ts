@@ -301,14 +301,9 @@ export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
     // ipl_CASE_SEQ_NO is "-" until preparation completes. Defensive
     // casing probes guard against NHI normalising field names later.
     const listRow: any = visits[reqs[i]?.listIdx ?? -1];
-    const status = String(
-      listRow?.jpG_STATUS ?? listRow?.jpg_STATUS ?? listRow?.JPG_STATUS ?? "",
-    );
+    const status = String(listRow?.jpG_STATUS ?? listRow?.jpg_STATUS ?? listRow?.JPG_STATUS ?? "");
     const listIplSeq = String(
-      listRow?.ipL_CASE_SEQ_NO ??
-        listRow?.ipl_CASE_SEQ_NO ??
-        listRow?.IPL_CASE_SEQ_NO ??
-        "",
+      listRow?.ipL_CASE_SEQ_NO ?? listRow?.ipl_CASE_SEQ_NO ?? listRow?.IPL_CASE_SEQ_NO ?? "",
     );
     // jpG_STATUS values (user-confirmed against NHI UI 2026-06-04):
     //   "1" → image is ready (cached, fetchable via IHKE3408S03)
@@ -413,11 +408,7 @@ export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
             visit.order_name ||
             "",
           hospital:
-            listRow?.hosp_ABBR ||
-            listRow?.hosp_abbr ||
-            visit.hosp_ABBR ||
-            visit.hosp_abbr ||
-            "",
+            listRow?.hosp_ABBR || listRow?.hosp_abbr || visit.hosp_ABBR || visit.hosp_abbr || "",
           assayUploadDate: visit.assay_UPLOAD_DATE || "",
           funcDate: visit.func_DATE || visit.func_date || "",
           radiMsv: visit.radi_MSV || visit.radi_msv || "",

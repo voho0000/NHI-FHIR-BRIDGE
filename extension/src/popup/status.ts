@@ -232,15 +232,8 @@ export function applySyncStatus(status) {
   // from step 4 (SMART app launcher) just because a few more
   // imaging frames landed. Re-render in place only.
   const isIncrementalUpdate =
-    prev?.phase === "done" &&
-    status.phase === "done" &&
-    !status.running &&
-    !prev.running;
-  if (
-    state.wizardInitialized &&
-    state.activeStep !== 3 &&
-    !isIncrementalUpdate
-  ) {
+    prev?.phase === "done" && status.phase === "done" && !status.running && !prev.running;
+  if (state.wizardInitialized && state.activeStep !== 3 && !isIncrementalUpdate) {
     _setActiveStep(3, { silent: true });
   }
   if (status.running) {

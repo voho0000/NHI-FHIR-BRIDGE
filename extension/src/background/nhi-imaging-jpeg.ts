@@ -63,10 +63,7 @@ import {
   PENDING_IMAGING_TTL_MS,
   SESSION_EXPIRED_ERROR,
 } from "./constants.js";
-import {
-  isCancelled,
-  setActiveImagingTabId,
-} from "./sync-state.js";
+import { isCancelled, setActiveImagingTabId } from "./sync-state.js";
 
 const POLL_INTERVAL_MS = 15_000;
 // 90s poll budget. v0.15+: SW background polling auto-fills the bundle
@@ -94,7 +91,7 @@ const INITIAL_WAIT_MS = 15_000;
  * restructuring loop logic. The Vue-click legacy paths share this
  * constant.
  */
-const MAX_TRIGGER_PER_SYNC_DEV = Infinity;
+const MAX_TRIGGER_PER_SYNC_DEV = Number.POSITIVE_INFINITY;
 
 export interface ImagingJpegRequest {
   rid: string; // crid from list — used to find row's 詳細資料 button
@@ -191,18 +188,14 @@ export async function triggerImagingRows(
     func: async (cappedReqs: any, devCap: number) => {
       const token = sessionStorage.getItem("token");
       if (!token) return { error: "SESSION_EXPIRED" };
-      if (
-        location.href.includes("IHKE3001S99") ||
-        location.href.includes("IDLE")
-      ) {
+      if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
         return { error: "SESSION_EXPIRED" };
       }
       if (!location.pathname.includes("IHKE3408S01")) {
         return { error: "WRONG_PAGE", url: location.pathname };
       }
 
-      const sleep = (ms: number) =>
-        new Promise((r) => setTimeout(r, ms));
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
       // DOM-level wait: poll until the 詳細資料 buttons for the rows
       // we need are rendered. NHI's Vue list renders one button per
@@ -211,16 +204,11 @@ export async function triggerImagingRows(
       // Vue introspection (looking for a component with `list` array)
       // proved unreliable: the list page's component shape differs
       // from the detail page's so heuristic walks miss.
-      const maxNeededIdx = Math.max(
-        ...cappedReqs.map((r: any) => r.listIdx ?? -1),
-        -1,
-      );
+      const maxNeededIdx = Math.max(...cappedReqs.map((r: any) => r.listIdx ?? -1), -1);
       const listReady = await (async () => {
         const deadline = Date.now() + 15_000;
         while (Date.now() < deadline) {
-          const btnCount = document.querySelectorAll(
-            'a[title="詳細資料"]',
-          ).length;
+          const btnCount = document.querySelectorAll('a[title="詳細資料"]').length;
           if (btnCount > maxNeededIdx) return true;
           await sleep(200);
         }
@@ -284,9 +272,7 @@ export async function triggerImagingRows(
         rid: string,
         ctype: string,
       ): Promise<{ ok: boolean; reason?: string; newStatus?: string }> {
-        const detailBtns = document.querySelectorAll<HTMLElement>(
-          'a[title="詳細資料"]',
-        );
+        const detailBtns = document.querySelectorAll<HTMLElement>('a[title="詳細資料"]');
         const detailBtn = detailBtns[listIdx];
         if (!detailBtn) {
           return {
@@ -345,10 +331,10 @@ export async function triggerImagingRows(
         // which the next confirmation step polls on.
         const detailComp = findVueByMethod("ok_add");
 
-        const confirmBtn = await poll(
-          () => findBtnByText("載入影像"),
-          { maxMs: 3000, intervalMs: 100 },
-        );
+        const confirmBtn = await poll(() => findBtnByText("載入影像"), {
+          maxMs: 3000,
+          intervalMs: 100,
+        });
         if (!confirmBtn) {
           try {
             history.back();
@@ -362,15 +348,9 @@ export async function triggerImagingRows(
         // couldn't get the Vue component, fall back to waiting until
         // the confirm button is gone from DOM (signals dialog closed).
         if (detailComp) {
-          await poll(
-            () => detailComp.openAGR === false,
-            { maxMs: 5000, intervalMs: 100 },
-          );
+          await poll(() => detailComp.openAGR === false, { maxMs: 5000, intervalMs: 100 });
         } else {
-          await poll(
-            () => !findBtnByText("載入影像"),
-            { maxMs: 5000, intervalMs: 100 },
-          );
+          await poll(() => !findBtnByText("載入影像"), { maxMs: 5000, intervalMs: 100 });
         }
 
         // Close any "已申請載入影像檔" notification
@@ -484,9 +464,7 @@ export async function triggerImagingRows(
           // button. NHI's row container is typically 3-5 levels up.
           let cur: HTMLElement | null = el as HTMLElement;
           for (let d = 0; d < 15 && cur; d++) {
-            const btn = cur.querySelector<HTMLElement>(
-              'a[title="詳細資料"]',
-            );
+            const btn = cur.querySelector<HTMLElement>('a[title="詳細資料"]');
             if (btn && btnToIndex.has(btn)) {
               result.set(btnToIndex.get(btn)!, t === "有影像檔");
               break;
@@ -574,9 +552,7 @@ export async function triggerImagingRows(
   if (result?.error) {
     // Page mismatch or other early failure — mark all triggerable as failed.
     for (const r of triggerable) {
-      const i = requests.findIndex(
-        (x) => x.rid === r.rid && x.ctype === r.ctype,
-      );
+      const i = requests.findIndex((x) => x.rid === r.rid && x.ctype === r.ctype);
       if (i >= 0) {
         outcomes[i].ok = false;
         outcomes[i].reason = `pre-flight: ${result.error}`;
@@ -586,9 +562,7 @@ export async function triggerImagingRows(
   }
   const scriptResults: any[] = result?.results || [];
   for (const sr of scriptResults) {
-    const i = requests.findIndex(
-      (x) => x.rid === sr.rid && x.ctype === sr.ctype,
-    );
+    const i = requests.findIndex((x) => x.rid === sr.rid && x.ctype === sr.ctype);
     if (i >= 0) {
       outcomes[i].ok = sr.ok;
       outcomes[i].reason = sr.reason;
@@ -624,20 +598,14 @@ export async function triggerImagingRows(
 // HTTP-only and just need ANY NHI tab with valid session for their
 // fetch calls to inherit cookies + sessionStorage token.
 // ────────────────────────────────────────────────────────────────────
-function waitForTabCompleteLocal(
-  tabId: number,
-  timeoutMs: number,
-): Promise<void> {
+function waitForTabCompleteLocal(tabId: number, timeoutMs: number): Promise<void> {
   return new Promise<void>((resolve) => {
     const done = () => {
       chrome.tabs.onUpdated.removeListener(listener);
       clearTimeout(timer);
       resolve();
     };
-    const listener = (
-      updatedTabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo,
-    ) => {
+    const listener = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
       if (updatedTabId === tabId && changeInfo.status === "complete") {
         done();
       }
@@ -969,11 +937,7 @@ export async function triggerImagingRowsViaSwFetch(
     //   (b) the rownum value in this POST body matching the GET's
     //       response.rownum (provides explicit row identity)
     // If (a) and (b) disagree, NHI rejects with "錯誤" in the message.
-    const addResp = await swPostNhiJson(
-      addUrl,
-      { ipl_CASE_SEQ_NO: rownum },
-      token,
-    );
+    const addResp = await swPostNhiJson(addUrl, { ipl_CASE_SEQ_NO: rownum }, token);
     if (addResp.error === "SESSION_EXPIRED") {
       throw new Error(SESSION_EXPIRED_ERROR);
     }
@@ -1063,9 +1027,7 @@ export async function triggerImagingRowsViaSwFetch(
   }
 
   for (const sr of scriptResults) {
-    const i = requests.findIndex(
-      (x) => x.rid === sr.rid && x.ctype === sr.ctype,
-    );
+    const i = requests.findIndex((x) => x.rid === sr.rid && x.ctype === sr.ctype);
     if (i >= 0) {
       outcomes[i].ok = sr.ok;
       outcomes[i].reason = sr.reason;
@@ -1091,18 +1053,10 @@ export async function pollFetchImagingJpegs(
 
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: async (
-      base: any,
-      reqs: any,
-      outcomes: any,
-      tuning: any,
-    ) => {
+    func: async (base: any, reqs: any, outcomes: any, tuning: any) => {
       const token = sessionStorage.getItem("token");
       if (!token) return { error: "SESSION_EXPIRED" };
-      if (
-        location.href.includes("IHKE3001S99") ||
-        location.href.includes("IDLE")
-      ) {
+      if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
         return { error: "SESSION_EXPIRED" };
       }
       const auth = `Bearer ${token}`;
@@ -1119,8 +1073,7 @@ export async function pollFetchImagingJpegs(
         outcome: "triggered-waiting",
       }));
 
-      const sleep = (ms: number) =>
-        new Promise((r) => setTimeout(r, ms));
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
       async function httpGetJson(url: string): Promise<any> {
         const ac = new AbortController();
@@ -1145,10 +1098,7 @@ export async function pollFetchImagingJpegs(
         } catch (e: any) {
           clearTimeout(t);
           return {
-            error:
-              e?.name === "AbortError"
-                ? "timeout 30s"
-                : String(e?.message || e),
+            error: e?.name === "AbortError" ? "timeout 30s" : String(e?.message || e),
           };
         }
       }
@@ -1162,14 +1112,7 @@ export async function pollFetchImagingJpegs(
           }
           if (acc.length > 0) return acc;
         }
-        for (const k of [
-          "img",
-          "imG",
-          "jpg",
-          "base64",
-          "imgBase64",
-          "data",
-        ]) {
+        for (const k of ["img", "imG", "jpg", "base64", "imgBase64", "data"]) {
           const v = body[k];
           if (typeof v === "string" && v.length > 1000) return [v];
         }
@@ -1228,10 +1171,7 @@ export async function pollFetchImagingJpegs(
         return results;
       }
 
-      function isTransientFetchError(
-        errStr: string,
-        gotBodyButNoBase64: boolean,
-      ): boolean {
+      function isTransientFetchError(errStr: string, gotBodyButNoBase64: boolean): boolean {
         if (gotBodyButNoBase64) return true;
         if (!errStr) return false;
         return (
@@ -1297,9 +1237,7 @@ export async function pollFetchImagingJpegs(
         const list = r.body.sp_IHKE3408S01_data || [];
         const m = new Map<string, string>();
         for (const row of list) {
-          const seq = String(
-            row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "",
-          );
+          const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
           if (seq && seq !== "-" && row?.row_ID) {
             m.set(String(row.row_ID), seq);
           }
@@ -1399,9 +1337,7 @@ export async function pollFetchImagingJpegs(
         if (r.error || !r.body) return { seqMap, shapeMap };
         const list = r.body.sp_IHKE3408S01_data || [];
         for (const row of list) {
-          const seq = String(
-            row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "",
-          );
+          const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
           const rid = String(row?.row_ID ?? "");
           if (seq && seq !== "-" && rid) {
             seqMap.set(rid, seq);
@@ -1412,12 +1348,8 @@ export async function pollFetchImagingJpegs(
             // for ori=E, but defensive filter anyway.
             if (status === "1" && oriType === "E") {
               const code = String(row?.order_CODE ?? row?.order_code ?? "");
-              const date = String(
-                row?.real_INSPECT_DATE ?? row?.real_inspect_date ?? "",
-              );
-              const hospital = String(
-                row?.hosp_ABBR ?? row?.hosp_abbr ?? "",
-              );
+              const date = String(row?.real_INSPECT_DATE ?? row?.real_inspect_date ?? "");
+              const hospital = String(row?.hosp_ABBR ?? row?.hosp_abbr ?? "");
               const sig = `${code}|${date}|${hospital}|${oriType}`;
               if (!shapeMap.has(sig)) shapeMap.set(sig, []);
               shapeMap.get(sig)!.push({ rid, seq });
@@ -1583,9 +1515,7 @@ function pendingKey(patientId: string): string {
  * Read the per-patient pending stash, evicting TTL-expired entries on
  * read. Returns the surviving rows. Returns [] for unknown patient.
  */
-export async function loadPendingImaging(
-  patientId: string,
-): Promise<PendingImagingRow[]> {
+export async function loadPendingImaging(patientId: string): Promise<PendingImagingRow[]> {
   if (!patientId) return [];
   const key = pendingKey(patientId);
   const obj = await chrome.storage.local.get(key);
@@ -1650,9 +1580,7 @@ export async function appendPendingImaging(
     [key]: { rows: Array.from(byKey.values()), updatedAt: now },
   });
   if (updated > 0) {
-    console.info(
-      `[pending] upsert: ${updated} re-triggered rows refreshed triggeredAt`,
-    );
+    console.info(`[pending] upsert: ${updated} re-triggered rows refreshed triggeredAt`);
   }
 }
 
@@ -1667,9 +1595,7 @@ export async function removePendingImaging(
   if (!patientId || removeKeys.size === 0) return;
   const key = pendingKey(patientId);
   const existing = await loadPendingImaging(patientId);
-  const remaining = existing.filter(
-    (r) => !removeKeys.has(`${r.rid}|${r.ctype}`),
-  );
+  const remaining = existing.filter((r) => !removeKeys.has(`${r.rid}|${r.ctype}`));
   if (remaining.length === existing.length) return;
   if (remaining.length === 0) {
     await chrome.storage.local.remove(key);
@@ -1699,10 +1625,7 @@ export async function removePendingImaging(
  * Save the visible tab's sessionStorage token snapshot so background
  * polling can use it. Called once at the end of each sync.
  */
-export async function saveBearerTokenForBgPoll(
-  tabId: number,
-  patientId: string,
-): Promise<void> {
+export async function saveBearerTokenForBgPoll(tabId: number, patientId: string): Promise<void> {
   try {
     const [res] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -1848,15 +1771,8 @@ export async function sweepPendingImaging(
   const oriTypeByRid = new Map<string, string>();
   let rowsWithSeq = 0;
   for (const row of list) {
-    const seq = String(
-      row?.ipL_CASE_SEQ_NO ??
-        row?.ipl_CASE_SEQ_NO ??
-        row?.IPL_CASE_SEQ_NO ??
-        "",
-    );
-    const rid = String(
-      row?.row_ID ?? row?.rowid ?? row?.rowID ?? row?.roW_ID ?? "",
-    );
+    const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? row?.IPL_CASE_SEQ_NO ?? "");
+    const rid = String(row?.row_ID ?? row?.rowid ?? row?.rowID ?? row?.roW_ID ?? "");
     const oriType = String(row?.ori_TYPE ?? row?.ori_type ?? "");
     if (rid) oriTypeByRid.set(rid, oriType);
     if (seq && seq !== "-" && rid) {
@@ -1887,7 +1803,6 @@ export async function sweepPendingImaging(
     }
     if (oriInList !== "E") {
       evictKeys.add(`${p.rid}|${p.ctype}`);
-      continue;
     }
     // E channel + in list: keep. Let stuck-retry attempt re-trigger
     // and content dedup handle the rest.
@@ -1901,9 +1816,7 @@ export async function sweepPendingImaging(
     } catch {}
   }
   // Filter pending down to live image-channel entries only.
-  const livePending = pending.filter(
-    (p) => !evictKeys.has(`${p.rid}|${p.ctype}`),
-  );
+  const livePending = pending.filter((p) => !evictKeys.has(`${p.rid}|${p.ctype}`));
   if (livePending.length === 0) {
     console.info("[sweep] all pending entries evicted, nothing to fetch");
     return [];
@@ -1911,20 +1824,13 @@ export async function sweepPendingImaging(
   // Diagnostic: dump list size + seq availability + sample so the user
   // can compare against what the NHI UI shows. Remove once auto-sweep
   // is verified end-to-end in production.
-  console.info(
-    `[sweep] list returned ${list.length} rows, ${rowsWithSeq} with seq populated`,
-  );
+  console.info(`[sweep] list returned ${list.length} rows, ${rowsWithSeq} with seq populated`);
   if (list.length > 0) {
     const sample = list.slice(0, 3).map((r: any) => ({
-      row_ID:
-        r?.row_ID ?? r?.rowid ?? r?.rowID ?? r?.roW_ID ?? "(missing)",
-      jpG_STATUS:
-        r?.jpG_STATUS ?? r?.jpg_STATUS ?? r?.JPG_STATUS ?? "(missing)",
+      row_ID: r?.row_ID ?? r?.rowid ?? r?.rowID ?? r?.roW_ID ?? "(missing)",
+      jpG_STATUS: r?.jpG_STATUS ?? r?.jpg_STATUS ?? r?.JPG_STATUS ?? "(missing)",
       ipL_CASE_SEQ_NO:
-        r?.ipL_CASE_SEQ_NO ??
-        r?.ipl_CASE_SEQ_NO ??
-        r?.IPL_CASE_SEQ_NO ??
-        "(missing)",
+        r?.ipL_CASE_SEQ_NO ?? r?.ipl_CASE_SEQ_NO ?? r?.IPL_CASE_SEQ_NO ?? "(missing)",
     }));
     console.info("[sweep] list sample (first 3 rows):", sample);
   }
@@ -1956,54 +1862,50 @@ export async function sweepPendingImaging(
     return results;
   }
   const SESSION_SENTINEL = Symbol("session-expired");
-  const settled = await runSweepBatched(
-    livePending,
-    SWEEP_BATCH_SIZE,
-    async (p) => {
-      const seq = seqByRid.get(String(p.rid));
-      if (!seq) {
-        return {
-          rid: p.rid,
-          ctype: p.ctype,
-          iplCaseSeqNo: null,
-          jpgBase64s: [] as string[],
-          outcome: "triggered-waiting" as const,
-        };
-      }
-      const u = `${baseUrl}/api/ihke3000/IHKE3408S03/page_load?IPL_CASE_SEQ_NO=${encodeURIComponent(seq)}`;
-      const r = await swFetchNhiJson(u, token);
-      if (r.error === "SESSION_EXPIRED") {
-        return SESSION_SENTINEL as unknown as ImagingJpegResult;
-      }
-      if (r.error) {
-        return {
-          rid: p.rid,
-          ctype: p.ctype,
-          iplCaseSeqNo: seq,
-          jpgBase64s: [] as string[],
-          outcome: "triggered-waiting" as const,
-          error: r.error,
-        };
-      }
-      const b64s = readBase64JpgsFromBody(r.body);
-      if (b64s.length === 0) {
-        return {
-          rid: p.rid,
-          ctype: p.ctype,
-          iplCaseSeqNo: seq,
-          jpgBase64s: [] as string[],
-          outcome: "triggered-waiting" as const,
-        };
-      }
+  const settled = await runSweepBatched(livePending, SWEEP_BATCH_SIZE, async (p) => {
+    const seq = seqByRid.get(String(p.rid));
+    if (!seq) {
+      return {
+        rid: p.rid,
+        ctype: p.ctype,
+        iplCaseSeqNo: null,
+        jpgBase64s: [] as string[],
+        outcome: "triggered-waiting" as const,
+      };
+    }
+    const u = `${baseUrl}/api/ihke3000/IHKE3408S03/page_load?IPL_CASE_SEQ_NO=${encodeURIComponent(seq)}`;
+    const r = await swFetchNhiJson(u, token);
+    if (r.error === "SESSION_EXPIRED") {
+      return SESSION_SENTINEL as unknown as ImagingJpegResult;
+    }
+    if (r.error) {
       return {
         rid: p.rid,
         ctype: p.ctype,
         iplCaseSeqNo: seq,
-        jpgBase64s: b64s,
-        outcome: "triggered-ready" as const,
+        jpgBase64s: [] as string[],
+        outcome: "triggered-waiting" as const,
+        error: r.error,
       };
-    },
-  );
+    }
+    const b64s = readBase64JpgsFromBody(r.body);
+    if (b64s.length === 0) {
+      return {
+        rid: p.rid,
+        ctype: p.ctype,
+        iplCaseSeqNo: seq,
+        jpgBase64s: [] as string[],
+        outcome: "triggered-waiting" as const,
+      };
+    }
+    return {
+      rid: p.rid,
+      ctype: p.ctype,
+      iplCaseSeqNo: seq,
+      jpgBase64s: b64s,
+      outcome: "triggered-ready" as const,
+    };
+  });
   if (settled.some((x) => (x as any) === SESSION_SENTINEL)) {
     throw new Error(SESSION_EXPIRED_ERROR);
   }
@@ -2033,10 +1935,7 @@ async function _legacySweepPendingImagingViaScript(
     func: async (base: any, pendingList: any) => {
       const token = sessionStorage.getItem("token");
       if (!token) return { error: "SESSION_EXPIRED" };
-      if (
-        location.href.includes("IHKE3001S99") ||
-        location.href.includes("IDLE")
-      ) {
+      if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
         return { error: "SESSION_EXPIRED" };
       }
       const auth = `Bearer ${token}`;
@@ -2067,10 +1966,7 @@ async function _legacySweepPendingImagingViaScript(
         } catch (e: any) {
           clearTimeout(t);
           return {
-            error:
-              e?.name === "AbortError"
-                ? "timeout 15s"
-                : String(e?.message || e),
+            error: e?.name === "AbortError" ? "timeout 15s" : String(e?.message || e),
           };
         }
       }
@@ -2097,9 +1993,7 @@ async function _legacySweepPendingImagingViaScript(
       const list = listResp.body.sp_IHKE3408S01_data || [];
       const seqByRid = new Map<string, string>();
       for (const row of list) {
-        const seq = String(
-          row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "",
-        );
+        const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
         if (seq && seq !== "-" && row?.row_ID) {
           seqByRid.set(String(row.row_ID), seq);
         }
@@ -2181,10 +2075,7 @@ function raceTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     p,
     new Promise<T>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`${label} timeout ${Math.round(ms / 1000)}s`)),
-        ms,
-      ),
+      setTimeout(() => reject(new Error(`${label} timeout ${Math.round(ms / 1000)}s`)), ms),
     ),
   ]);
 }
@@ -2201,9 +2092,5 @@ export async function sweepPendingImagingWithTimeout(
   patientId: string,
   timeoutMs = 60_000,
 ): Promise<ImagingJpegResult[]> {
-  return raceTimeout(
-    sweepPendingImaging(baseUrl, patientId),
-    timeoutMs,
-    "sweep",
-  );
+  return raceTimeout(sweepPendingImaging(baseUrl, patientId), timeoutMs, "sweep");
 }

@@ -58,20 +58,14 @@ import {
 // chrome.scripting.executeScript on a fully-loaded page (else the
 // in-tab Vue app isn't mounted yet and the trigger flow can't find
 // the list component).
-function waitForTabComplete(
-  tabId: number,
-  timeoutMs: number,
-): Promise<void> {
+function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
   return new Promise<void>((resolve) => {
     const done = () => {
       chrome.tabs.onUpdated.removeListener(listener);
       clearTimeout(timer);
       resolve();
     };
-    const listener = (
-      updatedTabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo,
-    ) => {
+    const listener = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
       if (updatedTabId === tabId && changeInfo.status === "complete") {
         done();
       }
@@ -402,9 +396,7 @@ export async function runNhiApiSync({
   // the hidden tab and burn user-visible work despite cancellation).
   if (isCancelled()) throw new Error(CANCEL_ERROR);
   if (fetchImagingEnabled && polledCandidates.length > 0) {
-    const _toTrigger = polledCandidates.filter(
-      (c: any) => c.needsTrigger,
-    ).length;
+    const _toTrigger = polledCandidates.filter((c: any) => c.needsTrigger).length;
     // v0.15+ trigger phase = pure SW-direct fetch. Each row:
     //   GET /S02 page_load → extract rownum from response
     //   POST /S02/add { ipl_CASE_SEQ_NO: <rownum> }
@@ -421,36 +413,24 @@ export async function runNhiApiSync({
           patientOverride.id_no,
           polledCandidates,
         );
-        return await pollFetchImagingJpegs(
-          tabId,
-          BASE,
-          polledCandidates,
-          triggerOutcomes,
-        );
+        return await pollFetchImagingJpegs(tabId, BASE, polledCandidates, triggerOutcomes);
       } catch (e: any) {
         errors.push(`imaging: ${e.message}`);
         return [] as any[];
       }
     })();
   }
-  if (
-    fetchImagingEnabled &&
-    pendingImagingRows.length > 0 &&
-    patientOverride.id_no
-  ) {
-    imagingSweepPromise = sweepPendingImagingWithTimeout(
-      BASE,
-      patientOverride.id_no,
-      60_000,
-    ).catch((e) => {
-      errors.push(`前次影像補抓: ${e.message}`);
-      return [] as any[];
-    });
+  if (fetchImagingEnabled && pendingImagingRows.length > 0 && patientOverride.id_no) {
+    imagingSweepPromise = sweepPendingImagingWithTimeout(BASE, patientOverride.id_no, 60_000).catch(
+      (e) => {
+        errors.push(`前次影像補抓: ${e.message}`);
+        return [] as any[];
+      },
+    );
   }
   _markPhase("imaging-kickoff");
   const _imgPending = imagingPromise !== null || imagingSweepPromise !== null;
-  const _withImgTag = (msg: string) =>
-    _imgPending ? `${msg} · 🖼️ 影像準備中` : msg;
+  const _withImgTag = (msg: string) => (_imgPending ? `${msg} · 🖼️ 影像準備中` : msg);
 
   // Step 1d: procedures need IHKE3308S02 for the actual ICD-10-PCS
   // op_CODE and the real execution date (exe_S_DATE on sub-list
@@ -562,9 +542,7 @@ export async function runNhiApiSync({
   if (imagingPromise || imagingSweepPromise) {
     try {
       const N = imagingJpegCandidates.length;
-      const needsTrigger = polledCandidates.filter(
-        (c: any) => c.needsTrigger,
-      ).length;
+      const needsTrigger = polledCandidates.filter((c: any) => c.needsTrigger).length;
       const alreadyPending = pendingImagingRows.length;
       const jpegResults = await withProgressTimer(
         (sec) => {
@@ -581,8 +559,7 @@ export async function runNhiApiSync({
           // "已請求 N 張" = "requested N images" — accurately reflects
           // bridge's action; users understand the actual prep status
           // is on NHI's side and out of bridge's view.
-          const pendingPart =
-            alreadyPending > 0 ? `；前次 ${alreadyPending} 張補抓中` : "";
+          const pendingPart = alreadyPending > 0 ? `；前次 ${alreadyPending} 張補抓中` : "";
           const head =
             needsTrigger > 0
               ? `🖼️ 等候健保署回傳影像（本次已請求 ${needsTrigger} 張${pendingPart}）`
@@ -615,10 +592,7 @@ export async function runNhiApiSync({
         const k = `${r.rid}|${r.ctype}`;
         const existing = mergedMap.get(k);
         // Prefer the one with non-empty jpgBase64s.
-        if (
-          !existing ||
-          (Array.isArray(r.jpgBase64s) && r.jpgBase64s.length > 0)
-        ) {
+        if (!existing || (Array.isArray(r.jpgBase64s) && r.jpgBase64s.length > 0)) {
           mergedMap.set(k, r);
         }
       }
@@ -635,8 +609,7 @@ export async function runNhiApiSync({
           (r: any) => Array.isArray(r.jpgBase64s) && r.jpgBase64s.length > 0,
         ).length;
         const frameCount = allResults.reduce(
-          (n: number, r: any) =>
-            n + (Array.isArray(r.jpgBase64s) ? r.jpgBase64s.length : 0),
+          (n: number, r: any) => n + (Array.isArray(r.jpgBase64s) ? r.jpgBase64s.length : 0),
           0,
         );
         settled[imgIdx].value.jpegReadyCount = readyCount;
@@ -658,12 +631,8 @@ export async function runNhiApiSync({
         // The user wants these surfaced separately so the breakdown
         // says "X cap-skipped" instead of inflating an alarming
         // "100+ trigger-fail" count.
-        const trigFailed = allResults.filter(
-          (r: any) => r.outcome === "trigger-failed",
-        );
-        const realFailures = trigFailed.filter(
-          (r: any) => r.error !== "dev-cap-skipped",
-        );
+        const trigFailed = allResults.filter((r: any) => r.outcome === "trigger-failed");
+        const realFailures = trigFailed.filter((r: any) => r.error !== "dev-cap-skipped");
         settled[imgIdx].value.jpegDevCapSkippedCount = trigFailed.filter(
           (r: any) => r.error === "dev-cap-skipped",
         ).length;
@@ -689,9 +658,7 @@ export async function runNhiApiSync({
           const reason = String(r.error || "unknown");
           reasonCounts.set(reason, (reasonCounts.get(reason) ?? 0) + 1);
         }
-        settled[imgIdx].value.jpegTriggerFailReasons = Array.from(
-          reasonCounts.entries(),
-        )
+        settled[imgIdx].value.jpegTriggerFailReasons = Array.from(reasonCounts.entries())
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3); // top 3 reasons
         // triggered-waiting = trigger Vue flow succeeded but base64
@@ -703,21 +670,15 @@ export async function runNhiApiSync({
         // this split the user sees "9 健康存摺準備中" while dev cap is
         // 3 and wonders if cap is broken — the 9 actually contains 3
         // new + 6 from previous syncs that NHI hasn't finished prep on.
-        const pendingKeysSnap = new Set(
-          pendingImagingRows.map((p) => `${p.rid}|${p.ctype}`),
-        );
-        const waitingResults = allResults.filter(
-          (r: any) => r.outcome === "triggered-waiting",
-        );
+        const pendingKeysSnap = new Set(pendingImagingRows.map((p) => `${p.rid}|${p.ctype}`));
+        const waitingResults = allResults.filter((r: any) => r.outcome === "triggered-waiting");
         settled[imgIdx].value.jpegTriggeredWaitingCount = waitingResults.length;
-        settled[imgIdx].value.jpegTriggeredWaitingNewCount =
-          waitingResults.filter(
-            (r: any) => !pendingKeysSnap.has(`${r.rid}|${r.ctype}`),
-          ).length;
-        settled[imgIdx].value.jpegTriggeredWaitingCarriedCount =
-          waitingResults.filter((r: any) =>
-            pendingKeysSnap.has(`${r.rid}|${r.ctype}`),
-          ).length;
+        settled[imgIdx].value.jpegTriggeredWaitingNewCount = waitingResults.filter(
+          (r: any) => !pendingKeysSnap.has(`${r.rid}|${r.ctype}`),
+        ).length;
+        settled[imgIdx].value.jpegTriggeredWaitingCarriedCount = waitingResults.filter((r: any) =>
+          pendingKeysSnap.has(`${r.rid}|${r.ctype}`),
+        ).length;
         settled[imgIdx].value.jpegTimeoutCount = allResults.filter(
           (r: any) => r.outcome === "timeout",
         ).length;
@@ -737,14 +698,9 @@ export async function runNhiApiSync({
         for (const r of allResults) {
           if (r?.outcome !== "fetch-failed") continue;
           const reason = String(r.error || "unknown");
-          fetchFailReasonCounts.set(
-            reason,
-            (fetchFailReasonCounts.get(reason) ?? 0) + 1,
-          );
+          fetchFailReasonCounts.set(reason, (fetchFailReasonCounts.get(reason) ?? 0) + 1);
         }
-        settled[imgIdx].value.jpegFetchFailReasons = Array.from(
-          fetchFailReasonCounts.entries(),
-        )
+        settled[imgIdx].value.jpegFetchFailReasons = Array.from(fetchFailReasonCounts.entries())
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3);
 
@@ -802,9 +758,7 @@ export async function runNhiApiSync({
         // Newly triggered-waiting rows → append to pending.
         if (patientOverride.id_no) {
           try {
-            const pendingKeysSet = new Set(
-              pendingImagingRows.map((p) => `${p.rid}|${p.ctype}`),
-            );
+            const pendingKeysSet = new Set(pendingImagingRows.map((p) => `${p.rid}|${p.ctype}`));
             const removeKeys = new Set<string>();
             for (const k of matchedKeys) {
               if (pendingKeysSet.has(k)) removeKeys.add(k);
@@ -944,23 +898,15 @@ export async function runNhiApiSync({
       // Surface the top trigger-failure reasons so the user can
       // diagnose without opening DevTools. Only when there were real
       // failures (dev-cap-skipped intentionally not surfaced here).
-      const reasons = s.value.jpegTriggerFailReasons as
-        | Array<[string, number]>
-        | undefined;
+      const reasons = s.value.jpegTriggerFailReasons as Array<[string, number]> | undefined;
       if (Array.isArray(reasons) && reasons.length > 0) {
-        const reasonStr = reasons
-          .map(([r, n]) => (n > 1 ? `${r}×${n}` : r))
-          .join(", ");
+        const reasonStr = reasons.map(([r, n]) => (n > 1 ? `${r}×${n}` : r)).join(", ");
         imagingLine += ` (trigger failures: ${reasonStr})`;
       }
       // Same treatment for fetch-failures (Step A — S03 fetch).
-      const fetchReasons = s.value.jpegFetchFailReasons as
-        | Array<[string, number]>
-        | undefined;
+      const fetchReasons = s.value.jpegFetchFailReasons as Array<[string, number]> | undefined;
       if (Array.isArray(fetchReasons) && fetchReasons.length > 0) {
-        const reasonStr = fetchReasons
-          .map(([r, n]) => (n > 1 ? `${r}×${n}` : r))
-          .join(", ");
+        const reasonStr = fetchReasons.map(([r, n]) => (n > 1 ? `${r}×${n}` : r)).join(", ");
         imagingLine += ` (fetch failures: ${reasonStr})`;
       }
       breakdown.push(imagingLine);
@@ -1169,10 +1115,7 @@ export async function runNhiApiSync({
   // produce.
   let _imagingTail = "";
   if (_waitingCount > 0 && _fetchFailCount > 0) {
-    _imagingTail =
-      `（健康存摺正在準備 ${_waitingCount} 張影像、` +
-      `另 ${_fetchFailCount} 張影像因網路問題未抓到，` +
-      `請過 5–10 分鐘後再按「取得健康存摺資料」即可補齊）`;
+    _imagingTail = `（健康存摺正在準備 ${_waitingCount} 張影像、另 ${_fetchFailCount} 張影像因網路問題未抓到，請過 5–10 分鐘後再按「取得健康存摺資料」即可補齊）`;
   } else if (_waitingCount > 0) {
     _imagingTail = `（健康存摺正在準備 ${_waitingCount} 張影像，請過 5–10 分鐘後再按「取得健康存摺資料」即可補齊）`;
   } else if (_fetchFailCount > 0) {

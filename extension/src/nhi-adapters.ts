@@ -891,10 +891,7 @@ export function adaptProcedureFromDetail(item) {
 // later imaging-JPEG fan-out can re-key its base64 results back onto
 // the right report. Optional — callers without ctx (legacy tests) leave
 // the fields as empty strings.
-export function adaptImagingReportFromDetail(
-  item,
-  ctx?: { rid?: string; ctype?: string },
-) {
+export function adaptImagingReportFromDetail(item, ctx?: { rid?: string; ctype?: string }) {
   if (!item || typeof item !== "object") return null;
   const date = rocToISO(
     item.real_INSPECT_DATE ||

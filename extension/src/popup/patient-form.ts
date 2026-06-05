@@ -12,8 +12,8 @@ import { setStatus } from "./status.js";
 import {
   _ageFromBirthDate,
   _displayId,
-  _generateAutoPatientId,
   _genderZh,
+  _generateAutoPatientId,
   currentMode,
 } from "./utils.js";
 import { _markStep2Confirmed, _maybeAutoAdvance, _refreshButtonStates } from "./wizard.js";

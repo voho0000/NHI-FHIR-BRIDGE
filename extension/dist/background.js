@@ -6401,9 +6401,7 @@
       const main = Array.isArray(r.body[IMAGING_SPEC.mainDataKey]) ? r.body[IMAGING_SPEC.mainDataKey] : [];
       const ctx = { rid: reqs[i]?.row_ID || "", ctype: String(reqs[i]?.ctype || "") };
       const listRow = visits[reqs[i]?.listIdx ?? -1];
-      const status = String(
-        listRow?.jpG_STATUS ?? listRow?.jpg_STATUS ?? listRow?.JPG_STATUS ?? ""
-      );
+      const status = String(listRow?.jpG_STATUS ?? listRow?.jpg_STATUS ?? listRow?.JPG_STATUS ?? "");
       const listIplSeq = String(
         listRow?.ipL_CASE_SEQ_NO ?? listRow?.ipl_CASE_SEQ_NO ?? listRow?.IPL_CASE_SEQ_NO ?? ""
       );
@@ -6551,7 +6549,7 @@
   var POLL_INTERVAL_MS = 15e3;
   var TIMEOUT_MS = 9e4;
   var INITIAL_WAIT_MS = 15e3;
-  var MAX_TRIGGER_PER_SYNC_DEV = Infinity;
+  var MAX_TRIGGER_PER_SYNC_DEV = Number.POSITIVE_INFINITY;
   var SW_TRIGGER_LOOP_WALL_CLOCK_MS = 9e4;
   var SW_TRIGGER_INTER_STEP_MS = 300;
   async function swPostNhiJson(url, body, token, timeoutMs = 15e3) {
@@ -6677,11 +6675,7 @@
         continue;
       }
       await sleep(SW_TRIGGER_INTER_STEP_MS);
-      const addResp = await swPostNhiJson(
-        addUrl,
-        { ipl_CASE_SEQ_NO: rownum },
-        token
-      );
+      const addResp = await swPostNhiJson(addUrl, { ipl_CASE_SEQ_NO: rownum }, token);
       if (addResp.error === "SESSION_EXPIRED") {
         throw new Error(SESSION_EXPIRED_ERROR);
       }
@@ -6758,9 +6752,7 @@
       }
     }
     for (const sr of scriptResults) {
-      const i = requests.findIndex(
-        (x) => x.rid === sr.rid && x.ctype === sr.ctype
-      );
+      const i = requests.findIndex((x) => x.rid === sr.rid && x.ctype === sr.ctype);
       if (i >= 0) {
         outcomes[i].ok = sr.ok;
         outcomes[i].reason = sr.reason;
@@ -6829,14 +6821,7 @@
             if (acc.length > 0)
               return acc;
           }
-          for (const k of [
-            "img",
-            "imG",
-            "jpg",
-            "base64",
-            "imgBase64",
-            "data"
-          ]) {
+          for (const k of ["img", "imG", "jpg", "base64", "imgBase64", "data"]) {
             const v = body[k];
             if (typeof v === "string" && v.length > 1e3)
               return [v];
@@ -6899,9 +6884,7 @@
           const list = r.body.sp_IHKE3408S01_data || [];
           const m = /* @__PURE__ */ new Map();
           for (const row of list) {
-            const seq = String(
-              row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? ""
-            );
+            const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
             if (seq && seq !== "-" && row?.row_ID) {
               m.set(String(row.row_ID), seq);
             }
@@ -6958,9 +6941,7 @@
             return { seqMap, shapeMap };
           const list = r.body.sp_IHKE3408S01_data || [];
           for (const row of list) {
-            const seq = String(
-              row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? ""
-            );
+            const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
             const rid = String(row?.row_ID ?? "");
             if (seq && seq !== "-" && rid) {
               seqMap.set(rid, seq);
@@ -6968,12 +6949,8 @@
               const oriType = String(row?.ori_TYPE ?? row?.ori_type ?? "");
               if (status === "1" && oriType === "E") {
                 const code = String(row?.order_CODE ?? row?.order_code ?? "");
-                const date = String(
-                  row?.real_INSPECT_DATE ?? row?.real_inspect_date ?? ""
-                );
-                const hospital = String(
-                  row?.hosp_ABBR ?? row?.hosp_abbr ?? ""
-                );
+                const date = String(row?.real_INSPECT_DATE ?? row?.real_inspect_date ?? "");
+                const hospital = String(row?.hosp_ABBR ?? row?.hosp_abbr ?? "");
                 const sig = `${code}|${date}|${hospital}|${oriType}`;
                 if (!shapeMap.has(sig))
                   shapeMap.set(sig, []);
@@ -7136,9 +7113,7 @@
       [key]: { rows: Array.from(byKey.values()), updatedAt: now }
     });
     if (updated > 0) {
-      console.info(
-        `[pending] upsert: ${updated} re-triggered rows refreshed triggeredAt`
-      );
+      console.info(`[pending] upsert: ${updated} re-triggered rows refreshed triggeredAt`);
     }
   }
   async function removePendingImaging(patientId, removeKeys) {
@@ -7146,9 +7121,7 @@
       return;
     const key = pendingKey(patientId);
     const existing = await loadPendingImaging(patientId);
-    const remaining = existing.filter(
-      (r) => !removeKeys.has(`${r.rid}|${r.ctype}`)
-    );
+    const remaining = existing.filter((r) => !removeKeys.has(`${r.rid}|${r.ctype}`));
     if (remaining.length === existing.length)
       return;
     if (remaining.length === 0) {
@@ -7258,12 +7231,8 @@
     const oriTypeByRid = /* @__PURE__ */ new Map();
     let rowsWithSeq = 0;
     for (const row of list) {
-      const seq = String(
-        row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? row?.IPL_CASE_SEQ_NO ?? ""
-      );
-      const rid = String(
-        row?.row_ID ?? row?.rowid ?? row?.rowID ?? row?.roW_ID ?? ""
-      );
+      const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? row?.IPL_CASE_SEQ_NO ?? "");
+      const rid = String(row?.row_ID ?? row?.rowid ?? row?.rowID ?? row?.roW_ID ?? "");
       const oriType = String(row?.ori_TYPE ?? row?.ori_type ?? "");
       if (rid)
         oriTypeByRid.set(rid, oriType);
@@ -7282,7 +7251,6 @@
       }
       if (oriInList !== "E") {
         evictKeys.add(`${p.rid}|${p.ctype}`);
-        continue;
       }
     }
     if (evictKeys.size > 0) {
@@ -7294,16 +7262,12 @@
       } catch {
       }
     }
-    const livePending = pending.filter(
-      (p) => !evictKeys.has(`${p.rid}|${p.ctype}`)
-    );
+    const livePending = pending.filter((p) => !evictKeys.has(`${p.rid}|${p.ctype}`));
     if (livePending.length === 0) {
       console.info("[sweep] all pending entries evicted, nothing to fetch");
       return [];
     }
-    console.info(
-      `[sweep] list returned ${list.length} rows, ${rowsWithSeq} with seq populated`
-    );
+    console.info(`[sweep] list returned ${list.length} rows, ${rowsWithSeq} with seq populated`);
     if (list.length > 0) {
       const sample = list.slice(0, 3).map((r) => ({
         row_ID: r?.row_ID ?? r?.rowid ?? r?.rowID ?? r?.roW_ID ?? "(missing)",
@@ -7328,54 +7292,50 @@
       return results;
     }
     const SESSION_SENTINEL = Symbol("session-expired");
-    const settled = await runSweepBatched(
-      livePending,
-      SWEEP_BATCH_SIZE,
-      async (p) => {
-        const seq = seqByRid.get(String(p.rid));
-        if (!seq) {
-          return {
-            rid: p.rid,
-            ctype: p.ctype,
-            iplCaseSeqNo: null,
-            jpgBase64s: [],
-            outcome: "triggered-waiting"
-          };
-        }
-        const u = `${baseUrl}/api/ihke3000/IHKE3408S03/page_load?IPL_CASE_SEQ_NO=${encodeURIComponent(seq)}`;
-        const r = await swFetchNhiJson(u, token);
-        if (r.error === "SESSION_EXPIRED") {
-          return SESSION_SENTINEL;
-        }
-        if (r.error) {
-          return {
-            rid: p.rid,
-            ctype: p.ctype,
-            iplCaseSeqNo: seq,
-            jpgBase64s: [],
-            outcome: "triggered-waiting",
-            error: r.error
-          };
-        }
-        const b64s = readBase64JpgsFromBody(r.body);
-        if (b64s.length === 0) {
-          return {
-            rid: p.rid,
-            ctype: p.ctype,
-            iplCaseSeqNo: seq,
-            jpgBase64s: [],
-            outcome: "triggered-waiting"
-          };
-        }
+    const settled = await runSweepBatched(livePending, SWEEP_BATCH_SIZE, async (p) => {
+      const seq = seqByRid.get(String(p.rid));
+      if (!seq) {
+        return {
+          rid: p.rid,
+          ctype: p.ctype,
+          iplCaseSeqNo: null,
+          jpgBase64s: [],
+          outcome: "triggered-waiting"
+        };
+      }
+      const u = `${baseUrl}/api/ihke3000/IHKE3408S03/page_load?IPL_CASE_SEQ_NO=${encodeURIComponent(seq)}`;
+      const r = await swFetchNhiJson(u, token);
+      if (r.error === "SESSION_EXPIRED") {
+        return SESSION_SENTINEL;
+      }
+      if (r.error) {
         return {
           rid: p.rid,
           ctype: p.ctype,
           iplCaseSeqNo: seq,
-          jpgBase64s: b64s,
-          outcome: "triggered-ready"
+          jpgBase64s: [],
+          outcome: "triggered-waiting",
+          error: r.error
         };
       }
-    );
+      const b64s = readBase64JpgsFromBody(r.body);
+      if (b64s.length === 0) {
+        return {
+          rid: p.rid,
+          ctype: p.ctype,
+          iplCaseSeqNo: seq,
+          jpgBase64s: [],
+          outcome: "triggered-waiting"
+        };
+      }
+      return {
+        rid: p.rid,
+        ctype: p.ctype,
+        iplCaseSeqNo: seq,
+        jpgBase64s: b64s,
+        outcome: "triggered-ready"
+      };
+    });
     if (settled.some((x) => x === SESSION_SENTINEL)) {
       throw new Error(SESSION_EXPIRED_ERROR);
     }
@@ -7385,19 +7345,12 @@
     return Promise.race([
       p,
       new Promise(
-        (_, reject) => setTimeout(
-          () => reject(new Error(`${label} timeout ${Math.round(ms / 1e3)}s`)),
-          ms
-        )
+        (_, reject) => setTimeout(() => reject(new Error(`${label} timeout ${Math.round(ms / 1e3)}s`)), ms)
       )
     ]);
   }
   async function sweepPendingImagingWithTimeout(baseUrl, patientId, timeoutMs = 6e4) {
-    return raceTimeout(
-      sweepPendingImaging(baseUrl, patientId),
-      timeoutMs,
-      "sweep"
-    );
+    return raceTimeout(sweepPendingImaging(baseUrl, patientId), timeoutMs, "sweep");
   }
 
   // src/background/nhi-list-fetch.ts
@@ -7807,9 +7760,7 @@
     if (isCancelled())
       throw new Error(CANCEL_ERROR);
     if (fetchImagingEnabled && polledCandidates.length > 0) {
-      const _toTrigger = polledCandidates.filter(
-        (c) => c.needsTrigger
-      ).length;
+      const _toTrigger = polledCandidates.filter((c) => c.needsTrigger).length;
       await setStatus({
         progress: `\u{1F5BC}\uFE0F \u958B\u59CB\u9810\u5099\u5F71\u50CF\uFF08\u80CC\u666F\u50B3\u9001\u89F8\u767C\u8ACB\u6C42\uFF0C\u5171 ${_toTrigger} \u5F35\uFF0C\u4E0D\u5F71\u97FF\u60A8\u6B63\u5728\u770B\u7684\u5206\u9801\uFF09\u2026`,
         phase: "imaging"
@@ -7821,12 +7772,7 @@
             patientOverride.id_no,
             polledCandidates
           );
-          return await pollFetchImagingJpegs(
-            tabId,
-            BASE,
-            polledCandidates,
-            triggerOutcomes
-          );
+          return await pollFetchImagingJpegs(tabId, BASE, polledCandidates, triggerOutcomes);
         } catch (e) {
           errors.push(`imaging: ${e.message}`);
           return [];
@@ -7834,14 +7780,12 @@
       })();
     }
     if (fetchImagingEnabled && pendingImagingRows.length > 0 && patientOverride.id_no) {
-      imagingSweepPromise = sweepPendingImagingWithTimeout(
-        BASE,
-        patientOverride.id_no,
-        6e4
-      ).catch((e) => {
-        errors.push(`\u524D\u6B21\u5F71\u50CF\u88DC\u6293: ${e.message}`);
-        return [];
-      });
+      imagingSweepPromise = sweepPendingImagingWithTimeout(BASE, patientOverride.id_no, 6e4).catch(
+        (e) => {
+          errors.push(`\u524D\u6B21\u5F71\u50CF\u88DC\u6293: ${e.message}`);
+          return [];
+        }
+      );
     }
     _markPhase("imaging-kickoff");
     const _imgPending = imagingPromise !== null || imagingSweepPromise !== null;
@@ -7924,9 +7868,7 @@
     if (imagingPromise || imagingSweepPromise) {
       try {
         const N = imagingJpegCandidates.length;
-        const needsTrigger = polledCandidates.filter(
-          (c) => c.needsTrigger
-        ).length;
+        const needsTrigger = polledCandidates.filter((c) => c.needsTrigger).length;
         const alreadyPending = pendingImagingRows.length;
         const jpegResults = await withProgressTimer(
           (sec) => {
@@ -7976,12 +7918,8 @@
           settled[imgIdx].value.jpegFreshTriggerCount = allResults.filter(
             (r) => r.outcome === "triggered-ready"
           ).length;
-          const trigFailed = allResults.filter(
-            (r) => r.outcome === "trigger-failed"
-          );
-          const realFailures = trigFailed.filter(
-            (r) => r.error !== "dev-cap-skipped"
-          );
+          const trigFailed = allResults.filter((r) => r.outcome === "trigger-failed");
+          const realFailures = trigFailed.filter((r) => r.error !== "dev-cap-skipped");
           settled[imgIdx].value.jpegDevCapSkippedCount = trigFailed.filter(
             (r) => r.error === "dev-cap-skipped"
           ).length;
@@ -7996,15 +7934,9 @@
             const reason = String(r.error || "unknown");
             reasonCounts.set(reason, (reasonCounts.get(reason) ?? 0) + 1);
           }
-          settled[imgIdx].value.jpegTriggerFailReasons = Array.from(
-            reasonCounts.entries()
-          ).sort((a, b) => b[1] - a[1]).slice(0, 3);
-          const pendingKeysSnap = new Set(
-            pendingImagingRows.map((p) => `${p.rid}|${p.ctype}`)
-          );
-          const waitingResults = allResults.filter(
-            (r) => r.outcome === "triggered-waiting"
-          );
+          settled[imgIdx].value.jpegTriggerFailReasons = Array.from(reasonCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
+          const pendingKeysSnap = new Set(pendingImagingRows.map((p) => `${p.rid}|${p.ctype}`));
+          const waitingResults = allResults.filter((r) => r.outcome === "triggered-waiting");
           settled[imgIdx].value.jpegTriggeredWaitingCount = waitingResults.length;
           settled[imgIdx].value.jpegTriggeredWaitingNewCount = waitingResults.filter(
             (r) => !pendingKeysSnap.has(`${r.rid}|${r.ctype}`)
@@ -8023,14 +7955,9 @@
             if (r?.outcome !== "fetch-failed")
               continue;
             const reason = String(r.error || "unknown");
-            fetchFailReasonCounts.set(
-              reason,
-              (fetchFailReasonCounts.get(reason) ?? 0) + 1
-            );
+            fetchFailReasonCounts.set(reason, (fetchFailReasonCounts.get(reason) ?? 0) + 1);
           }
-          settled[imgIdx].value.jpegFetchFailReasons = Array.from(
-            fetchFailReasonCounts.entries()
-          ).sort((a, b) => b[1] - a[1]).slice(0, 3);
+          settled[imgIdx].value.jpegFetchFailReasons = Array.from(fetchFailReasonCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
           const resultByKey = /* @__PURE__ */ new Map();
           for (const r of allResults) {
             if (!Array.isArray(r?.jpgBase64s) || r.jpgBase64s.length === 0)
@@ -8073,9 +8000,7 @@
           settled[imgIdx].value.raw_count = items.length;
           if (patientOverride.id_no) {
             try {
-              const pendingKeysSet = new Set(
-                pendingImagingRows.map((p) => `${p.rid}|${p.ctype}`)
-              );
+              const pendingKeysSet = new Set(pendingImagingRows.map((p) => `${p.rid}|${p.ctype}`));
               const removeKeys = /* @__PURE__ */ new Set();
               for (const k of matchedKeys) {
                 if (pendingKeysSet.has(k))
