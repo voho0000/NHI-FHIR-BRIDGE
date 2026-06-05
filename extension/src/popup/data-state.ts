@@ -18,7 +18,7 @@
 // sides; user decides.
 
 import { derivePatientId } from "@nhi-fhir-bridge/mapper";
-import { PENDING_BUNDLE_KEY } from "./constants.js";
+import { PENDING_BUNDLE_JSON_KEY, PENDING_BUNDLE_KEY } from "./constants.js";
 import { els } from "./els.js";
 import { getPatientOverride } from "./patient-form.js";
 import { state } from "./state.js";
@@ -110,13 +110,18 @@ export function _renderDataState() {
 }
 
 export async function _refreshLocalBundleState() {
-  const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+  // v0.16.1: read METADATA only from chrome.storage.local — no longer
+  // parses the 80+ MB JSON to count entries (entryCount is now stored
+  // in metadata at stash time). Pre-v0.16.1 this code was also using
+  // chrome.storage.session by mistake (a leftover from a session-→-local
+  // migration); that bug made state.localBundle never populate, so the
+  // 後端/本地 reconciliation panel was empty in backend mode. Both
+  // issues are fixed here.
+  const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
   state.localBundle = pending
     ? {
         exists: true,
-        count: Array.isArray(JSON.parse(pending.json)?.entry)
-          ? JSON.parse(pending.json).entry.length
-          : 0,
+        count: pending.entryCount || 0,
         generatedAt: pending.generatedAt || 0,
         patientId: pending.patientId || null,
       }
@@ -196,12 +201,15 @@ export async function pushLocalBundleToBackend() {
   els.pushLocalBtn.disabled = true;
   els.pushLocalBtn.textContent = "傳送中…";
   try {
-    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
-    if (!pending?.json) throw new Error("no local bundle");
+    // v0.16.1: pull JSON from its dedicated key (storage split).
+    const stored = await chrome.storage.local.get([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]);
+    const pending = stored[PENDING_BUNDLE_KEY];
+    const jsonRecord = stored[PENDING_BUNDLE_JSON_KEY];
+    if (!pending || !jsonRecord?.json) throw new Error("no local bundle");
     const r = await fetch(`${url}/fhir/import`, {
       method: "POST",
       headers,
-      body: pending.json,
+      body: jsonRecord.json,
     });
     if (!r.ok) {
       const text = await r.text();

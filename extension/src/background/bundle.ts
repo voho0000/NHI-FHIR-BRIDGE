@@ -11,7 +11,7 @@ import {
   maskId,
   resolveSexStratifiedRanges,
 } from "@nhi-fhir-bridge/mapper";
-import { LOCAL_PAGE_TYPE_ORDER, PENDING_BUNDLE_KEY } from "./constants.js";
+import { LOCAL_PAGE_TYPE_ORDER, PENDING_BUNDLE_JSON_KEY, PENDING_BUNDLE_KEY } from "./constants.js";
 import { buildOverridePatient } from "./patient-override.js";
 
 export function assembleLocalBundle(byType, patientOverride, maskEnabled) {
@@ -173,20 +173,36 @@ export async function stashFhirBundle(
 
   // Stash JSON + metadata to chrome.storage.local. unlimitedStorage
   // manifest permission lifts the per-extension quota so imaging
-  // bundles (25 MB+) fit comfortably. The popup's "下載健康紀錄檔"
-  // button reads this slot, creates a Blob URL, and triggers
-  // chrome.downloads.download with saveAs:true — the popup click is
-  // the user gesture Chrome requires for the Save As dialog. The SW
-  // does NOT auto-download (the offscreen workaround we tried in an
-  // earlier v0.14 iteration was unreliable for >10 MB bundles).
+  // bundles (80+ MB) fit comfortably. The popup's "下載健康紀錄檔"
+  // button reads PENDING_BUNDLE_JSON_KEY, creates a Blob URL, and
+  // triggers chrome.downloads.download with saveAs:true — the popup
+  // click is the user gesture Chrome requires for the Save As dialog.
+  // The SW does NOT auto-download (the offscreen workaround we tried
+  // in an earlier v0.14 iteration was unreliable for >10 MB bundles).
+  //
+  // v0.16.1: split into TWO storage records to keep popup boot fast:
+  //   PENDING_BUNDLE_KEY      — metadata only (~200 B), read on every
+  //                             popup open + chrome.storage.onChanged
+  //   PENDING_BUNDLE_JSON_KEY — the 80+ MB JSON string, read ONLY
+  //                             when user clicks download
+  // Before the split, refreshPendingBundle pulled the full record
+  // every popup open, blocking the wizard's data-active-step
+  // assignment by 2-3 sec on big bundles and visually overlapping
+  // step 2 + step 3 (user-reported FOUC). hasJson: true lets the
+  // metadata-only path know to surface the download button.
+  // entryCount lets the data-state card render "✓ N 筆 · 5 分鐘前產生"
+  // without re-parsing the 80+ MB JSON every popup-open (v0.16.1).
+  const entryCount = Array.isArray(bundle?.entry) ? bundle.entry.length : 0;
   await chrome.storage.local.set({
     [PENDING_BUNDLE_KEY]: {
       filename,
       bytes,
-      json,
       generatedAt: Date.now(),
       patientId: patientId || null,
+      hasJson: true,
+      entryCount,
     },
+    [PENDING_BUNDLE_JSON_KEY]: { json },
   });
   return { filename, bytes };
 }

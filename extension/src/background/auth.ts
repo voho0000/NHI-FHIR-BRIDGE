@@ -3,7 +3,7 @@
 // the logged-in user's citizen ID in its `cid` field — so the same cheap
 // call doubles as a login check and a patient-ID seed.
 
-import { PENDING_BUNDLE_KEY } from "./constants.js";
+import { PENDING_BUNDLE_JSON_KEY, PENDING_BUNDLE_KEY } from "./constants.js";
 
 // Cheap pre-flight: does this NHI tab have an authenticated session?
 // Uses the same sessionStorage.token + lightweight API call pattern as
@@ -99,7 +99,10 @@ export async function maybeFetchPatientIdFromNhi(tabId, patientOverride) {
     // savePatientOverride when it detects patientChanged.
     const switchedRealPatients = current && !current.startsWith("auto-") && current !== cid;
     if (switchedRealPatients) {
-      await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
+      // v0.16.1: drop both metadata + JSON keys (storage split).
+      await chrome.storage.local
+        .remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY])
+        .catch(() => {});
     }
   }
   return resolved;

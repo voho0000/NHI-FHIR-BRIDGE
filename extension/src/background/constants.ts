@@ -22,6 +22,14 @@ export const SESSION_EXPIRED_ERROR = "__SESSION_EXPIRED__";
 // TTL sweep (PENDING_BUNDLE_TTL_MS) and explicit clear gestures bound
 // the PHI window in the same way the session-storage approach did.
 export const PENDING_BUNDLE_KEY = "pendingFhirBundle";
+// v0.16.1: bundle storage split. PENDING_BUNDLE_KEY now holds metadata
+// only (~200 B: filename / bytes / generatedAt / patientId / hasJson).
+// The actual JSON string lives in PENDING_BUNDLE_JSON_KEY and is read
+// ONLY when the user clicks the download button. Imaging bundles can
+// be 80+ MB; reading them on every popup-open via the metadata path
+// caused 2-3 sec freezes that delayed the wizard's data-active-step
+// assignment, manifesting as FOUC of step 2 + step 3 overlapping.
+export const PENDING_BUNDLE_JSON_KEY = "pendingFhirBundleJson";
 export const PENDING_BUNDLE_TTL_MS = 60 * 60 * 1000; // 1 hour
 export const PENDING_BUNDLE_SWEEP_ALARM = "pending-bundle-sweep";
 

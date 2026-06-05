@@ -2,7 +2,12 @@
 // install-time PHI sweep for keys older extension versions left behind,
 // and the periodic TTL sweep of the pending-bundle slot.
 
-import { PENDING_BUNDLE_KEY, PENDING_BUNDLE_TTL_MS, SYNC_KEYS_TO_MIGRATE } from "./constants.js";
+import {
+  PENDING_BUNDLE_JSON_KEY,
+  PENDING_BUNDLE_KEY,
+  PENDING_BUNDLE_TTL_MS,
+  SYNC_KEYS_TO_MIGRATE,
+} from "./constants.js";
 
 // One-time migration from chrome.storage.sync → chrome.storage.local.
 // Previous versions stored syncApiKey + patientOverride (containing the
@@ -53,11 +58,13 @@ export async function sweepStaleLocalKeys() {
 // record once it exceeds PENDING_BUNDLE_TTL_MS (1 hour).
 export async function sweepPendingBundleIfStale() {
   try {
+    // v0.16.1: only need metadata to decide staleness; never pull the
+    // 80+ MB JSON into the SW for a sweep check.
     const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
     if (!pending) return;
     const age = Date.now() - (pending.generatedAt || 0);
     if (age > PENDING_BUNDLE_TTL_MS) {
-      await chrome.storage.local.remove(PENDING_BUNDLE_KEY);
+      await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]);
     }
   } catch {}
 }

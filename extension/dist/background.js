@@ -475,6 +475,7 @@
   var CANCEL_ERROR = "__SYNC_CANCELLED__";
   var SESSION_EXPIRED_ERROR = "__SESSION_EXPIRED__";
   var PENDING_BUNDLE_KEY = "pendingFhirBundle";
+  var PENDING_BUNDLE_JSON_KEY = "pendingFhirBundleJson";
   var PENDING_BUNDLE_TTL_MS = 60 * 60 * 1e3;
   var PENDING_BUNDLE_SWEEP_ALARM = "pending-bundle-sweep";
   var PENDING_IMAGING_KEY_PREFIX = "nhiImagingPending:";
@@ -568,7 +569,7 @@
       });
       const switchedRealPatients = current && !current.startsWith("auto-") && current !== cid;
       if (switchedRealPatients) {
-        await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {
+        await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]).catch(() => {
         });
       }
     }
@@ -5554,7 +5555,7 @@
         return;
       const age = Date.now() - (pending.generatedAt || 0);
       if (age > PENDING_BUNDLE_TTL_MS) {
-        await chrome.storage.local.remove(PENDING_BUNDLE_KEY);
+        await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]);
       }
     } catch {
     }
@@ -6351,14 +6352,17 @@
     const filename = `nhi-${safePid}-${s}-${e}-v${version}${imgSuffix}.json`;
     const json = JSON.stringify(bundle, null, 2);
     const bytes = json.length;
+    const entryCount = Array.isArray(bundle?.entry) ? bundle.entry.length : 0;
     await chrome.storage.local.set({
       [PENDING_BUNDLE_KEY]: {
         filename,
         bytes,
-        json,
         generatedAt: Date.now(),
-        patientId: patientId || null
-      }
+        patientId: patientId || null,
+        hasJson: true,
+        entryCount
+      },
+      [PENDING_BUNDLE_JSON_KEY]: { json }
     });
     return { filename, bytes };
   }
@@ -7814,7 +7818,7 @@
       errors: []
     });
     await clearResultBadge();
-    await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {
+    await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]).catch(() => {
     });
     await stopPrepPolling().catch(() => {
     });

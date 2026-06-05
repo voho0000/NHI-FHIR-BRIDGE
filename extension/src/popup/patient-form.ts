@@ -4,7 +4,7 @@
 
 import { maskName } from "@nhi-fhir-bridge/mapper";
 import { refreshPendingBundle } from "./bundle.js";
-import { PENDING_BUNDLE_KEY } from "./constants.js";
+import { PENDING_BUNDLE_JSON_KEY, PENDING_BUNDLE_KEY } from "./constants.js";
 import { _renderDataState, checkBackendPatient } from "./data-state.js";
 import { els } from "./els.js";
 import { state } from "./state.js";
@@ -266,7 +266,10 @@ export async function savePatientOverride() {
     // 2. drop the SW's last sync status so the result zone doesn't
     //    keep showing "✅ 取得完成 · A 的 81 筆…"
     // 3. drop the in-popup latest-status snapshot
-    await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
+    // v0.16.1: drop both metadata + JSON keys (storage split).
+    await chrome.storage.local
+      .remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY])
+      .catch(() => {});
     await chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {});
     state.latestStatus = null;
     setStatus("", null);

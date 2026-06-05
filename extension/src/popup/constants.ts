@@ -27,6 +27,10 @@ export const NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
 export const NHI_LOGIN_URL = "https://myhealthbank.nhi.gov.tw/IHKE3000/IHKE3095S01";
 
 export const PENDING_BUNDLE_KEY = "pendingFhirBundle";
+// v0.16.1: bundle storage split. Metadata (~200 B) lives in
+// PENDING_BUNDLE_KEY for fast popup-open reads; the 80+ MB JSON
+// string lives in this separate key, read only on download click.
+export const PENDING_BUNDLE_JSON_KEY = "pendingFhirBundleJson";
 
 // Date-range dropdown labels (apiSyncNhi). "1" = NHI's default window.
 export const RANGE_LABELS = {

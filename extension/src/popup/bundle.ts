@@ -11,7 +11,7 @@
 // chrome.storage.session is no longer used for this slot — bundles can
 // exceed its 10 MB ceiling once imaging is enabled.
 
-import { PENDING_BUNDLE_KEY } from "./constants.js";
+import { PENDING_BUNDLE_JSON_KEY, PENDING_BUNDLE_KEY } from "./constants.js";
 import { els } from "./els.js";
 import { getPatientOverride } from "./patient-form.js";
 import { state } from "./state.js";
@@ -20,14 +20,16 @@ import { _fmtBytes, _fmtRelative } from "./utils.js";
 import { _refreshResultZone } from "./wizard.js";
 
 export async function refreshPendingBundle() {
+  // v0.16.1: read METADATA ONLY (~200 B) — the 80+ MB JSON lives in
+  // PENDING_BUNDLE_JSON_KEY and is only fetched when the user clicks
+  // download. Reading the metadata key returns near-instantly even
+  // for huge bundles, letting the wizard's data-active-step apply
+  // before any visible FOUC of overlapping steps.
   const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
-  // Diagnostic log so we can verify the popup is reacting to SW-side
-  // hot-patches (bg poll writes new bundle.bytes → onChanged fires →
-  // popup should re-read + re-render). Remove once verified.
   console.info(
     "[popup] refreshPendingBundle:",
     pending
-      ? `${((pending.bytes || 0) / 1024 / 1024).toFixed(2)} MB, generatedAt=${pending.generatedAt ? new Date(pending.generatedAt).toLocaleTimeString() : "(none)"}, lastPatchedAt=${pending.lastPatchedAt ? new Date(pending.lastPatchedAt).toLocaleTimeString() : "(none)"}`
+      ? `${((pending.bytes || 0) / 1024 / 1024).toFixed(2)} MB, generatedAt=${pending.generatedAt ? new Date(pending.generatedAt).toLocaleTimeString() : "(none)"}`
       : "(no pending bundle)",
   );
   if (!pending) {
@@ -60,8 +62,10 @@ export async function refreshPendingBundle() {
   // SW no longer auto-saves; the user is the only path to disk and
   // the popup click is what Chrome accepts for the saveAs:true
   // dialog (which gives the user control over file location).
+  // v0.16.1: the JSON itself is now in a separate storage key; the
+  // metadata-only record has a `hasJson: true` flag we check instead.
   if (els.downloadBundleBtn) {
-    els.downloadBundleBtn.hidden = !pending.json;
+    els.downloadBundleBtn.hidden = !pending.hasJson;
     els.downloadBundleBtn.textContent = "下載健康紀錄檔";
   }
   if (state.wizardInitialized) _refreshResultZone();
@@ -89,9 +93,15 @@ async function _transitionStatusToDownloaded(bytes) {
 }
 
 export async function downloadPendingBundle() {
-  const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
-  if (!pending || !pending.json) return;
-  const blob = new Blob([pending.json], { type: "application/fhir+json" });
+  // v0.16.1: fetch metadata + JSON in one call. Both keys are present
+  // together (SW writes them atomically in stashFhirBundle) so a single
+  // get covers both. Pulling 80+ MB here is fine — this is a one-shot
+  // user-driven download, not a popup-boot path.
+  const stored = await chrome.storage.local.get([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]);
+  const pending = stored[PENDING_BUNDLE_KEY];
+  const jsonRecord = stored[PENDING_BUNDLE_JSON_KEY];
+  if (!pending || !jsonRecord?.json) return;
+  const blob = new Blob([jsonRecord.json], { type: "application/fhir+json" });
   const url = URL.createObjectURL(blob);
   let downloadId = null;
   try {
@@ -127,7 +137,9 @@ export async function downloadPendingBundle() {
     if (delta.id !== downloadId) return;
     const final = delta.state?.current;
     if (final === "complete") {
-      chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
+      // v0.16.1: wipe BOTH keys; leaving the 80+ MB JSON behind after
+      // the user has the file on disk is pure PHI surface.
+      chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]).catch(() => {});
       chrome.downloads.onChanged.removeListener(_onChange);
       // Transition the sync status banner from "✅ 取得完成" to
       // "✅ 已下載" so users who close + reopen the popup (or just
@@ -147,7 +159,8 @@ export async function downloadPendingBundle() {
 }
 
 export async function clearPendingBundle() {
-  await chrome.storage.local.remove(PENDING_BUNDLE_KEY);
+  // v0.16.1: remove both metadata + JSON keys.
+  await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]);
   await refreshPendingBundle();
   // Clearing the download is the user's "I'm done with this result"
   // gesture — wipe the completion status banner too so the result zone

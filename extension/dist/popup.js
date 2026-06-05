@@ -477,6 +477,7 @@
   var NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
   var NHI_LOGIN_URL = "https://myhealthbank.nhi.gov.tw/IHKE3000/IHKE3095S01";
   var PENDING_BUNDLE_KEY = "pendingFhirBundle";
+  var PENDING_BUNDLE_JSON_KEY = "pendingFhirBundleJson";
   var RANGE_LABELS = {
     "1": "\u6700\u8FD1 1 \u5E74",
     "3": "\u6700\u8FD1 3 \u5E74",
@@ -1830,10 +1831,28 @@
         return false;
     }
   }
+  var ACTIVE_STEP_LS_KEY = "nhi-bridge:activeStep";
+  function _restoreActiveStepFromCache() {
+    try {
+      const raw = localStorage.getItem(ACTIVE_STEP_LS_KEY);
+      if (!raw)
+        return;
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 1 && n <= 4) {
+        state.activeStep = n;
+        document.body.dataset.activeStep = String(n);
+      }
+    } catch {
+    }
+  }
   function _setActiveStep(n, opts = {}) {
     const clamped = Math.max(1, Math.min(4, n));
     state.activeStep = clamped;
     document.body.dataset.activeStep = String(clamped);
+    try {
+      localStorage.setItem(ACTIVE_STEP_LS_KEY, String(clamped));
+    } catch {
+    }
     _refreshWizardUi();
     if (!opts.silent) {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -2233,10 +2252,10 @@
     els.pushLocalBtn.textContent = "\u628A\u9019\u6B21\u8CC7\u6599\u50B3\u5230\u672C\u6A5F\u4F3A\u670D\u5668";
   }
   async function _refreshLocalBundleState() {
-    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.session.get(PENDING_BUNDLE_KEY);
+    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
     state.localBundle = pending ? {
       exists: true,
-      count: Array.isArray(JSON.parse(pending.json)?.entry) ? JSON.parse(pending.json).entry.length : 0,
+      count: pending.entryCount || 0,
       generatedAt: pending.generatedAt || 0,
       patientId: pending.patientId || null
     } : { exists: false, count: 0, generatedAt: 0, patientId: null };
@@ -2308,13 +2327,15 @@
     els.pushLocalBtn.disabled = true;
     els.pushLocalBtn.textContent = "\u50B3\u9001\u4E2D\u2026";
     try {
-      const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
-      if (!pending?.json)
+      const stored = await chrome.storage.local.get([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]);
+      const pending = stored[PENDING_BUNDLE_KEY];
+      const jsonRecord = stored[PENDING_BUNDLE_JSON_KEY];
+      if (!pending || !jsonRecord?.json)
         throw new Error("no local bundle");
       const r = await fetch(`${url}/fhir/import`, {
         method: "POST",
         headers,
-        body: pending.json
+        body: jsonRecord.json
       });
       if (!r.ok) {
         const text = await r.text();
@@ -2475,7 +2496,7 @@
     _storedIdNo = ov.id_no;
     await chrome.storage.local.set({ patientOverride: ov });
     if (patientChanged) {
-      await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {
+      await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]).catch(() => {
       });
       await chrome.runtime.sendMessage({ type: "clearSyncStatus" }).catch(() => {
       });
@@ -2524,7 +2545,7 @@
     const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
     console.info(
       "[popup] refreshPendingBundle:",
-      pending ? `${((pending.bytes || 0) / 1024 / 1024).toFixed(2)} MB, generatedAt=${pending.generatedAt ? new Date(pending.generatedAt).toLocaleTimeString() : "(none)"}, lastPatchedAt=${pending.lastPatchedAt ? new Date(pending.lastPatchedAt).toLocaleTimeString() : "(none)"}` : "(no pending bundle)"
+      pending ? `${((pending.bytes || 0) / 1024 / 1024).toFixed(2)} MB, generatedAt=${pending.generatedAt ? new Date(pending.generatedAt).toLocaleTimeString() : "(none)"}` : "(no pending bundle)"
     );
     if (!pending) {
       els.pendingBundle.hidden = true;
@@ -2552,7 +2573,7 @@
       els.bundleSizeage.textContent = parts.join(" \xB7 ");
     }
     if (els.downloadBundleBtn) {
-      els.downloadBundleBtn.hidden = !pending.json;
+      els.downloadBundleBtn.hidden = !pending.hasJson;
       els.downloadBundleBtn.textContent = "\u4E0B\u8F09\u5065\u5EB7\u7D00\u9304\u6A94";
     }
     if (state.wizardInitialized)
@@ -2576,10 +2597,12 @@
     }
   }
   async function downloadPendingBundle() {
-    const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
-    if (!pending || !pending.json)
+    const stored = await chrome.storage.local.get([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]);
+    const pending = stored[PENDING_BUNDLE_KEY];
+    const jsonRecord = stored[PENDING_BUNDLE_JSON_KEY];
+    if (!pending || !jsonRecord?.json)
       return;
-    const blob = new Blob([pending.json], { type: "application/fhir+json" });
+    const blob = new Blob([jsonRecord.json], { type: "application/fhir+json" });
     const url = URL.createObjectURL(blob);
     let downloadId = null;
     try {
@@ -2601,7 +2624,7 @@
         return;
       const final = delta.state?.current;
       if (final === "complete") {
-        chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {
+        chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]).catch(() => {
         });
         chrome.downloads.onChanged.removeListener(_onChange);
         _transitionStatusToDownloaded(pending.bytes);
@@ -2613,7 +2636,7 @@
     setTimeout(() => URL.revokeObjectURL(url), 5e3);
   }
   async function clearPendingBundle() {
-    await chrome.storage.local.remove(PENDING_BUNDLE_KEY);
+    await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]);
     await refreshPendingBundle();
     state.latestStatus = null;
     setStatus("", null);
@@ -3085,6 +3108,7 @@
   }
 
   // src/popup.ts
+  _restoreActiveStepFromCache();
   async function init() {
     document.getElementById("version").textContent = `v${chrome.runtime.getManifest().version}`;
     chrome.runtime.sendMessage({ type: "markSyncSeen" }).catch(() => {

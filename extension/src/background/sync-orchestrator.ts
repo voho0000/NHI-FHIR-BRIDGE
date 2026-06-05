@@ -32,6 +32,7 @@ import {
   CANCEL_ERROR,
   DEBUG_STASH_BODY_SAMPLES,
   NHI_HOST,
+  PENDING_BUNDLE_JSON_KEY,
   PENDING_BUNDLE_KEY,
 } from "./constants.js";
 import { startPrepPolling, stopPrepPolling } from "./imaging-prep-poll.js";
@@ -182,7 +183,8 @@ export async function runNhiApiSync({
   // and download last-time's stale data. Cleared at sync START (not
   // sync end) on purpose: at end the new bundle is written into the
   // same slot, so an end-of-sync clear would race the new write.
-  await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
+  // v0.16.1: remove BOTH metadata + JSON keys (storage split).
+  await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]).catch(() => {});
   // v0.16.0: a new sync supersedes whatever the prep poller was
   // tracking. Clear it now so the banner disappears and the alarm
   // doesn't fire mid-sync trying to use a possibly-stale token.

@@ -58,8 +58,17 @@ import {
   _maybeAutoAdvance,
   _refreshButtonStates,
   _refreshWizardUi,
+  _restoreActiveStepFromCache,
   _setActiveStep,
 } from "./popup/wizard.js";
+
+// v0.16.1: synchronous wizard-step restore BEFORE the rest of the
+// init promise chain even starts. localStorage is sync, body.dataset
+// gets the correct value immediately, CSS hides non-active steps —
+// the popup never visibly flashes step 1 → step 3 transitions on
+// reopens. Async chrome.storage reads later may further refine state
+// but the visual jump is gone.
+_restoreActiveStepFromCache();
 
 async function init() {
   document.getElementById("version").textContent = `v${chrome.runtime.getManifest().version}`;

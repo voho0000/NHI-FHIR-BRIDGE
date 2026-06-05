@@ -57,10 +57,36 @@ export function _isStepDone(step) {
   }
 }
 
+// v0.16.1: localStorage key for the wizard's last-active step. Used
+// to restore the user's view synchronously on popup open BEFORE any
+// chrome.storage async I/O — without this restore, popup defaulted
+// to step 1's CSS until _initWizard ran, briefly flashing the wrong
+// content. localStorage is synchronous so the read happens before
+// the first paint.
+const ACTIVE_STEP_LS_KEY = "nhi-bridge:activeStep";
+
+export function _restoreActiveStepFromCache(): void {
+  try {
+    const raw = localStorage.getItem(ACTIVE_STEP_LS_KEY);
+    if (!raw) return;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 1 && n <= 4) {
+      state.activeStep = n;
+      document.body.dataset.activeStep = String(n);
+    }
+  } catch {
+    // localStorage access can throw in some privacy modes — non-fatal.
+  }
+}
+
 export function _setActiveStep(n, opts: any = {}) {
   const clamped = Math.max(1, Math.min(4, n));
   state.activeStep = clamped;
   document.body.dataset.activeStep = String(clamped);
+  // Persist so the NEXT popup open can restore synchronously.
+  try {
+    localStorage.setItem(ACTIVE_STEP_LS_KEY, String(clamped));
+  } catch {}
   _refreshWizardUi();
   if (!opts.silent) {
     // Auto-scroll the popup to the top of the step so users always
