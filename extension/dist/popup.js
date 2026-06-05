@@ -498,6 +498,13 @@
     syncBlockedReason: byId("sync-blocked-reason"),
     apiSyncRange: byId("api-sync-range"),
     stopBtn: byId("stop-btn"),
+    // v0.16.0: imaging prep banner — appears post-sync when NHI is still
+    // preparing N images. Lives in imaging-prep-banner.ts.
+    prepBanner: byId("imaging-prep-banner"),
+    prepTitle: byId("prep-title"),
+    prepProgress: byId("prep-progress"),
+    prepCloseBtn: byId("prep-close-btn"),
+    prepCtaBtn: byId("prep-cta-btn"),
     ovName: byId("ov-name"),
     ovBirthDate: byId("ov-birth-date"),
     ovGender: byId("ov-gender"),
@@ -2807,19 +2814,6 @@
       testBackendConnection();
   }
 
-  // src/popup/imaging-toggle.ts
-  async function loadFetchImagingEnabled() {
-    const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
-    if (els.fetchImagingEnabled) {
-      els.fetchImagingEnabled.checked = fetchImagingEnabled === true;
-    }
-  }
-  async function onFetchImagingToggle() {
-    await chrome.storage.local.set({
-      fetchImagingEnabled: els.fetchImagingEnabled.checked === true
-    });
-  }
-
   // src/popup/sync-client.ts
   async function isOnNhiLoginPage(tabId, url) {
     if (url?.pathname && /IHKE3099/.test(url.pathname))
@@ -2974,6 +2968,92 @@
     chrome.storage.local.set({ smartAppLaunchUrl: v });
   }
 
+  // src/popup/imaging-prep-banner.ts
+  var IMAGING_PREP_STATE_KEY = "imagingPrepState";
+  function _elapsedText(state2) {
+    const ms = Date.now() - state2.startedAt;
+    const minutes = Math.max(0, Math.floor(ms / 6e4));
+    if (minutes < 1)
+      return "\u525B\u958B\u59CB";
+    if (minutes === 1)
+      return "\u5DF2\u7B49\u5019 1 \u5206\u9418";
+    return `\u5DF2\u7B49\u5019 ${minutes} \u5206\u9418`;
+  }
+  function _render(state2) {
+    const banner = els.prepBanner;
+    if (!banner)
+      return;
+    if (!state2) {
+      banner.hidden = true;
+      return;
+    }
+    banner.hidden = false;
+    banner.dataset.state = state2.status;
+    const title = els.prepTitle;
+    const progress = els.prepProgress;
+    const cta = els.prepCtaBtn;
+    if (state2.status === "ready") {
+      title.textContent = "\u2705 \u5F71\u50CF\u5DF2\u5099\u9F4A";
+      progress.textContent = `\u5065\u4FDD\u7F72\u5DF2\u6E96\u5099\u597D ${state2.initialCount} \u5F35\u5F71\u50CF\uFF0C\u6309\u4E0B\u65B9\u6309\u9215\u53D6\u5F97\u6700\u65B0\u8CC7\u6599\u3002`;
+      cta.hidden = false;
+    } else if (state2.status === "timeout") {
+      title.textContent = "\u23F1 \u7B49\u5019\u903E\u6642\uFF08\u5DF2\u904E 30 \u5206\u9418\uFF09";
+      progress.textContent = `\u4ECD\u6709 ${state2.count} \u5F35\u5F71\u50CF\u672A\u6E96\u5099\u5B8C\u6210\uFF1B\u53EF\u95DC\u9589\u6B64\u63D0\u793A\uFF0C\u7A0D\u5F8C\u624B\u52D5\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u3002`;
+      cta.hidden = true;
+    } else if (state2.status === "session-expired") {
+      title.textContent = "\u{1F512} \u5065\u4FDD\u5B58\u647A\u767B\u5165\u903E\u6642";
+      progress.textContent = "\u8ACB\u56DE\u5230\u5065\u4FDD\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\u5F8C\uFF0C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u7E7C\u7E8C\u3002";
+      cta.hidden = true;
+    } else {
+      title.textContent = "\u{1F5BC}\uFE0F \u5065\u4FDD\u7F72\u6E96\u5099\u4E2D";
+      progress.textContent = `\u5269 ${state2.count} / ${state2.initialCount} \u5F35 \xB7 ${_elapsedText(state2)}`;
+      cta.hidden = true;
+    }
+  }
+  async function _loadInitial() {
+    try {
+      const obj = await chrome.storage.local.get(IMAGING_PREP_STATE_KEY);
+      const state2 = obj[IMAGING_PREP_STATE_KEY] || null;
+      _render(state2);
+    } catch (e) {
+      console.warn("[imaging-prep-banner] initial load failed:", e);
+    }
+  }
+  function initImagingPrepBanner() {
+    if (!els.prepBanner)
+      return;
+    _loadInitial();
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local")
+        return;
+      if (!(IMAGING_PREP_STATE_KEY in changes))
+        return;
+      const newVal = changes[IMAGING_PREP_STATE_KEY]?.newValue || null;
+      _render(newVal);
+    });
+    els.prepCloseBtn?.addEventListener("click", () => {
+      chrome.runtime.sendMessage({ type: "dismissPrepBanner" }).catch(() => {
+        _render(null);
+      });
+    });
+    els.prepCtaBtn?.addEventListener("click", () => {
+      apiSyncNhi();
+    });
+  }
+
+  // src/popup/imaging-toggle.ts
+  async function loadFetchImagingEnabled() {
+    const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
+    if (els.fetchImagingEnabled) {
+      els.fetchImagingEnabled.checked = fetchImagingEnabled === true;
+    }
+  }
+  async function onFetchImagingToggle() {
+    await chrome.storage.local.set({
+      fetchImagingEnabled: els.fetchImagingEnabled.checked === true
+    });
+  }
+
   // src/popup/tooltip.ts
   var _helpTip = document.createElement("div");
   _helpTip.className = "help-tooltip";
@@ -3012,6 +3092,7 @@
     document.getElementById("login-ok-next")?.addEventListener("click", () => _setActiveStep(2));
     await loadMaskNameEnabled();
     await loadFetchImagingEnabled();
+    initImagingPrepBanner();
     await _refreshLocalBundleState();
     await loadBackendModeEnabled();
     await loadBackendUrl();

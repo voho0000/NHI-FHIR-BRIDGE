@@ -779,6 +779,69 @@
     .settings-view-card .field { margin-bottom: 12px; }
     .settings-view-card .field:last-child { margin-bottom: 0; }
 
+    /* ── Imaging prep banner (v0.16.0) ───────────────────────────── */
+    /* Appears after a sync ends with N rows triggered-waiting at NHI.
+       SW polls the imaging list every minute; banner shows live count
+       so user knows when to come back to re-sync. X dismisses + stops
+       polling. CTA appears when count=0 to invite a fresh sync. */
+    .prep-banner {
+      position: relative;
+      padding: 10px 30px 10px 12px;
+      border-radius: 8px;
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      margin-top: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .prep-banner[data-state="ready"] {
+      background: #f0fdf4;
+      border-color: #86efac;
+    }
+    .prep-banner[data-state="timeout"],
+    .prep-banner[data-state="session-expired"] {
+      background: #fff7ed;
+      border-color: #fed7aa;
+    }
+    .prep-close {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #475569;
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .prep-close:hover {
+      background: rgba(0, 0, 0, 0.05);
+    }
+    .prep-body {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .prep-title {
+      font-weight: 600;
+      color: #075985;
+    }
+    .prep-banner[data-state="ready"] .prep-title { color: #166534; }
+    .prep-banner[data-state="timeout"] .prep-title,
+    .prep-banner[data-state="session-expired"] .prep-title { color: #9a3412; }
+    .prep-progress {
+      color: #334155;
+    }
+    .prep-cta {
+      align-self: flex-start;
+      padding: 6px 12px;
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
     /* ── Status banner ─────────────────────────────────────────────── */
     .status {
       padding: 8px 10px;
@@ -1568,6 +1631,23 @@
 
           <!-- Sync completion status -->
           <div id="status" class="status"></div>
+
+          <!-- v0.16.0: Imaging prep banner. Shows live count of
+               status=0 rows when SW poll is active. Hidden when no
+               state. Renders different sub-states (polling / ready /
+               timeout / session-expired) based on imagingPrepState in
+               chrome.storage.local. X dismisses (stops poll + hides);
+               立即取得 CTA appears when count=0 and triggers a new sync. -->
+          <div id="imaging-prep-banner" class="prep-banner" hidden>
+            <button class="prep-close" id="prep-close-btn" aria-label="關閉">✕</button>
+            <div class="prep-body">
+              <div class="prep-title" id="prep-title">🖼️ 健保署準備中</div>
+              <div class="prep-progress" id="prep-progress"></div>
+              <button class="btn-primary prep-cta" id="prep-cta-btn" hidden>
+                立即取得健康存摺資料
+              </button>
+            </div>
+          </div>
 
           <!-- Backend mode: compact 後端 / 本地 reconciliation rows -->
           <div class="state-rows backend-only" id="data-state-section" hidden>

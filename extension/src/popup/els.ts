@@ -24,6 +24,13 @@ export const els = {
   syncBlockedReason: byId("sync-blocked-reason"),
   apiSyncRange: byId("api-sync-range"),
   stopBtn: byId("stop-btn"),
+  // v0.16.0: imaging prep banner — appears post-sync when NHI is still
+  // preparing N images. Lives in imaging-prep-banner.ts.
+  prepBanner: byId("imaging-prep-banner"),
+  prepTitle: byId("prep-title"),
+  prepProgress: byId("prep-progress"),
+  prepCloseBtn: byId("prep-close-btn"),
+  prepCtaBtn: byId("prep-cta-btn"),
   ovName: byId("ov-name"),
   ovBirthDate: byId("ov-birth-date"),
   ovGender: byId("ov-gender"),

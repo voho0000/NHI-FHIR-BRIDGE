@@ -34,6 +34,7 @@ import {
   NHI_HOST,
   PENDING_BUNDLE_KEY,
 } from "./constants.js";
+import { startPrepPolling, stopPrepPolling } from "./imaging-prep-poll.js";
 import {
   fetchChronicMedicationDetails,
   fetchEncounterDetails,
@@ -182,6 +183,10 @@ export async function runNhiApiSync({
   // sync end) on purpose: at end the new bundle is written into the
   // same slot, so an end-of-sync clear would race the new write.
   await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {});
+  // v0.16.0: a new sync supersedes whatever the prep poller was
+  // tracking. Clear it now so the banner disappears and the alarm
+  // doesn't fire mid-sync trying to use a possibly-stale token.
+  await stopPrepPolling().catch(() => {});
 
   // Step 1: fetch all endpoints in PARALLEL inside the NHI tab. Inject
   // the ISO date range into each endpoint that supports it; skipped
@@ -1167,6 +1172,20 @@ export async function runNhiApiSync({
   // still sees fresh records are waiting. Cleared when they next open the
   // popup (markSyncSeen). A 0-resource finish shows no dot.
   await showResultBadge(total);
+
+  // v0.16.0: when imaging rows ended this sync in triggered-waiting
+  // (NHI accepted trigger, prep still in flight), kick off a 1-min
+  // background counter that polls the IHKE3408S01 list and updates
+  // chrome.storage so the popup banner shows live progress. Stops on
+  // count=0 / 30-min cap / session expired / new sync / user dismiss.
+  // Counts only — NEVER fetches bytes or modifies the stashed bundle.
+  if (fetchImagingEnabled && patientOverride.id_no && _waitingCount > 0 && !errors.length) {
+    try {
+      await startPrepPolling(patientOverride.id_no, _waitingCount, BASE);
+    } catch (e) {
+      console.warn("[imaging-prep-poll] start failed:", e);
+    }
+  }
 
   // Best-effort: write a Sync History row to the backend so the dashboard
   // can show when/who/how-long/what/range. Skipped in local mode (there

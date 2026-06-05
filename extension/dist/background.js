@@ -481,6 +481,11 @@
   var PENDING_IMAGING_TTL_MS = 8 * 24 * 60 * 60 * 1e3;
   var NHI_BEARER_TOKEN_KEY = "nhiBearerToken";
   var NHI_BEARER_TOKEN_TTL_MS = 30 * 60 * 1e3;
+  var IMAGING_PREP_POLL_ALARM = "imaging-prep-poll";
+  var IMAGING_PREP_STATE_KEY = "imagingPrepState";
+  var IMAGING_PREP_BASE_KEY = "imagingPrepBase";
+  var IMAGING_PREP_MAX_MS = 30 * 60 * 1e3;
+  var IMAGING_PREP_POLL_INTERVAL_MIN = 1;
   var DEBUG_STASH_BODY_SAMPLES = false;
   var LOCAL_PAGE_TYPE_ORDER = [
     "encounters",
@@ -5387,6 +5392,132 @@
     }
   }
 
+  // src/background/imaging-prep-poll.ts
+  async function startPrepPolling(patientId, initialCount, baseUrl) {
+    if (!patientId || initialCount <= 0)
+      return;
+    const now = Date.now();
+    const state = {
+      patientId,
+      startedAt: now,
+      initialCount,
+      count: initialCount,
+      lastPolledAt: 0,
+      pollAttempts: 0,
+      status: "polling"
+    };
+    await chrome.storage.local.set({
+      [IMAGING_PREP_STATE_KEY]: state,
+      [IMAGING_PREP_BASE_KEY]: baseUrl
+    });
+    chrome.alarms.create(IMAGING_PREP_POLL_ALARM, {
+      periodInMinutes: IMAGING_PREP_POLL_INTERVAL_MIN,
+      delayInMinutes: IMAGING_PREP_POLL_INTERVAL_MIN
+    });
+  }
+  async function stopPrepPolling(opts) {
+    await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
+    });
+    if (!opts?.keepState) {
+      await chrome.storage.local.remove([IMAGING_PREP_STATE_KEY, IMAGING_PREP_BASE_KEY]).catch(() => {
+      });
+    }
+  }
+  async function _loadBearerToken(patientId) {
+    const obj = await chrome.storage.local.get(NHI_BEARER_TOKEN_KEY);
+    const stash = obj[NHI_BEARER_TOKEN_KEY];
+    if (!stash)
+      return null;
+    if (stash.patientId !== patientId)
+      return null;
+    if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS)
+      return null;
+    return stash.token || null;
+  }
+  async function _writeState(state) {
+    await chrome.storage.local.set({ [IMAGING_PREP_STATE_KEY]: state });
+  }
+  async function pollPrepCount() {
+    const stored = await chrome.storage.local.get([IMAGING_PREP_STATE_KEY, IMAGING_PREP_BASE_KEY]);
+    const state = stored[IMAGING_PREP_STATE_KEY];
+    const baseUrl = stored[IMAGING_PREP_BASE_KEY];
+    if (!state || !baseUrl) {
+      await stopPrepPolling();
+      return;
+    }
+    if (Date.now() - state.startedAt >= IMAGING_PREP_MAX_MS) {
+      await _writeState({ ...state, status: "timeout" });
+      await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
+      });
+      return;
+    }
+    const token = await _loadBearerToken(state.patientId);
+    if (!token) {
+      await _writeState({ ...state, status: "session-expired" });
+      await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
+      });
+      return;
+    }
+    const url = `${baseUrl}/api/ihke3000/ihke3408s01/page_load?s_type=&s_sort=A1&_=${Date.now()}`;
+    let nextCount = state.count;
+    try {
+      const r = await fetch(url, {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-Requested-With": "XMLHttpRequest"
+        }
+      });
+      if (r.status === 401 || r.status === 403) {
+        await _writeState({ ...state, status: "session-expired" });
+        await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
+        });
+        return;
+      }
+      if (!r.ok) {
+        await _writeState({
+          ...state,
+          pollAttempts: state.pollAttempts + 1,
+          lastPolledAt: Date.now(),
+          error: `HTTP ${r.status}`
+        });
+        return;
+      }
+      const body = await r.json();
+      const list = body && body.sp_IHKE3408S01_data || [];
+      let c = 0;
+      for (const row of list) {
+        const status = String(row?.jpG_STATUS ?? row?.jpg_STATUS ?? "");
+        if (status === "0")
+          c++;
+      }
+      nextCount = c;
+    } catch (e) {
+      await _writeState({
+        ...state,
+        pollAttempts: state.pollAttempts + 1,
+        lastPolledAt: Date.now(),
+        error: String(e?.message || e)
+      });
+      return;
+    }
+    const isReady = nextCount === 0;
+    await _writeState({
+      ...state,
+      count: nextCount,
+      pollAttempts: state.pollAttempts + 1,
+      lastPolledAt: Date.now(),
+      status: isReady ? "ready" : "polling",
+      error: void 0
+    });
+    if (isReady) {
+      await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
+      });
+    }
+  }
+
   // src/background/storage-migration.ts
   async function migrateSyncToLocal() {
     try {
@@ -7685,6 +7816,8 @@
     await clearResultBadge();
     await chrome.storage.local.remove(PENDING_BUNDLE_KEY).catch(() => {
     });
+    await stopPrepPolling().catch(() => {
+    });
     const fetchSpec = NHI_API_ENDPOINTS.map((ep) => {
       const path = ep.supportsDateRange ? applyDateRangeToPath(ep.path, dateRange) : ep.path;
       return { name: ep.name, url: BASE + path, method: "GET" };
@@ -8283,6 +8416,13 @@
       localFilename: _localFilename
     });
     await showResultBadge(total);
+    if (fetchImagingEnabled && patientOverride.id_no && _waitingCount > 0 && !errors.length) {
+      try {
+        await startPrepPolling(patientOverride.id_no, _waitingCount, BASE);
+      } catch (e) {
+        console.warn("[imaging-prep-poll] start failed:", e);
+      }
+    }
     if (mode !== "local")
       try {
         await postSyncLog(backend, syncApiKey, {
@@ -8391,10 +8531,26 @@
         })();
       }
       setActiveSyncCtx(null);
+      stopPrepPolling().catch(() => {
+      });
       try {
         sendResponse({ ok: true });
       } catch {
       }
+      return true;
+    }
+    if (msg?.type === "dismissPrepBanner") {
+      stopPrepPolling().then(() => {
+        try {
+          sendResponse({ ok: true });
+        } catch {
+        }
+      }).catch(() => {
+        try {
+          sendResponse({ ok: false });
+        } catch {
+        }
+      });
       return true;
     }
     if (msg?.type === "getSyncStatus") {
@@ -8437,6 +8593,11 @@
   chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === PENDING_BUNDLE_SWEEP_ALARM) {
       await sweepPendingBundleIfStale().catch(() => {
+      });
+    }
+    if (alarm.name === IMAGING_PREP_POLL_ALARM) {
+      await pollPrepCount().catch((e) => {
+        console.warn("[imaging-prep-poll] cycle failed:", e);
       });
     }
   });

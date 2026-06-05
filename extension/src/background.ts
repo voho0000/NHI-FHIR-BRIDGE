@@ -19,10 +19,12 @@ import { deletePartialPatientData } from "./background/backend-upload.js";
 import { clearResultBadge, restoreResultBadge } from "./background/badge.js";
 import {
   CANCEL_ERROR,
+  IMAGING_PREP_POLL_ALARM,
   PENDING_BUNDLE_SWEEP_ALARM,
   SESSION_EXPIRED_ERROR,
   STORAGE_KEY,
 } from "./background/constants.js";
+import { pollPrepCount, stopPrepPolling } from "./background/imaging-prep-poll.js";
 import {
   migrateSyncToLocal,
   sweepPendingBundleIfStale,
@@ -152,9 +154,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       })();
     }
     setActiveSyncCtx(null);
+    // v0.16.0: stop the imaging prep poll banner too — the cancelled
+    // sync invalidates whatever the poller was tracking.
+    stopPrepPolling().catch(() => {});
     try {
       sendResponse({ ok: true });
     } catch {}
+    return true;
+  }
+  if (msg?.type === "dismissPrepBanner") {
+    // v0.16.0: user clicked the X on the popup's "still preparing N"
+    // banner. Stop polling + wipe state so the banner stays hidden
+    // until the next sync triggers a fresh poll.
+    stopPrepPolling()
+      .then(() => {
+        try {
+          sendResponse({ ok: true });
+        } catch {}
+      })
+      .catch(() => {
+        try {
+          sendResponse({ ok: false });
+        } catch {}
+      });
     return true;
   }
   if (msg?.type === "getSyncStatus") {
@@ -210,6 +232,11 @@ chrome.alarms.create(PENDING_BUNDLE_SWEEP_ALARM, { periodInMinutes: 10 });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === PENDING_BUNDLE_SWEEP_ALARM) {
     await sweepPendingBundleIfStale().catch(() => {});
+  }
+  if (alarm.name === IMAGING_PREP_POLL_ALARM) {
+    await pollPrepCount().catch((e) => {
+      console.warn("[imaging-prep-poll] cycle failed:", e);
+    });
   }
   // sw-keepalive is a no-op; the alarm firing is what keeps the SW alive.
 });
