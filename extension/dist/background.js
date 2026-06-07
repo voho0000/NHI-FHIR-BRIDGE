@@ -7983,6 +7983,90 @@
     }
     return settledRaw;
   }
+  async function refetchImagingListUntilResolved({
+    tabId,
+    url,
+    maxAttempts = 4,
+    intervalMs = 3e3
+  }) {
+    let out;
+    try {
+      [{ result: out }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: async (baseUrl, maxA, intMs) => {
+          const token = sessionStorage.getItem("token");
+          if (!token)
+            return { error: "SESSION_EXPIRED" };
+          if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
+            return { error: "SESSION_EXPIRED" };
+          }
+          const auth = `Bearer ${token}`;
+          const HELPER_RE = /select|option|dropdown|filter|sort|lookup/i;
+          function rowsOf(body) {
+            if (body && Array.isArray(body.sp_IHKE3408S01_data))
+              return body.sp_IHKE3408S01_data;
+            if (body && typeof body === "object") {
+              for (const k of Object.keys(body)) {
+                const v = body[k];
+                if (Array.isArray(v) && !HELPER_RE.test(k))
+                  return v;
+              }
+            }
+            return [];
+          }
+          function hasUnresolved(rows) {
+            return rows.some((row) => {
+              const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
+              return s === "-";
+            });
+          }
+          async function fetchOnce() {
+            const sep = baseUrl.includes("?") ? "&" : "?";
+            const r = await fetch(`${baseUrl}${sep}_=${Date.now()}`, {
+              method: "GET",
+              credentials: "same-origin",
+              headers: {
+                Accept: "application/json",
+                Authorization: auth,
+                "X-Requested-With": "XMLHttpRequest"
+              }
+            });
+            if (r.status === 401 || r.status === 403)
+              return { error: "SESSION_EXPIRED" };
+            if (!r.ok)
+              return { error: `HTTP ${r.status}` };
+            return { body: await r.json() };
+          }
+          let res = await fetchOnce();
+          if (res.error)
+            return res;
+          let attempts = 1;
+          while (hasUnresolved(rowsOf(res.body)) && attempts < maxA) {
+            await new Promise((r) => setTimeout(r, intMs));
+            const next = await fetchOnce();
+            if (next.error)
+              return { ...next, attempts };
+            res = next;
+            attempts++;
+          }
+          return { body: res.body, attempts, stillUnresolved: hasUnresolved(rowsOf(res.body)) };
+        },
+        args: [url, maxAttempts, intervalMs]
+      });
+    } catch (e) {
+      throw new Error(`executeScript failed: ${e.message}`);
+    }
+    if (out?.error === "SESSION_EXPIRED")
+      throw new Error(SESSION_EXPIRED_ERROR);
+    if (out?.error) {
+      return { rows: [], attempts: out.attempts ?? 0, stillUnresolved: true, error: out.error };
+    }
+    return {
+      rows: extractList(out.body),
+      attempts: out.attempts ?? 1,
+      stillUnresolved: !!out.stillUnresolved
+    };
+  }
   function extractList(body) {
     if (Array.isArray(body))
       return body;
@@ -8324,7 +8408,26 @@
     const imgIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "imaging");
     let imagingJpegCandidates = [];
     if (imgIdx >= 0 && settled[imgIdx].status === "fulfilled") {
-      const visits = settled[imgIdx].value.rawList || [];
+      let visits = settled[imgIdx].value.rawList || [];
+      const hasUnresolvedImaging = visits.some(
+        (v) => String(v?.jpG_STATUS ?? v?.jpg_STATUS ?? v?.JPG_STATUS ?? "") === "-"
+      );
+      if (fetchImagingEnabled && visits.length > 0 && hasUnresolvedImaging) {
+        try {
+          const imgEp = NHI_API_ENDPOINTS[imgIdx];
+          const imagingUrl = BASE + (imgEp.supportsDateRange ? applyDateRangeToPath(imgEp.path, dateRange) : imgEp.path);
+          const resolved = await withProgressTimer(
+            (sec) => sec === 0 ? "\u{1F504} \u5065\u5EB7\u5B58\u647A\u6B63\u5728\u78BA\u8A8D\u5F71\u50CF\u6E05\u55AE\uFF0C\u8ACB\u7A0D\u5019\u2026" : `\u{1F504} \u5065\u5EB7\u5B58\u647A\u6B63\u5728\u78BA\u8A8D\u5F71\u50CF\u6E05\u55AE\uFF0C\u8ACB\u7A0D\u5019\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
+            () => refetchImagingListUntilResolved({ tabId, url: imagingUrl })
+          );
+          if (resolved?.rows?.length) {
+            visits = resolved.rows;
+            settled[imgIdx].value.rawList = resolved.rows;
+          }
+        } catch (e) {
+          errors.push(`imaging list confirm: ${e?.message || e}`);
+        }
+      }
       if (visits.length > 0) {
         try {
           const detail = await withProgressTimer(

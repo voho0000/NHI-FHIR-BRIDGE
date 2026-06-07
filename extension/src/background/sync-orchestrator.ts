@@ -83,7 +83,11 @@ function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
 }
 import { rocToISO } from "../nhi-adapters.js";
 import { fetchDischargeSummaryHtmls } from "./discharge-summary-fetcher.js";
-import { adaptSettledLists, fetchNhiListsInTab } from "./nhi-list-fetch.js";
+import {
+  adaptSettledLists,
+  fetchNhiListsInTab,
+  refetchImagingListUntilResolved,
+} from "./nhi-list-fetch.js";
 import { applyDateRangeToPath, isMaskEnabled, replaceNameDeep } from "./patient-override.js";
 import {
   classFromS02Detail,
@@ -397,7 +401,42 @@ export async function runNhiApiSync({
   const imgIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "imaging");
   let imagingJpegCandidates = [];
   if (imgIdx >= 0 && settled[imgIdx].status === "fulfilled") {
-    const visits = settled[imgIdx].value.rawList || [];
+    let visits = settled[imgIdx].value.rawList || [];
+    // First-entry "資料確認中" resolve. On the FIRST access to a never-
+    // synced patient's imaging list, NHI returns every row's jpG_STATUS
+    // as "-" (lazy server-side confirmation hasn't run); NHI's own SPA
+    // labels these "資料確認中". The bulk list fetch above captured that
+    // unresolved snapshot, so without a re-fetch every "-" row decodes as
+    // a non-candidate and bridge misses the real images — the user had to
+    // run a SECOND sync to pick them up. Re-fetch (cache-busted, polls
+    // until statuses resolve) only when the user opted into image
+    // download: narrative DR emission is unaffected by jpG_STATUS, so an
+    // opted-out sync gets identical reports either way. Non-fatal — any
+    // failure falls back to the original snapshot.
+    const hasUnresolvedImaging = visits.some(
+      (v: any) => String(v?.jpG_STATUS ?? v?.jpg_STATUS ?? v?.JPG_STATUS ?? "") === "-",
+    );
+    if (fetchImagingEnabled && visits.length > 0 && hasUnresolvedImaging) {
+      try {
+        const imgEp = NHI_API_ENDPOINTS[imgIdx];
+        const imagingUrl =
+          BASE +
+          (imgEp.supportsDateRange ? applyDateRangeToPath(imgEp.path, dateRange) : imgEp.path);
+        const resolved = await withProgressTimer(
+          (sec) =>
+            sec === 0
+              ? "🔄 健康存摺正在確認影像清單，請稍候…"
+              : `🔄 健康存摺正在確認影像清單，請稍候…（已 ${sec} 秒）`,
+          () => refetchImagingListUntilResolved({ tabId, url: imagingUrl }),
+        );
+        if (resolved?.rows?.length) {
+          visits = resolved.rows;
+          settled[imgIdx].value.rawList = resolved.rows;
+        }
+      } catch (e: any) {
+        errors.push(`imaging list confirm: ${e?.message || e}`);
+      }
+    }
     if (visits.length > 0) {
       try {
         const detail = await withProgressTimer(

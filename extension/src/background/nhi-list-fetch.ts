@@ -103,6 +103,116 @@ export async function fetchNhiListsInTab(tabId, fetchSpec) {
   return settledRaw;
 }
 
+// First-entry "資料確認中" resolver for the imaging list (IHKE3408S01).
+//
+// On the FIRST access to a brand-new patient's imaging list, NHI returns
+// every row with jpG_STATUS = "-" — its lazy server-side confirmation
+// hasn't run yet. NHI's own SPA shows these rows as "資料確認中". A
+// second list fetch a few seconds later flips each "-" to its real
+// status ("1" ready / "A" needs-trigger / "0" preparing / "2" no-image).
+// Live-probed 2026-06-08 on a fresh patient: 4 rows came back "-", all
+// resolved to "2" within a single 10s wait.
+//
+// The bulk fetch in fetchNhiListsInTab captures whatever snapshot exists
+// at sync start, so a never-before-synced patient's imaging list lands
+// entirely as "-". Every "-" row then decodes as a NON-candidate (status
+// is neither "1"/"A"/"0"), so bridge silently skips real images — the
+// user had to run a SECOND sync to pick them up. This resolver closes
+// that gap by re-fetching the list (cache-busted, same in-tab Bearer +
+// same-origin cookie path as the bulk fetch) and polling until no row is
+// "-" or maxAttempts is reached.
+//
+// The whole poll loop runs INSIDE one executeScript so the inter-attempt
+// waits happen in the page context (no repeated SW round-trips). Returns
+// the resolved rows (already run through extractList) for the caller to
+// substitute. Caller decides whether to invoke this at all — it's only
+// worth the latency when the user opted into image download, since
+// narrative DR emission is unaffected by jpG_STATUS.
+export async function refetchImagingListUntilResolved({
+  tabId,
+  url,
+  maxAttempts = 4,
+  intervalMs = 3000,
+}: {
+  tabId: number;
+  url: string;
+  maxAttempts?: number;
+  intervalMs?: number;
+}): Promise<{ rows: any[]; attempts: number; stillUnresolved: boolean; error?: string }> {
+  let out: any;
+  try {
+    [{ result: out }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async (baseUrl: string, maxA: number, intMs: number) => {
+        const token = sessionStorage.getItem("token");
+        if (!token) return { error: "SESSION_EXPIRED" };
+        if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
+          return { error: "SESSION_EXPIRED" };
+        }
+        const auth = `Bearer ${token}`;
+        // In-page row extraction — mirrors the SW-side extractList's
+        // imaging case. The list array key is sp_IHKE3408S01_data; NHI
+        // mixes in UI-helper arrays (icd9cm_select etc.) we skip.
+        const HELPER_RE = /select|option|dropdown|filter|sort|lookup/i;
+        function rowsOf(body: any): any[] {
+          if (body && Array.isArray(body.sp_IHKE3408S01_data)) return body.sp_IHKE3408S01_data;
+          if (body && typeof body === "object") {
+            for (const k of Object.keys(body)) {
+              const v = (body as any)[k];
+              if (Array.isArray(v) && !HELPER_RE.test(k)) return v;
+            }
+          }
+          return [];
+        }
+        function hasUnresolved(rows: any[]): boolean {
+          return rows.some((row) => {
+            const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
+            return s === "-";
+          });
+        }
+        async function fetchOnce() {
+          const sep = baseUrl.includes("?") ? "&" : "?";
+          const r = await fetch(`${baseUrl}${sep}_=${Date.now()}`, {
+            method: "GET",
+            credentials: "same-origin",
+            headers: {
+              Accept: "application/json",
+              Authorization: auth,
+              "X-Requested-With": "XMLHttpRequest",
+            },
+          });
+          if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
+          if (!r.ok) return { error: `HTTP ${r.status}` };
+          return { body: await r.json() };
+        }
+        let res: any = await fetchOnce();
+        if (res.error) return res;
+        let attempts = 1;
+        while (hasUnresolved(rowsOf(res.body)) && attempts < maxA) {
+          await new Promise((r) => setTimeout(r, intMs));
+          const next: any = await fetchOnce();
+          if (next.error) return { ...next, attempts };
+          res = next;
+          attempts++;
+        }
+        return { body: res.body, attempts, stillUnresolved: hasUnresolved(rowsOf(res.body)) };
+      },
+      args: [url, maxAttempts, intervalMs],
+    });
+  } catch (e: any) {
+    throw new Error(`executeScript failed: ${e.message}`);
+  }
+  if (out?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
+  if (out?.error) {
+    return { rows: [], attempts: out.attempts ?? 0, stillUnresolved: true, error: out.error };
+  }
+  return {
+    rows: extractList(out.body),
+    attempts: out.attempts ?? 1,
+    stillUnresolved: !!out.stillUnresolved,
+  };
+}
+
 // Generic list extraction: handles all observed NHI shapes.
 //   - Plain array (IHKE3409 lab)
 //   - {sp_IHKE<X>_data: [...]}  (medications, allergies)
