@@ -310,12 +310,29 @@ export function findLoincDetailed(
  * catalog name (panel-level), not a per-row LIS label like the
  * generic "血型鑑定" that gets shipped under multiple distinct codes.
  * Falls back to `display` when no panel name is available.
+ *
+ * `itemName` (v0.17.4, user directive 2026-06-08):
+ * the hospital's 檢驗檢查項目名稱 (assaY_ITEM_NAME). When a lab has a
+ * LOINC, the LOINC coding already carries an English Long Common Name
+ * alongside the Chinese NHI 醫令名 — the app's zh/en toggle has both.
+ * But a NO-LOINC NHI-coded lab emits ONLY the nhi-medical-order-code
+ * coding (Chinese 醫令名, verbatim per CLAUDE.md rule #1), so the
+ * hospital's own item name — frequently the English shorthand, e.g.
+ * 12068C 甲狀腺球蛋白抗體 ships assaY_ITEM_NAME = "aTG, (Thyroglobulin
+ * Ab)" — is dropped entirely and the English toggle shows nothing.
+ * When there is no LOINC and `itemName` is non-empty and differs from
+ * the NHI display, we add a his-local-lab coding carrying it so BOTH
+ * names ride in the bundle (faithful transport: both are NHI-supplied
+ * facts; we add no data and alter neither). The NHI coding's display
+ * stays the verbatim 醫令名 (rule #1); the item name is a hospital-
+ * local label, which is exactly what HIS_LOCAL_LAB_CODE represents.
  */
 export function buildCodings(
   code: string | null | undefined,
   display: string,
   loinc: string | null,
   nhiPanelName?: string,
+  itemName?: string,
 ): Record<string, string>[] {
   const codings: Record<string, string>[] = [];
   if (loinc) {
@@ -327,11 +344,23 @@ export function buildCodings(
   }
   const codeStr = (code ?? "").trim();
   if (codeStr && NHI_LAB_CODE_RE.test(codeStr)) {
+    const nhiDisplay = nhiPanelName || display;
     codings.push({
       system: systems.NHI_MEDICAL_ORDER_CODE,
       code: codeStr,
-      display: nhiPanelName || display,
+      display: nhiDisplay,
     });
+    // v0.17.4: preserve the hospital's assaY_ITEM_NAME when there's no
+    // LOINC to carry the second (often English) label. Skip when the
+    // item name is empty or already equals the NHI 醫令名 (no new info).
+    const itemStr = (itemName ?? "").trim();
+    if (!loinc && itemStr && itemStr !== nhiDisplay) {
+      codings.push({
+        system: systems.HIS_LOCAL_LAB_CODE,
+        code: itemStr,
+        display: itemStr,
+      });
+    }
   } else {
     codings.push({
       system: systems.HIS_LOCAL_LAB_CODE,
@@ -1744,6 +1773,7 @@ export function mapObservation(
         display,
         loinc,
         String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || undefined,
+        itemName,
       ),
       // v0.11.9 / v0.11.10 / v0.13: see resolveObsCodeText() — CBC LOINCs
       // gate on cleanMatch, others keep "always SHORT_TEXT" behaviour.
@@ -2006,6 +2036,7 @@ function buildObservation(
         display,
         loinc,
         String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || undefined,
+        itemName,
       ),
       // v0.11.9 / v0.11.10 / v0.13: precedence (high → low):
       //   1. LOINC_SHORT_TEXT override — gated on cleanMatch for CBC

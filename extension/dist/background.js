@@ -3835,7 +3835,7 @@
     }
     return { loinc: null, cleanMatch: false };
   }
-  function buildCodings(code, display, loinc, nhiPanelName) {
+  function buildCodings(code, display, loinc, nhiPanelName, itemName) {
     const codings = [];
     if (loinc) {
       codings.push({
@@ -3846,11 +3846,20 @@
     }
     const codeStr = (code ?? "").trim();
     if (codeStr && NHI_LAB_CODE_RE.test(codeStr)) {
+      const nhiDisplay = nhiPanelName || display;
       codings.push({
         system: NHI_MEDICAL_ORDER_CODE,
         code: codeStr,
-        display: nhiPanelName || display
+        display: nhiDisplay
       });
+      const itemStr = (itemName ?? "").trim();
+      if (!loinc && itemStr && itemStr !== nhiDisplay) {
+        codings.push({
+          system: HIS_LOCAL_LAB_CODE,
+          code: itemStr,
+          display: itemStr
+        });
+      }
     } else {
       codings.push({
         system: HIS_LOCAL_LAB_CODE,
@@ -4690,7 +4699,8 @@
           code,
           display,
           loinc,
-          String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || void 0
+          String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || void 0,
+          itemName
         ),
         // v0.11.9 / v0.11.10 / v0.13: see resolveObsCodeText() — CBC LOINCs
         // gate on cleanMatch, others keep "always SHORT_TEXT" behaviour.
@@ -4861,7 +4871,8 @@
           code,
           display,
           loinc,
-          String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || void 0
+          String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || void 0,
+          itemName
         ),
         // v0.11.9 / v0.11.10 / v0.13: precedence (high → low):
         //   1. LOINC_SHORT_TEXT override — gated on cleanMatch for CBC

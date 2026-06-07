@@ -2172,6 +2172,111 @@ describe("CI v0.11.12 — Coding.display uses LOINC Long Common Name (not raw di
   });
 });
 
+// ── v0.17.4 — no-LOINC labs preserve BOTH 醫令名 + assaY_ITEM_NAME ──
+// User directive 2026-06-08: 12068C 甲狀腺球蛋白抗體 ships
+// assaY_ITEM_NAME = "aTG, (Thyroglobulin Ab)" (the hospital's English
+// shorthand), but because the code has no LOINC the bundle previously
+// emitted ONLY the nhi-medical-order-code coding (Chinese 醫令名). The
+// app's zh/en toggle then had no English string and showed Chinese even
+// in English mode. Fix: buildCodings adds a his-local-lab coding
+// carrying the assaY_ITEM_NAME when (no LOINC) AND (item name non-empty)
+// AND (item name differs from the 醫令名). Silent-bug gate per CLAUDE.md
+// rule #8 — wrong-toggle is invisible to FHIR validators.
+describe("CI v0.17.4 — no-LOINC labs store both 醫令名 and assaY_ITEM_NAME", () => {
+  test("12068C aTG — both Chinese 醫令名 and English item name in coding[]", () => {
+    const items = [
+      {
+        order_code: "12068C",
+        code: "12068C",
+        display: "aTG, (Thyroglobulin Ab)",
+        item_name: "aTG, (Thyroglobulin Ab)",
+        order_name: "甲狀腺球蛋白抗體",
+        value: 15,
+        unit: "IU/mL",
+        date: "2025-05-18",
+        hospital: "某醫院",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    // No LOINC for this code
+    const loincCoding = obs.code.coding.find((c: any) => c.system === "http://loinc.org");
+    expect(loincCoding).toBeUndefined();
+    // NHI coding keeps the verbatim 醫令名 (rule #1)
+    const nhiCoding = obs.code.coding.find((c: any) =>
+      c.system?.endsWith("nhi-medical-order-code"),
+    );
+    expect(nhiCoding.code).toBe("12068C");
+    expect(nhiCoding.display).toBe("甲狀腺球蛋白抗體");
+    // English assaY_ITEM_NAME preserved as his-local-lab coding
+    const localCoding = obs.code.coding.find((c: any) => c.system?.endsWith("his-local-lab"));
+    expect(localCoding).toBeDefined();
+    expect(localCoding.display).toBe("aTG, (Thyroglobulin Ab)");
+  });
+
+  test("LOINC'd lab does NOT add a redundant his-local coding (English already on LOINC)", () => {
+    const items = [
+      {
+        order_code: "09006C",
+        code: "09006C",
+        display: "Hb-A1c",
+        item_name: "Hb-A1c",
+        order_name: "醣化血紅素",
+        value: 5.8,
+        unit: "%",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(obs.code.coding.find((c: any) => c.system === "http://loinc.org")).toBeDefined();
+    // The LOINC coding already carries the English Long Common Name, so
+    // no extra his-local coding is added.
+    expect(obs.code.coding.find((c: any) => c.system?.endsWith("his-local-lab"))).toBeUndefined();
+  });
+
+  test("no assaY_ITEM_NAME → no spurious his-local coding", () => {
+    const items = [
+      {
+        order_code: "12068C",
+        code: "12068C",
+        display: "甲狀腺球蛋白抗體",
+        order_name: "甲狀腺球蛋白抗體",
+        value: 15,
+        unit: "IU/mL",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const localCoding = obs.code.coding.find((c: any) => c.system?.endsWith("his-local-lab"));
+    expect(localCoding).toBeUndefined();
+  });
+
+  test("item name equal to 醫令名 → no duplicate coding", () => {
+    const items = [
+      {
+        order_code: "12068C",
+        code: "12068C",
+        display: "甲狀腺球蛋白抗體",
+        item_name: "甲狀腺球蛋白抗體",
+        order_name: "甲狀腺球蛋白抗體",
+        value: 15,
+        unit: "IU/mL",
+        date: "2025-05-18",
+      },
+    ];
+    const obs = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    const localCoding = obs.code.coding.find((c: any) => c.system?.endsWith("his-local-lab"));
+    expect(localCoding).toBeUndefined();
+  });
+});
+
 // ── v0.11.13 — SMART app dev bug 9 (INR mistag + placeholder unit) ──
 // Three sub-bugs rolled into one v0.11.10 bundle pattern:
 //   9a — 11.9 sec value emitted under LOINC 6301-6 (INR); structurally
