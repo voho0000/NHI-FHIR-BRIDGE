@@ -1576,13 +1576,13 @@
         <div class="setting-row imaging-toggle-row">
           <label class="toggle-row" style="flex:1;margin:0;">
             <input type="checkbox" id="fetch-imaging-enabled" />
-            <span>抓影像檢查報告（X 光 / 超音波 / 心電圖）</span>
+            <span>一併下載影像圖片（X 光 / 電腦斷層）</span>
             <span class="help-icon"
-                  data-tip="勾選後會額外抓 X 光 / 超音波 / 心電圖等 JPG 影像並編進 bundle。背景送出觸發請求給健康存摺，不會切換您的分頁。首次預備 5-10 分鐘；NHI 7 天內快取，下次同步快。預設關閉。">ⓘ</span>
+                  data-tip="不勾選（預設）：只下載檢查的文字報告，不含影像圖片。&#10;勾選：連 X 光、電腦斷層的影像圖片一起下載；第一次大約多花 5-10 分鐘，檔案會明顯變大。">ⓘ</span>
           </label>
         </div>
         <div class="hint imaging-toggle-hint">
-          預設關閉。勾選後背景送觸發請求給健康存摺預備影像（不會切換您的分頁）；首次 5-10 分鐘，之後 7 天內快取大幅加快。bundle 體積會明顯增大（每張影像約 2-3 MB）。
+          預設只下載文字報告；需要影像圖片時再勾選。
         </div>
 
         <!-- Backend connection status — only in backend mode. Single

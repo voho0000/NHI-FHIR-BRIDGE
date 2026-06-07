@@ -8802,6 +8802,14 @@
           imagingLine += ` (fetch failures: ${reasonStr})`;
         }
         breakdown.push(imagingLine);
+      } else if (ep.name === "imaging" && items.length > 0) {
+        if (!fetchImagingEnabled) {
+          breakdown.push(
+            "\u3000\u6B64\u6B21\u53EA\u53D6\u5F97\u6587\u5B57\u5831\u544A\uFF0C\u672A\u4E0B\u8F09\u5F71\u50CF\u5716\u7247\u3002\u5982\u9700 X \u5149\uFF0F\u96FB\u8166\u65B7\u5C64\u7B49\u5716\u7247\uFF0C\u8ACB\u52FE\u9078\u300C\u4E00\u4F75\u4E0B\u8F09\u5F71\u50CF\u5716\u7247\u300D\u5F8C\u91CD\u65B0\u53D6\u5F97\u3002"
+          );
+        } else {
+          breakdown.push(`\u3000\u9019 ${items.length} \u7B46\u5F71\u50CF\u6AA2\u67E5\u6C92\u6709\u53EF\u4E0B\u8F09\u7684\u5716\u7247\uFF0C\u53EA\u53D6\u5F97\u6587\u5B57\u5831\u544A\u3002`);
+        }
       }
       if (DEBUG_STASH_BODY_SAMPLES && raw_count > 0 && items.length === 0) {
         try {

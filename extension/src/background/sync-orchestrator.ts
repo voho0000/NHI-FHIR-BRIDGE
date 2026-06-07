@@ -1051,6 +1051,26 @@ export async function runNhiApiSync({
         imagingLine += ` (fetch failures: ${reasonStr})`;
       }
       breakdown.push(imagingLine);
+    } else if (ep.name === "imaging" && items.length > 0) {
+      // No JPG-stats line was produced (jpegTotal unset) yet there ARE
+      // imaging rows. Explain why, so a bare "影像檢查：N 筆" never
+      // misleads the user into thinking the bundle holds the pictures.
+      // Two distinct reasons → two distinct notices. Plain rows (no
+      // full-width colon) so popup/status.ts block-wraps them cleanly.
+      if (!fetchImagingEnabled) {
+        // Opted out: images were never fetched this sync.
+        breakdown.push(
+          "　此次只取得文字報告，未下載影像圖片。如需 X 光／電腦斷層等圖片，請勾選「一併下載影像圖片」後重新取得。",
+        );
+      } else {
+        // Opted IN, but EVERY imaging row was image-less at NHI side
+        // (jpG_STATUS "2" 無影像檔 / no fetchable candidate) → the gate
+        // at "imagingJpegCandidates.length > 0" never fired, so jpegTotal
+        // stayed unset and the detailed stats line above was skipped.
+        // Tell the user these rows are text-only rather than leaving the
+        // bare count to imply a missing-image bug.
+        breakdown.push(`　這 ${items.length} 筆影像檢查沒有可下載的圖片，只取得文字報告。`);
+      }
     }
     // Save body sample for first endpoint with raw>0 but adapted=0 (adapter
     // mismatch) so we can iterate. GATED on DEBUG_STASH_BODY_SAMPLES: the
