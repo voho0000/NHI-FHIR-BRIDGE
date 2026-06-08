@@ -7907,6 +7907,15 @@
     return map;
   }
 
+  // src/background/imaging-list-status.ts
+  function imagingRowHasUsableImage(row) {
+    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
+    return s === "A" || s === "1";
+  }
+  function imagingListNeedsResolve(rows) {
+    return !rows.some(imagingRowHasUsableImage);
+  }
+
   // src/background/nhi-list-fetch.ts
   async function fetchNhiListsInTab(tabId, fetchSpec) {
     let settledRaw;
@@ -8015,9 +8024,9 @@
             return [];
           }
           function hasUnresolved(rows) {
-            return rows.some((row) => {
+            return !rows.some((row) => {
               const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
-              return s === "-";
+              return s === "A" || s === "1";
             });
           }
           async function fetchOnce() {
@@ -8409,16 +8418,18 @@
     let imagingJpegCandidates = [];
     if (imgIdx >= 0 && settled[imgIdx].status === "fulfilled") {
       let visits = settled[imgIdx].value.rawList || [];
-      const hasUnresolvedImaging = visits.some(
-        (v) => String(v?.jpG_STATUS ?? v?.jpg_STATUS ?? v?.JPG_STATUS ?? "") === "-"
-      );
-      if (fetchImagingEnabled && visits.length > 0 && hasUnresolvedImaging) {
+      if (fetchImagingEnabled && visits.length > 0 && imagingListNeedsResolve(visits)) {
         try {
           const imgEp = NHI_API_ENDPOINTS[imgIdx];
           const imagingUrl = BASE + (imgEp.supportsDateRange ? applyDateRangeToPath(imgEp.path, dateRange) : imgEp.path);
           const resolved = await withProgressTimer(
             (sec) => sec === 0 ? "\u{1F504} \u5065\u5EB7\u5B58\u647A\u6B63\u5728\u78BA\u8A8D\u5F71\u50CF\u6E05\u55AE\uFF0C\u8ACB\u7A0D\u5019\u2026" : `\u{1F504} \u5065\u5EB7\u5B58\u647A\u6B63\u5728\u78BA\u8A8D\u5F71\u50CF\u6E05\u55AE\uFF0C\u8ACB\u7A0D\u5019\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
-            () => refetchImagingListUntilResolved({ tabId, url: imagingUrl })
+            () => refetchImagingListUntilResolved({
+              tabId,
+              url: imagingUrl,
+              maxAttempts: 5,
+              intervalMs: 3e3
+            })
           );
           if (resolved?.rows?.length) {
             visits = resolved.rows;

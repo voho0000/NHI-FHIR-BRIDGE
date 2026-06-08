@@ -103,24 +103,28 @@ export async function fetchNhiListsInTab(tabId, fetchSpec) {
   return settledRaw;
 }
 
-// First-entry "資料確認中" resolver for the imaging list (IHKE3408S01).
+// First-entry "資料確認中 / 資料準備中" resolver for the imaging list
+// (IHKE3408S01).
 //
-// On the FIRST access to a brand-new patient's imaging list, NHI returns
-// every row with jpG_STATUS = "-" — its lazy server-side confirmation
-// hasn't run yet. NHI's own SPA shows these rows as "資料確認中". A
-// second list fetch a few seconds later flips each "-" to its real
-// status ("1" ready / "A" needs-trigger / "0" preparing / "2" no-image).
-// Live-probed 2026-06-08 on a fresh patient: 4 rows came back "-", all
-// resolved to "2" within a single 10s wait.
+// On the FIRST access to a brand-new patient's imaging list, NHI lazily
+// confirms it server-side and the bulk fetch can capture a transient,
+// INCOMPLETE snapshot. NHI's SPA labels these "資料確認中" or "資料準備
+// 中", and the underlying shapes differ: a brand-new patient returned
+// rows with jpG_STATUS "-" (all resolved to "2" within ~10s, live-probed
+// 2026-06-08); another individual returned a single "資料準備中" row with
+// NO "-", whose real image candidate (E channel, jpG_STATUS "A") only
+// appeared as a SECOND row after a manual refresh.
 //
-// The bulk fetch in fetchNhiListsInTab captures whatever snapshot exists
-// at sync start, so a never-before-synced patient's imaging list lands
-// entirely as "-". Every "-" row then decodes as a NON-candidate (status
-// is neither "1"/"A"/"0"), so bridge silently skips real images — the
-// user had to run a SECOND sync to pick them up. This resolver closes
-// that gap by re-fetching the list (cache-busted, same in-tab Bearer +
-// same-origin cookie path as the bulk fetch) and polling until no row is
-// "-" or maxAttempts is reached.
+// Because the transient code is not stable, we do NOT key off "-"
+// (v0.17.5 did, and missed the "資料準備中" shape above). Instead we poll
+// while the list is "unresolved" — i.e. NO row yet exposes a usable
+// image (jpG_STATUS "A" needs-trigger or "1" bytes-ready). The bulk
+// snapshot's preparing/incomplete rows decode as non-candidates, so
+// without this resolver bridge silently skips real images and the user
+// had to run a SECOND sync to pick them up. This closes the gap by
+// re-fetching the list (cache-busted, same in-tab Bearer + same-origin
+// cookie path as the bulk fetch) and polling until some row resolves to
+// A/1 or maxAttempts is reached (→ conclude genuinely no image).
 //
 // The whole poll loop runs INSIDE one executeScript so the inter-attempt
 // waits happen in the page context (no repeated SW round-trips). Returns
@@ -164,10 +168,17 @@ export async function refetchImagingListUntilResolved({
           }
           return [];
         }
+        // Keep in sync with imaging-list-status.ts::imagingRowHasUsableImage.
+        // This loop body is serialized into executeScript and cannot
+        // import the shared module, so the predicate is inlined here.
+        // Code-agnostic "still preparing" check: the list is unresolved
+        // until SOME row exposes a usable image — jpG_STATUS "A" (needs
+        // trigger) or "1" (bytes ready). We do NOT enumerate transient
+        // codes ("資料確認中" "-" / "資料準備中") because NHI uses several.
         function hasUnresolved(rows: any[]): boolean {
-          return rows.some((row) => {
+          return !rows.some((row) => {
             const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
-            return s === "-";
+            return s === "A" || s === "1";
           });
         }
         async function fetchOnce() {

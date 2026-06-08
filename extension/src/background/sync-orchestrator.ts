@@ -83,6 +83,7 @@ function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
 }
 import { rocToISO } from "../nhi-adapters.js";
 import { fetchDischargeSummaryHtmls } from "./discharge-summary-fetcher.js";
+import { imagingListNeedsResolve } from "./imaging-list-status.js";
 import {
   adaptSettledLists,
   fetchNhiListsInTab,
@@ -402,21 +403,23 @@ export async function runNhiApiSync({
   let imagingJpegCandidates = [];
   if (imgIdx >= 0 && settled[imgIdx].status === "fulfilled") {
     let visits = settled[imgIdx].value.rawList || [];
-    // First-entry "資料確認中" resolve. On the FIRST access to a never-
-    // synced patient's imaging list, NHI returns every row's jpG_STATUS
-    // as "-" (lazy server-side confirmation hasn't run); NHI's own SPA
-    // labels these "資料確認中". The bulk list fetch above captured that
-    // unresolved snapshot, so without a re-fetch every "-" row decodes as
-    // a non-candidate and bridge misses the real images — the user had to
-    // run a SECOND sync to pick them up. Re-fetch (cache-busted, polls
-    // until statuses resolve) only when the user opted into image
-    // download: narrative DR emission is unaffected by jpG_STATUS, so an
+    // First-entry "資料確認中 / 資料準備中" resolve. On the FIRST access
+    // to a never-synced patient's imaging list, NHI lazily confirms it
+    // server-side and the bulk fetch above can capture a transient,
+    // INCOMPLETE snapshot — its SPA labels these "資料確認中" or "資料準備
+    // 中". Observed shapes differ: a brand-new patient returns rows with
+    // jpG_STATUS "-"; another returned a single "資料準備中" row (no "-")
+    // and the real image candidate only appeared as a SECOND row after a
+    // refresh. We therefore do NOT key off any specific transient code
+    // (v0.17.5 only watched "-" and missed the "資料準備中" shape). Rule:
+    // if NO row exposes a usable image yet (jpG_STATUS "A" needs-trigger
+    // or "1" bytes-ready), treat the list as still-preparing and refetch
+    // (cache-busted, polls until an A/1 appears or the attempt budget is
+    // spent → genuinely no image). Only when the user opted into image
+    // download — narrative DR emission is unaffected by jpG_STATUS, so an
     // opted-out sync gets identical reports either way. Non-fatal — any
     // failure falls back to the original snapshot.
-    const hasUnresolvedImaging = visits.some(
-      (v: any) => String(v?.jpG_STATUS ?? v?.jpg_STATUS ?? v?.JPG_STATUS ?? "") === "-",
-    );
-    if (fetchImagingEnabled && visits.length > 0 && hasUnresolvedImaging) {
+    if (fetchImagingEnabled && visits.length > 0 && imagingListNeedsResolve(visits)) {
       try {
         const imgEp = NHI_API_ENDPOINTS[imgIdx];
         const imagingUrl =
@@ -427,7 +430,13 @@ export async function runNhiApiSync({
             sec === 0
               ? "🔄 健康存摺正在確認影像清單，請稍候…"
               : `🔄 健康存摺正在確認影像清單，請稍候…（已 ${sec} 秒）`,
-          () => refetchImagingListUntilResolved({ tabId, url: imagingUrl }),
+          () =>
+            refetchImagingListUntilResolved({
+              tabId,
+              url: imagingUrl,
+              maxAttempts: 5,
+              intervalMs: 3000,
+            }),
         );
         if (resolved?.rows?.length) {
           visits = resolved.rows;
