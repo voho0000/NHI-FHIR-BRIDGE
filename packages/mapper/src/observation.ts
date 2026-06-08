@@ -1619,13 +1619,34 @@ function resolveHumanLabel(opts: {
   orderName?: string;
   display?: string;
   fallback: string;
+  preferItemName?: boolean;
 }): string {
-  const { loincShortText, code, itemName, orderName, display, fallback } = opts;
+  const { loincShortText, code, itemName, orderName, display, fallback, preferItemName } = opts;
   const item = (itemName ?? "").trim();
   const order = (orderName ?? "").trim();
   const disp = (display ?? "").trim();
   const itemCjk = cjkChars(item) > 0 ? item : "";
   const orderCjk = cjkChars(order) > 0 ? order : "";
+  // v0.18 (SMART app dev report 2026-06-08): NO-LOINC labs.
+  // code.text is the ONLY standard interop field a generic FHIR/SMART app
+  // reads (render order code.text → coding[].display). When the lab HAS a
+  // LOINC, code.text is English and the LOINC coding's display is English too
+  // → generic apps show English. When the lab has NO LOINC, the only coding
+  // is the nhi-medical-order-code (Chinese 醫令名, verbatim per rule #1) plus
+  // a non-standard his-local-lab coding carrying the hospital's assay name
+  // (often the English shorthand, e.g. 12068C → "aTG, (Thyroglobulin Ab)").
+  // Putting the Chinese 醫令名 in code.text made no-LOINC labs render Chinese
+  // on a standard field while LOINC labs render English — an inconsistency on
+  // the interop surface that every downstream app inherits. So when there is
+  // no LOINC (`preferItemName`), the assay item_name outranks the CJK
+  // orderName: bridge already holds the English, it must surface it on the
+  // standard field. Faithful transport (rule #6): both names are NHI-supplied,
+  // the Chinese is NOT lost (it stays on coding[nhi].display for patient-mode
+  // apps); we only choose which fact goes in the free-form .text. Falls back
+  // to the order name / Chinese only when no item_name exists.
+  if (preferItemName && item) {
+    return loincShortText || NHI_CODE_PANEL_NAME[code] || item || order || disp || fallback;
+  }
   return (
     loincShortText ||
     NHI_CODE_PANEL_NAME[code] ||
@@ -2238,6 +2259,12 @@ function groupByOrderCode(
       // unchanged. loincShortText / NHI_CODE_PANEL_NAME stay top of
       // precedence so TSH / Hb / ABO / RH titles are unaffected.
       const singleItemName = String(deduped[0]!.item_name ?? "");
+      // v0.18: when the panel has NO LOINC (panelLoinc undefined), the
+      // English his-local-lab assay item_name outranks the CJK 醫令名 so
+      // the single propagated obs.code.text (line ~2369) lands English on
+      // the standard interop field — matching how LOINC-coded labs render.
+      // With a LOINC present the legacy precedence holds (loincShortText /
+      // CJK item / CJK order win as before).
       panelTitle = resolveHumanLabel({
         loincShortText,
         code: groupCodeStr,
@@ -2245,6 +2272,7 @@ function groupByOrderCode(
         orderName: orderName ?? undefined,
         display: singleDisplay,
         fallback: groupCodeStr,
+        preferItemName: !panelLoinc,
       });
     } else {
       // Multi-row panel: only let LOINC_SHORT_TEXT win when the panel

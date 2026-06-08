@@ -291,6 +291,58 @@ describe("parseRange — P2-a doubled-bracket .text collapse (display precision)
   });
 });
 
+describe("parseRange — P3 HTML-escaped comparator decode (display + structured)", () => {
+  // CLAUDE.md rule #8 silent-bug gate: NHI sometimes HTML-escapes the
+  // comparator in the reference-range field ("[&lt;200][]" instead of
+  // "[<200][]"). Pre-fix this silently (a) printed "&lt;" gibberish on
+  // referenceRange.text AND (b) dropped the structured referenceRange.high/low
+  // — the very same value parses fine when shipped as full-width "＜200".
+  // Decoding restores both (faithful-transport rule #6: un-escaping a transport
+  // encoding is not fabrication). Add a row here every time a new escaped shape
+  // appears in a real bundle.
+  test.each([
+    // [rawRange, unit, expectedText, expectedLow, expectedHigh]
+    ["[&lt;200][]", "mg/dL", "[<200][]", undefined, 200],
+    ["[&lt;150][]", "mg/dL", "[<150][]", undefined, 150],
+    ["[&lt;130][]", "mg/dL", "[<130][]", undefined, 130],
+    ["[&gt;90.00][]", "mL/min/1.73m2", "[>90.00][]", 90, undefined],
+    ["[&le;5][]", "", "[<=5][]", undefined, 5],
+    ["[&ge;5][]", "", "[>=5][]", 5, undefined],
+    ["[&#60;200][]", "", "[<200][]", undefined, 200],
+  ] as const)(
+    "'%s' → text '%s' (low=%s high=%s)",
+    (raw, unit, expectedText, expectedLow, expectedHigh) => {
+      const r = parseRange(raw, unit);
+      expect(r?.text).toBe(expectedText);
+      expect(r?.low?.value).toBe(expectedLow);
+      expect(r?.high?.value).toBe(expectedHigh);
+    },
+  );
+
+  test("literal '<' (no entity) still parses — confirms no regression", () => {
+    const r = parseRange("[<200][]", "mg/dL");
+    expect(r?.text).toBe("[<200][]");
+    expect(r?.high?.value).toBe(200);
+    expect(r?.low).toBeUndefined();
+  });
+
+  test("full-width '≧' display is untouched by entity decode", () => {
+    // Entity decode must NOT alter full-width comparator rendering: text stays
+    // bracketed "[≧60][]" (only the structured low is extracted), so this
+    // surgical fix introduces zero display drift for non-escaped ranges.
+    const r = parseRange("[≧60][]", "mL/min/1.73m2");
+    expect(r?.text).toBe("[≧60][]");
+    expect(r?.low?.value).toBe(60);
+  });
+
+  test("plain numeric range without any entity is unchanged", () => {
+    const r = parseRange("[3.89][26.8]", "mg/dL");
+    expect(r?.text).toBe("[3.89][26.8]");
+    expect(r?.low?.value).toBe(3.89);
+    expect(r?.high?.value).toBe(26.8);
+  });
+});
+
 describe("parseRange — dash range without brackets", () => {
   test("'70-100' → low+high", () => {
     const r = parseRange("70-100", "mg/dL");

@@ -36,6 +36,40 @@ function translateFullwidth(s: string): string {
   return out;
 }
 
+// P3 (display precision, 2026-06-08): NHI sometimes HTML-escapes the
+// comparator operators in the reference-range field — e.g. "[&lt;200][]"
+// for "[<200][]", "[&gt;90.00][]" for "[>90.00][]". Without decoding, both
+// the free-form .text shows literal "&lt;" gibberish AND the comparator
+// parser (RR_COMPARATOR needs a literal "<"/">") can't extract the
+// structured bound — so the same value that parses fine when shipped as
+// full-width "＜200" silently loses its referenceRange.high when shipped
+// HTML-escaped. Decoding is NOT fabrication per faithful-transport rule #6:
+// it un-escapes a transport-layer encoding back to the exact character NHI
+// meant (same class of normalization as translateFullwidth's full-width →
+// half-width). Single-pass over the entities NHI actually emits; we do not
+// attempt to resolve hypothetical double-escaping ("&amp;lt;") that NHI has
+// never been observed to produce.
+const HTML_ENTITIES: ReadonlyArray<[string, string]> = [
+  ["&lt;", "<"],
+  ["&gt;", ">"],
+  ["&le;", "<="],
+  ["&ge;", ">="],
+  ["&#60;", "<"],
+  ["&#62;", ">"],
+  ["&amp;", "&"],
+];
+
+function decodeHtmlEntities(s: string): string {
+  if (!s.includes("&")) return s;
+  let out = s;
+  for (const [from, to] of HTML_ENTITIES) {
+    if (out.includes(from)) {
+      out = out.split(from).join(to);
+    }
+  }
+  return out;
+}
+
 const COMPARATOR_RE = /^\s*(<=|>=|<|>)\s*(.+)$/;
 
 // Reference-range parsing. NHI ships the range as plain text like
@@ -155,7 +189,11 @@ function tryParseFloat(s: string): number | null {
  * code can pick the right one for the patient's sex.
  */
 export function parseRangeMulti(rawRange: string, unit: string): RangeEntry[] {
-  const s = translateFullwidth((rawRange || "").trim());
+  // P3 (2026-06-08): same HTML-entity decode as parseRange so the sex-
+  // stratified path doesn't drift (faithful-transport rule #7 — shared
+  // normalization). `decoded` feeds .text; `s` drives structured matching.
+  const decoded = decodeHtmlEntities((rawRange || "").trim());
+  const s = translateFullwidth(decoded);
   if (!s) return [];
 
   const lowBySex: Record<string, string> = {};
@@ -210,7 +248,7 @@ export function parseRangeMulti(rawRange: string, unit: string): RangeEntry[] {
       if (!mapping) continue;
       const [fhirCode, fhirDisplay] = mapping;
       const entry: RangeEntry = {
-        text: rawRange,
+        text: decoded,
         appliesTo: [
           {
             coding: [
@@ -265,7 +303,13 @@ export function parseRangeMulti(rawRange: string, unit: string): RangeEntry[] {
  * for empty input.
  */
 export function parseRange(rawRange: string, unit: string): RangeEntry | null {
-  const s = translateFullwidth((rawRange || "").trim());
+  // P3 (2026-06-08): decode HTML-escaped comparators ("[&lt;200][]") before
+  // parsing. `decoded` keeps full-width chars intact (only entities un-escaped)
+  // and is what we surface on .text — so the entity gibberish disappears from
+  // display WITHOUT changing how existing full-width comparator ranges render.
+  // `s` additionally normalizes full-width → ASCII for the structured parser.
+  const decoded = decodeHtmlEntities((rawRange || "").trim());
+  const s = translateFullwidth(decoded);
   if (!s) return null;
 
   // C4 (bug report 2026-05-27 Part 3): result-interpretation strings
@@ -273,10 +317,10 @@ export function parseRange(rawRange: string, unit: string): RangeEntry | null {
   // 醫師" / etc. These aren't ranges and shouldn't end up in
   // Observation.referenceRange. Caller routes them to .interpretation.
   if (_looksLikeInterpretationText(s)) {
-    return { text: rawRange, interpretationText: s };
+    return { text: decoded, interpretationText: s };
   }
 
-  const entry: RangeEntry = { text: rawRange };
+  const entry: RangeEntry = { text: decoded };
 
   const m = s.match(RR_LOWHIGH_BRACKETS);
   if (m) {
@@ -308,11 +352,11 @@ export function parseRange(rawRange: string, unit: string): RangeEntry | null {
     const isLoEmpty = !lo || lo === "無" || lo === "空白";
     if (hi && isLoEmpty) {
       const spec = _tryExtractSpecimenThreshold(hi, unit);
-      if (spec) return { text: rawRange, ...spec };
+      if (spec) return { text: decoded, ...spec };
     }
     if (lo && isHiEmpty) {
       const spec = _tryExtractSpecimenThreshold(lo, unit);
-      if (spec) return { text: rawRange, ...spec };
+      if (spec) return { text: decoded, ...spec };
     }
 
     // C3 (bug report Part 3): qualitative bracket convention like

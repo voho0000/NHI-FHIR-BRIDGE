@@ -3401,6 +3401,26 @@
     }
     return out;
   }
+  var HTML_ENTITIES = [
+    ["&lt;", "<"],
+    ["&gt;", ">"],
+    ["&le;", "<="],
+    ["&ge;", ">="],
+    ["&#60;", "<"],
+    ["&#62;", ">"],
+    ["&amp;", "&"]
+  ];
+  function decodeHtmlEntities(s) {
+    if (!s.includes("&"))
+      return s;
+    let out = s;
+    for (const [from, to] of HTML_ENTITIES) {
+      if (out.includes(from)) {
+        out = out.split(from).join(to);
+      }
+    }
+    return out;
+  }
   var COMPARATOR_RE = /^\s*(<=|>=|<|>)\s*(.+)$/;
   var RR_LOWHIGH_BRACKETS = /^\s*\[\s*([^\]]*)\s*\]\s*\[\s*([^\]]*)\s*\]\s*$/;
   var RR_DASH_RANGE = /(-?\d+(?:\.\d+)?)\s*[-~–]\s*(-?\d+(?:\.\d+)?)/;
@@ -3460,7 +3480,8 @@
     return n;
   }
   function parseRangeMulti(rawRange, unit) {
-    const s = translateFullwidth((rawRange || "").trim());
+    const decoded = decodeHtmlEntities((rawRange || "").trim());
+    const s = translateFullwidth(decoded);
     if (!s)
       return [];
     const lowBySex = {};
@@ -3513,7 +3534,7 @@
           continue;
         const [fhirCode, fhirDisplay] = mapping;
         const entry = {
-          text: rawRange,
+          text: decoded,
           appliesTo: [
             {
               coding: [
@@ -3556,13 +3577,14 @@
     return one ? [one] : [];
   }
   function parseRange(rawRange, unit) {
-    const s = translateFullwidth((rawRange || "").trim());
+    const decoded = decodeHtmlEntities((rawRange || "").trim());
+    const s = translateFullwidth(decoded);
     if (!s)
       return null;
     if (_looksLikeInterpretationText(s)) {
-      return { text: rawRange, interpretationText: s };
+      return { text: decoded, interpretationText: s };
     }
-    const entry = { text: rawRange };
+    const entry = { text: decoded };
     const m = s.match(RR_LOWHIGH_BRACKETS);
     if (m) {
       const lo = (m[1] ?? "").trim();
@@ -3575,12 +3597,12 @@
       if (hi && isLoEmpty) {
         const spec = _tryExtractSpecimenThreshold(hi, unit);
         if (spec)
-          return { text: rawRange, ...spec };
+          return { text: decoded, ...spec };
       }
       if (lo && isHiEmpty) {
         const spec = _tryExtractSpecimenThreshold(lo, unit);
         if (spec)
-          return { text: rawRange, ...spec };
+          return { text: decoded, ...spec };
       }
       if (lo && !_looksNumericLike(lo) && isHiEmpty) {
         return { text: lo };
@@ -4628,12 +4650,15 @@
     });
   }
   function resolveHumanLabel(opts) {
-    const { loincShortText, code, itemName, orderName, display, fallback } = opts;
+    const { loincShortText, code, itemName, orderName, display, fallback, preferItemName } = opts;
     const item = (itemName ?? "").trim();
     const order = (orderName ?? "").trim();
     const disp = (display ?? "").trim();
     const itemCjk = cjkChars2(item) > 0 ? item : "";
     const orderCjk = cjkChars2(order) > 0 ? order : "";
+    if (preferItemName && item) {
+      return loincShortText || NHI_CODE_PANEL_NAME[code] || item || order || disp || fallback;
+    }
     return loincShortText || NHI_CODE_PANEL_NAME[code] || itemCjk || orderCjk || item || order || disp || fallback;
   }
   function resolveObsCodeText(loinc, code, display, cleanMatch, itemName) {
@@ -5030,7 +5055,8 @@
           itemName: singleItemName,
           orderName: orderName ?? void 0,
           display: singleDisplay,
-          fallback: groupCodeStr
+          fallback: groupCodeStr,
+          preferItemName: !panelLoinc
         });
       } else {
         const allSameAnalyte = !DISPLAY_FIRST_CODES.has(groupCodeStr);

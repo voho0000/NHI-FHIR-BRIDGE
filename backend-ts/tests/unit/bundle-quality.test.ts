@@ -4845,3 +4845,119 @@ describe("CI v0.17 — 檢驗檢查項目名稱 surfaced over 醫令名 (CMV ser
     expect(dr.code.text).toBe("鉀");
   });
 });
+
+// ── CI v0.18 — no-LOINC labs: code.text prefers the English assay name ──
+//
+// SMART app dev report 2026-06-08. CodeableConcept.text is the ONLY
+// standard interop field a generic FHIR/SMART app reads for the human
+// label (render order: code.text → coding[].display). For a LOINC-coded
+// lab, code.text is English and the LOINC coding's display is English too,
+// so generic apps show English. For a NO-LOINC lab, the only standard
+// coding is the nhi-medical-order-code (Chinese 醫令名, verbatim per
+// rule #1); the hospital's English assay name rides only on the
+// non-standard his-local-lab coding. Previously bridge put the Chinese
+// 醫令名 into code.text for no-LOINC labs → English-mode apps showed
+// Chinese on the standard field, an inconsistency every downstream app
+// inherits, even though bridge already holds the English string.
+//
+// Fix: when there is NO LOINC, the his-local-lab assay item_name outranks
+// the CJK 醫令名 in code.text (resolveHumanLabel `preferItemName`). The
+// Chinese is NOT lost — it stays on coding[nhi].display for patient-mode
+// apps (faithful transport rule #6: both are NHI-supplied facts; bridge
+// only chooses which goes in the free-form .text).
+//
+// Silent-bug gate per rule #8 — wrong-language label is invisible to FHIR
+// validators. (input: NHI code, item_name, order_name, has-LOINC?) →
+// expected code.text.
+describe("CI v0.18 — no-LOINC labs prefer English assay name in code.text", () => {
+  test("12068C aTG (no LOINC, English item, CJK 醫令名) → code.text = English", () => {
+    const items = [
+      {
+        order_code: "12068C",
+        code: "12068C",
+        display: "aTG, (Thyroglobulin Ab)",
+        item_name: "aTG, (Thyroglobulin Ab)",
+        order_name: "甲狀腺球蛋白抗體",
+        value: 15,
+        unit: "IU/mL",
+        date: "2025-05-18",
+        hospital: "某醫院",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const dr = all.find((r) => r.resourceType === "DiagnosticReport") as any;
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    // No LOINC for this code — bug only applies here.
+    expect(obs.code.coding.find((c: any) => c.system === "http://loinc.org")).toBeUndefined();
+    // code.text now the English assay name on BOTH obs and DR.
+    expect(obs.code.text).toBe("aTG, (Thyroglobulin Ab)");
+    expect(dr.code.text).toBe("aTG, (Thyroglobulin Ab)");
+    // Chinese is NOT lost: it stays on coding[nhi].display (rule #1).
+    const nhiCoding = obs.code.coding.find((c: any) =>
+      c.system?.endsWith("nhi-medical-order-code"),
+    );
+    expect(nhiCoding.display).toBe("甲狀腺球蛋白抗體");
+  });
+
+  test("no-LOINC + only a Chinese item_name → code.text stays Chinese (no English exists)", () => {
+    const items = [
+      {
+        order_code: "14004B",
+        code: "14004B",
+        display: "巨細胞病毒IgG抗體",
+        item_name: "巨細胞病毒IgG抗體",
+        order_name: "巨大細胞病毒抗體  酵素免疫法",
+        value: "陰性",
+        unit: "",
+        date: "2025-05-18",
+        hospital: "某醫院",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    expect(obs.code.coding.find((c: any) => c.system === "http://loinc.org")).toBeUndefined();
+    // CJK item_name is the only label available → it wins (unchanged from v0.17).
+    expect(obs.code.text).toBe("巨細胞病毒IgG抗體");
+  });
+
+  test("no-LOINC + no item_name at all → code.text falls back to the CJK 醫令名", () => {
+    const items = [
+      {
+        order_code: "12068C",
+        code: "12068C",
+        display: "甲狀腺球蛋白抗體",
+        order_name: "甲狀腺球蛋白抗體",
+        value: 15,
+        unit: "IU/mL",
+        date: "2025-05-18",
+        hospital: "某醫院",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    expect(obs.code.text).toBe("甲狀腺球蛋白抗體");
+  });
+
+  test("GUARD: LOINC-coded lab with English item is unaffected — chemistry 09022C K stays '鉀'", () => {
+    // 09022C → LOINC 2823-3, so preferItemName is false and the legacy
+    // precedence (CJK 醫令名 wins over ASCII item) holds. Mirrors the
+    // v0.17 GUARD 2 — restated here to lock the no-LOINC gate's boundary.
+    const items = [
+      {
+        order_code: "09022C",
+        code: "09022C",
+        display: "K",
+        item_name: "K",
+        order_name: "鉀",
+        value: "4.0",
+        unit: "mmol/L",
+        date: "2025-05-18",
+        hospital: "某醫院",
+      },
+    ];
+    const all = mapObservationsGrouped(items, PATIENT_ID);
+    const obs = all.find((r) => r.resourceType === "Observation") as any;
+    expect(obs.code.coding.find((c: any) => c.system === "http://loinc.org")).toBeDefined();
+    expect(obs.code.text).toBe("鉀");
+  });
+});
