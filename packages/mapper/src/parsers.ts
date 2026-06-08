@@ -283,6 +283,21 @@ export function parseRange(rawRange: string, unit: string): RangeEntry | null {
     const lo = (m[1] ?? "").trim();
     const hi = (m[2] ?? "").trim();
 
+    // P2-a (display precision, 2026-06-08): NHI sometimes echoes the SAME
+    // value into BOTH the low-bound and high-bound bracket — e.g.
+    // "[(-)][(-)]", "[0.92 ~ 1.68][0.92 ~ 1.68]", "[＜115 IU/mL][＜115 IU/mL]".
+    // The doubling is a pure encoding artifact (one reference value copied
+    // into both slots), not a genuine low≠high pair. Collapse the .text to
+    // the single inner value so SMART apps render a clean "(-)" /
+    // "0.92 ~ 1.68" instead of the bracketed VGH-internal syntax. This only
+    // touches the free-form .text label (allowed per faithful-transport
+    // rule #6 — free-form referenceRange text may be normalized); the
+    // structured low/high extraction below still runs against lo & hi
+    // exactly as before, so no numeric data is lost.
+    if (lo && lo === hi) {
+      entry.text = lo;
+    }
+
     // C5 (bug report Part 3): specimen + threshold packed into one
     // bracket side, e.g. "[][Random Urine＜ 1.9]" or "[][plasma ≦0.04]".
     // Try this FIRST so the comparator inside doesn't trigger the

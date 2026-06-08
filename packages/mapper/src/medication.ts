@@ -205,7 +205,19 @@ export function mapMedicationRequest(
       const perDayStr = Number.isInteger(perDay)
         ? String(perDay)
         : Number.parseFloat(perDay.toFixed(2)).toString();
-      dosage.text = `${qtyStr} dose(s) over ${daysNum} day(s) (≈ ${perDayStr}/day)`;
+      // P2-b (display precision, 2026-06-08): use NHI's own field labels
+      // 給藥總量 / 給藥日數 verbatim instead of the previous synthesized
+      // English "N dose(s) over M day(s) (≈ R/day)". Two reasons:
+      //   1. Faithfulness — the old "dose(s)" word ASSERTED a dispensing
+      //      unit ("dose") that NHI never supplies (IHKE3306S02 ships only
+      //      給藥總量 + 給藥日數, no unit field). 給藥總量 is NHI's neutral
+      //      count label, so we transport it verbatim and assert no unit.
+      //   2. Display — zh-TW patient / clinician context matches the
+      //      bundle's patient-facing .text convention (drug_name_zh,
+      //      drug_class_zh, reasonCode 繁中).
+      // The per-day figure stays a clearly-labelled 平均 (average) derived
+      // value; every number here is 100% NHI-sourced (給藥總量 ÷ 給藥日數).
+      dosage.text = `給藥總量 ${qtyStr}，給藥日數 ${daysNum} 天（平均每日 ${perDayStr}）`;
     }
   }
   if (raw.route) {
@@ -223,6 +235,15 @@ export function mapMedicationRequest(
   if (qtyRaw !== null && qtyRaw !== undefined && qtyRaw !== "") {
     const qtyNum = Number.parseFloat(String(qtyRaw).replace(/,/g, ""));
     if (Number.isFinite(qtyNum)) {
+      // P2-b (2026-06-08): emit value WITHOUT a unit. NHI IHKE3306S02
+      // ships 給藥總量 as a bare count with NO dispensing-unit field
+      // (drug obj = drug_name / order_code / order_drug_day / order_qty /
+      // act only). The real unit (錠 / mL / 支 / 包 …) depends on the
+      // dosage form and cannot be derived reliably from the drug code, so
+      // per the faithful-transport rule we do NOT fabricate one — a bare
+      // SimpleQuantity.value is FHIR R4 valid. The dosageInstruction text
+      // carries the 給藥總量 label so consumers still know the number is
+      // a "total dispensed quantity".
       dr.quantity = { value: qtyNum };
     }
   }

@@ -1433,7 +1433,12 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "5778-6": "Color of Urine",
   "5767-9": "Appearance of Urine",
   "5818-0": "Urobilinogen Urine Ql",
-  "20454-5": "Protein Mass/Vol in Urine",
+  // Canonical Long Common Name per loinc.org/20454-5/ (verified 2026-06-08):
+  // Component=Protein, Property=PrThr (Presence/Threshold), Scale=Ord,
+  // System=Urine, Method=Test strip. The earlier "Protein Mass/Vol in Urine"
+  // display was wrong (Mass/Vol implies the Qn 2888-6 form) and contradicted
+  // the Ord/PrThr scale this code actually carries — rule #1 violation.
+  "20454-5": "Protein [Presence] in Urine by Test strip",
   // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): quantitative
   // urine protein LOINC. Verified at loinc.org/2888-6/ —
   //   Component=Protein, Property=MCnc (Mass concentration),
@@ -1775,11 +1780,14 @@ export const LOINC_SHORT_TEXT: Record<string, string> = {
   // v0.12.1 (SMART app dev bug 8' 2026-05-29): urine total protein
   // observations had DR title "全蛋白" (ambiguous NHI catalog name —
   // can mean serum or urine total protein) while the obs itself was
-  // correctly LOINC 20454-5 (Protein Mass/Vol in Urine). Clinicians
-  // reading the DR header assumed serum TP. Clean short text resolves
-  // both DR title and obs.code.text to "Urine Protein" — disambiguating
-  // the specimen explicitly. LOINC_DISPLAY[20454-5] already correctly
-  // reads "Protein Mass/Vol in Urine" (catalog-faithful, FHIR R4 OK).
+  // correctly LOINC 20454-5 (the Ord/PrThr test-strip qualitative form).
+  // Clinicians reading the DR header assumed serum TP. Clean short text
+  // resolves both DR title and obs.code.text to "Urine Protein" —
+  // disambiguating the specimen explicitly. This is the free-form
+  // CodeableConcept.text; the catalog-faithful Coding.display lives in
+  // LOINC_DISPLAY[20454-5] = "Protein [Presence] in Urine by Test strip"
+  // (canonical Long Common Name, corrected 2026-06-08 — was wrongly the
+  // Qn 2888-6 "Mass/Vol" wording, see loinc-tables.ts note above).
   "20454-5": "Urine Protein",
   // v0.12.2: quantitative urine protein. Same clean label as the
   // qualitative twin so SMART app per-LOINC pivot shows both under

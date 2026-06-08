@@ -2823,7 +2823,12 @@ describe("CI v0.12.2 — Urine protein scale routing (qualitative vs quantitativ
     ).find((r) => r.resourceType === "Observation") as any;
     const qualLoinc = qual.code.coding.find((c: any) => c.system === "http://loinc.org");
     expect(qualLoinc.code).toBe("20454-5");
-    expect(qualLoinc.display).toBe("Protein Mass/Vol in Urine");
+    // Canonical Long Common Name per loinc.org/20454-5/ (verified 2026-06-08):
+    // 20454-5 is the Ord/PrThr (test-strip) qualitative form. The earlier
+    // "Protein Mass/Vol in Urine" string was the Qn 2888-6 wording and
+    // contradicted this code's own scale — rule #1 (Coding.display = canonical
+    // Long Common Name) fix shipped in loinc-tables.ts.
+    expect(qualLoinc.display).toBe("Protein [Presence] in Urine by Test strip");
 
     // Quantitative
     const quant = mapObservationsGrouped(

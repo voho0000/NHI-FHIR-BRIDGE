@@ -250,6 +250,47 @@ describe("parseRange — bracketed [low][high]", () => {
   });
 });
 
+describe("parseRange — P2-a doubled-bracket .text collapse (display precision)", () => {
+  // CLAUDE.md rule #8 silent-bug gate: NHI echoes the same value into both
+  // the low- and high-bound bracket. The doubling is an encoding artifact;
+  // .text should surface the single inner value (cleaner display) while the
+  // structured low/high extraction stays unchanged. Add a row here every
+  // time a new doubled-bracket shape is seen in a real bundle.
+  test.each([
+    // [rawRange, unit, expectedText]
+    ["[(-)][(-)]", "", "(-)"],
+    ["[0.92 ~ 1.68][0.92 ~ 1.68]", "", "0.92 ~ 1.68"],
+    ["[0.270~4.20][0.270~4.20]", "", "0.270~4.20"],
+    ["[Negative][Negative]", "", "Negative"],
+  ] as const)("'%s' → text '%s'", (raw, unit, expectedText) => {
+    const r = parseRange(raw, unit);
+    expect(r?.text).toBe(expectedText);
+  });
+
+  test("doubled numeric dash range still extracts structured low/high", () => {
+    // The collapse only touches .text — structured bounds must survive so
+    // SMART apps that read low/high (not text) are unaffected.
+    const r = parseRange("[0.92 ~ 1.68][0.92 ~ 1.68]", "");
+    expect(r?.text).toBe("0.92 ~ 1.68");
+    expect(r?.low?.value).toBe(0.92);
+    expect(r?.high?.value).toBe(1.68);
+  });
+
+  test("qualitative doubled bracket '[(-)][(-)]' is text-only", () => {
+    const r = parseRange("[(-)][(-)]", "");
+    expect(r?.text).toBe("(-)");
+    expect(r?.low).toBeUndefined();
+    expect(r?.high).toBeUndefined();
+  });
+
+  test("genuine low≠high pair is NOT collapsed (only identical sides)", () => {
+    const r = parseRange("[70][100]", "mg/dL");
+    expect(r?.text).toBe("[70][100]");
+    expect(r?.low?.value).toBe(70);
+    expect(r?.high?.value).toBe(100);
+  });
+});
+
 describe("parseRange — dash range without brackets", () => {
   test("'70-100' → low+high", () => {
     const r = parseRange("70-100", "mg/dL");

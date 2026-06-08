@@ -6,6 +6,7 @@
  * Encounter (the post-mapping linker depends on this).
  */
 
+import { normalizeIcd10Cm } from "./condition";
 import { stableId } from "./helpers";
 import { ENCOUNTER_CHANNEL_SYSTEM, ENCOUNTER_KIND_SYSTEM } from "./systems";
 
@@ -137,11 +138,19 @@ export function mapEncounter(raw: Record<string, any>, patientId: string): Recor
       rc.coding = [
         {
           system: "http://hl7.org/fhir/sid/icd-10-cm",
-          code: reasonCode,
+          // NHI ships ICD-10-CM WITHOUT the dot ("E079"); the canonical
+          // system form is dotted ("E07.9"). Normalising here keeps the
+          // same diagnosis from appearing as two distinct codes across
+          // encounters (the medication mapper already normalises) — a
+          // problem-list grouping bug in consuming SMART apps.
+          code: normalizeIcd10Cm(reasonCode),
           display: displayPlain || reason || reasonZh,
         },
       ];
     }
+    // .text keeps NHI's original phrasing (including its un-dotted code
+    // prefix) — FHIR CodeableConcept.text is the "original text", while the
+    // dotted form lives in coding.code. Mirrors the medication mapper.
     rc.text = reasonZh || reason;
     reasonCodes.push(rc);
   }
@@ -156,7 +165,7 @@ export function mapEncounter(raw: Record<string, any>, patientId: string): Recor
       entry.coding = [
         {
           system: "http://hl7.org/fhir/sid/icd-10-cm",
-          code,
+          code: normalizeIcd10Cm(code),
           display: nameEn || nameZh,
         },
       ];

@@ -227,22 +227,63 @@ describe("mapEncounter", () => {
       PID,
     );
     expect(r.reasonCode).toHaveLength(3);
-    // Primary stays as the first entry, unchanged from v0.8.0.
-    expect(r.reasonCode[0].coding[0].code).toBe("H401110");
-    // Secondaries follow, each with their own ICD-10-CM coding + 繁中 text.
+    // Primary stays first; coding.code is normalised to the canonical dotted
+    // ICD-10-CM form (H401110 → H40.1110) so the same diagnosis can't appear
+    // as two distinct codes across encounters/medications. The patient-facing
+    // .text keeps NHI's original un-dotted phrasing.
+    expect(r.reasonCode[0].coding[0].code).toBe("H40.1110");
+    // Secondaries follow, each with their own (dotted) ICD-10-CM coding + 繁中 text.
     expect(r.reasonCode[1].coding[0]).toEqual({
       system: "http://hl7.org/fhir/sid/icd-10-cm",
-      code: "H35379",
+      code: "H35.379",
       display: "Puckering of macula, unspecified eye",
     });
     expect(r.reasonCode[1].text).toBe("H35379 未明示側性黃斑部皺褶");
-    expect(r.reasonCode[2].coding[0].code).toBe("H3581");
+    expect(r.reasonCode[2].coding[0].code).toBe("H35.81");
     expect(r.reasonCode[2].text).toBe("H3581 視網膜水腫");
   });
 
   test("v0.9.0 no secondary_diagnoses → only primary reasonCode emitted", () => {
     const r = mapEncounter({ reason: "Essential hypertension", reason_code: "I10" }, PID);
     expect(r.reasonCode).toHaveLength(1);
+  });
+
+  // Silent-bug gate (CLAUDE.md rule #8). The v0.17.6 bundle audit found the
+  // SAME diagnosis shipped as two distinct ICD-10-CM codes — Encounter
+  // reasonCode kept NHI's un-dotted form ("E079") while the medication mapper
+  // already normalised to the dotted canonical ("E07.9"). A problem-list app
+  // grouping by coding.code then sees two conditions where there is one.
+  // These (raw NHI input → expected dotted coding.code) pairs lock the fix:
+  // every ICD code emitted on Encounter.reasonCode must be canonical-dotted.
+  describe("CI invariant — Encounter reasonCode ICD-10-CM is canonical-dotted", () => {
+    test.each([
+      ["E079", "E07.9"], // 4-char → dot after 3
+      ["E039", "E03.9"],
+      ["M5432", "M54.32"], // 5-char
+      ["K2900", "K29.00"],
+      ["S335XXA", "S33.5XXA"], // 7th-char extension
+      ["E8881", "E88.81"],
+      ["I10", "I10"], // 3-char category → no dot
+      ["F29", "F29"],
+      ["R05", "R05"],
+      ["E07.9", "E07.9"], // already dotted → pass through unchanged
+    ])("primary reason_code %s → coding.code %s", (raw, expected) => {
+      const r = mapEncounter({ reason: `${raw} dx`, reason_code: raw }, PID);
+      expect(r.reasonCode[0].coding[0].code).toBe(expected);
+    });
+
+    test("secondary diagnoses are normalised too", () => {
+      const r = mapEncounter(
+        {
+          reason: "E079 dx",
+          reason_code: "E079",
+          secondary_diagnoses: [{ code: "M5432", name_en: "Sciatica, left side" }],
+        },
+        PID,
+      );
+      expect(r.reasonCode[0].coding[0].code).toBe("E07.9");
+      expect(r.reasonCode[1].coding[0].code).toBe("M54.32");
+    });
   });
 
   test("v0.9.0 secondary_diagnoses without primary → only secondaries emitted", () => {

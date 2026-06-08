@@ -284,10 +284,13 @@ describe("mapMedicationsDedup", () => {
     );
     const r = resources[0]!;
     expect(r.dosageInstruction).toBeDefined();
-    expect(r.dosageInstruction[0].text).toBe("30 dose(s) over 30 day(s) (≈ 1/day)");
+    // P2-b (2026-06-08): NHI's own field labels 給藥總量 / 給藥日數 verbatim
+    // — no fabricated "dose" unit (NHI ships a bare count). zh-TW matches
+    // the bundle's patient-facing .text convention.
+    expect(r.dosageInstruction[0].text).toBe("給藥總量 30，給藥日數 30 天（平均每日 1）");
   });
 
-  test("v0.10.0 — BID-pattern qty (60 over 30 days) shows ≈ 2/day", () => {
+  test("v0.10.0 — BID-pattern qty (60 over 30 days) → 平均每日 2", () => {
     const resources = mapMedicationsDedup(
       [
         {
@@ -300,7 +303,7 @@ describe("mapMedicationsDedup", () => {
       ],
       PATIENT_ID,
     );
-    expect(resources[0]!.dosageInstruction[0].text).toBe("60 dose(s) over 30 day(s) (≈ 2/day)");
+    expect(resources[0]!.dosageInstruction[0].text).toBe("給藥總量 60，給藥日數 30 天（平均每日 2）");
   });
 
   test("v0.10.0 — non-integer rate rounds to 2 decimals", () => {
@@ -316,7 +319,33 @@ describe("mapMedicationsDedup", () => {
       ],
       PATIENT_ID,
     );
-    expect(resources[0]!.dosageInstruction[0].text).toBe("45 dose(s) over 30 day(s) (≈ 1.5/day)");
+    expect(resources[0]!.dosageInstruction[0].text).toBe(
+      "給藥總量 45，給藥日數 30 天（平均每日 1.5）",
+    );
+  });
+
+  test("P2-b — dispenseRequest.quantity carries value but NO fabricated unit", () => {
+    // CLAUDE.md rule #8 silent-bug gate + faithful-transport rule: NHI
+    // IHKE3306S02 ships 給藥總量 with no dispensing-unit field. The bridge
+    // must NOT invent one (錠 / mL / 支 vary by dosage form). A bare
+    // SimpleQuantity.value is FHIR R4 valid.
+    const resources = mapMedicationsDedup(
+      [
+        {
+          drug_name: "ASPIRIN 100MG",
+          code: "B025823100",
+          date: "2025-05-18",
+          quantity: 30,
+          duration_days: 30,
+        },
+      ],
+      PATIENT_ID,
+    );
+    const dr = resources[0]!.dispenseRequest;
+    expect(dr.quantity.value).toBe(30);
+    expect(dr.quantity.unit).toBeUndefined();
+    expect(dr.quantity.code).toBeUndefined();
+    expect(dr.quantity.system).toBeUndefined();
   });
 
   test("v0.10.0 — explicit dosage_text still wins over derived (priority preserved)", () => {
