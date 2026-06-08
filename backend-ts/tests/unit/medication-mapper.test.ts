@@ -303,7 +303,9 @@ describe("mapMedicationsDedup", () => {
       ],
       PATIENT_ID,
     );
-    expect(resources[0]!.dosageInstruction[0].text).toBe("給藥總量 60，給藥日數 30 天（平均每日 2）");
+    expect(resources[0]!.dosageInstruction[0].text).toBe(
+      "給藥總量 60，給藥日數 30 天（平均每日 2）",
+    );
   });
 
   test("v0.10.0 — non-integer rate rounds to 2 decimals", () => {
