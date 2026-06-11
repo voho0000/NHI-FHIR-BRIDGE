@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 
 import * as systems from "@nhi-fhir-bridge/mapper";
 import {
+  deidBirthDate,
   derivePatientId,
   looksLikeTwNationalId,
   mapPatient,
@@ -167,5 +168,30 @@ describe("maskId", () => {
   });
   test("trims whitespace first", () => {
     expect(maskId("  P123456789  ")).toBe("P12345****");
+  });
+});
+
+describe("deidBirthDate", () => {
+  test("full date keeps year, normalizes month/day to Jan 1", () => {
+    expect(deidBirthDate("1958-06-15")).toBe("1958-01-01");
+    expect(deidBirthDate("2003-12-31")).toBe("2003-01-01");
+  });
+  test("already-Jan-1 stays Jan 1 (idempotent)", () => {
+    expect(deidBirthDate("1958-01-01")).toBe("1958-01-01");
+  });
+  test("inputs coarser than full date still normalize to Jan 1", () => {
+    expect(deidBirthDate("1958")).toBe("1958-01-01");
+    expect(deidBirthDate("1958-03")).toBe("1958-01-01");
+  });
+  test("result is a full FHIR YYYY-MM-DD date (SMART-app parseable)", () => {
+    const out = deidBirthDate("1958-06-15");
+    expect(/^\d{4}-\d{2}-\d{2}$/.test(out)).toBe(true);
+    expect(Number.isNaN(new Date(out).getTime())).toBe(false);
+  });
+  test("empty / null / undefined / unparseable pass through", () => {
+    expect(deidBirthDate("")).toBe("");
+    expect(deidBirthDate(null)).toBe("");
+    expect(deidBirthDate(undefined)).toBe("");
+    expect(deidBirthDate("不詳")).toBe("不詳");
   });
 });

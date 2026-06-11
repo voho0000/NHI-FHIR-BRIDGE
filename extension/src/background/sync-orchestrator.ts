@@ -10,7 +10,7 @@
 //   - "backend" → POST per-page_type items to /sync/upload-structured,
 //                 then export the cumulative bundle for the popup.
 
-import { dedupImagingItems, maskName } from "@nhi-fhir-bridge/mapper";
+import { dedupImagingItems, maskId, maskName } from "@nhi-fhir-bridge/mapper";
 import {
   // adaptEncounterFromMedExpense is invoked directly from the
   // IHKE3303S02 detail fan-out (overrides the registry's classHint
@@ -1147,6 +1147,16 @@ export async function runNhiApiSync({
     const replacement = maskName(patientOverride.name);
     for (const key of Object.keys(byType)) {
       byType[key] = replaceNameDeep(byType[key], patientOverride.name, replacement);
+    }
+  }
+  // Defense-in-depth: NHI report headers (radiology / pathology) sometimes
+  // echo the patient's 身分證 in narrative text. When de-identifying, scrub
+  // it out of the same byType narratives — exact-token replace with the
+  // half-masked form so it stays consistent with Patient.identifier.value.
+  if (maskEnabled && patientOverride.id_no) {
+    const idReplacement = maskId(patientOverride.id_no, "X");
+    for (const key of Object.keys(byType)) {
+      byType[key] = replaceNameDeep(byType[key], patientOverride.id_no, idReplacement);
     }
   }
 

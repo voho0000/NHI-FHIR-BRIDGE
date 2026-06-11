@@ -81,6 +81,34 @@ export function maskId(id: string | null | undefined, char = "*"): string {
 }
 
 /**
+ * De-identify a birth date by keeping only the year and normalizing the
+ * month/day to January 1st: `1958-06-15` → `1958-01-01`.
+ *
+ * Why Jan-1 instead of year-only (`1958`)? FHIR `Patient.birthDate` (type
+ * `date`) permits a bare `YYYY`, but many SMART apps parse birthDate with
+ * `new Date()` or assume `YYYY-MM-DD` precision and break on a year-only
+ * value. A full `YYYY-01-01` date parses everywhere while leaking the same
+ * information as year-only (the precise month/day — the identifying part —
+ * is gone). Age math is off by at most ~1 year, which is clinically fine
+ * for age-banded reference ranges / adult-vs-pediatric logic.
+ *
+ * HIPAA Safe Harbor allows the birth YEAR to remain (only date elements
+ * more specific than year must be removed). The >89-age aggregation rule
+ * is NOT applied here — this is a limited-dataset-level redaction (the
+ * bundle still carries hospital names + exact visit dates), not full
+ * anonymization. Callers gate this behind the de-identify toggle.
+ *
+ * Inputs already coarser than a full date (`1958`, `1958-03`) still
+ * normalize to `1958-01-01`. Empty / unparseable input passes through.
+ */
+export function deidBirthDate(iso: string | null | undefined): string {
+  const s = (iso ?? "").trim();
+  if (!s) return s;
+  const m = /^(\d{4})\b/.exec(s);
+  return m ? `${m[1]}-01-01` : s;
+}
+
+/**
  * Normalize a narrative report body for content-equality comparison.
  *
  * NHI's PACS/RIS ships the SAME radiology narrative through different

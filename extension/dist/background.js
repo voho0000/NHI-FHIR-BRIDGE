@@ -620,6 +620,13 @@
       return s.slice(0, 2) + char.repeat(s.length - 4) + s.slice(-2);
     return s;
   }
+  function deidBirthDate(iso) {
+    const s = (iso ?? "").trim();
+    if (!s)
+      return s;
+    const m = /^(\d{4})\b/.exec(s);
+    return m ? `${m[1]}-01-01` : s;
+  }
   function normalizeNarrativeForDedup(s) {
     return (s ?? "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
   }
@@ -6575,7 +6582,15 @@
       raw.birthDate = ov.birth_date;
     if (ov.gender)
       raw.gender = ov.gender;
-    return mapPatient(raw);
+    const patient = mapPatient(raw);
+    if (maskEnabled) {
+      const idVal = patient.identifier?.[0]?.value;
+      if (idVal)
+        patient.identifier[0].value = maskId(idVal, "X");
+      if (patient.birthDate)
+        patient.birthDate = deidBirthDate(patient.birthDate);
+    }
+    return patient;
   }
   function replaceNameDeep(value, needle, replacement) {
     if (!needle || needle === replacement)
@@ -8903,6 +8918,12 @@
       const replacement = maskName(patientOverride.name);
       for (const key of Object.keys(byType)) {
         byType[key] = replaceNameDeep(byType[key], patientOverride.name, replacement);
+      }
+    }
+    if (maskEnabled && patientOverride.id_no) {
+      const idReplacement = maskId(patientOverride.id_no, "X");
+      for (const key of Object.keys(byType)) {
+        byType[key] = replaceNameDeep(byType[key], patientOverride.id_no, idReplacement);
       }
     }
     let total = 0;

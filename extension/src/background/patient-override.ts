@@ -3,7 +3,7 @@
 // because they all operate on the popup-supplied `patientOverride` object
 // (id_no / name / birth_date / gender) and the mask-name preference.
 
-import { mapPatient, maskName } from "@nhi-fhir-bridge/mapper";
+import { deidBirthDate, mapPatient, maskId, maskName } from "@nhi-fhir-bridge/mapper";
 
 // Apply a {start, end} ISO date range to an endpoint path:
 //   - If path already has s_date= placeholders, fill them in.
@@ -53,7 +53,27 @@ export function buildOverridePatient(ov, maskEnabled) {
   };
   if (ov.birth_date) raw.birthDate = ov.birth_date;
   if (ov.gender) raw.gender = ov.gender;
-  return mapPatient(raw);
+  const patient = mapPatient(raw);
+
+  // De-identify the two remaining cleartext PII fields when the toggle is
+  // on. We post-process the assembled resource (rather than masking the
+  // raw input) deliberately:
+  //   • Patient.id is a salted hash of the REAL id (derivePatientId) — it
+  //     is non-reversible and already de-identified by design, and every
+  //     subject.reference points at it. Leaving it untouched keeps all
+  //     intra-bundle references consistent and stable whether the toggle
+  //     is on or off.
+  //   • Only identifier[].value (the real 身分證) and birthDate carry
+  //     cleartext PII, so those are the only fields we redact here.
+  // Name is already masked upstream via `displayName`. Default OFF: the
+  // 民眾自用 workflow needs the real id_no so SMART apps can match the
+  // patient — masking only matters when the bundle will be shared/demoed.
+  if (maskEnabled) {
+    const idVal = patient.identifier?.[0]?.value;
+    if (idVal) patient.identifier[0].value = maskId(idVal, "X");
+    if (patient.birthDate) patient.birthDate = deidBirthDate(patient.birthDate);
+  }
+  return patient;
 }
 
 // Walk a JSON-like value and replace every string token equal to or

@@ -108,6 +108,23 @@ Checklist:
    > "你要考量到這份 fhir json 可能給其他非我開發的 smart app 使用，如果把 dedup 的責任都放在 app 端，會有大問題。你有忠實搬運，但不能明明 UI 顯示只有一筆你抓了兩筆。"
    > (You need to consider this FHIR JSON may be used by other SMART apps I didn't develop. Putting the dedup responsibility entirely on the app side will be a big problem. You're faithful in transport, but you can't fetch 2 rows when the UI clearly only shows 1.)
 
+10. **NHI 醫令碼的「碼義 / 單項 vs panel」必須先確認，再決定 LOINC 與分類。 (added 2026-06-09, after 06012C silent mis-tag)** User-driven after 06012C (尿液一般檢查, a full 18-analyte urinalysis panel) was found shipping all 18 sub-analytes under LOINC 5778-6 "Color of Urine":
+
+    > 06012C 我查健保碼是尿液常規的意思，那被歸成顏色也很離譜，還是我們多一個規則，以後關乎 NHI 碼的部分也需要先 web search 確認內容正確。
+
+    Rule #5 verifies the *LOINC* side (loinc.org confirms the target code's Component/Property/System/Method). Rule #10 closes the symmetric gap on the *NHI* side: **before adding or changing any `NHI_TO_LOINC` entry or panel classification, confirm what the NHI billing code actually bills for** — a single analyte vs a multi-analyte panel. A panel code given a single sub-analyte's LOINC is a silent bug (FHIR validator passes; every sub-row collapses to one wrong analyte).
+
+    Trigger: any new/modified `NHI_TO_LOINC` entry, `DISPLAY_FIRST_CODES` membership, or `PANEL_LOINC_MAP` table.
+
+    Procedure:
+    1. **Read `ordeR_NAME` first.** Panel-indicating phrasing — `一般檢查` / `常規` / `分類計數` / `包括…等` / English `panel` / `profile` — means it is NOT a single analyte. A single LOINC for such a code is wrong.
+    2. **Confirm scope** against NHI 支付標準 / web search (the code's official 項目名稱 + 內容).
+    3. **Panel invariant** — a panel code MUST be in `DISPLAY_FIRST_CODES` AND have a `PANEL_LOINC_MAP` sub-analyte table; its `NHI_TO_LOINC` value may only be a **panel-level** LOINC used as the Step-C best-effort fallback (kept cleanMatch=false so the mis-tag canary stays visible). A single-analyte code may keep the Step-A short-circuit.
+    4. **`coding[nhi].display` stays verbatim** (rule #1) regardless.
+    5. **Add a rule #8 CI invariant row** for the (code, display)→LOINC mapping.
+
+    Architectural root cause (the asymmetry that let 06012C through): specimen inference already uses prefix-family logic (`NHI_CODE_PREFIX_SPECIMEN`: 06→Urine works for ANY 06 code), but LOINC routing's Step-A trusts `NHI_TO_LOINC[code]` for ANY code not explicitly listed in `DISPLAY_FIRST_CODES` — so a panel code accidentally omitted from that set short-circuits to its (wrong, single-analyte) default AND is marked cleanMatch=true, silencing the canary. The durable fix is a single-source-of-truth analyte table reused by all urinalysis panel codes + specimen-qualified global keys (`尿蛋白`, never bare `蛋白`) so standalone urine tests under unrecognized codes route safely. See the urinalysis panel-routing design plan (pending implementation — currently 只診斷不修).
+
 ## NHI imaging ori_TYPE A/B/E channels (added 2026-06-04, v0.15; simplified 2026-06-05 v0.15.5)
 
 **`ori_TYPE` is an upload-channel label, NOT a candidacy signal.** Verified directly against `https://myhealthbank.nhi.gov.tw/api/ihke3000/IHKE3408S02/page_load?crid=...&ctype=...` 2026-06-04 by reading `ori_TYPE_NAME` field in detail body (NHI's own plain-Chinese label):
