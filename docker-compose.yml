@@ -29,6 +29,10 @@ services:
       # bind that protects PHI lives in the port mapping above, NOT
       # inside the container.
       BIND_HOST: 0.0.0.0
+      # Host-header allowlist (DNS-rebinding protection). Loopback hosts
+      # are always accepted; this adds the compose-internal hostname the
+      # dashboard's server-side proxy uses to reach us.
+      ALLOWED_HOSTS: backend:8010
     volumes:
       # Named volume for the SQLite DB — on macOS Docker, bind-mounting
       # the host's "data/" folder makes every fsync go through gRPC FUSE

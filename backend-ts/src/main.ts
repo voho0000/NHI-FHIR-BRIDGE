@@ -24,31 +24,37 @@ import { smartAuth } from "@/smart/oauth2";
 
 // ── CORS allow-list ──────────────────────────────────────────────────
 
-const DEFAULT_CORS_ORIGINS = [
-  "http://localhost:3010",
-  "http://127.0.0.1:3010",
-  "http://localhost:3001",
-  "http://127.0.0.1:3001",
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  "https://myhealthbank.nhi.gov.tw",
-  "https://voho0000.github.io",
-];
+// Loopback origins (any port) are always trusted — that's the user's
+// own machine talking to its own bridge.
+const LOOPBACK_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 
-const EXTRA_CORS_ORIGINS = (settings.ALLOW_CORS_ORIGINS ?? "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+// Third-party origins shipped as defaults. 2026-06-12 (audit P1-2):
+// these are only honored when SYNC_API_KEY is set — in keyless mode the
+// key middlewares are no-ops, so reflecting a third-party origin with
+// credentials would hand the whole PHI store to any page on that origin
+// (github.io is shared by every repo of the account). The NHI origin
+// (myhealthbank.nhi.gov.tw) was dropped entirely: nothing of ours runs
+// on NHI pages (no content scripts), and an XSS there must not be able
+// to read the local bridge.
+const DEFAULT_THIRD_PARTY_ORIGINS = new Set(["https://voho0000.github.io"]);
 
-const CORS_ALLOWED_ORIGINS = new Set([...DEFAULT_CORS_ORIGINS, ...EXTRA_CORS_ORIGINS]);
+// Origins the operator explicitly configured — deliberate opt-in,
+// honored regardless of key mode.
+const EXTRA_CORS_ORIGINS = new Set(
+  (settings.ALLOW_CORS_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
 
 // Pin to specific extension IDs rather than accepting every
-// chrome-extension://* origin. Without this, any malicious extension
-// the user installs could make credentialed calls to the backend's
-// PHI endpoints. IDs come from ALLOWED_EXTENSION_IDS env (comma-sep).
-// When the env is empty (e.g. unpacked dev install), fall back to the
-// permissive regex so first-run UX still works; deployments meant to
-// share with anyone else MUST set ALLOWED_EXTENSION_IDS.
+// chrome-extension://* origin. IDs come from ALLOWED_EXTENSION_IDS env
+// (comma-sep). Note the extension itself does NOT need CORS approval —
+// its service-worker fetches use manifest host_permissions, which are
+// CORS-exempt. The permissive fallback regex below only exists for
+// unpacked dev installs and is now gated behind keyed mode (audit
+// P1-2): keyless + any-extension reflection meant every extension the
+// user has installed could read the PHI store.
 const ALLOWED_EXTENSION_IDS = (process.env.ALLOWED_EXTENSION_IDS ?? "")
   .split(",")
   .map((s) => s.trim())
@@ -59,12 +65,41 @@ const ALLOWED_EXTENSION_ORIGINS = new Set(
 const CHROME_EXTENSION_RE = /^chrome-extension:\/\/[a-p]{32}$/;
 
 function corsOriginCheck(origin: string): string | null {
-  if (CORS_ALLOWED_ORIGINS.has(origin)) return origin;
+  if (LOOPBACK_ORIGIN_RE.test(origin)) return origin;
+  if (EXTRA_CORS_ORIGINS.has(origin)) return origin;
   if (ALLOWED_EXTENSION_ORIGINS.has(origin)) return origin;
+  // Keyless mode = single-user loopback POC. Nothing beyond the user's
+  // own loopback origins (and explicit env opt-ins above) gets CORS.
+  if (!settings.SYNC_API_KEY) return null;
+  if (DEFAULT_THIRD_PARTY_ORIGINS.has(origin)) return origin;
   if (ALLOWED_EXTENSION_IDS.length === 0 && CHROME_EXTENSION_RE.test(origin)) {
     return origin;
   }
   return null;
+}
+
+// ── Host-header validation (DNS-rebinding protection) ───────────────
+//
+// 2026-06-12 (audit P1-3): a malicious page can DNS-rebind its hostname
+// to 127.0.0.1 and issue requests that the browser treats as
+// same-origin — no Origin header, no CORS involved — defeating both the
+// CORS layer and (via the dashboard proxy) SYNC_API_KEY. The one thing
+// the attacker cannot forge is the Host header, so reject any request
+// whose Host isn't loopback / an explicitly allowed host.
+// ALLOWED_HOSTS (comma-sep) covers reverse proxies and the
+// docker-compose internal hostname (backend:8010).
+const LOOPBACK_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const EXTRA_ALLOWED_HOSTS = new Set(
+  (process.env.ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+export function hostAllowed(host: string | null | undefined): boolean {
+  if (!host) return false;
+  const h = host.toLowerCase();
+  return LOOPBACK_HOST_RE.test(h) || EXTRA_ALLOWED_HOSTS.has(h);
 }
 
 // Endpoints that return discovery JSON with no PHI — must allow *.
@@ -79,7 +114,27 @@ const PUBLIC_DISCOVERY_PATHS = new Set([
 export function createApp(): Hono {
   const app = new Hono();
 
-  // OUTERMOST: public discovery wildcard CORS. Must run before the strict
+  // OUTERMOST: Host validation (audit P1-3, DNS-rebinding protection).
+  // When the header is absent (Hono's app.request() test helper, some
+  // non-browser clients) fall back to the request URL's host — with a
+  // real HTTP server that URL is reconstructed from the Host header
+  // anyway, so the two never disagree.
+  app.use("*", async (c, next) => {
+    const host = c.req.header("host") ?? new URL(c.req.url).host;
+    if (!hostAllowed(host)) {
+      return c.json(
+        {
+          detail:
+            "Forbidden: unrecognized Host header (DNS-rebinding protection). " +
+            "Set ALLOWED_HOSTS=<host:port>[,…] to allow additional hostnames.",
+        },
+        403,
+      );
+    }
+    return next();
+  });
+
+  // Public discovery wildcard CORS. Must run before the strict
   // layer below, because once strict CORS rejects a preflight we never get
   // the chance to override.
   app.use("*", async (c, next) => {
@@ -181,7 +236,9 @@ if (isDirectRun) {
     if (!settings.SYNC_API_KEY) {
       console.warn(
         "[NHI-FHIR-Bridge] WARNING: SYNC_API_KEY is empty — all auth is disabled. " +
-          "Set SYNC_API_KEY in .env before exposing this beyond localhost.",
+          "CORS is locked to loopback origins in this mode (external SMART apps " +
+          "like the GitHub-Pages demo need a key). Set SYNC_API_KEY in .env " +
+          "before exposing this beyond localhost.",
       );
     }
   });

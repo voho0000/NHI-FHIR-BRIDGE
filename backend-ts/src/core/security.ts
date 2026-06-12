@@ -28,6 +28,8 @@
  * scope contract.
  */
 
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import type { MiddlewareHandler } from "hono";
 
 import { settings } from "@/core/config";
@@ -38,10 +40,21 @@ export type SmartAuthVariables = {
   smartToken: OAuthToken | null;
 };
 
+/**
+ * Constant-time string comparison (audit 2026-06-12): `===` short-
+ * circuits per character, leaking key-prefix length through timing.
+ * Hashing both sides first equalizes lengths so timingSafeEqual applies.
+ */
+export function safeEqual(a: string, b: string): boolean {
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
+
 export const requireSyncApiKey: MiddlewareHandler = async (c, next) => {
   if (!settings.SYNC_API_KEY) return next();
   const got = c.req.header("X-Sync-API-Key");
-  if (got !== settings.SYNC_API_KEY) {
+  if (!got || !safeEqual(got, settings.SYNC_API_KEY)) {
     return c.json({ detail: "Invalid or missing X-Sync-API-Key header" }, 401);
   }
   return next();
@@ -62,7 +75,7 @@ export const requireFhirAuth: MiddlewareHandler = async (c, next) => {
   }
 
   const apiKey = c.req.header("X-Sync-API-Key");
-  if (apiKey && apiKey === settings.SYNC_API_KEY) {
+  if (apiKey && safeEqual(apiKey, settings.SYNC_API_KEY)) {
     c.set("smartToken", null);
     return next();
   }

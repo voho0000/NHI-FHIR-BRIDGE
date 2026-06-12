@@ -42,7 +42,28 @@ const SAME_SITE_ORIGINS = new Set([
   "http://127.0.0.1:3010",
 ]);
 
+// 2026-06-12 (audit P1-3): DNS-rebinding protection. A malicious page can
+// rebind its hostname to 127.0.0.1:3010; its requests then look
+// same-origin to the browser (no Origin header), pass the Origin check
+// below, and get the API key stamped on by this proxy. The Host header is
+// the one thing rebinding cannot forge — accept loopback hosts (any port,
+// to cover `next dev` on :3000) plus DASHBOARD_ALLOWED_HOSTS extras.
+const LOOPBACK_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const EXTRA_ALLOWED_HOSTS = new Set(
+  (process.env.DASHBOARD_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+);
+
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  const host = req.headers.get("host")?.toLowerCase() ?? "";
+  if (!LOOPBACK_HOST_RE.test(host) && !EXTRA_ALLOWED_HOSTS.has(host)) {
+    return new Response("forbidden: unrecognized Host (DNS-rebinding protection)", {
+      status: 403,
+    });
+  }
+
   // Browser fetch/XHR includes Origin on all cross-origin calls and on
   // POST/PUT/DELETE/PATCH calls (even same-origin). Same-origin GET/HEAD
   // doesn't always set Origin — allow when missing (matches normal

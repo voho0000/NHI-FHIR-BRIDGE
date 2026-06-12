@@ -9,7 +9,7 @@
  *   - Bearer token validation.
  */
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { and, eq } from "drizzle-orm";
 
@@ -240,7 +240,8 @@ export class SMARTAuthServer {
     if (row.clientId !== clientId || row.redirectUri !== redirectUri) return null;
     if (row.expiresAt < new Date()) return null;
 
-    // PKCE verification.
+    // PKCE verification. timingSafeEqual over digests (audit 2026-06-12)
+    // instead of `!==`, which leaks match-prefix length through timing.
     if (row.codeChallenge) {
       if (!codeVerifier) return null;
       let computed: string;
@@ -250,7 +251,9 @@ export class SMARTAuthServer {
       } else {
         computed = codeVerifier;
       }
-      if (computed !== row.codeChallenge) return null;
+      const ca = createHash("sha256").update(computed).digest();
+      const cb = createHash("sha256").update(row.codeChallenge).digest();
+      if (!timingSafeEqual(ca, cb)) return null;
     }
 
     dbi
