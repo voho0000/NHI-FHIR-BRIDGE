@@ -16,11 +16,12 @@ export const SESSION_EXPIRED_ERROR = "__SESSION_EXPIRED__";
 
 // v0.14+: bundle slot moved from chrome.storage.session (10 MB ceiling
 // that imaging blew past) to chrome.storage.local with the
-// unlimitedStorage permission. Happy-path stash is metadata-only because
-// the SW auto-triggers chrome.downloads.download via an offscreen doc
-// at sync completion — only cancel/error paths keep the JSON for retry.
-// TTL sweep (PENDING_BUNDLE_TTL_MS) and explicit clear gestures bound
-// the PHI window in the same way the session-storage approach did.
+// unlimitedStorage permission. The SW does NOT auto-download — the
+// popup's download button reads the JSON and triggers
+// chrome.downloads.download (the popup click is the user gesture Chrome
+// requires for saveAs; the v0.14 offscreen auto-save attempt failed
+// silently for >10 MB bundles). TTL sweep (PENDING_BUNDLE_TTL_MS) and
+// explicit clear gestures bound the PHI window.
 export const PENDING_BUNDLE_KEY = "pendingFhirBundle";
 // v0.16.1: bundle storage split. PENDING_BUNDLE_KEY now holds metadata
 // only (~200 B: filename / bytes / generatedAt / patientId / hasJson).

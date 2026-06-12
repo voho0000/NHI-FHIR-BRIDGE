@@ -28,6 +28,11 @@ export async function postStructured(backend, page_type, items, syncApiKey, pati
       patient_override: patientOverride || null,
     }),
   });
+  if (r.status === 401) {
+    // Audit P2-8: raw English 401 JSON was the only hint that the API key
+    // is wrong — point the user at the actual fix.
+    throw new Error("API Key 驗證失敗（401）— 請到「⚙️ 進階設定」檢查 Sync API Key 是否與後端一致");
+  }
   if (!r.ok)
     throw new Error(`POST upload-structured ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return await r.json();

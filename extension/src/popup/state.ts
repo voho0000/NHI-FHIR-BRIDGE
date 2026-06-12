@@ -23,6 +23,9 @@
 export const state = {
   connState: "unknown",
   connFailReason: null,
+  // true while connected to a non-loopback http:// backend (audit P2-1)
+  // — keeps the cleartext-transport warning visible in the banner.
+  connInsecure: false,
   backendPatient: { state: "unknown", count: 0, lastUpdated: null },
   localBundle: { exists: false, count: 0, generatedAt: 0, patientId: null },
   activeStep: 1,

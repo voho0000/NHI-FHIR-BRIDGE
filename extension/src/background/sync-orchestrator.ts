@@ -1431,9 +1431,11 @@ export async function runNhiApiSync({
         // too (v0.18.3) so the real 身分證 never reaches the backend on the
         // de-id path. Default OFF → dashboard sees the raw values they typed
         // (consistent with "民眾自用").
-        patient_id: maskEnabled
-          ? maskId(patientOverride.id_no || "", "X")
-          : patientOverride.id_no || "",
+        // Audit P2-2 (2026-06-12): the history log NEVER needs the full
+        // national ID — the dashboard only displays it. Always send the
+        // half-masked form (human-recognizable, shoulder-surfing-safe)
+        // regardless of the de-identify toggle.
+        patient_id: maskId(patientOverride.id_no || "", "X"),
         patient_name: maskEnabled
           ? maskName(patientOverride.name || "")
           : patientOverride.name || "",

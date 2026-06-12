@@ -22,6 +22,56 @@ import { state } from "./state.js";
 import { _originPatternFor, currentMode } from "./utils.js";
 import { _refreshButtonStates } from "./wizard.js";
 
+// ── Backend-URL validation (audit P2-1, 2026-06-12) ─────────────────
+// The SMART App URL has had a https-or-loopback gate since v0.12; the
+// backend URL had none — a typo'd `javascript:` URL reached the
+// dashboard link's href, and an http:// LAN URL ships the full FHIR
+// payload (including the national ID) in cleartext.
+const _LOOPBACK_HOSTNAME_RE = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/i;
+
+// null = unparseable / non-http(s) scheme (hard reject).
+export function classifyBackendUrl(url): "ok" | "insecure-http" | null {
+  let u: URL;
+  try {
+    u = new URL((url || "").trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol === "https:") return "ok";
+  if (u.protocol !== "http:") return null;
+  return _LOOPBACK_HOSTNAME_RE.test(u.hostname) ? "ok" : "insecure-http";
+}
+
+// Dashboard URL is only derivable for the default port pairing
+// (backend :8010 ↔ dashboard :3010). For any other port we hide the
+// link instead of pointing it at the backend's JSON (audit P3) — and
+// going through URL() means a non-http(s) value can never reach href.
+function _dashboardUrlFor(backendUrl): string | null {
+  try {
+    const u = new URL((backendUrl || "").trim());
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (u.port !== "8010") return null;
+    u.port = "3010";
+    u.pathname = "/";
+    u.search = "";
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+function _applyDashboardLink() {
+  const dashUrl = _dashboardUrlFor(els.backendUrl.value);
+  if (dashUrl) {
+    els.dashboardLink.href = dashUrl;
+    els.dashboardLink.hidden = false;
+  } else {
+    els.dashboardLink.removeAttribute("href");
+    els.dashboardLink.hidden = true;
+  }
+}
+
 // Persisted-state keys. Backend URL and API key persist across browser sessions.
 export async function loadBackendUrl() {
   const { backendUrl, syncApiKey, smartAppLaunchUrl } = await chrome.storage.local.get([
@@ -32,7 +82,7 @@ export async function loadBackendUrl() {
   els.backendUrl.value = backendUrl || DEFAULT_BACKEND;
   els.syncApiKey.value = syncApiKey || "";
   els.smartAppUrl.value = smartAppLaunchUrl || DEFAULT_SMART_APP_LAUNCH;
-  els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
+  _applyDashboardLink();
 }
 
 // Banner copy. Drop the leading ✗ — the red dot left of the text is
@@ -47,11 +97,13 @@ const _CONN_LABELS = {
     return (
       {
         "no-url": "未設定 Backend URL",
+        "bad-url": "Backend URL 無效",
         "no-permission": "未授權連線",
         network: "連不上後端",
         timeout: "連線逾時",
         http: `HTTP ${r.detail || ""}`.trim(),
         "not-fhir": "回應不是 FHIR",
+        auth: "API Key 驗證失敗",
       }[r.kind] ?? "連線失敗"
     );
   },
@@ -59,6 +111,8 @@ const _CONN_LABELS = {
 
 const _CONN_HELP = {
   "no-url": "請到「進階設定」填入 Backend URL，例如 <code>http://localhost:8010</code>。",
+  "bad-url":
+    "Backend URL 必須是 <code>http://</code> 或 <code>https://</code> 開頭的完整網址，例如 <code>http://localhost:8010</code>。",
   "no-permission": "Chrome 阻擋了跨來源請求。請重新開 popup，當權限對話框跳出時按「允許」。",
   network:
     "後端可能還沒啟動。請執行：<br><code>docker compose up -d</code><br>確認 backend 容器跑起來再重試。",
@@ -66,7 +120,17 @@ const _CONN_HELP = {
   http: "Backend 回應錯誤狀態碼。檢查 backend 的 log：<br><code>docker compose logs backend</code>",
   "not-fhir":
     "這個 URL 回了東西，但不是 FHIR CapabilityStatement。確認 Backend URL 指向 NHI-FHIR-Bridge 的 /fhir 根目錄。",
+  // Audit P2-8: /fhir/metadata is auth-exempt per the SMART discovery
+  // spec, so a wrong key used to show 🟢 已連線 and then fail every
+  // upload with raw English 401s — a dead end pointing at a green banner.
+  auth: "後端設定了 <code>SYNC_API_KEY</code>，但目前填的 API Key 不符（或未填）。請到「進階設定」的 Sync API Key 欄位，填入與後端 <code>.env</code> 相同的值。",
 };
+
+// Static warning shown while connected over cleartext HTTP to a
+// non-loopback host (audit P2-1). Constant string — never interpolate
+// user/NHI data into _CONN_HELP/_INSECURE_HELP (they reach innerHTML).
+const _INSECURE_HELP =
+  "⚠️ 目前設定為<strong>非本機的 http://</strong> 後端 — 健康資料（含身分證）將以<strong>明文</strong>在網路上傳輸。建議改用 https://，或只連本機 <code>localhost</code>。";
 
 export function _renderConnBanner() {
   const banner = els.connBanner;
@@ -82,6 +146,9 @@ export function _renderConnBanner() {
   if (state.connState === "fail" && state.connFailReason?.kind) {
     els.connHelp.hidden = false;
     els.connHelp.innerHTML = _CONN_HELP[state.connFailReason.kind] ?? "";
+  } else if (state.connState === "ok" && state.connInsecure) {
+    els.connHelp.hidden = false;
+    els.connHelp.innerHTML = _INSECURE_HELP;
   } else {
     els.connHelp.hidden = true;
     els.connHelp.innerHTML = "";
@@ -91,7 +158,9 @@ export function _renderConnBanner() {
   // a small green pill in the header so the popup body has more room
   // for actionable content. Anything else (unknown / checking / fail)
   // keeps the full banner so progress + error help has space to render.
-  const isOk = state.connState === "ok";
+  // Cleartext-HTTP connections (audit P2-1) deliberately keep the full
+  // banner so the warning stays visible instead of hiding in the pill.
+  const isOk = state.connState === "ok" && !state.connInsecure;
   if (els.connSection) els.connSection.hidden = isOk;
   if (els.connMini) {
     els.connMini.hidden = !isOk;
@@ -126,6 +195,16 @@ export async function testBackendConnection() {
     _refreshButtonStates();
     return false;
   }
+  const urlClass = classifyBackendUrl(url);
+  if (urlClass === null) {
+    state.connState = "fail";
+    state.connFailReason = { kind: "bad-url" };
+    state.connInsecure = false;
+    _renderConnBanner();
+    _refreshButtonStates();
+    return false;
+  }
+  state.connInsecure = urlClass === "insecure-http";
   state.connState = "checking";
   state.connFailReason = null;
   _renderConnBanner();
@@ -143,7 +222,8 @@ export async function testBackendConnection() {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {
-    const res = await fetch(`${url.replace(/\/$/, "")}/fhir/metadata`, { signal: ctrl.signal });
+    const base = url.replace(/\/$/, "");
+    const res = await fetch(`${base}/fhir/metadata`, { signal: ctrl.signal });
     if (!res.ok) {
       state.connState = "fail";
       state.connFailReason = { kind: "http", detail: res.status };
@@ -153,8 +233,22 @@ export async function testBackendConnection() {
         state.connState = "fail";
         state.connFailReason = { kind: "not-fhir" };
       } else {
-        state.connState = "ok";
-        state.connFailReason = null;
+        // Audit P2-8: /fhir/metadata is auth-exempt (SMART discovery), so
+        // it can't tell us whether the API key matches. Probe a key-gated
+        // endpoint too — otherwise a wrong key shows 🟢 已連線 and every
+        // upload then dies with 401s pointing at a green banner.
+        const key = els.syncApiKey.value.trim();
+        const authRes = await fetch(`${base}/sync/logs?limit=1`, {
+          headers: key ? { "X-Sync-API-Key": key } : {},
+          signal: ctrl.signal,
+        });
+        if (authRes.status === 401) {
+          state.connState = "fail";
+          state.connFailReason = { kind: "auth" };
+        } else {
+          state.connState = "ok";
+          state.connFailReason = null;
+        }
       }
     }
   } catch (e) {
@@ -252,6 +346,6 @@ export function onModeChange() {
 // Backend-URL change handler (wired in the entry).
 export function onBackendUrlChange() {
   chrome.storage.local.set({ backendUrl: els.backendUrl.value.trim() });
-  els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
+  _applyDashboardLink();
   if (currentMode() === "backend") testBackendConnection();
 }

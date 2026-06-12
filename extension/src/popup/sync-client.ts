@@ -59,7 +59,7 @@ export async function apiSyncNhi() {
   try {
     url = new URL(tab.url);
   } catch {
-    setStatus("active tab has no URL", "error");
+    setStatus("使用中的分頁沒有網址 — 請切換到健保存摺網頁再試", "error");
     return;
   }
   const onLogin = await isOnNhiLoginPage(tab.id, url);
@@ -163,9 +163,15 @@ export async function launch() {
   }
   setStatus("準備開啟醫析…", "info");
   try {
+    // /smart/launch-context is key-gated on the backend — without the
+    // header the launch 401s whenever SYNC_API_KEY is set (audit P2-8).
+    const key = els.syncApiKey.value.trim();
     const res = await fetch(`${backend}/smart/launch-context`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(key ? { "X-Sync-API-Key": key } : {}),
+      },
       body: JSON.stringify({ patient_id: patientId }),
     });
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);

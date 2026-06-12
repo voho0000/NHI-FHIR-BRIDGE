@@ -5764,6 +5764,9 @@
         patient_override: patientOverride || null
       })
     });
+    if (r.status === 401) {
+      throw new Error("API Key \u9A57\u8B49\u5931\u6557\uFF08401\uFF09\u2014 \u8ACB\u5230\u300C\u2699\uFE0F \u9032\u968E\u8A2D\u5B9A\u300D\u6AA2\u67E5 Sync API Key \u662F\u5426\u8207\u5F8C\u7AEF\u4E00\u81F4");
+    }
     if (!r.ok)
       throw new Error(`POST upload-structured ${r.status}: ${(await r.text()).slice(0, 200)}`);
     return await r.json();
@@ -9227,7 +9230,11 @@
           // too (v0.18.3) so the real 身分證 never reaches the backend on the
           // de-id path. Default OFF → dashboard sees the raw values they typed
           // (consistent with "民眾自用").
-          patient_id: maskEnabled ? maskId(patientOverride.id_no || "", "X") : patientOverride.id_no || "",
+          // Audit P2-2 (2026-06-12): the history log NEVER needs the full
+          // national ID — the dashboard only displays it. Always send the
+          // half-masked form (human-recognizable, shoulder-surfing-safe)
+          // regardless of the de-identify toggle.
+          patient_id: maskId(patientOverride.id_no || "", "X"),
           patient_name: maskEnabled ? maskName(patientOverride.name || "") : patientOverride.name || "",
           total,
           breakdown,

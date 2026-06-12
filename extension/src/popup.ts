@@ -104,7 +104,7 @@ async function init() {
 
   const tab = await getActiveTab();
   if (!tab?.url) {
-    setStatus("no active tab", "error");
+    setStatus("找不到使用中的分頁 — 請先開啟健保存摺網頁", "error");
     els.syncApiBtn.dataset.offNhi = "1";
     _refreshButtonStates();
     return;

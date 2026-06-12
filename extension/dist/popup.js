@@ -1730,6 +1730,9 @@
   var state = {
     connState: "unknown",
     connFailReason: null,
+    // true while connected to a non-loopback http:// backend (audit P2-1)
+    // — keeps the cleartext-transport warning visible in the banner.
+    connInsecure: false,
     backendPatient: { state: "unknown", count: 0, lastUpdated: null },
     localBundle: { exists: false, count: 0, generatedAt: 0, patientId: null },
     activeStep: 1,
@@ -2686,6 +2689,46 @@
   }
 
   // src/popup/connection.ts
+  var _LOOPBACK_HOSTNAME_RE = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/i;
+  function classifyBackendUrl(url) {
+    let u;
+    try {
+      u = new URL((url || "").trim());
+    } catch {
+      return null;
+    }
+    if (u.protocol === "https:")
+      return "ok";
+    if (u.protocol !== "http:")
+      return null;
+    return _LOOPBACK_HOSTNAME_RE.test(u.hostname) ? "ok" : "insecure-http";
+  }
+  function _dashboardUrlFor(backendUrl) {
+    try {
+      const u = new URL((backendUrl || "").trim());
+      if (u.protocol !== "http:" && u.protocol !== "https:")
+        return null;
+      if (u.port !== "8010")
+        return null;
+      u.port = "3010";
+      u.pathname = "/";
+      u.search = "";
+      u.hash = "";
+      return u.toString();
+    } catch {
+      return null;
+    }
+  }
+  function _applyDashboardLink() {
+    const dashUrl = _dashboardUrlFor(els.backendUrl.value);
+    if (dashUrl) {
+      els.dashboardLink.href = dashUrl;
+      els.dashboardLink.hidden = false;
+    } else {
+      els.dashboardLink.removeAttribute("href");
+      els.dashboardLink.hidden = true;
+    }
+  }
   async function loadBackendUrl() {
     const { backendUrl, syncApiKey, smartAppLaunchUrl } = await chrome.storage.local.get([
       "backendUrl",
@@ -2695,7 +2738,7 @@
     els.backendUrl.value = backendUrl || DEFAULT_BACKEND;
     els.syncApiKey.value = syncApiKey || "";
     els.smartAppUrl.value = smartAppLaunchUrl || DEFAULT_SMART_APP_LAUNCH;
-    els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
+    _applyDashboardLink();
   }
   var _CONN_LABELS = {
     unknown: "\u5C1A\u672A\u6AA2\u67E5",
@@ -2705,22 +2748,30 @@
       const r = state.connFailReason || {};
       return {
         "no-url": "\u672A\u8A2D\u5B9A Backend URL",
+        "bad-url": "Backend URL \u7121\u6548",
         "no-permission": "\u672A\u6388\u6B0A\u9023\u7DDA",
         network: "\u9023\u4E0D\u4E0A\u5F8C\u7AEF",
         timeout: "\u9023\u7DDA\u903E\u6642",
         http: `HTTP ${r.detail || ""}`.trim(),
-        "not-fhir": "\u56DE\u61C9\u4E0D\u662F FHIR"
+        "not-fhir": "\u56DE\u61C9\u4E0D\u662F FHIR",
+        auth: "API Key \u9A57\u8B49\u5931\u6557"
       }[r.kind] ?? "\u9023\u7DDA\u5931\u6557";
     }
   };
   var _CONN_HELP = {
     "no-url": "\u8ACB\u5230\u300C\u9032\u968E\u8A2D\u5B9A\u300D\u586B\u5165 Backend URL\uFF0C\u4F8B\u5982 <code>http://localhost:8010</code>\u3002",
+    "bad-url": "Backend URL \u5FC5\u9808\u662F <code>http://</code> \u6216 <code>https://</code> \u958B\u982D\u7684\u5B8C\u6574\u7DB2\u5740\uFF0C\u4F8B\u5982 <code>http://localhost:8010</code>\u3002",
     "no-permission": "Chrome \u963B\u64CB\u4E86\u8DE8\u4F86\u6E90\u8ACB\u6C42\u3002\u8ACB\u91CD\u65B0\u958B popup\uFF0C\u7576\u6B0A\u9650\u5C0D\u8A71\u6846\u8DF3\u51FA\u6642\u6309\u300C\u5141\u8A31\u300D\u3002",
     network: "\u5F8C\u7AEF\u53EF\u80FD\u9084\u6C92\u555F\u52D5\u3002\u8ACB\u57F7\u884C\uFF1A<br><code>docker compose up -d</code><br>\u78BA\u8A8D backend \u5BB9\u5668\u8DD1\u8D77\u4F86\u518D\u91CD\u8A66\u3002",
     timeout: "5 \u79D2\u5167\u6C92\u6536\u5230\u56DE\u61C9 \u2014 backend \u53EF\u80FD\u9084\u5728\u555F\u52D5\u4E2D\uFF0C\u7B49 30 \u79D2\u518D\u6309\u91CD\u8A66\u3002",
     http: "Backend \u56DE\u61C9\u932F\u8AA4\u72C0\u614B\u78BC\u3002\u6AA2\u67E5 backend \u7684 log\uFF1A<br><code>docker compose logs backend</code>",
-    "not-fhir": "\u9019\u500B URL \u56DE\u4E86\u6771\u897F\uFF0C\u4F46\u4E0D\u662F FHIR CapabilityStatement\u3002\u78BA\u8A8D Backend URL \u6307\u5411 NHI-FHIR-Bridge \u7684 /fhir \u6839\u76EE\u9304\u3002"
+    "not-fhir": "\u9019\u500B URL \u56DE\u4E86\u6771\u897F\uFF0C\u4F46\u4E0D\u662F FHIR CapabilityStatement\u3002\u78BA\u8A8D Backend URL \u6307\u5411 NHI-FHIR-Bridge \u7684 /fhir \u6839\u76EE\u9304\u3002",
+    // Audit P2-8: /fhir/metadata is auth-exempt per the SMART discovery
+    // spec, so a wrong key used to show 🟢 已連線 and then fail every
+    // upload with raw English 401s — a dead end pointing at a green banner.
+    auth: "\u5F8C\u7AEF\u8A2D\u5B9A\u4E86 <code>SYNC_API_KEY</code>\uFF0C\u4F46\u76EE\u524D\u586B\u7684 API Key \u4E0D\u7B26\uFF08\u6216\u672A\u586B\uFF09\u3002\u8ACB\u5230\u300C\u9032\u968E\u8A2D\u5B9A\u300D\u7684 Sync API Key \u6B04\u4F4D\uFF0C\u586B\u5165\u8207\u5F8C\u7AEF <code>.env</code> \u76F8\u540C\u7684\u503C\u3002"
   };
+  var _INSECURE_HELP = "\u26A0\uFE0F \u76EE\u524D\u8A2D\u5B9A\u70BA<strong>\u975E\u672C\u6A5F\u7684 http://</strong> \u5F8C\u7AEF \u2014 \u5065\u5EB7\u8CC7\u6599\uFF08\u542B\u8EAB\u5206\u8B49\uFF09\u5C07\u4EE5<strong>\u660E\u6587</strong>\u5728\u7DB2\u8DEF\u4E0A\u50B3\u8F38\u3002\u5EFA\u8B70\u6539\u7528 https://\uFF0C\u6216\u53EA\u9023\u672C\u6A5F <code>localhost</code>\u3002";
   function _renderConnBanner() {
     const banner = els.connBanner;
     if (!banner)
@@ -2734,11 +2785,14 @@
     if (state.connState === "fail" && state.connFailReason?.kind) {
       els.connHelp.hidden = false;
       els.connHelp.innerHTML = _CONN_HELP[state.connFailReason.kind] ?? "";
+    } else if (state.connState === "ok" && state.connInsecure) {
+      els.connHelp.hidden = false;
+      els.connHelp.innerHTML = _INSECURE_HELP;
     } else {
       els.connHelp.hidden = true;
       els.connHelp.innerHTML = "";
     }
-    const isOk = state.connState === "ok";
+    const isOk = state.connState === "ok" && !state.connInsecure;
     if (els.connSection)
       els.connSection.hidden = isOk;
     if (els.connMini) {
@@ -2771,6 +2825,16 @@
       _refreshButtonStates();
       return false;
     }
+    const urlClass = classifyBackendUrl(url);
+    if (urlClass === null) {
+      state.connState = "fail";
+      state.connFailReason = { kind: "bad-url" };
+      state.connInsecure = false;
+      _renderConnBanner();
+      _refreshButtonStates();
+      return false;
+    }
+    state.connInsecure = urlClass === "insecure-http";
     state.connState = "checking";
     state.connFailReason = null;
     _renderConnBanner();
@@ -2786,7 +2850,8 @@
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 5e3);
     try {
-      const res = await fetch(`${url.replace(/\/$/, "")}/fhir/metadata`, { signal: ctrl.signal });
+      const base = url.replace(/\/$/, "");
+      const res = await fetch(`${base}/fhir/metadata`, { signal: ctrl.signal });
       if (!res.ok) {
         state.connState = "fail";
         state.connFailReason = { kind: "http", detail: res.status };
@@ -2796,8 +2861,18 @@
           state.connState = "fail";
           state.connFailReason = { kind: "not-fhir" };
         } else {
-          state.connState = "ok";
-          state.connFailReason = null;
+          const key = els.syncApiKey.value.trim();
+          const authRes = await fetch(`${base}/sync/logs?limit=1`, {
+            headers: key ? { "X-Sync-API-Key": key } : {},
+            signal: ctrl.signal
+          });
+          if (authRes.status === 401) {
+            state.connState = "fail";
+            state.connFailReason = { kind: "auth" };
+          } else {
+            state.connState = "ok";
+            state.connFailReason = null;
+          }
         }
       }
     } catch (e) {
@@ -2873,7 +2948,7 @@
   }
   function onBackendUrlChange() {
     chrome.storage.local.set({ backendUrl: els.backendUrl.value.trim() });
-    els.dashboardLink.href = els.backendUrl.value.replace(/:8010.*$/, ":3010");
+    _applyDashboardLink();
     if (currentMode() === "backend")
       testBackendConnection();
   }
@@ -2920,7 +2995,7 @@
     try {
       url = new URL(tab.url);
     } catch {
-      setStatus("active tab has no URL", "error");
+      setStatus("\u4F7F\u7528\u4E2D\u7684\u5206\u9801\u6C92\u6709\u7DB2\u5740 \u2014 \u8ACB\u5207\u63DB\u5230\u5065\u4FDD\u5B58\u647A\u7DB2\u9801\u518D\u8A66", "error");
       return;
     }
     const onLogin = await isOnNhiLoginPage(tab.id, url);
@@ -3001,9 +3076,13 @@
     }
     setStatus("\u6E96\u5099\u958B\u555F\u91AB\u6790\u2026", "info");
     try {
+      const key = els.syncApiKey.value.trim();
       const res = await fetch(`${backend}/smart/launch-context`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...key ? { "X-Sync-API-Key": key } : {}
+        },
         body: JSON.stringify({ patient_id: patientId })
       });
       if (!res.ok)
@@ -3174,7 +3253,7 @@
     await refreshPendingBundle();
     const tab = await getActiveTab();
     if (!tab?.url) {
-      setStatus("no active tab", "error");
+      setStatus("\u627E\u4E0D\u5230\u4F7F\u7528\u4E2D\u7684\u5206\u9801 \u2014 \u8ACB\u5148\u958B\u555F\u5065\u4FDD\u5B58\u647A\u7DB2\u9801", "error");
       els.syncApiBtn.dataset.offNhi = "1";
       _refreshButtonStates();
       return;
