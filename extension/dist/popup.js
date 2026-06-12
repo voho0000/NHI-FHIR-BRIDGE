@@ -1733,6 +1733,15 @@
     nhiTabId: null
   };
 
+  // src/popup/step-logic.ts
+  function _shouldJumpToResultStep(prev, status) {
+    if (status.running && prev?.running) return false;
+    if (prev?.phase === "done" && status.phase === "done" && !status.running && !prev.running) {
+      return false;
+    }
+    return true;
+  }
+
   // src/popup/utils.ts
   function isNhiTab(url) {
     if (!url) return false;
@@ -2144,8 +2153,7 @@
     const prev = state.latestStatus;
     state.latestStatus = status;
     _renderStatus();
-    const isIncrementalUpdate = prev?.phase === "done" && status.phase === "done" && !status.running && !prev.running;
-    if (state.wizardInitialized && state.activeStep !== 3 && !isIncrementalUpdate) {
+    if (state.wizardInitialized && state.activeStep !== 3 && _shouldJumpToResultStep(prev, status)) {
       _setActiveStep(3, { silent: true });
     }
     if (status.running) {

@@ -8,6 +8,7 @@
 import { _refreshLocalBundleState, checkBackendPatient } from "./data-state.js";
 import { els } from "./els.js";
 import { state } from "./state.js";
+import { _shouldJumpToResultStep } from "./step-logic.js";
 import { _fmtElapsed, currentMode } from "./utils.js";
 import { _refreshButtonStates, _refreshResultZone, _setActiveStep } from "./wizard.js";
 
@@ -222,18 +223,7 @@ export function applySyncStatus(status) {
   const prev = state.latestStatus;
   state.latestStatus = status;
   _renderStatus();
-  // Status banner lives inside step 3 — force-jump there so it's
-  // actually visible. Running sync OR a fresh completion both warrant
-  // being on the result step.
-  //
-  // v0.15+ exception: when both prev and current are "done" (and not
-  // running), this is just a SW background poll incrementally
-  // updating the progress text — we should NOT pull the user back
-  // from step 4 (SMART app launcher) just because a few more
-  // imaging frames landed. Re-render in place only.
-  const isIncrementalUpdate =
-    prev?.phase === "done" && status.phase === "done" && !status.running && !prev.running;
-  if (state.wizardInitialized && state.activeStep !== 3 && !isIncrementalUpdate) {
+  if (state.wizardInitialized && state.activeStep !== 3 && _shouldJumpToResultStep(prev, status)) {
     _setActiveStep(3, { silent: true });
   }
   if (status.running) {

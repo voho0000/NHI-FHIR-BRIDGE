@@ -1,6 +1,6 @@
 {
   "name": "nhi-fhir-bridge",
-  "version": "0.18.4",
+  "version": "0.18.5",
   "private": true,
   "description": "NHI 健康存摺 → FHIR R4 bridge with extension, backend, and dashboard.",
   "workspaces": [

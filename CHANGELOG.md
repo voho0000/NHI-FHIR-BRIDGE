@@ -3,9 +3,13 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.18.5 重點 — 2026-06-13
+
+- **修「同步中無法切到第 ② 步看資料」**：取得健保存摺資料的過程中，若切到「② 您的資料」查看，約一兩秒就會被自動拉回「③ 取得資料」的進度畫面。原因是同步每隔約 1-2 秒寫一次進度，每次都把畫面強制跳回第 ③ 步。現在同步進行中的進度更新不再搶走你的畫面；只有「開始同步」「同步完成／失敗」「重開視窗接回進行中的同步」才會跳到第 ③ 步。
+
 ## 0.18.4 重點 — 2026-06-13
 
-**🔒 隱私與安全總體檢 — 外部稽核後的修補（尚未發布，內容可能再增補）**
+**🔒 隱私與安全總體檢 — 外部稽核後的修補**
 
 - **測試資料去識別化**：repo 內測試資料曾含真實格式的身分證字號與生日，全面換成「檢查碼故意不合法」的合成假資料；新增 CI 守門（`scripts/check-no-real-twid.mjs`），只要 tracked 檔案出現檢查碼合法的身分證字號就擋下。
 - **修「更新 extension 後 PHI bundle 殘留」bug**：舊版更新 extension 時會誤刪 bundle 的中繼資料、留下孤兒的大型健康資料 JSON 永遠清不掉。現在更新時兩者一起清乾淨。
