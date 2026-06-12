@@ -6,7 +6,7 @@
 // context into the configured SMART App URL. Both gate on the patient
 // override + a fresh connectivity check.
 
-import { derivePatientId } from "@nhi-fhir-bridge/mapper";
+import { effectiveFhirPatientId } from "@nhi-fhir-bridge/mapper";
 import { testBackendConnection } from "./connection.js";
 import { DEFAULT_SMART_APP_LAUNCH, RANGE_LABELS } from "./constants.js";
 import { els } from "./els.js";
@@ -150,8 +150,10 @@ export async function launch() {
     setStatus("還沒有身分資料 — 請先按「取得健保存摺資料」一次", "error");
     return;
   }
-  // Backend tracks Patient under its hashed FHIR id, not the raw national ID.
-  const patientId = derivePatientId(rawId);
+  // Backend tracks Patient under its hashed FHIR id, not the raw national
+  // ID. De-identified syncs store under the masked-id hash (audit P1-1).
+  const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
+  const patientId = effectiveFhirPatientId(rawId, maskNameEnabled === true);
   // Re-test connection even if banner shows ok — backend may have gone
   // down since the last probe.
   const ok = await testBackendConnection();

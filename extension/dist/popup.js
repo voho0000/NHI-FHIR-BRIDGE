@@ -571,6 +571,9 @@
       return s.slice(0, 2) + char.repeat(s.length - 4) + s.slice(-2);
     return s;
   }
+  function effectiveFhirPatientId(idNo, deidentify) {
+    return derivePatientId(deidentify ? maskId(idNo, "X") : idNo);
+  }
   function maskName(name) {
     const trimmed = (name ?? "").trim();
     if (!trimmed || trimmed === "Unknown")
@@ -2311,7 +2314,8 @@
     const url = els.backendUrl.value.trim().replace(/\/$/, "");
     const key = els.syncApiKey.value.trim();
     const headers = key ? { "X-Sync-API-Key": key } : {};
-    const fhirPid = derivePatientId(ov.id_no);
+    const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
+    const fhirPid = effectiveFhirPatientId(ov.id_no, maskNameEnabled === true);
     try {
       const pr = await fetch(`${url}/fhir/Patient/${encodeURIComponent(fhirPid)}`, { headers });
       if (pr.status === 404) {
@@ -2988,7 +2992,8 @@
       setStatus("\u9084\u6C92\u6709\u8EAB\u5206\u8CC7\u6599 \u2014 \u8ACB\u5148\u6309\u300C\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u300D\u4E00\u6B21", "error");
       return;
     }
-    const patientId = derivePatientId(rawId);
+    const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
+    const patientId = effectiveFhirPatientId(rawId, maskNameEnabled === true);
     const ok = await testBackendConnection();
     if (!ok) {
       setStatus("\u26D4 \u9023\u4E0D\u4E0A\u672C\u6A5F\u4F3A\u670D\u5668 \u2014 \u8ACB\u770B\u4E0A\u65B9\u63D0\u793A\u8AAA\u660E", "error");

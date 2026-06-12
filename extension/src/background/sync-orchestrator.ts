@@ -1253,7 +1253,12 @@ export async function runNhiApiSync({
     if (patientOverride.id_no && total > 0) {
       try {
         await setStatus({ progress: "📦 整理伺服器上的完整資料…", totalResources: total });
-        const bundle = await exportPatientBundle(backend, syncApiKey, patientOverride.id_no);
+        const bundle = await exportPatientBundle(
+          backend,
+          syncApiKey,
+          patientOverride.id_no,
+          maskEnabled,
+        );
         // Pass the same dateRange the user picked through so the
         // downloaded filename reflects "最近 3 年" → 2023-2026 instead
         // of always synthesizing today-1y → today.

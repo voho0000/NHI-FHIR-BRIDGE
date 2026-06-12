@@ -8,6 +8,7 @@ import * as systems from "@nhi-fhir-bridge/mapper";
 import {
   deidBirthDate,
   derivePatientId,
+  effectiveFhirPatientId,
   looksLikeTwNationalId,
   mapPatient,
   maskId,
@@ -68,6 +69,18 @@ describe("mapPatient", () => {
     const r = mapPatient({ identifier: "P001", name: "Foo" });
     const ids = r.identifier;
     expect(ids.some((i: any) => i.system === systems.HIS_LOCAL_PATIENT_MRN)).toBe(true);
+  });
+
+  test("half-masked TWID keeps the national-id system (audit P1-1)", () => {
+    // De-identified syncs feed the masked form straight into mapPatient
+    // (both X for filenames/bundle and * for display) — the identifier's
+    // TYPE is still 身分證, so the system must stay self-describing.
+    for (const masked of ["A12345XXXX", "A12345****"]) {
+      const r = mapPatient({ identifier: masked, name: "陳O文" });
+      expect(r.identifier[0].system).toBe(systems.TW_NATIONAL_ID);
+      expect(r.identifier[0].value).toBe(masked);
+      expect(r.id).toBe(derivePatientId(masked));
+    }
   });
 
   test("birth date passes through", () => {
@@ -168,6 +181,26 @@ describe("maskId", () => {
   });
   test("trims whitespace first", () => {
     expect(maskId("  P123456789  ")).toBe("P12345****");
+  });
+});
+
+describe("effectiveFhirPatientId (audit P1-1)", () => {
+  test("deidentify=false hashes the full id (unchanged behavior)", () => {
+    expect(effectiveFhirPatientId(PATIENT_ID, false)).toBe(derivePatientId(PATIENT_ID));
+  });
+  test("deidentify=true hashes the HALF-MASKED id, not the full one", () => {
+    const masked = maskId(PATIENT_ID, "X"); // A12345XXXX
+    expect(effectiveFhirPatientId(PATIENT_ID, true)).toBe(derivePatientId(masked));
+    // The whole point: a de-identified Patient.id must not be the
+    // brute-forceable hash of the full national ID.
+    expect(effectiveFhirPatientId(PATIENT_ID, true)).not.toBe(derivePatientId(PATIENT_ID));
+  });
+  test("matches what the backend derives after deidentifyOverride pre-masks id_no", () => {
+    // Backend path: extension masks id_no with X before upload, backend
+    // hashes what it receives — both paths must land on the same id.
+    expect(derivePatientId(maskId(PATIENT_ID, "X"))).toBe(
+      effectiveFhirPatientId(PATIENT_ID, true),
+    );
   });
 });
 

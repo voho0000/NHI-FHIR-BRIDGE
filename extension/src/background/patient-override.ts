@@ -60,33 +60,38 @@ export function deidentifyOverride(ov) {
 
 export function buildOverridePatient(ov, maskEnabled) {
   const displayName = maskEnabled ? maskName(ov.name || "") : ov.name || "";
-  // Phase-1 migration: birthDate/gender added below.
+  // De-identify at the INPUT, not by post-masking the resource (audit
+  // P1-1, 2026-06-12). The previous version hashed the FULL national ID
+  // into Patient.id even with the toggle on, reasoning the hash was
+  // "non-reversible" — but derivePatientId is an UNSALTED SHA-1 over a
+  // ~3×10⁸-value keyspace, brute-forceable in seconds, so the hash
+  // quietly undid the identifier masking. Feeding the half-masked id in
+  // here means Patient.id, identifier[].value AND every
+  // subject.reference (assembleLocalBundle propagates patient.id to all
+  // mappers) derive from the masked form: consistent within the bundle,
+  // and recovering the hash input reveals nothing the bundle doesn't
+  // already display. Trade-off: resource ids differ between toggle
+  // states — that's the point; id stability across modes was the leak.
+  // Same derivation as the backend path (deidentifyOverride masks id_no
+  // pre-upload) and effectiveFhirPatientId in the mapper.
+  const effectiveId = maskEnabled && ov.id_no ? maskId(ov.id_no, "X") : ov.id_no;
   const raw: any = {
-    id: ov.id_no,
-    identifier: ov.id_no,
-    name: displayName || ov.id_no,
+    id: effectiveId,
+    identifier: effectiveId,
+    name: displayName || effectiveId,
   };
   if (ov.birth_date) raw.birthDate = ov.birth_date;
   if (ov.gender) raw.gender = ov.gender;
   const patient = mapPatient(raw);
 
-  // De-identify the two remaining cleartext PII fields when the toggle is
-  // on. We post-process the assembled resource (rather than masking the
-  // raw input) deliberately:
-  //   • Patient.id is a salted hash of the REAL id (derivePatientId) — it
-  //     is non-reversible and already de-identified by design, and every
-  //     subject.reference points at it. Leaving it untouched keeps all
-  //     intra-bundle references consistent and stable whether the toggle
-  //     is on or off.
-  //   • Only identifier[].value (the real 身分證) and birthDate carry
-  //     cleartext PII, so those are the only fields we redact here.
-  // Name is already masked upstream via `displayName`. Default OFF: the
-  // 民眾自用 workflow needs the real id_no so SMART apps can match the
-  // patient — masking only matters when the bundle will be shared/demoed.
-  if (maskEnabled) {
-    const idVal = patient.identifier?.[0]?.value;
-    if (idVal) patient.identifier[0].value = maskId(idVal, "X");
-    if (patient.birthDate) patient.birthDate = deidBirthDate(patient.birthDate);
+  // birthDate is the one remaining cleartext PII field after the input
+  // masking above (mapPatient keeps the masked-TWID identifier.system
+  // as national-id so the field's TYPE stays self-describing). Name is
+  // masked upstream via `displayName`. Default OFF: the 民眾自用
+  // workflow needs the real id_no so SMART apps can match the patient —
+  // masking only matters when the bundle will be shared/demoed.
+  if (maskEnabled && patient.birthDate) {
+    patient.birthDate = deidBirthDate(patient.birthDate);
   }
   return patient;
 }

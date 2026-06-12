@@ -14,6 +14,13 @@ import * as systems from "./systems";
 // canonical national-id system or as a local hospital MRN.
 const TW_NATIONAL_ID_RE = /^[A-Z][12]\d{8}$/;
 
+// Half-masked TWID, the form the de-identify toggle produces
+// (F12345XXXX / F12345****). Still semantically a national ID — the
+// identifier.system should keep saying so (audit P1-1, 2026-06-12: with
+// the toggle on, the masked form now feeds mapPatient directly on both
+// the local-bundle and backend-upload paths).
+const MASKED_TW_ID_RE = /^[A-Z][12]\d{4}[X*]{4}$/;
+
 export function looksLikeTwNationalId(value: string | null | undefined): boolean {
   if (!value) return false;
   return TW_NATIONAL_ID_RE.test(value.trim().toUpperCase());
@@ -21,10 +28,11 @@ export function looksLikeTwNationalId(value: string | null | undefined): boolean
 
 export function mapPatient(raw: Record<string, any>): Record<string, any> {
   const rawId = String(raw.identifier ?? raw.id ?? "unknown");
-  // FHIR Patient.id is the hashed/salted form. Real national ID stays
-  // only in identifier[].value so a leaked Bundle (or a SMART app token
-  // payload containing patient_id) doesn't disclose it via every
-  // subject.reference.
+  // FHIR Patient.id is the hashed form (unsalted SHA-1 — see the
+  // effectiveFhirPatientId docs in helpers.ts for why de-identified
+  // bundles must feed the MASKED id in here, not the full one). The
+  // raw input stays only in identifier[].value so the id doesn't leak
+  // into URLs / subject.reference / SMART token payloads.
   const patientId = derivePatientId(rawId);
 
   // Use `??` (not just default arg) so explicit null from the LLM also
@@ -50,9 +58,10 @@ export function mapPatient(raw: Record<string, any>): Record<string, any> {
     identifier: [
       {
         use: "official",
-        system: looksLikeTwNationalId(rawId)
-          ? systems.TW_NATIONAL_ID
-          : systems.HIS_LOCAL_PATIENT_MRN,
+        system:
+          looksLikeTwNationalId(rawId) || MASKED_TW_ID_RE.test(rawId.trim().toUpperCase())
+            ? systems.TW_NATIONAL_ID
+            : systems.HIS_LOCAL_PATIENT_MRN,
         value: rawId,
       },
     ],

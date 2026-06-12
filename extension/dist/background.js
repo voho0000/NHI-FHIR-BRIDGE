@@ -620,6 +620,9 @@
       return s.slice(0, 2) + char.repeat(s.length - 4) + s.slice(-2);
     return s;
   }
+  function effectiveFhirPatientId(idNo, deidentify) {
+    return derivePatientId(deidentify ? maskId(idNo, "X") : idNo);
+  }
   function deidBirthDate(iso) {
     const s = (iso ?? "").trim();
     if (!s)
@@ -5614,6 +5617,7 @@
 
   // ../packages/mapper/src/patient.ts
   var TW_NATIONAL_ID_RE = /^[A-Z][12]\d{8}$/;
+  var MASKED_TW_ID_RE = /^[A-Z][12]\d{4}[X*]{4}$/;
   function looksLikeTwNationalId(value) {
     if (!value)
       return false;
@@ -5638,7 +5642,7 @@
       identifier: [
         {
           use: "official",
-          system: looksLikeTwNationalId(rawId) ? TW_NATIONAL_ID : HIS_LOCAL_PATIENT_MRN,
+          system: looksLikeTwNationalId(rawId) || MASKED_TW_ID_RE.test(rawId.trim().toUpperCase()) ? TW_NATIONAL_ID : HIS_LOCAL_PATIENT_MRN,
           value: rawId
         }
       ],
@@ -5676,6 +5680,75 @@
     return "unknown";
   }
 
+  // src/background/patient-override.ts
+  function applyDateRangeToPath(path, dateRange) {
+    if (!dateRange || !dateRange.start && !dateRange.end)
+      return path;
+    const s = (dateRange.start || "").slice(0, 10);
+    const e = (dateRange.end || "").slice(0, 10);
+    let p = path;
+    if (/[?&]s_date=/.test(p)) {
+      p = p.replace(/([?&]s_date=)[^&]*/, `$1${s}`);
+    } else {
+      p += `${p.includes("?") ? "&" : "?"}s_date=${s}`;
+    }
+    if (/[?&]e_date=/.test(p)) {
+      p = p.replace(/([?&]e_date=)[^&]*/, `$1${e}`);
+    } else {
+      p += `&e_date=${e}`;
+    }
+    return p;
+  }
+  async function isMaskEnabled() {
+    try {
+      const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
+      return maskNameEnabled === true;
+    } catch {
+      return false;
+    }
+  }
+  function deidentifyOverride(ov) {
+    return {
+      ...ov,
+      name: ov?.name ? maskName(ov.name) : ov?.name,
+      id_no: ov?.id_no ? maskId(ov.id_no, "X") : ov?.id_no,
+      birth_date: ov?.birth_date ? deidBirthDate(ov.birth_date) : ov?.birth_date
+    };
+  }
+  function buildOverridePatient(ov, maskEnabled) {
+    const displayName = maskEnabled ? maskName(ov.name || "") : ov.name || "";
+    const effectiveId = maskEnabled && ov.id_no ? maskId(ov.id_no, "X") : ov.id_no;
+    const raw = {
+      id: effectiveId,
+      identifier: effectiveId,
+      name: displayName || effectiveId
+    };
+    if (ov.birth_date)
+      raw.birthDate = ov.birth_date;
+    if (ov.gender)
+      raw.gender = ov.gender;
+    const patient = mapPatient(raw);
+    if (maskEnabled && patient.birthDate) {
+      patient.birthDate = deidBirthDate(patient.birthDate);
+    }
+    return patient;
+  }
+  function replaceNameDeep(value, needle, replacement) {
+    if (!needle || needle === replacement)
+      return value;
+    if (typeof value === "string")
+      return value.split(needle).join(replacement);
+    if (Array.isArray(value))
+      return value.map((v) => replaceNameDeep(v, needle, replacement));
+    if (value && typeof value === "object") {
+      const out = {};
+      for (const k in value)
+        out[k] = replaceNameDeep(value[k], needle, replacement);
+      return out;
+    }
+    return value;
+  }
+
   // src/background/backend-upload.ts
   async function postStructured(backend, page_type, items, syncApiKey, patientOverride) {
     const r = await fetch(`${backend}/sync/upload-structured`, {
@@ -5695,8 +5768,8 @@
       throw new Error(`POST upload-structured ${r.status}: ${(await r.text()).slice(0, 200)}`);
     return await r.json();
   }
-  async function exportPatientBundle(backend, syncApiKey, patientId) {
-    const fhirPid = derivePatientId(patientId);
+  async function exportPatientBundle(backend, syncApiKey, patientId, deidentify) {
+    const fhirPid = effectiveFhirPatientId(patientId, deidentify ?? await isMaskEnabled());
     const expUrl = `${backend}/fhir/export?patient=${encodeURIComponent(fhirPid)}`;
     const r = await fetch(expUrl, {
       headers: syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {}
@@ -5705,8 +5778,8 @@
       throw new Error(`HTTP ${r.status}`);
     return await r.json();
   }
-  async function deletePartialPatientData(backend, syncApiKey, patientId) {
-    const fhirPid = derivePatientId(patientId);
+  async function deletePartialPatientData(backend, syncApiKey, patientId, deidentify) {
+    const fhirPid = effectiveFhirPatientId(patientId, deidentify ?? await isMaskEnabled());
     await fetch(`${backend}/sync/patient/${encodeURIComponent(fhirPid)}`, {
       method: "DELETE",
       headers: syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {}
@@ -6670,78 +6743,6 @@
       adapt: adaptCarePlan
     }
   ];
-
-  // src/background/patient-override.ts
-  function applyDateRangeToPath(path, dateRange) {
-    if (!dateRange || !dateRange.start && !dateRange.end)
-      return path;
-    const s = (dateRange.start || "").slice(0, 10);
-    const e = (dateRange.end || "").slice(0, 10);
-    let p = path;
-    if (/[?&]s_date=/.test(p)) {
-      p = p.replace(/([?&]s_date=)[^&]*/, `$1${s}`);
-    } else {
-      p += `${p.includes("?") ? "&" : "?"}s_date=${s}`;
-    }
-    if (/[?&]e_date=/.test(p)) {
-      p = p.replace(/([?&]e_date=)[^&]*/, `$1${e}`);
-    } else {
-      p += `&e_date=${e}`;
-    }
-    return p;
-  }
-  async function isMaskEnabled() {
-    try {
-      const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
-      return maskNameEnabled === true;
-    } catch {
-      return false;
-    }
-  }
-  function deidentifyOverride(ov) {
-    return {
-      ...ov,
-      name: ov?.name ? maskName(ov.name) : ov?.name,
-      id_no: ov?.id_no ? maskId(ov.id_no, "X") : ov?.id_no,
-      birth_date: ov?.birth_date ? deidBirthDate(ov.birth_date) : ov?.birth_date
-    };
-  }
-  function buildOverridePatient(ov, maskEnabled) {
-    const displayName = maskEnabled ? maskName(ov.name || "") : ov.name || "";
-    const raw = {
-      id: ov.id_no,
-      identifier: ov.id_no,
-      name: displayName || ov.id_no
-    };
-    if (ov.birth_date)
-      raw.birthDate = ov.birth_date;
-    if (ov.gender)
-      raw.gender = ov.gender;
-    const patient = mapPatient(raw);
-    if (maskEnabled) {
-      const idVal = patient.identifier?.[0]?.value;
-      if (idVal)
-        patient.identifier[0].value = maskId(idVal, "X");
-      if (patient.birthDate)
-        patient.birthDate = deidBirthDate(patient.birthDate);
-    }
-    return patient;
-  }
-  function replaceNameDeep(value, needle, replacement) {
-    if (!needle || needle === replacement)
-      return value;
-    if (typeof value === "string")
-      return value.split(needle).join(replacement);
-    if (Array.isArray(value))
-      return value.map((v) => replaceNameDeep(v, needle, replacement));
-    if (value && typeof value === "object") {
-      const out = {};
-      for (const k in value)
-        out[k] = replaceNameDeep(value[k], needle, replacement);
-      return out;
-    }
-    return value;
-  }
 
   // src/background/bundle.ts
   function assembleLocalBundle(byType, patientOverride, maskEnabled) {
@@ -9142,7 +9143,12 @@
       if (patientOverride.id_no && total > 0) {
         try {
           await setStatus({ progress: "\u{1F4E6} \u6574\u7406\u4F3A\u670D\u5668\u4E0A\u7684\u5B8C\u6574\u8CC7\u6599\u2026", totalResources: total });
-          const bundle = await exportPatientBundle(backend, syncApiKey, patientOverride.id_no);
+          const bundle = await exportPatientBundle(
+            backend,
+            syncApiKey,
+            patientOverride.id_no,
+            maskEnabled
+          );
           const dl = await stashFhirBundle(
             bundle,
             patientOverride.id_no,

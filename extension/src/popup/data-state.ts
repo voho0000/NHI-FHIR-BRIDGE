@@ -17,7 +17,7 @@
 // genuinely want to look at the older state. The UI lays out both
 // sides; user decides.
 
-import { derivePatientId } from "@nhi-fhir-bridge/mapper";
+import { effectiveFhirPatientId } from "@nhi-fhir-bridge/mapper";
 import { PENDING_BUNDLE_JSON_KEY, PENDING_BUNDLE_KEY } from "./constants.js";
 import { els } from "./els.js";
 import { getPatientOverride } from "./patient-form.js";
@@ -144,8 +144,11 @@ export async function checkBackendPatient() {
   const key = els.syncApiKey.value.trim();
   const headers = key ? { "X-Sync-API-Key": key } : {};
   // Backend stores Patient under the hashed FHIR id, never under the raw
-  // national ID — query / export by the hashed form.
-  const fhirPid = derivePatientId(ov.id_no);
+  // national ID — query / export by the hashed form. With the de-identify
+  // toggle on, the backend ingested a MASKED id (deidentifyOverride), so
+  // the lookup key must derive from the masked form too (audit P1-1).
+  const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
+  const fhirPid = effectiveFhirPatientId(ov.id_no, maskNameEnabled === true);
   try {
     const pr = await fetch(`${url}/fhir/Patient/${encodeURIComponent(fhirPid)}`, { headers });
     if (pr.status === 404) {

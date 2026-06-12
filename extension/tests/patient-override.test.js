@@ -7,8 +7,14 @@
  * and the full birthDate — an inconsistent de-identification that is a real
  * privacy risk for shared / demo / test bundles. These tests pin the fix:
  * when the toggle is on, identifier.value is half-masked (matching the
- * filename) and birthDate is year-only (Jan-1 normalized), while Patient.id
- * (a hash) stays stable so intra-bundle references don't shift.
+ * filename) and birthDate is year-only (Jan-1 normalized).
+ *
+ * Audit P1-1 (2026-06-12): Patient.id now ALSO derives from the masked id
+ * when the toggle is on. The previous "keep the full-id hash for
+ * reference stability" design leaked the full ID — derivePatientId is an
+ * unsalted SHA-1 over the tiny TWID keyspace, brute-forceable in seconds,
+ * so hash(full id) ≡ full id. References stay consistent because
+ * assembleLocalBundle propagates patient.id to every mapper.
  */
 import { describe, expect, test } from "vitest";
 import * as systems from "@nhi-fhir-bridge/mapper";
@@ -56,13 +62,29 @@ describe("buildOverridePatient — de-identify toggle ON", () => {
     expect(p.name[0].text).toBe("王O試");
   });
 
-  test("Patient.id (hash) is identical masked vs unmasked — references stay stable", async () => {
+  test("Patient.id derives from the MASKED id when toggle on (audit P1-1)", async () => {
     const { buildOverridePatient } = await import("../src/background/patient-override.ts");
     const masked = buildOverridePatient(OV, true);
     const plain = buildOverridePatient(OV, false);
-    expect(masked.id).toBe(plain.id);
-    // And the hash never equals the cleartext ID either way.
-    expect(masked.id).not.toBe("F223456789");
+    // hash(full id) is offline-brute-forceable over the TWID keyspace, so
+    // a de-identified bundle must NOT carry it — ids differ across modes.
+    expect(masked.id).not.toBe(plain.id);
+    expect(masked.id).toBe(systems.effectiveFhirPatientId(OV.id_no, true));
+    expect(plain.id).toBe(systems.effectiveFhirPatientId(OV.id_no, false));
+    // And neither is ever the cleartext ID.
+    expect(masked.id).not.toBe(OV.id_no);
+    expect(plain.id).not.toBe(OV.id_no);
+  });
+
+  test("backend-upload path lands on the same masked-derived id (paths can't drift)", async () => {
+    const { buildOverridePatient, deidentifyOverride } = await import(
+      "../src/background/patient-override.ts"
+    );
+    // Backend path: deidentifyOverride masks id_no, backend's mapPatient
+    // hashes what it receives. Must equal the local-bundle Patient.id.
+    const local = buildOverridePatient(OV, true);
+    const backendSide = buildOverridePatient(deidentifyOverride(OV), false);
+    expect(backendSide.id).toBe(local.id);
   });
 
   test("no birth_date supplied → no birthDate field, no crash", async () => {

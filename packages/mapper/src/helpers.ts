@@ -81,6 +81,28 @@ export function maskId(id: string | null | undefined, char = "*"): string {
 }
 
 /**
+ * FHIR `Patient.id` for a popup-supplied identity, respecting the
+ * de-identify toggle (audit P1-1, 2026-06-12).
+ *
+ * Why this exists: the TWID keyspace is tiny (~3×10⁸ checksum-valid
+ * values), so the unsalted SHA-1 in `derivePatientId` is offline-
+ * brute-forceable in seconds. Hashing the FULL national ID into a
+ * "de-identified" bundle therefore undoes the masking — anyone holding
+ * the bundle can recover the full ID from `Patient.id` alone. With the
+ * toggle on we hash the HALF-MASKED form instead: brute-forcing that
+ * hash reveals nothing beyond what `identifier[].value` already shows.
+ *
+ * Single source of truth for "which Patient.id does this identity map
+ * to under this mask mode" — used by local bundle assembly, the popup's
+ * backend-patient checks, and SMART launches. The backend-upload path
+ * arrives at the same value implicitly because `deidentifyOverride`
+ * masks `id_no` before upload and the backend hashes what it receives.
+ */
+export function effectiveFhirPatientId(idNo: string, deidentify: boolean): string {
+  return derivePatientId(deidentify ? maskId(idNo, "X") : idNo);
+}
+
+/**
  * De-identify a birth date by keeping only the year and normalizing the
  * month/day to January 1st: `1962-04-15` → `1962-01-01`.
  *
