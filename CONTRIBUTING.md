@@ -34,14 +34,29 @@ npm run dev
 ```bash
 cd frontend
 npm install
-npm run dev   # → http://localhost:3010
+npm run dev   # → http://localhost:3000（next dev 預設 port；3010 是 docker-compose 對外映射的 port）
 ```
 
 ### Chrome Extension 開發
 
+extension 是 TypeScript（`extension/src/`），用 esbuild（`extension/build.mjs`）打包輸出到 `extension/dist/`：
+
+```bash
+# 在 repo 根 build 一次（輸出 extension/dist/）
+npm run build:extension
+
+# 或在 extension/ 內開 watch 模式，改 code 自動重 build
+cd extension
+npm run dev
+```
+
 1. Chrome → `chrome://extensions` → 開啟「開發人員模式」
-2. 點「載入未封裝項目」→ 選 `extension/` 資料夾
-3. 改 code 後在 extensions 頁面點 reload 圖示
+2. 點「載入未封裝項目」→ 選 `extension/dist/` 資料夾
+3. 改 code 後重新 build（或讓 watch 跑著），再在 extensions 頁面點 reload 圖示
+
+> ⚠️ `extension/dist/` 是 commit 進 repo 的成品。改了 extension 程式碼後，commit 前務必跑
+> `npm run build:extension` 並把 `dist/` 一起 commit — CI 會驗證 dist 與 src 一致
+> （`git diff --exit-code extension/dist`），不一致會直接 fail。
 
 ---
 
@@ -56,8 +71,9 @@ npm run dev   # → http://localhost:3010
 - 縮排：2 空白
 - Next.js App Router 規範
 
-### Chrome Extension
-- vanilla JS（不引 build step）
+### TypeScript（extension）
+- TypeScript（`extension/src/*.ts`），esbuild 打包（`extension/build.mjs`）→ `extension/dist/`
+- 由 Biome 統一格式與 lint；`tsc --noEmit` 必須全綠
 - 函式宣告風格、early-return、簡短註解
 
 ---
@@ -122,7 +138,7 @@ npm run db:migrate
 ## 如何加入新的 NHI 頁面 / FHIR 資源類型
 
 1. **取得 NHI JSON 端點**：在 NHI 健康存摺頁面打開 DevTools → Network → 找出對應的 `/api/ihke3000/...` 端點
-2. **Extension 端**：在 `extension/src/background.js` 的 `runNhiApiSync` / `NHI_API_ENDPOINTS` 加入該端點 + 用 `adapt*()` 把 JSON 轉成 mapper-shape items
+2. **Extension 端**：在 `extension/src/nhi-endpoints.ts` 的 endpoint registry 加入該端點，在 `extension/src/background/sync-orchestrator.ts` 接進 sync 流程，並在 `extension/src/nhi-adapters.ts` 用 `adapt*()` 把 JSON 轉成 mapper-shape items
 3. **Mapper**：在 `packages/mapper/src/` 新增 mapper 函式（或擴充既有的）— 同一份程式碼會被 backend 和 extension 共用
 4. **註冊**：把 mapper 加進 `packages/mapper/src/dispatch.ts` 的 `LIST_HANDLERS` 或 `GROUP_HANDLERS`
 5. **寫測試**：`backend-ts/tests/unit/<resource>-mapper.test.ts`

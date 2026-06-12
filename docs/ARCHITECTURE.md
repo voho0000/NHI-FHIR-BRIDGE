@@ -52,20 +52,23 @@ NHI-FHIR-BRIDGE/                     # npm workspaces
 │   │   └── main.ts                  # Hono app + CORS + lifespan
 │   ├── drizzle/                     # SQL migration
 │   └── tests/                       # vitest
-├── extension/                       # Chrome MV3
+├── extension/                       # Chrome MV3 (TypeScript + esbuild)
 │   ├── src/
-│   │   ├── background.js            # service worker — sync flow + Chrome APIs
-│   │   ├── popup.{html,js}          # extension popup UI
-│   │   ├── nhi-adapters.js          # pure NHI JSON → normalized shape adapters
-│   │   └── nhi-endpoints.js         # endpoint URL registry + 中文 label map
+│   │   ├── background.ts            # service worker entry — 組裝 background/ 模組
+│   │   ├── background/              # sync-orchestrator / nhi-list-fetch / nhi-detail-fetchers
+│   │   │                            #   nhi-imaging-jpeg / backend-upload / auth / badge / …
+│   │   ├── popup.html / popup.ts    # extension popup UI entry
+│   │   ├── popup/                   # wizard / sync-client / connection / state / …
+│   │   ├── nhi-adapters.ts          # pure NHI JSON → normalized shape adapters
+│   │   └── nhi-endpoints.ts         # endpoint URL registry + 中文 label map
+│   ├── dist/                        # esbuild 輸出（commit 進 repo；CI 驗證與 src 一致）
 │   ├── tests/                       # vitest — see extension/tests/README.md
 │   └── build.mjs                    # esbuild + Resvg icon render
 ├── frontend/                        # Next.js Dashboard
 │   └── app/
 │       ├── api/backend/[...path]/   # server-side proxy with API key
 │       ├── page.tsx                 # patient list / export / launch / delete
-│       ├── launch/                  # SMART launch redirect
-│       └── authorize/               # SMART authorize redirect
+│       └── layout.tsx, globals.css
 ├── docker-compose.yml               # backend + frontend
 └── .env.example
 ```
@@ -77,7 +80,7 @@ NHI-FHIR-BRIDGE/                     # npm workspaces
 ```mermaid
 sequenceDiagram
   participant User as 使用者瀏覽器
-  participant Ext as Extension (background.js)
+  participant Ext as Extension (background.ts)
   participant NHI as myhealthbank.nhi.gov.tw
   participant API as Hono /sync/upload-structured
   participant DB as SQLite (FHIR resources)
@@ -185,4 +188,4 @@ migration 檔在 `backend-ts/drizzle/`，每個 PR 一同 review。
 3. **單一病人 sync**：單一 instance 同時間只跑一位病人（`patient_override` 串行）
 4. **SQLite**：適合單機構 / 單使用者 POC。多人並行寫入要換 PostgreSQL（schema 已可 portable）
 5. **FHIR 驗證**：通過 TWNHIFHIR validator 三輪修正（Bundle / UCUM / OID / LOINC / ICD-10-CM / SNOMED），但未整合自動驗證進 CI
-6. **Mapper 測試覆蓋**：目前約 100 個 unit test，主要在 patient / observation / condition / medication / parsers。allergy / procedure / encounter / diagnostic-report / link / dispatch 尚無 golden-file 測試
+6. **Mapper 測試覆蓋**：`backend-ts/tests/unit/` 目前 17 個測試檔、500+ 個 unit test，涵蓋所有 mapper（patient / observation / condition / medication / allergy / procedure / encounter / diagnostic-report / document-reference / immunization / careplan）以及 parsers / dispatch / link / imaging-dedup / tombstone / bundle-quality。缺口主要在端到端：FHIR validator 未自動化（見上一點）
