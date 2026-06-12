@@ -145,7 +145,7 @@ The labels describe HOW the row was uploaded, not WHAT it carries — any channe
 |---|---|---|
 | v0.14 | Trigger any `status=A` | Correct in retrospect, just had the rownum bug (POST body hard-coded `"-3"`) so most triggers silent-failed |
 | v0.15.0-v0.15.3 | Trigger only `ori=E status=A`; fetch only `ori=E status=1` | First probe patient had 6 `status=A × A` rows that stayed at A after triggers → wrongly classified as "phantoms" (was actually the rownum bug) |
-| v0.15.4 | Drop channel filter from cached-bytes gate | F10375XXXX showed 3 `status=1 × A` rows with valid seq + imG_SIZE dropped silently — proved A can carry images |
+| v0.15.4 | Drop channel filter from cached-bytes gate | 某探針病人 showed 3 `status=1 × A` rows with valid seq + imG_SIZE dropped silently — proved A can carry images |
 | v0.15.5 | Drop channel filter from trigger gate too | Symmetric simplification — if status=A × A rows are genuinely phantoms (no image source), post-verify silent-fail detection catches them cleanly, no pending stash pollution |
 
 ### Phantom protection

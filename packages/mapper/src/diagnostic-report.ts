@@ -48,7 +48,7 @@ function looksLikeLabValueOnly(conclusion: string): boolean {
 // line breaks in different spots), and lowercases. Pre-v0.17.2 the
 // raw-byte hash gave those channel-variants DISTINCT ids → both
 // survived → downstream apps saw a phantom "multi-part CT" group
-// (MediPrisma bug report 2026-06-06, patient P10109XXXX brain CT).
+// (MediPrisma bug report 2026-06-06, a real brain-CT bundle).
 // Normalizing the hash input collapses pure formatting variants to one
 // id while keeping genuinely distinct exams apart (they differ in real
 // alphanumeric content, not just spacing/fullwidth). Length suffix is

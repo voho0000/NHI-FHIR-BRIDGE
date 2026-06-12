@@ -260,7 +260,7 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
   // ── Cross-code content dedup pass ──────────────────────────────────
   // Within (date, hospital), if multiple items have byte-identical
   // frame content but were emitted under DIFFERENT codes, collapse to
-  // one. Real-world case (F10375XXXX 2026-06-05): NHI billing data
+  // one. Real-world case (real-patient probe, 2026-06-05): NHI billing data
   // contained codes 32022C + 32023C for the same physical pelvis X-ray
   // study; same hospital uploaded identical JPG bytes under both codes
   // ("骨盆及髖關節檢查" order_NAME on both). The per-group dedup above

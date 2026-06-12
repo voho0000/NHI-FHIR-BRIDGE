@@ -150,7 +150,7 @@ export function deidBirthDate(iso: string | null | undefined): string {
  *      channel-variant byte differences compare equal. NFKC is an
  *      exact-equality fold — it CANNOT merge two genuinely different
  *      exams (their real alphanumeric content still differs after the
- *      fold). Verified against a real bundle (P10109XXXX, 2026-06-06):
+ *      fold). Verified against a real bundle (2026-06-06):
  *      adding NFKC dropped residual whitespace/case-only narrative
  *      clusters 20→10 while chest CT vs head/neck CT (both 33070B) stay
  *      apart.

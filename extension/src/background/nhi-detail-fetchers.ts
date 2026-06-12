@@ -341,7 +341,7 @@ export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
     //          status=A after triggers. The phantoms-stuck-at-A signal
     //          turned out to be the rownum bug (POST body hard-coded
     //          "-3" instead of per-row rownum), not a channel issue.
-    //   v0.15.4: F10375XXXX patient had 3 status=1 × ori=A rows with
+    //   v0.15.4: a probe patient had 3 status=1 × ori=A rows with
     //          valid 16-digit seq + imG_SIZE — fetchable images dropped
     //          silently because v0.15.0's gate required ori=E. Fix
     //          dropped the channel filter from the READY-BYTES gate.
