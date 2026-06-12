@@ -27,7 +27,9 @@ import {
 import { pollPrepCount, stopPrepPolling } from "./background/imaging-prep-poll.js";
 import {
   migrateSyncToLocal,
+  purgeBearerToken,
   sweepPendingBundleIfStale,
+  sweepStaleBearerToken,
   sweepStaleLocalKeys,
 } from "./background/storage-migration.js";
 import { runNhiApiSync } from "./background/sync-orchestrator.js";
@@ -45,6 +47,10 @@ chrome.runtime.onInstalled.addListener(async () => {
   // Security audit #5 cleanup: sweep PHI dead-weight keys left in
   // chrome.storage.local by extension versions <= v0.8.7.
   await sweepStaleLocalKeys();
+  // Audit P0-4/P1-6 (2026-06-12): an update may have orphaned the
+  // bundle JSON, and a stale NHI bearer token may sit on disk.
+  await sweepPendingBundleIfStale();
+  await sweepStaleBearerToken();
 });
 
 // Also run migration on service-worker wake-up (covers reload/restart
@@ -86,6 +92,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
         if (e?.message === SESSION_EXPIRED_ERROR) {
+          // Audit P1-6: NHI just told us the session is dead — the saved
+          // bearer snapshot is useless; don't leave it on disk.
+          await purgeBearerToken();
           await chrome.storage.local.set({
             syncStatus: {
               running: false,
@@ -232,6 +241,8 @@ chrome.alarms.create(PENDING_BUNDLE_SWEEP_ALARM, { periodInMinutes: 10 });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === PENDING_BUNDLE_SWEEP_ALARM) {
     await sweepPendingBundleIfStale().catch(() => {});
+    // Audit P1-6: the NHI bearer token must not outlive its 30-min TTL.
+    await sweepStaleBearerToken().catch(() => {});
   }
   if (alarm.name === IMAGING_PREP_POLL_ALARM) {
     await pollPrepCount().catch((e) => {

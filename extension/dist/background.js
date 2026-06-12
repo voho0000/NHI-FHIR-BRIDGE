@@ -5790,6 +5790,66 @@
     }
   }
 
+  // src/background/storage-migration.ts
+  async function migrateSyncToLocal() {
+    try {
+      const synced = await chrome.storage.sync.get(SYNC_KEYS_TO_MIGRATE);
+      const present = Object.fromEntries(Object.entries(synced).filter(([, v]) => v !== void 0));
+      if (Object.keys(present).length === 0)
+        return;
+      const local = await chrome.storage.local.get(Object.keys(present));
+      const toWrite = Object.fromEntries(
+        Object.entries(present).filter(([k]) => local[k] === void 0)
+      );
+      if (Object.keys(toWrite).length > 0) {
+        await chrome.storage.local.set(toWrite);
+      }
+      await chrome.storage.sync.remove(Object.keys(present));
+    } catch {
+    }
+  }
+  async function sweepStaleLocalKeys() {
+    try {
+      const all = await chrome.storage.local.get(null);
+      const stale = Object.keys(all).filter((k) => k.startsWith("__sampleBody_"));
+      if (stale.length)
+        await chrome.storage.local.remove(stale);
+    } catch {
+    }
+  }
+  async function sweepPendingBundleIfStale() {
+    try {
+      const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
+      if (!pending) {
+        const orphanBytes = await chrome.storage.local.getBytesInUse(PENDING_BUNDLE_JSON_KEY);
+        if (orphanBytes > 0)
+          await chrome.storage.local.remove(PENDING_BUNDLE_JSON_KEY);
+        return;
+      }
+      const age = Date.now() - (pending.generatedAt || 0);
+      if (age > PENDING_BUNDLE_TTL_MS) {
+        await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]);
+      }
+    } catch {
+    }
+  }
+  async function sweepStaleBearerToken() {
+    try {
+      const obj = await chrome.storage.local.get(NHI_BEARER_TOKEN_KEY);
+      const stash = obj[NHI_BEARER_TOKEN_KEY];
+      if (stash && Date.now() - (stash.savedAt || 0) > NHI_BEARER_TOKEN_TTL_MS) {
+        await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY);
+      }
+    } catch {
+    }
+  }
+  async function purgeBearerToken() {
+    try {
+      await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY);
+    } catch {
+    }
+  }
+
   // src/background/imaging-prep-poll.ts
   async function startPrepPolling(patientId, initialCount, baseUrl, baselineReady = 0) {
     if (!patientId || initialCount <= 0)
@@ -5827,9 +5887,12 @@
     const stash = obj[NHI_BEARER_TOKEN_KEY];
     if (!stash)
       return null;
-    if (stash.patientId !== patientId)
+    if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS) {
+      await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY).catch(() => {
+      });
       return null;
-    if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS)
+    }
+    if (stash.patientId !== patientId)
       return null;
     return stash.token || null;
   }
@@ -5848,6 +5911,7 @@
       await _writeState({ ...state, status: "timeout" });
       await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
       });
+      await purgeBearerToken();
       return;
     }
     const token = await _loadBearerToken(state.patientId);
@@ -5875,6 +5939,7 @@
         await _writeState({ ...state, status: "session-expired" });
         await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
         });
+        await purgeBearerToken();
         return;
       }
       if (!r.ok) {
@@ -5929,48 +5994,7 @@
     if (nextStatus !== "polling") {
       await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
       });
-    }
-  }
-
-  // src/background/storage-migration.ts
-  async function migrateSyncToLocal() {
-    try {
-      const synced = await chrome.storage.sync.get(SYNC_KEYS_TO_MIGRATE);
-      const present = Object.fromEntries(Object.entries(synced).filter(([, v]) => v !== void 0));
-      if (Object.keys(present).length === 0)
-        return;
-      const local = await chrome.storage.local.get(Object.keys(present));
-      const toWrite = Object.fromEntries(
-        Object.entries(present).filter(([k]) => local[k] === void 0)
-      );
-      if (Object.keys(toWrite).length > 0) {
-        await chrome.storage.local.set(toWrite);
-      }
-      await chrome.storage.sync.remove(Object.keys(present));
-    } catch {
-    }
-  }
-  async function sweepStaleLocalKeys() {
-    try {
-      const all = await chrome.storage.local.get(null);
-      const stale = Object.keys(all).filter(
-        (k) => k === "pendingFhirBundle" || k.startsWith("__sampleBody_")
-      );
-      if (stale.length)
-        await chrome.storage.local.remove(stale);
-    } catch {
-    }
-  }
-  async function sweepPendingBundleIfStale() {
-    try {
-      const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
-      if (!pending)
-        return;
-      const age = Date.now() - (pending.generatedAt || 0);
-      if (age > PENDING_BUNDLE_TTL_MS) {
-        await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]);
-      }
-    } catch {
+      await purgeBearerToken();
     }
   }
 
@@ -7793,9 +7817,14 @@
   async function loadBearerToken(patientId) {
     const obj = await chrome.storage.local.get(NHI_BEARER_TOKEN_KEY);
     const stash = obj[NHI_BEARER_TOKEN_KEY];
-    if (!stash || stash.patientId !== patientId)
+    if (!stash)
       return null;
-    if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS)
+    if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS) {
+      await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY).catch(() => {
+      });
+      return null;
+    }
+    if (stash.patientId !== patientId)
       return null;
     return stash.token || null;
   }
@@ -9211,6 +9240,8 @@
   chrome.runtime.onInstalled.addListener(async () => {
     await migrateSyncToLocal();
     await sweepStaleLocalKeys();
+    await sweepPendingBundleIfStale();
+    await sweepStaleBearerToken();
   });
   chrome.runtime.onStartup?.addListener?.(() => {
     migrateSyncToLocal();
@@ -9238,6 +9269,7 @@
             return;
           }
           if (e?.message === SESSION_EXPIRED_ERROR) {
+            await purgeBearerToken();
             await chrome.storage.local.set({
               syncStatus: {
                 running: false,
@@ -9355,6 +9387,8 @@
   chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === PENDING_BUNDLE_SWEEP_ALARM) {
       await sweepPendingBundleIfStale().catch(() => {
+      });
+      await sweepStaleBearerToken().catch(() => {
       });
     }
     if (alarm.name === IMAGING_PREP_POLL_ALARM) {

@@ -32,6 +32,7 @@ import {
   NHI_BEARER_TOKEN_KEY,
   NHI_BEARER_TOKEN_TTL_MS,
 } from "./constants.js";
+import { purgeBearerToken } from "./storage-migration.js";
 
 export type ImagingPrepStatus = "polling" | "ready" | "unavailable" | "timeout" | "session-expired";
 
@@ -118,8 +119,12 @@ async function _loadBearerToken(patientId: string): Promise<string | null> {
     | { token: string; patientId: string; savedAt: number }
     | undefined;
   if (!stash) return null;
+  if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS) {
+    // Audit P1-6 (2026-06-12): self-clean expired credential on read.
+    await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY).catch(() => {});
+    return null;
+  }
   if (stash.patientId !== patientId) return null;
-  if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS) return null;
   return stash.token || null;
 }
 
@@ -147,6 +152,8 @@ export async function pollPrepCount(): Promise<void> {
   if (Date.now() - state.startedAt >= IMAGING_PREP_MAX_MS) {
     await _writeState({ ...state, status: "timeout" });
     await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {});
+    // Audit P1-6: poll is over — nothing needs the bearer snapshot anymore.
+    await purgeBearerToken();
     return;
   }
   const token = await _loadBearerToken(state.patientId);
@@ -174,6 +181,8 @@ export async function pollPrepCount(): Promise<void> {
     if (r.status === 401 || r.status === 403) {
       await _writeState({ ...state, status: "session-expired" });
       await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {});
+      // Audit P1-6: NHI rejected the token — it's dead, delete the snapshot.
+      await purgeBearerToken();
       return;
     }
     if (!r.ok) {
@@ -243,5 +252,8 @@ export async function pollPrepCount(): Promise<void> {
   });
   if (nextStatus !== "polling") {
     await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {});
+    // Audit P1-6: terminal state (ready / unavailable) — the bearer
+    // snapshot has no remaining consumer; next sync saves a fresh one.
+    await purgeBearerToken();
   }
 }

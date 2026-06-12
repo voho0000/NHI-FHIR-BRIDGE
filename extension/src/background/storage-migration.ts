@@ -3,6 +3,8 @@
 // and the periodic TTL sweep of the pending-bundle slot.
 
 import {
+  NHI_BEARER_TOKEN_KEY,
+  NHI_BEARER_TOKEN_TTL_MS,
   PENDING_BUNDLE_JSON_KEY,
   PENDING_BUNDLE_KEY,
   PENDING_BUNDLE_TTL_MS,
@@ -34,18 +36,23 @@ export async function migrateSyncToLocal() {
 }
 
 // Security audit #5 cleanup: users upgrading from <= v0.8.7 may have
-// a `pendingFhirBundle` (entire FHIR Bundle JSON) and/or
 // `__sampleBody_*` entries (raw NHI payload) sitting in
-// chrome.storage.local from previous installs. The new version uses
-// chrome.storage.session for the pending bundle and gates the body
-// samples behind a debug flag — so those local entries are now pure
-// PHI dead weight. Sweep them on every install/update.
+// chrome.storage.local from previous installs — pure PHI dead weight.
+// Sweep them on every install/update.
+//
+// 2026-06-12 (audit P0-4): `pendingFhirBundle` was REMOVED from this
+// sweep. v0.14 recycled that exact key name as the CURRENT bundle-
+// metadata slot, so sweeping it on every extension update deleted the
+// live metadata while PENDING_BUNDLE_JSON_KEY (the 80+ MB PHI blob)
+// survived — orphaned forever, because the TTL sweep early-returns
+// without metadata and the popup hides its download/clear buttons.
+// Legacy <= v0.8.7 full-JSON values under this key are still bounded:
+// they lack `generatedAt`, so sweepPendingBundleIfStale treats them as
+// infinitely old and drops them on the next 10-min alarm.
 export async function sweepStaleLocalKeys() {
   try {
     const all: any = await chrome.storage.local.get(null);
-    const stale = Object.keys(all).filter(
-      (k) => k === "pendingFhirBundle" || k.startsWith("__sampleBody_"),
-    );
+    const stale = Object.keys(all).filter((k) => k.startsWith("__sampleBody_"));
     if (stale.length) await chrome.storage.local.remove(stale);
   } catch {}
 }
@@ -61,10 +68,39 @@ export async function sweepPendingBundleIfStale() {
     // v0.16.1: only need metadata to decide staleness; never pull the
     // 80+ MB JSON into the SW for a sweep check.
     const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
-    if (!pending) return;
+    if (!pending) {
+      // 2026-06-12 (audit P0-4): metadata absent but the JSON blob may
+      // still exist — pre-fix versions orphaned it on extension update.
+      // getBytesInUse checks existence without pulling 80+ MB into the SW.
+      const orphanBytes = await chrome.storage.local.getBytesInUse(PENDING_BUNDLE_JSON_KEY);
+      if (orphanBytes > 0) await chrome.storage.local.remove(PENDING_BUNDLE_JSON_KEY);
+      return;
+    }
     const age = Date.now() - (pending.generatedAt || 0);
     if (age > PENDING_BUNDLE_TTL_MS) {
       await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]);
     }
+  } catch {}
+}
+
+// 2026-06-12 (audit P1-6): the NHI bearer-token snapshot used to persist
+// until the NEXT sync overwrote it — loadBearerToken() rejected expired
+// entries but never deleted them, and no sweep listed the key. A live-ish
+// NHI session token on disk is a credential, not PHI dead weight; bound
+// its life to the 30-min TTL (plus at most one 10-min alarm period).
+export async function sweepStaleBearerToken() {
+  try {
+    const obj: any = await chrome.storage.local.get(NHI_BEARER_TOKEN_KEY);
+    const stash = obj[NHI_BEARER_TOKEN_KEY];
+    if (stash && Date.now() - (stash.savedAt || 0) > NHI_BEARER_TOKEN_TTL_MS) {
+      await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY);
+    }
+  } catch {}
+}
+
+/** Hard-delete the bearer-token snapshot (poll finished / session expired). */
+export async function purgeBearerToken() {
+  try {
+    await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY);
   } catch {}
 }

@@ -1686,8 +1686,14 @@ async function loadBearerToken(patientId: string): Promise<string | null> {
   const stash = obj[NHI_BEARER_TOKEN_KEY] as
     | { token: string; patientId: string; savedAt: number }
     | undefined;
-  if (!stash || stash.patientId !== patientId) return null;
-  if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS) return null;
+  if (!stash) return null;
+  if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS) {
+    // Audit P1-6 (2026-06-12): self-clean — an expired session token is
+    // a credential, never leave it on disk just because reads reject it.
+    await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY).catch(() => {});
+    return null;
+  }
+  if (stash.patientId !== patientId) return null;
   return stash.token || null;
 }
 
