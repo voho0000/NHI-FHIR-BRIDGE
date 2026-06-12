@@ -15,7 +15,7 @@ permissions:
 jobs:
   package:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +27,22 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      # ── Quality gates (mirror backend-ts.yml) — a release must not
+      # publish if the same checks that gate main would fail. ─────────
+      - name: Type-check (backend)
+        working-directory: backend-ts
+        run: npx tsc --noEmit
+
+      - name: Test (backend, vitest)
+        working-directory: backend-ts
+        run: npx vitest run
+
+      - name: Type-check (extension)
+        run: npm run typecheck --workspace extension
+
+      - name: Test (extension)
+        run: npm run test --workspace extension
 
       - name: Build extension
         run: npm run build --workspace extension
@@ -42,6 +58,16 @@ jobs:
           VER=${TAG#v}
           echo "tag=$TAG"     >> "$GITHUB_OUTPUT"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches extension/src/manifest.json version
+        run: |
+          MANIFEST_VER=$(node -p "require('./extension/src/manifest.json').version")
+          TAG_VER="${{ steps.ver.outputs.version }}"
+          if [ "$MANIFEST_VER" != "$TAG_VER" ]; then
+            echo "::error::Tag v$TAG_VER does not match extension/src/manifest.json version $MANIFEST_VER — bump the manifest (and re-tag) before releasing."
+            exit 1
+          fi
+          echo "tag v$TAG_VER == manifest $MANIFEST_VER ✓"
 
       - name: Zip extension/dist
         run: |
@@ -62,9 +88,10 @@ jobs:
         # CHANGELOG.md format expected: each release section starts with a
         # heading like "## X.Y.Z 重點 — YYYY-MM-DD". Awk captures from the
         # matching heading until the next "## X.Y.Z" heading, then trims any
-        # trailing "---" separators and blank lines. If no entry is found
-        # (shouldn't happen but defensive), fall back to a single-line
-        # pointer to CHANGELOG.md.
+        # trailing "---" separators and blank lines. If no entry is found,
+        # the release FAILS — CHANGELOG.md is the authoritative release-notes
+        # source, so a tag without an entry must not publish (the old
+        # pointer-body fallback let undocumented releases slip through).
         run: |
           VERSION=${{ steps.ver.outputs.version }}
           awk -v ver="$VERSION" '
@@ -80,8 +107,8 @@ jobs:
           ' CHANGELOG.md > /tmp/release-notes.md
 
           if [ ! -s /tmp/release-notes.md ]; then
-            echo "::warning::No CHANGELOG.md entry found for v$VERSION — falling back to pointer"
-            echo "Release v$VERSION — see [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." > /tmp/release-notes.md
+            echo "::error::No CHANGELOG.md entry found for v$VERSION. Add a \"## $VERSION 重點 — YYYY-MM-DD\" section to CHANGELOG.md before tagging — releases without curated notes are not allowed."
+            exit 1
           fi
 
           echo "---- release notes preview ($(wc -l < /tmp/release-notes.md) lines) ----"

@@ -21,14 +21,20 @@
 //
 // This is intentionally a "smell detector", not a ground-truth diff.
 // For ground-truth verification you re-fetch the same NHI endpoints
-// with the user's session and compare row-by-row — see TODO_FOLLOWUP.md
-// for the live-verifier sketch.
+// with the user's session and compare row-by-row (no automated
+// live-verifier exists yet; this script only inspects the output JSON).
+//
+// It ALSO asserts repo version consistency (no bundle file needed):
+// extension/src/manifest.json (canonical, matches the git tag) must
+// equal extension/dist/manifest.json, extension/package.json, and the
+// root package.json. A mismatch names the offending file and exits 1.
 //
 // Usage:
-//   node scripts/verify-sync.mjs <path-to-fhir.json>
+//   node scripts/verify-sync.mjs                       # version check only
+//   node scripts/verify-sync.mjs <path-to-fhir.json>   # + bundle smells
 //
 // Exit codes:
-//   0 — no smells detected
+//   0 — no smells / mismatches detected
 //   1 — at least one warning printed
 //   2 — couldn't load / parse the file
 //
@@ -36,16 +42,72 @@
 // surface warnings.)
 
 import { readFileSync, existsSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 const quiet = args.includes("--quiet");
 const positional = args.filter((a) => !a.startsWith("--"));
 const fhirPath = positional[0];
 
+// ── Version consistency (always runs) ──────────────────────────────────
+//
+// Canonical version = extension/src/manifest.json (this is what the git
+// tag vX.Y.Z and the release workflow key on). Everything else must agree.
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+function readVersion(relPath) {
+  const abs = join(repoRoot, relPath);
+  if (!existsSync(abs)) return { relPath, version: null, missing: true };
+  try {
+    return { relPath, version: JSON.parse(readFileSync(abs, "utf8")).version ?? null };
+  } catch {
+    return { relPath, version: null, unparsable: true };
+  }
+}
+
+const CANONICAL = "extension/src/manifest.json";
+const versionFiles = [
+  readVersion(CANONICAL),
+  readVersion("extension/dist/manifest.json"),
+  readVersion("extension/package.json"),
+  readVersion("package.json"),
+];
+const canonical = versionFiles[0];
+
+let versionErrors = 0;
+if (!canonical.version) {
+  console.error(`❌ version check: cannot read "version" from ${CANONICAL}`);
+  versionErrors += 1;
+} else {
+  for (const f of versionFiles.slice(1)) {
+    if (f.missing) {
+      console.error(`❌ version check: ${f.relPath} not found (expected version ${canonical.version})`);
+      versionErrors += 1;
+    } else if (f.unparsable) {
+      console.error(`❌ version check: ${f.relPath} is not valid JSON`);
+      versionErrors += 1;
+    } else if (f.version !== canonical.version) {
+      console.error(
+        `❌ version check: ${f.relPath} has version ${f.version ?? "(none)"} ` +
+        `but ${CANONICAL} (canonical) has ${canonical.version} — bump ${f.relPath}.`,
+      );
+      versionErrors += 1;
+    }
+  }
+}
+if (versionErrors === 0) {
+  console.log(`✅ version check: all version files agree on ${canonical.version}`);
+}
+
 if (!fhirPath) {
-  console.error("usage: node scripts/verify-sync.mjs <fhir.json> [--quiet]");
-  process.exit(2);
+  // No bundle to inspect — the version check is the whole job.
+  process.exit(versionErrors > 0 ? 1 : 0);
+}
+if (versionErrors > 0) {
+  // Keep going so bundle smells still print, but remember the failure.
+  process.exitCode = 1;
 }
 if (!existsSync(fhirPath)) {
   console.error(`error: file not found: ${fhirPath}`);
@@ -210,7 +272,7 @@ if (filenameRange) {
 
 if (warnings.length === 0) {
   console.log("✅ no smells detected");
-  process.exit(0);
+  process.exit(versionErrors > 0 ? 1 : 0);
 } else {
   console.log("⚠️  warnings:");
   for (const w of warnings) console.log(`   • ${w}`);
