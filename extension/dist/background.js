@@ -6260,6 +6260,32 @@
       program_code: String(item.prgcode || item.prgCode || item.prgCODE || "").trim()
     };
   }
+  function adaptCancerScreening(item, screeningLabel) {
+    if (!item || typeof item !== "object") return null;
+    const date = rocToISO(item.funC_DATE || item.func_date || "");
+    const resultText = String(item.codE_CNAME || item.code_cname || "").trim();
+    if (!date || !resultText) return null;
+    const detailRaw = String(
+      item.diagnosis_CODE || item.diagnosis_code || item.cytopathiC_CODE || item.cytopathic_code || ""
+    );
+    const detail = detailRaw.replace(/<br\s*\/?>/gi, "\uFF1B").replace(/[●•·]\s*/g, "").replace(/[；;]\s*[；;]+/g, "\uFF1B").replace(/\s+/g, " ").replace(/^[；;\s]+|[；;\s]+$/g, "").trim();
+    const value = detail ? `${resultText}\uFF08${detail}\uFF09` : resultText;
+    return {
+      date,
+      // No NHI 醫令碼 on these rows — group/route by the screening label.
+      code: "",
+      order_name: screeningLabel,
+      display: screeningLabel,
+      value,
+      unit: "",
+      reference_range: "",
+      category: "laboratory",
+      hospital: item.hosP_ABBR || item.hosp_abbr || "",
+      // Tagged so SMART apps can isolate the 癌症篩檢 programme (mirrors
+      // adult-preventive's source_program tag).
+      source_program: "cancer-screening"
+    };
+  }
   function adaptAllergy(item) {
     if (!item || typeof item !== "object") return null;
     const allergen = item.allergen_name || item.alleR_NAME || item.medname || item.druG_NAME || item.allergen || "";
@@ -6363,6 +6389,30 @@
   }
 
   // src/nhi-endpoints.ts
+  var CANCER_SCREENING_ENDPOINTS = [
+    {
+      name: "cancer_colorectal",
+      label: "\u5927\u8178\u764C\u7BE9\u6AA2",
+      path: "/api/ihke3000/ihke3404s02/SP_IHKE3404S02"
+    },
+    { name: "cancer_oral", label: "\u53E3\u8154\u764C\u7BE9\u6AA2", path: "/api/ihke3000/ihke3404s03/SP_IHKE3404S03" },
+    { name: "cancer_breast", label: "\u4E73\u764C\u7BE9\u6AA2", path: "/api/ihke3000/ihke3404s04/page_load" },
+    {
+      name: "cancer_cervical",
+      label: "\u5B50\u5BAE\u9838\u764C\u7BE9\u6AA2",
+      path: "/api/ihke3000/ihke3404s05/SP_IHKE3404S05"
+    },
+    { name: "cancer_lung", label: "\u80BA\u764C\u7BE9\u6AA2", path: "/api/ihke3000/ihke3404s06/page_load" },
+    { name: "cancer_hpv", label: "\u5A66\u5973HPV\u6AA2\u6E2C", path: "/api/ihke3000/ihke3404s07/page_load" },
+    { name: "cancer_hpsa", label: "\u80C3\u5E7D\u9580\u687F\u83CC\u7BE9\u6AA2", path: "/api/ihke3000/ihke3404s08/page_load" }
+  ].map((c) => ({
+    name: c.name,
+    path: c.path,
+    page_type: "observations",
+    // No date-range param — NHI returns all-time screening history.
+    supportsDateRange: false,
+    adapt: (item) => adaptCancerScreening(item, c.label)
+  }));
   var ENDPOINT_LABEL_ZH = {
     encounters: "\u5C31\u91AB",
     inpatient: "\u4F4F\u9662",
@@ -6373,7 +6423,13 @@
     allergies: "\u85E5\u7269\u904E\u654F",
     allergies_b: "\u85E5\u7269\u904E\u654F\uFF08B\uFF09",
     adult_preventive: "\u6210\u4EBA\u5065\u6AA2",
-    cancer_screening: "\u764C\u75C7\u7BE9\u6AA2",
+    cancer_colorectal: "\u5927\u8178\u764C\u7BE9\u6AA2",
+    cancer_oral: "\u53E3\u8154\u764C\u7BE9\u6AA2",
+    cancer_breast: "\u4E73\u764C\u7BE9\u6AA2",
+    cancer_cervical: "\u5B50\u5BAE\u9838\u764C\u7BE9\u6AA2",
+    cancer_lung: "\u80BA\u764C\u7BE9\u6AA2",
+    cancer_hpv: "\u5A66\u5973HPV\u6AA2\u6E2C",
+    cancer_hpsa: "\u80C3\u5E7D\u9580\u687F\u83CC\u7BE9\u6AA2",
     imaging: "\u5F71\u50CF\u6AA2\u67E5",
     other_labs: "\u6AA2\u9A57",
     catastrophic_illness: "\u91CD\u5927\u50B7\u75C5",
@@ -6475,12 +6531,13 @@
       page_type: "observations",
       adapt: adaptAdultPreventive
     },
-    {
-      name: "cancer_screening",
-      path: "/api/ihke3000/ihke3404s01/SP_IHKE3404S01",
-      page_type: "observations",
-      adapt: adaptLabItem
-    },
+    // 癌症篩檢 (IHKE3404S02–S08) — 7 per-cancer-type sub-endpoints, spread
+    // in from CANCER_SCREENING_ENDPOINTS above. The pre-2026-06-13 single
+    // entry pointed at IHKE3404S01 (the category MENU, no data) and used
+    // adaptLabItem (which needs assaY_VALUE the qualitative rows don't have)
+    // — so cancer screening captured ZERO. Now each type fetches its real
+    // sub-endpoint and maps via adaptCancerScreening.
+    ...CANCER_SCREENING_ENDPOINTS,
     // glucose (IHKE3406S01) + lipid (IHKE3407S01) are subsets of
     // other_labs (IHKE3409S01) per NHI's data model — fetching them
     // separately just creates dup observations, so we skip them.

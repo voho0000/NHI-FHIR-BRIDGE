@@ -15,6 +15,7 @@
 import {
   adaptAdultPreventive,
   adaptAllergy,
+  adaptCancerScreening,
   adaptCarePlan,
   adaptCatastrophicIllness,
   adaptChronicListStub,
@@ -26,6 +27,38 @@ import {
   adaptMedication,
   adaptProcedureListStub,
 } from "./nhi-adapters.js";
+
+// 癌症篩檢 sub-endpoints (IHKE3404S02–S08). NOT a single endpoint: each
+// cancer type has its own sub-endpoint with a NON-uniform URL suffix
+// (SP_… vs page_load — verified live 2026-06-13; see adaptCancerScreening).
+// IHKE3404S01 (the old registry target) is just the category menu and
+// returns no data — which is why cancer screening captured ZERO before.
+// `label` is bound into each entry's adapter so one Observation per record
+// carries the screening name. No date-range param (NHI returns all-time).
+const CANCER_SCREENING_ENDPOINTS = [
+  {
+    name: "cancer_colorectal",
+    label: "大腸癌篩檢",
+    path: "/api/ihke3000/ihke3404s02/SP_IHKE3404S02",
+  },
+  { name: "cancer_oral", label: "口腔癌篩檢", path: "/api/ihke3000/ihke3404s03/SP_IHKE3404S03" },
+  { name: "cancer_breast", label: "乳癌篩檢", path: "/api/ihke3000/ihke3404s04/page_load" },
+  {
+    name: "cancer_cervical",
+    label: "子宮頸癌篩檢",
+    path: "/api/ihke3000/ihke3404s05/SP_IHKE3404S05",
+  },
+  { name: "cancer_lung", label: "肺癌篩檢", path: "/api/ihke3000/ihke3404s06/page_load" },
+  { name: "cancer_hpv", label: "婦女HPV檢測", path: "/api/ihke3000/ihke3404s07/page_load" },
+  { name: "cancer_hpsa", label: "胃幽門桿菌篩檢", path: "/api/ihke3000/ihke3404s08/page_load" },
+].map((c) => ({
+  name: c.name,
+  path: c.path,
+  page_type: "observations",
+  // No date-range param — NHI returns all-time screening history.
+  supportsDateRange: false,
+  adapt: (item: any) => adaptCancerScreening(item, c.label),
+}));
 
 // User-facing label for each endpoint name. The breakdown collapsible
 // in the popup ("查看明細") reads from this so users see "就醫 12 筆"
@@ -42,7 +75,13 @@ export const ENDPOINT_LABEL_ZH = {
   allergies: "藥物過敏",
   allergies_b: "藥物過敏（B）",
   adult_preventive: "成人健檢",
-  cancer_screening: "癌症篩檢",
+  cancer_colorectal: "大腸癌篩檢",
+  cancer_oral: "口腔癌篩檢",
+  cancer_breast: "乳癌篩檢",
+  cancer_cervical: "子宮頸癌篩檢",
+  cancer_lung: "肺癌篩檢",
+  cancer_hpv: "婦女HPV檢測",
+  cancer_hpsa: "胃幽門桿菌篩檢",
   imaging: "影像檢查",
   other_labs: "檢驗",
   catastrophic_illness: "重大傷病",
@@ -151,12 +190,13 @@ export const NHI_API_ENDPOINTS = [
     page_type: "observations",
     adapt: adaptAdultPreventive,
   },
-  {
-    name: "cancer_screening",
-    path: "/api/ihke3000/ihke3404s01/SP_IHKE3404S01",
-    page_type: "observations",
-    adapt: adaptLabItem,
-  },
+  // 癌症篩檢 (IHKE3404S02–S08) — 7 per-cancer-type sub-endpoints, spread
+  // in from CANCER_SCREENING_ENDPOINTS above. The pre-2026-06-13 single
+  // entry pointed at IHKE3404S01 (the category MENU, no data) and used
+  // adaptLabItem (which needs assaY_VALUE the qualitative rows don't have)
+  // — so cancer screening captured ZERO. Now each type fetches its real
+  // sub-endpoint and maps via adaptCancerScreening.
+  ...CANCER_SCREENING_ENDPOINTS,
   // glucose (IHKE3406S01) + lipid (IHKE3407S01) are subsets of
   // other_labs (IHKE3409S01) per NHI's data model — fetching them
   // separately just creates dup observations, so we skip them.

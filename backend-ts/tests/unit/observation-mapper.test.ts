@@ -930,3 +930,38 @@ describe("mapObservation — NHI Chinese interpretation (成人預防保健, aud
     expect(obs?.interpretation?.[0]?.coding?.[0]?.code).toBe("N");
   });
 });
+
+describe("mapObservation — 癌症篩檢 shape end-to-end (IHKE3404, audit 2026-06-13)", () => {
+  // The adaptCancerScreening output (qualitative, code="") must survive the
+  // observation pipeline and emit a valid Observation — the old path
+  // (adaptLabItem on the menu endpoint) produced ZERO. Locks the full fix.
+  test("qualitative cancer-screening row → valid Observation (not dropped)", () => {
+    const obs = mapObservation(
+      {
+        date: "2023-04-20",
+        code: "",
+        order_name: "大腸癌篩檢",
+        display: "大腸癌篩檢",
+        value: "無異常",
+        unit: "",
+        reference_range: "",
+        category: "laboratory",
+        hospital: "新北市聯醫",
+        source_program: "cancer-screening",
+      },
+      "patient-x",
+    );
+    expect(obs).not.toBeNull();
+    expect(obs?.resourceType).toBe("Observation");
+    expect(obs?.code?.text).toBe("大腸癌篩檢");
+    expect(obs?.valueString).toBe("無異常");
+    expect(obs?.effectiveDateTime).toBe("2023-04-20T00:00:00+08:00");
+    // (performer ← hospital is emitted by the grouped page_type="observations"
+    // path the real pipeline uses; single-row mapObservation omits it.)
+    // source-program tag lets SMART apps isolate the 癌症篩檢 programme.
+    expect(obs?.meta?.tag).toContainEqual({
+      system: "http://nhi-fhir-bridge/source-program",
+      code: "cancer-screening",
+    });
+  });
+});

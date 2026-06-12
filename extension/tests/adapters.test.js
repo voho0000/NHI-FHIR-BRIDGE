@@ -14,14 +14,15 @@
 //   3. Bilingual / casing variants in NHI's JSON keys
 //   4. End-to-end fixture snapshots so structural drift is caught
 
-import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, test } from "vitest";
 
 import {
   adaptAdultPreventive,
   adaptAllergy,
+  adaptCancerScreening,
   adaptCarePlan,
   adaptCatastrophicIllness,
   adaptChronicListStub,
@@ -120,8 +121,9 @@ describe("isoToROC", () => {
 
 describe("pickEnglish", () => {
   test("returns English half when bilingual 中文||English", () => {
-    expect(pickEnglish("良性攝護腺肥大||Benign prostatic hyperplasia"))
-      .toBe("Benign prostatic hyperplasia");
+    expect(pickEnglish("良性攝護腺肥大||Benign prostatic hyperplasia")).toBe(
+      "Benign prostatic hyperplasia",
+    );
   });
   test("falls back to Chinese half when English half is empty", () => {
     expect(pickEnglish("某中文||")).toBe("某中文");
@@ -140,8 +142,7 @@ describe("pickEnglish", () => {
 
 describe("pickChinese", () => {
   test("returns Chinese half when bilingual 中文||English", () => {
-    expect(pickChinese("良性攝護腺肥大||Benign prostatic hyperplasia"))
-      .toBe("良性攝護腺肥大");
+    expect(pickChinese("良性攝護腺肥大||Benign prostatic hyperplasia")).toBe("良性攝護腺肥大");
   });
   test("falls back to English half when Chinese half is empty", () => {
     expect(pickChinese("||English only")).toBe("English only");
@@ -169,7 +170,7 @@ describe("adaptLabItem", () => {
   // The v0.6.1 regression — pin this hard.
   test("date prefers reaL_INSPECT_DATE over funC_DATE (inpatient case)", () => {
     const item = {
-      funC_DATE: "114/05/18",        // admission
+      funC_DATE: "114/05/18", // admission
       reaL_INSPECT_DATE: "114/05/22", // actual sample draw, 4 days into stay
       assaY_VALUE: "191",
       assaY_ITEM_NAME: "FINGER SUGAR",
@@ -212,11 +213,16 @@ describe("adaptLabItem", () => {
 
   test("returns null when no assaY_VALUE (zero would be a real reading and is kept)", () => {
     expect(adaptLabItem({ funC_DATE: "114/05/18", assaY_ITEM_NAME: "X" })).toBeNull();
-    expect(adaptLabItem({ funC_DATE: "114/05/18", assaY_VALUE: "", assaY_ITEM_NAME: "X" })).toBeNull();
-    expect(adaptLabItem({ funC_DATE: "114/05/18", assaY_VALUE: null, assaY_ITEM_NAME: "X" })).toBeNull();
+    expect(
+      adaptLabItem({ funC_DATE: "114/05/18", assaY_VALUE: "", assaY_ITEM_NAME: "X" }),
+    ).toBeNull();
+    expect(
+      adaptLabItem({ funC_DATE: "114/05/18", assaY_VALUE: null, assaY_ITEM_NAME: "X" }),
+    ).toBeNull();
     // Zero is a real (low) result — keep it
-    expect(adaptLabItem({ funC_DATE: "114/05/18", assaY_VALUE: 0, assaY_ITEM_NAME: "X" }))
-      .toMatchObject({ value: "0" });
+    expect(
+      adaptLabItem({ funC_DATE: "114/05/18", assaY_VALUE: 0, assaY_ITEM_NAME: "X" }),
+    ).toMatchObject({ value: "0" });
   });
 
   test("prefers full assaY_ITEM_NAME over UI-truncated order_shortname", () => {
@@ -290,31 +296,37 @@ describe("adaptLabItem", () => {
       assaY_ITEM_NAME: "Crea",
       assaY_VALUE: "1.1",
     });
-    expect(r.code).toBe("09027C");      // stable across hospitals
-    expect(r.display).toBe("Crea");     // cleaned hospital label
+    expect(r.code).toBe("09027C"); // stable across hospitals
+    expect(r.display).toBe("Crea"); // cleaned hospital label
   });
 
   test("strips trailing comma / whitespace from free-text display", () => {
-    expect(adaptLabItem({
-      funC_DATE: "114/05/18",
-      ordeR_CODE: "09027C",
-      assaY_ITEM_NAME: "Crea,",
-      assaY_VALUE: "1.2",
-    }).display).toBe("Crea");
+    expect(
+      adaptLabItem({
+        funC_DATE: "114/05/18",
+        ordeR_CODE: "09027C",
+        assaY_ITEM_NAME: "Crea,",
+        assaY_VALUE: "1.2",
+      }).display,
+    ).toBe("Crea");
 
-    expect(adaptLabItem({
-      funC_DATE: "114/05/18",
-      ordeR_CODE: "09027C",
-      assaY_ITEM_NAME: "Crea， ",   // 中文逗號 + trailing space
-      assaY_VALUE: "1.2",
-    }).display).toBe("Crea");
+    expect(
+      adaptLabItem({
+        funC_DATE: "114/05/18",
+        ordeR_CODE: "09027C",
+        assaY_ITEM_NAME: "Crea， ", // 中文逗號 + trailing space
+        assaY_VALUE: "1.2",
+      }).display,
+    ).toBe("Crea");
 
-    expect(adaptLabItem({
-      funC_DATE: "114/05/18",
-      ordeR_CODE: "09027C",
-      assaY_ITEM_NAME: "  ALT/GPT ;  ",   // semicolons + whitespace
-      assaY_VALUE: "30",
-    }).display).toBe("ALT/GPT");
+    expect(
+      adaptLabItem({
+        funC_DATE: "114/05/18",
+        ordeR_CODE: "09027C",
+        assaY_ITEM_NAME: "  ALT/GPT ;  ", // semicolons + whitespace
+        assaY_VALUE: "30",
+      }).display,
+    ).toBe("ALT/GPT");
   });
 
   test("two hospitals reporting same ordeR_CODE → same code (the SMART-app grouping fix)", () => {
@@ -437,17 +449,21 @@ describe("adaptImagingReportFromDetail", () => {
   });
 
   test("returns null when desc (report body) is missing — no narrative = no DR", () => {
-    expect(adaptImagingReportFromDetail({
-      func_DATE: "113/01/14",
-      order_NAME: "CT",
-    })).toBeNull();
+    expect(
+      adaptImagingReportFromDetail({
+        func_DATE: "113/01/14",
+        order_NAME: "CT",
+      }),
+    ).toBeNull();
   });
 
   test("returns null when order_NAME is missing", () => {
-    expect(adaptImagingReportFromDetail({
-      func_DATE: "113/01/14",
-      desc: "body",
-    })).toBeNull();
+    expect(
+      adaptImagingReportFromDetail({
+        func_DATE: "113/01/14",
+        desc: "body",
+      }),
+    ).toBeNull();
   });
 
   test("end-to-end fixture: live IHKE3408S02 row produces expected date / category / issued", () => {
@@ -518,10 +534,9 @@ describe("adaptProcedureFromDetail", () => {
     const item = {
       func_DATE: "103/09/23",
       op_CODE: "08B53ZZ",
-      op_CODE_CNAME: "08B53ZZ/經皮左側玻璃體部分切除術||08B53ZZ/Excision of Left Vitreous, Percutaneous Approach",
-      sp_IHKE3308S04_data_list: [
-        { exe_S_DATE: "103/09/23", order_CODE_NAME: "Y||Y" },
-      ],
+      op_CODE_CNAME:
+        "08B53ZZ/經皮左側玻璃體部分切除術||08B53ZZ/Excision of Left Vitreous, Percutaneous Approach",
+      sp_IHKE3308S04_data_list: [{ exe_S_DATE: "103/09/23", order_CODE_NAME: "Y||Y" }],
     };
     expect(adaptProcedureFromDetail(item).display).toBe(
       "Excision of Left Vitreous, Percutaneous Approach",
@@ -533,9 +548,7 @@ describe("adaptProcedureFromDetail", () => {
       func_DATE: "103/09/23",
       op_CODE: "08B53ZZ",
       op_CODE_CNAME: "08B53ZZ/X||08B53ZZ/X",
-      sp_IHKE3308S04_data_list: [
-        { exe_S_DATE: "103/09/23", order_CODE_NAME: "Y||Y" },
-      ],
+      sp_IHKE3308S04_data_list: [{ exe_S_DATE: "103/09/23", order_CODE_NAME: "Y||Y" }],
     };
     const r = adaptProcedureFromDetail(item);
     expect(r.code).toBe("08B53ZZ");
@@ -563,17 +576,21 @@ describe("adaptProcedureFromDetail", () => {
   });
 
   test("returns null when display can't be derived", () => {
-    expect(adaptProcedureFromDetail({
-      func_DATE: "103/09/23",
-      sp_IHKE3308S04_data_list: [{ exe_S_DATE: "103/09/23" }],
-    })).toBeNull();
+    expect(
+      adaptProcedureFromDetail({
+        func_DATE: "103/09/23",
+        sp_IHKE3308S04_data_list: [{ exe_S_DATE: "103/09/23" }],
+      }),
+    ).toBeNull();
   });
 
   test("returns null when no date can be derived", () => {
-    expect(adaptProcedureFromDetail({
-      op_CODE: "X",
-      op_CODE_CNAME: "X/Y||X/Y",
-    })).toBeNull();
+    expect(
+      adaptProcedureFromDetail({
+        op_CODE: "X",
+        op_CODE_CNAME: "X/Y||X/Y",
+      }),
+    ).toBeNull();
   });
 
   test("end-to-end fixture: inpatient IHKE3308S02 row", () => {
@@ -591,7 +608,9 @@ describe("adaptProcedureFromDetail", () => {
     const r = adaptProcedureFromDetail(readFixture("ihke3308-procedure-outpatient.json"));
     expect(r.date).toBe("2014-01-14");
     expect(r.code).toBe("3E0C3GC");
-    expect(r.display).toBe("Introduction of Other Therapeutic Substance into Eye, Percutaneous Approach");
+    expect(r.display).toBe(
+      "Introduction of Other Therapeutic Substance into Eye, Percutaneous Approach",
+    );
     expect(r.hospital).toBe("嘉基醫院");
     // icd9cm_CODE_CNAME is null in this fixture — note should still have
     // the sub-list item but no Reason: line.
@@ -673,9 +692,7 @@ describe("adaptMedicationFromDetail", () => {
 
   test("end-to-end fixture: inpatient admission produces expected end_date on every drug row", () => {
     const fixture = readFixture("ihke3306s02-inpatient-admission.json");
-    const adapted = fixture.drugs.map((d) =>
-      adaptMedicationFromDetail(d, fixture.main_data_visit),
-    );
+    const adapted = fixture.drugs.map((d) => adaptMedicationFromDetail(d, fixture.main_data_visit));
     expect(adapted).toHaveLength(3);
     for (const r of adapted) {
       expect(r.date).toBe("2022-05-18");
@@ -807,10 +824,12 @@ describe("adaptCatastrophicIllness", () => {
   });
 
   test("clinical_status hard-coded to 'active' (NHI only returns valid certs)", () => {
-    expect(adaptCatastrophicIllness({
-      icD10CM_CNAME: "x",
-      valiD_S_DATE: "111/01/01",
-    }).clinical_status).toBe("active");
+    expect(
+      adaptCatastrophicIllness({
+        icD10CM_CNAME: "x",
+        valiD_S_DATE: "111/01/01",
+      }).clinical_status,
+    ).toBe("active");
   });
 
   test("handles bilingual icD10CM_CNAME (中文||English) by preferring English", () => {
@@ -886,8 +905,16 @@ describe("adaptInpatientEncounter", () => {
       },
       {
         secondary_diagnoses: [
-          { code: "K2100", name_en: "GERD with esophagitis", name_zh: "胃食道逆流性疾病伴有食道炎" },
-          { code: "E1122", name_en: "T2DM with chronic kidney disease", name_zh: "第二型糖尿病伴慢性腎臟病" },
+          {
+            code: "K2100",
+            name_en: "GERD with esophagitis",
+            name_zh: "胃食道逆流性疾病伴有食道炎",
+          },
+          {
+            code: "E1122",
+            name_en: "T2DM with chronic kidney disease",
+            name_zh: "第二型糖尿病伴慢性腎臟病",
+          },
         ],
       },
     );
@@ -1073,10 +1100,7 @@ describe("adaptEncounterFromMedExpense", () => {
     // Mapper's array iteration expects a real array. Adapter normalises
     // missing / non-array option values to [] so the mapper doesn't
     // need an Array.isArray guard at every callsite.
-    const r = adaptEncounterFromMedExpense(
-      { funC_DATE: "115/04/29", hosP_ABBR: "X" },
-      "AMB",
-    );
+    const r = adaptEncounterFromMedExpense({ funC_DATE: "115/04/29", hosP_ABBR: "X" }, "AMB");
     expect(r.secondary_diagnoses).toEqual([]);
   });
 
@@ -1102,9 +1126,7 @@ describe("adaptEncounterFromMedExpense", () => {
         },
       },
     );
-    expect(r.reason).toBe(
-      "N400 Benign prostatic hyperplasia without lower urinary tract symptoms",
-    );
+    expect(r.reason).toBe("N400 Benign prostatic hyperplasia without lower urinary tract symptoms");
     expect(r.reason_zh).toBe("N400 良性攝護腺增生未伴有下泌尿道症狀");
     expect(r.reason_code).toBe("N400");
   });
@@ -1116,8 +1138,7 @@ describe("adaptEncounterFromMedExpense", () => {
         funC_DATE: "115/05/13",
         hosP_ABBR: "VGH",
         icD9CM_CODE: "I10",
-        icD9CM_CODE_CNAME:
-          "I10/原發性高血壓||I10/Essential hypertension",
+        icD9CM_CODE_CNAME: "I10/原發性高血壓||I10/Essential hypertension",
       },
       "AMB",
     );
@@ -1379,17 +1400,17 @@ describe("adaptAdultPreventive", () => {
   test("all chemistry / liver / renal / hepatitis fields carry their NHI 醫令碼", () => {
     const row = {
       firsT_DIAG_DATE: "113/11/07",
-      cho: "199",     // 09001C
-      bloD_TG: "93",  // 09004C
-      hdl: "42",      // 09043C
-      ldl: "138",     // 09044C
-      sgot: "23",     // 09025C
-      sgpt: "23",     // 09026C
+      cho: "199", // 09001C
+      bloD_TG: "93", // 09004C
+      hdl: "42", // 09043C
+      ldl: "138", // 09044C
+      sgot: "23", // 09025C
+      sgpt: "23", // 09026C
       s_09005C: "92", // 09005C (already pinned pre-v0.6.8)
-      urinE_BUN: "12",      // 09002C
-      bloD_CREAT: "1",      // 09015C
-      uriC_ACID: "5.5",     // 09013C
-      hbsaG_TEXT: "陰性",   // 14032C (pinned v0.6.6)
+      urinE_BUN: "12", // 09002C
+      bloD_CREAT: "1", // 09015C
+      uriC_ACID: "5.5", // 09013C
+      hbsaG_TEXT: "陰性", // 14032C (pinned v0.6.6)
       antI_HCV_TEXT: "陰性", // 14051C (pinned v0.6.6)
     };
     const out = adaptAdultPreventive(row);
@@ -1499,5 +1520,62 @@ describe("adaptAdultPreventive", () => {
     expect(up).toBeDefined();
     expect(up.value).toBe("-");
     expect(up.value).not.toBe("0");
+  });
+});
+
+describe("adaptCancerScreening (IHKE3404 — audit 2026-06-13)", () => {
+  // Real shape captured live: qualitative result, NO assaY_VALUE/uniT_DATA
+  // (which is why the old adaptLabItem mapping dropped every row).
+  const colorectal = {
+    hosP_ID: "0131020016",
+    hosP_ABBR: "新北市聯醫",
+    funC_DATE: "112/04/20",
+    assaY_RESULT: "0",
+    codE_CNAME: "無異常",
+    codE_ENAME: "Y",
+  };
+
+  test("maps a colorectal screening row → Observation-shaped dict", () => {
+    const o = adaptCancerScreening(colorectal, "大腸癌篩檢");
+    expect(o).not.toBeNull();
+    expect(o.date).toBe("2023-04-20"); // 112 → 2023
+    expect(o.display).toBe("大腸癌篩檢");
+    expect(o.value).toBe("無異常");
+    expect(o.hospital).toBe("新北市聯醫");
+    expect(o.category).toBe("laboratory");
+    expect(o.source_program).toBe("cancer-screening");
+    expect(o.code).toBe(""); // no NHI 醫令碼 on these rows
+  });
+
+  test("folds 乳癌 diagnosis_CODE (BI-RADS-ish, <BR>/● markup) into the value cleanly", () => {
+    const breast = {
+      hosP_ABBR: "明新診所",
+      funC_DATE: "112/03/13",
+      codE_CNAME: "無異常",
+      diagnosis_CODE: "●良性發現<BR>●有發現影像變化，但為良性，建議每年定期檢查即可。",
+    };
+    const o = adaptCancerScreening(breast, "乳癌篩檢");
+    expect(o.value).toContain("無異常");
+    expect(o.value).toContain("良性發現");
+    expect(o.value).not.toMatch(/<br/i); // HTML stripped
+    expect(o.value).not.toMatch(/[●•]/); // bullets stripped
+  });
+
+  test("子宮頸 cytopathiC_CODE is folded in too", () => {
+    const cervical = {
+      hosP_ABBR: "三重衛生所",
+      funC_DATE: "105/12/16",
+      codE_CNAME: "無異常",
+      cytopathiC_CODE: "NILM",
+    };
+    const o = adaptCancerScreening(cervical, "子宮頸癌篩檢");
+    expect(o.value).toContain("無異常");
+    expect(o.value).toContain("NILM");
+  });
+
+  test("drops rows with no date or no result (defensive)", () => {
+    expect(adaptCancerScreening({ codE_CNAME: "無異常" }, "大腸癌篩檢")).toBeNull();
+    expect(adaptCancerScreening({ funC_DATE: "112/04/20" }, "大腸癌篩檢")).toBeNull();
+    expect(adaptCancerScreening(null, "大腸癌篩檢")).toBeNull();
   });
 });

@@ -769,6 +769,74 @@ export function adaptCarePlan(item) {
   };
 }
 
+// IHKE3404 癌症篩檢結果 — confirmed by live raw-data audit 2026-06-13.
+//
+// IMPORTANT endpoint topology (this is why cancer screening was silently
+// captured as ZERO before): IHKE3404S01/SP_IHKE3404S01 is only the
+// CATEGORY MENU page (returns `{T_SEX}` — no data array). The real
+// per-cancer-type results live at sibling sub-endpoints, with a
+// NON-uniform URL suffix verified against the live API:
+//   大腸癌  s02 → SP_IHKE3404S02      口腔癌   s03 → SP_IHKE3404S03
+//   乳癌    s04 → page_load           子宮頸癌 s05 → SP_IHKE3404S05
+//   肺癌    s06 → page_load           婦女HPV  s07 → page_load
+//   胃HPSA  s08 → page_load
+// (page_load 404s for the SP_ ones and vice-versa — paths are fixed per
+// endpoint. No clicklink gate is needed; the earlier 404s were purely
+// wrong-suffix.) Each response carries ONE array (`sP_…_Data` or
+// `sp_…_Data` — casing differs by endpoint; extractList finds it).
+//
+// Row shape is QUALITATIVE (no assaY_VALUE / uniT_DATA), which is also
+// why adaptLabItem dropped every row even when pointed at the right
+// endpoint:
+//   { hosP_ID, hosP_ABBR, id, funC_DATE, assaY_RESULT ("0"),
+//     codE_CNAME ("無異常" / 異常 …), codE_ENAME,
+//     diagnosis_CODE? (乳癌, BI-RADS-ish "●良性發現<BR>…"),
+//     cytopathiC_CODE? (子宮頸, 抹片細胞病理碼) }
+//
+// We emit ONE Observation per screening record: code.text = the screening
+// label (大腸癌篩檢 …), valueString = the result, with any per-type detail
+// (乳攝 BI-RADS / 抹片碼) folded in cleanly. `screeningLabel` is bound per
+// endpoint in the registry. source_program="cancer-screening" tags the
+// Observation so SMART apps can filter the 癌症篩檢 programme.
+export function adaptCancerScreening(item, screeningLabel) {
+  if (!item || typeof item !== "object") return null;
+  const date = rocToISO(item.funC_DATE || item.func_date || "");
+  const resultText = String(item.codE_CNAME || item.code_cname || "").trim();
+  if (!date || !resultText) return null;
+  // Per-type free-text detail: 乳癌 diagnosis_CODE (findings, may carry
+  // <BR> + ● bullets), 子宮頸 cytopathiC_CODE (cytopathology code/text).
+  const detailRaw = String(
+    item.diagnosis_CODE ||
+      item.diagnosis_code ||
+      item.cytopathiC_CODE ||
+      item.cytopathic_code ||
+      "",
+  );
+  const detail = detailRaw
+    .replace(/<br\s*\/?>/gi, "；") // HTML line breaks → fullwidth semicolon
+    .replace(/[●•·]\s*/g, "") // bullet glyphs
+    .replace(/[；;]\s*[；;]+/g, "；") // collapse doubled separators
+    .replace(/\s+/g, " ")
+    .replace(/^[；;\s]+|[；;\s]+$/g, "")
+    .trim();
+  const value = detail ? `${resultText}（${detail}）` : resultText;
+  return {
+    date,
+    // No NHI 醫令碼 on these rows — group/route by the screening label.
+    code: "",
+    order_name: screeningLabel,
+    display: screeningLabel,
+    value,
+    unit: "",
+    reference_range: "",
+    category: "laboratory",
+    hospital: item.hosP_ABBR || item.hosp_abbr || "",
+    // Tagged so SMART apps can isolate the 癌症篩檢 programme (mirrors
+    // adult-preventive's source_program tag).
+    source_program: "cancer-screening",
+  };
+}
+
 export function adaptAllergy(item) {
   if (!item || typeof item !== "object") return null;
   const allergen =
