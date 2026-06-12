@@ -2,6 +2,19 @@
 
 Standing rules that survive across sessions. Update when the user adds a new rule.
 
+## 測試資料身分證規則 (added 2026-06-12, audit P0-1 post-mortem)
+
+**Committed 檔案中禁止 checksum-valid 的台灣身分證。** 一組真實身分證＋姓名＋生日曾隨 v0.18.1 進入公開 repo（2026-06-12 已以 git filter-repo 重寫全史清除＋force push）。規則：
+
+- 測試假資料一律用 **checksum 故意無效**的合成碼（如 `F223456789`、`P123456789`、`B223456789`）。唯一允許的 checksum-valid 例外：`A123456789`（眾所周知的規格書範例，列在 guard 的 allowlist）。
+- CI gate：`scripts/check-no-real-twid.mjs`（backend-ts.yml 第一個 step）— 掃描所有 git-tracked 檔案，比對 `[A-Z][12]\d{8}` 且通過官方 checksum 即 fail。
+- 文件/註解引用真實病人案例時（即使已半遮如 `F10375XXXX`），改用通用占位符（"probe patient" 等）；日期可保留當 breadcrumb。
+- fixtures 不可用真實擷取原樣 commit：日期需逐檔年份平移、小型院所/藥局/電話改合成值、`_note` 標明 sanitized。
+
+## 去識別化 Patient.id 派生 (added 2026-06-12, audit P1-1)
+
+de-identify toggle 開啟時，`Patient.id` 必須由**半遮後** ID 派生（`effectiveFhirPatientId(idNo, deidentify)`，mapper 單一真相來源）— 因 TWID 空間僅 ~3×10⁸，無鹽 SHA-1(全碼) 可秒級暴力還原，等於把遮罩拆掉。本機 bundle、backend 上傳（經 `deidentifyOverride` 先遮）、popup 查詢、SMART launch 四條路徑都走同一派生；新增任何跨路徑 patient-key 邏輯時禁止另起爐灶。
+
 ## FHIR R4 compliance check (added 2026-05-29)
 
 **Every change to mapper / observation pipeline / coding fields / resource construction must be audited against FHIR R4 spec before commit.** Don't ship "bug-fix patches" that violate the spec for short-term wins.
