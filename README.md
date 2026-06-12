@@ -132,9 +132,9 @@ docker compose up -d
 
 **2. 切換 Extension 模式**
 
-Extension popup → 右上角 **⚙️ 齒輪** → 進階設定 → 勾「**啟用本機伺服器模式**」。回到 wizard 後步驟 ③「**輸出方式**」會多出「**📥 下載到電腦** / **🏥 本機伺服器**」切換，選後者即可。
+Extension popup → 右上角 **⚙️ 齒輪** → 進階設定 → 勾「**啟用本機伺服器模式**」。勾選當下 Chrome 會跳出權限對話框要求存取本機伺服器（`localhost`）—— 按「**允許**」即可（v0.18.6 起 localhost 是 optional 權限，安裝時不要求，只有啟用本機伺服器模式才請求；按「拒絕」會自動取消勾選）。回到 wizard 後步驟 ③「**輸出方式**」會多出「**📥 下載到電腦** / **🏥 本機伺服器**」切換，選後者即可。
 
-Backend URL 預設 `http://localhost:8010` 不用改；自架其他位置（例如 `http://192.168.1.100:8010`）就在進階設定填新的 URL，第一次 Chrome 會跳出權限對話框，按「允許」就好。
+Backend URL 預設 `http://localhost:8010` 不用改；自架其他位置（例如 `http://192.168.1.100:8010`）就在進階設定填新的 URL，第一次連該位置 Chrome 會再跳一次權限對話框，按「允許」就好。
 
 popup 最上方會出現綠色「**🟢 已連線**」banner — 沒有 banner 不要按 sync，
 表示 backend 還沒起來或設定錯了，banner 會直接告訴你原因（例如「請執行 `docker compose up -d`」）。

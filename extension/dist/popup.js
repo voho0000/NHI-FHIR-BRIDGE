@@ -2710,6 +2710,15 @@
       if (isOk) els.connMini.title = `\u5DF2\u9023\u7DDA \u2014 ${els.backendUrl.value.trim()}`;
     }
   }
+  var LOCAL_BACKEND_ORIGINS = ["http://localhost/*", "http://127.0.0.1/*"];
+  async function ensureLocalhostPermission() {
+    try {
+      if (await chrome.permissions.contains({ origins: LOCAL_BACKEND_ORIGINS })) return true;
+      return await chrome.permissions.request({ origins: LOCAL_BACKEND_ORIGINS });
+    } catch {
+      return false;
+    }
+  }
   async function ensureBackendPermission(backendUrl) {
     const pattern = _originPatternFor(backendUrl);
     if (!pattern) return { ok: false, reason: `Backend URL \u7121\u6CD5\u89E3\u6790: ${backendUrl}` };
@@ -2801,6 +2810,17 @@
   }
   async function onBackendModeToggle() {
     const enabled = els.backendModeEnabled.checked;
+    if (enabled) {
+      const granted = await ensureLocalhostPermission();
+      if (!granted) {
+        els.backendModeEnabled.checked = false;
+        document.body.dataset.backendEnabled = "false";
+        alert(
+          "\u672A\u6388\u6B0A\u9023\u7DDA\u672C\u6A5F\u4F3A\u670D\u5668 \u2014 \u672C\u6A5F\u4F3A\u670D\u5668\u6A21\u5F0F\u9700\u8981\u5B58\u53D6 localhost \u7684\u6B0A\u9650\u624D\u80FD\u904B\u4F5C\u3002\n\u82E5\u8981\u4F7F\u7528\uFF0C\u8ACB\u518D\u52FE\u4E00\u6B21\u4E26\u5728\u6B0A\u9650\u8996\u7A97\u6309\u300C\u5141\u8A31\u300D\u3002"
+        );
+        return;
+      }
+    }
     document.body.dataset.backendEnabled = enabled ? "true" : "false";
     await chrome.storage.local.set({ backendModeEnabled: enabled });
     if (enabled) {

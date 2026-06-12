@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NHI-FHIR Bridge Capture",
-  "version": "0.18.5",
+  "version": "0.18.6",
   "description": "將健保署「健康存摺」就醫、用藥、檢驗紀錄轉換為 FHIR R4 標準格式，資料只在本機處理。",
   "icons": {
     "16": "icons/icon-16.png",
@@ -22,9 +22,6 @@
     "service_worker": "background.js"
   },
   "permissions": ["activeTab", "storage", "scripting", "downloads", "alarms", "unlimitedStorage"],
-  "host_permissions": [
-    "http://localhost/*",
-    "http://127.0.0.1/*",
-    "https://myhealthbank.nhi.gov.tw/*"
-  ]
+  "host_permissions": ["https://myhealthbank.nhi.gov.tw/*"],
+  "optional_host_permissions": ["http://localhost/*", "http://127.0.0.1/*"]
 }

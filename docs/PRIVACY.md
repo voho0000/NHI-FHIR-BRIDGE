@@ -1,6 +1,6 @@
 # Privacy Policy / 隱私權政策
 
-**Last updated / 最後更新**：2026-06-12
+**Last updated / 最後更新**：2026-06-13
 **Effective date / 生效日期**：2026-05-24
 
 ---
@@ -56,8 +56,8 @@ NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrom
 | `downloads` | 將產生的 FHIR Bundle JSON 儲存至使用者本機 |
 | `alarms` | 維持背景同步流程之心跳，避免 Chrome MV3 service worker 在長時間同步時被回收；並每 10 分鐘檢查、清除逾時（1 小時）的本機暫存健康紀錄檔 |
 | `unlimitedStorage` | 含影像的健康紀錄檔可能超過瀏覽器預設儲存配額，需要此權限才能在本機暫存（仍受上述 1 小時 TTL 與下載後立即清除機制管控） |
-| Host: `https://myhealthbank.nhi.gov.tw/*` | 擷取使用者本人的健保存摺紀錄 |
-| Host: `http://localhost/*`、`http://127.0.0.1/*` | （選用）將 FHIR 資料上傳至使用者自架的本機後端 |
+| Host: `https://myhealthbank.nhi.gov.tw/*` | 擷取使用者本人的健保存摺紀錄（安裝時要求的唯一主機權限） |
+| Optional host: `http://localhost/*`、`http://127.0.0.1/*` | （選用，v0.18.6 起改為 optional_host_permissions）將 FHIR 資料上傳至使用者自架的本機後端。**安裝時不要求**；僅在使用者主動啟用「上傳後端」模式時，由擴充功能在當下請求授權 |
 
 ### 六、使用者責任與限制
 
@@ -77,6 +77,7 @@ NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrom
 
 如政策有實質變更（例如新增資料收集），將更新本頁面之「最後更新」日期並於 GitHub repository 中標示。
 
+- 2026-06-13：localhost / 127.0.0.1 主機權限自 v0.18.6 起改為 `optional_host_permissions` — 安裝時不再要求，僅在使用者主動啟用「上傳後端」模式時才動態請求。一般使用者安裝時只會被要求存取健保署網域。
 - 2026-06-12：更正暫存機制描述（健康紀錄檔自 v0.14 起實際暫存於 `chrome.storage.local` 並以下載完成／1 小時 TTL 清除，並非 `chrome.storage.session` 隨瀏覽器關閉清除）；補列 `unlimitedStorage` 權限；去識別化模式下 `Patient.id` 雜湊改以半遮身分證計算（v0.18.4）。
 
 ### 十、聯絡方式
@@ -138,8 +139,8 @@ Both paths are **user-initiated** with the destination **fully controlled by the
 | `downloads` | Save the generated FHIR Bundle JSON to the user's local machine |
 | `alarms` | Keep service-worker heartbeat alive during long syncs to prevent MV3 worker termination; also runs a 10-minute sweep that clears locally staged bundles older than the 1-hour TTL |
 | `unlimitedStorage` | Bundles that include imaging can exceed the browser's default storage quota; this permission allows local staging (still bounded by the 1-hour TTL and cleared-on-download mechanisms above) |
-| Host: `https://myhealthbank.nhi.gov.tw/*` | Read the user's own health records from NHI |
-| Host: `http://localhost/*`, `http://127.0.0.1/*` | (Optional) Upload FHIR data to the user's self-hosted local backend |
+| Host: `https://myhealthbank.nhi.gov.tw/*` | Read the user's own health records from NHI (the only host permission requested at install) |
+| Optional host: `http://localhost/*`, `http://127.0.0.1/*` | (Optional, moved to optional_host_permissions in v0.18.6) Upload FHIR data to the user's self-hosted local backend. **Not requested at install**; requested on demand only when the user enables "Upload to backend" mode |
 
 ### 6. User responsibilities
 
@@ -159,6 +160,7 @@ The Extension does not knowingly collect any data from children under 13.
 
 Material changes (e.g. introducing any data collection) will be reflected in the "Last updated" date above and announced in the GitHub repository.
 
+- 2026-06-13: the localhost / 127.0.0.1 host permissions became `optional_host_permissions` in v0.18.6 — no longer requested at install, only requested on demand when the user enables "Upload to backend" mode. A normal install requests access to the NHI domain only.
 - 2026-06-12: corrected the staging-storage description (since v0.14 the bundle is staged in `chrome.storage.local` and cleared on download / 1-hour TTL, not in `chrome.storage.session` wiped on browser close); documented the `unlimitedStorage` permission; in de-identify mode, `Patient.id` is now hashed from the half-masked national ID (v0.18.4).
 
 ### 10. Contact

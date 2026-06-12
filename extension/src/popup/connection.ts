@@ -168,10 +168,33 @@ export function _renderConnBanner() {
   }
 }
 
+// localhost / 127.0.0.1 moved from required `host_permissions` to
+// `optional_host_permissions` (v0.18.6) so a Web-Store install requests
+// ONLY the NHI host — backend mode is opt-in and most users never touch
+// it. These are the broad (port-less) origins we request the moment the
+// user enables backend mode; they cover any local backend port the user
+// later configures, so ensureBackendPermission's per-URL contains check
+// short-circuits without re-prompting.
+const LOCAL_BACKEND_ORIGINS = ["http://localhost/*", "http://127.0.0.1/*"];
+
+// Request the localhost optional host permission. MUST be called from a
+// user gesture (the backend-mode toggle's change handler). Returns true
+// if already granted or granted just now, false if the user declined.
+export async function ensureLocalhostPermission(): Promise<boolean> {
+  try {
+    if (await chrome.permissions.contains({ origins: LOCAL_BACKEND_ORIGINS })) return true;
+    return await chrome.permissions.request({ origins: LOCAL_BACKEND_ORIGINS });
+  } catch {
+    return false;
+  }
+}
+
 // Backend-mode pre-flight: ensure the extension has host permission for
-// the user-configured backend URL. Localhost / 127.0.0.1 are covered by
-// the default manifest host_permissions; remote / LAN / production URLs
-// need a one-time user grant. Must run from a user gesture (button click).
+// the user-configured backend URL. Loopback origins are requested up
+// front when backend mode is enabled (ensureLocalhostPermission), so for
+// the default localhost backend `contains` is already true here; remote
+// / LAN / production URLs still need their own one-time grant. Must run
+// from a user gesture (button click).
 export async function ensureBackendPermission(backendUrl) {
   const pattern = _originPatternFor(backendUrl);
   if (!pattern) return { ok: false, reason: `Backend URL 無法解析: ${backendUrl}` };
@@ -282,6 +305,22 @@ export async function loadBackendModeEnabled() {
 // Backend-mode toggle change handler (wired in the entry).
 export async function onBackendModeToggle() {
   const enabled = els.backendModeEnabled.checked;
+  if (enabled) {
+    // v0.18.6: localhost is an OPTIONAL host permission now — request it
+    // here, while we still hold the toggle's user gesture. Declining
+    // leaves the extension with only the NHI host permission, so roll the
+    // toggle back instead of enabling a mode that can't reach anything.
+    const granted = await ensureLocalhostPermission();
+    if (!granted) {
+      els.backendModeEnabled.checked = false;
+      document.body.dataset.backendEnabled = "false";
+      alert(
+        "未授權連線本機伺服器 — 本機伺服器模式需要存取 localhost 的權限才能運作。\n" +
+          "若要使用，請再勾一次並在權限視窗按「允許」。",
+      );
+      return;
+    }
+  }
   document.body.dataset.backendEnabled = enabled ? "true" : "false";
   await chrome.storage.local.set({ backendModeEnabled: enabled });
   if (enabled) {
