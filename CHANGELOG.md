@@ -3,7 +3,7 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
-## 0.18.4 重點（未發布）— 2026-06-12
+## 0.18.4 重點 — 2026-06-13
 
 **🔒 隱私與安全總體檢 — 外部稽核後的修補（尚未發布，內容可能再增補）**
 
