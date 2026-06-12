@@ -40,6 +40,7 @@ import {
   NHI_TO_LOINC,
   PANEL_LOINC_MAP,
   findLoinc,
+  findLoincDetailed,
   mapDiagnosticReport,
   mapDischargeSummaryDocRef,
   mapEncounter,
@@ -1264,6 +1265,86 @@ describe("CI v0.11.4 — display-variant coverage (proactive audit)", () => {
     expect(findLoinc("06013C", "SG")).toBe("5811-5");
     expect(findLoinc("06013C", "Colour")).toBe("5778-6"); // UK spelling
     expect(findLoinc("06013C", "WBC esterase")).toBe("5799-2"); // not 6690-2
+  });
+
+  // ── CI v0.18.2 — 06012C urinalysis panel mis-tag (rule #8 / #10) ──────
+  // Silent bug (diagnosed 2026-06-09): 06012C 尿液一般檢查 is a full 18-
+  // analyte routine UA panel, but it was absent from DISPLAY_FIRST_CODES
+  // and NHI_TO_LOINC["06012C"]="5778-6", so findLoincDetailed Step A short-
+  // circuited and collapsed ALL 18 sub-analytes to 5778-6 "Color of Urine"
+  // (cleanMatch=true → no canary). FHIR validator passes; only a hand audit
+  // of a real bundle caught it. This table pins each (06012C, display) →
+  // its correct per-analyte LOINC so the collapse can never silently return.
+  describe("CI v0.18.2 — 06012C urinalysis panel routes 18 distinct LOINCs", () => {
+    // (display verbatim as the hospital ships it: combined 中文+English)
+    const CASES: Array<[string, string]> = [
+      ["外觀 Apperance", "5767-9"],
+      ["尿中上皮細胞 Epi cell", "5787-7"],
+      ["尿中白血球計數 WBC", "5821-4"],
+      ["尿中紅血球計數 RBC", "5808-1"],
+      ["尿中細菌 Bacteria", "25145-4"],
+      ["尿中結晶 Crystal", "5783-6"],
+      ["尿亞硝酸鹽 Nitrite", "5802-4"],
+      ["尿潛血 Occult blood", "5794-3"],
+      ["尿糖 Glucose", "5792-7"],
+      ["尿膽紅素 Bilirubin", "5770-3"],
+      ["尿膽素元 Urobilinogen", "5818-0"],
+      ["尿蛋白 Protein", "20454-5"],
+      ["尿酮體 Ketone", "5797-6"],
+      ["尿比重 S.G.", "5811-5"],
+      ["尿白血球酯脢 Leukocyte esterase", "5799-2"],
+      ["尿酸鹼值 PH", "5803-2"],
+      ["尿顏色 Color", "5778-6"],
+    ];
+
+    test.each(CASES)("06012C %s → %s (cleanMatch)", (display, loinc) => {
+      const r = findLoincDetailed("06012C", display);
+      expect(r.loinc).toBe(loinc);
+      expect(r.cleanMatch).toBe(true);
+    });
+
+    test("no two routable sub-analytes collapse to the same LOINC", () => {
+      const loincs = CASES.map(([d]) => findLoincDetailed("06012C", d).loinc);
+      expect(new Set(loincs).size).toBe(CASES.length); // 17 distinct
+      expect(loincs).not.toContain("24356-8"); // none fell to panel default
+    });
+
+    test("黏液/Mucus has no clean LOINC → Step-C panel default, canary visible", () => {
+      const r = findLoincDetailed("06012C", "尿黏液 Mucus");
+      expect(r.loinc).toBe("24356-8"); // panel default, NOT 5778-6 Color
+      expect(r.cleanMatch).toBe(false); // mis-tag canary stays on
+    });
+
+    test("06012C is registered as a panel (DISPLAY_FIRST + PANEL_LOINC_MAP)", () => {
+      expect(NHI_TO_LOINC["06012C"]).toBe("24356-8"); // panel-level fallback
+      expect("06012C" in PANEL_LOINC_MAP).toBe(true);
+      // 06012C and 06013C share the SAME table object (single source of truth)
+      expect(PANEL_LOINC_MAP["06012C"]).toBe(PANEL_LOINC_MAP["06013C"]);
+    });
+
+    test("every new microscopy LOINC has a canonical LOINC_DISPLAY name", () => {
+      for (const code of ["5787-7", "5821-4", "5808-1", "25145-4", "5783-6"]) {
+        expect(LOINC_DISPLAY[code]).toBeTruthy();
+      }
+    });
+
+    // Scenario D: standalone single urine analyte billed under an
+    // unrecognized / batch code (e.g. 成人預防保健 "21") still routes via the
+    // specimen-qualified GLOBAL keys — NOT to a serum LOINC or panel default.
+    test("standalone urine dipstick under unknown code routes via global keys", () => {
+      expect(findLoinc("21", "尿糖 Urine Glucose")).toBe("5792-7");
+      expect(findLoinc("21", "尿蛋白 Urine Protein")).toBe("20454-5");
+      expect(findLoinc("XX999", "尿潛血 Occult Blood")).toBe("5794-3");
+      expect(findLoinc("XX999", "尿酮體")).toBe("5797-6");
+    });
+
+    // GUARD: the new urine keys must NOT poach serum analytes. Known serum
+    // codes short-circuit at Step A before the global urine keys are read.
+    test("serum analytes are not poached by the urine keys", () => {
+      expect(findLoinc("09013C", "尿酸 Uric Acid")).toBe("3084-1"); // serum urate
+      expect(findLoinc("09002C", "尿素氮 BUN")).toBe("3094-0"); // serum BUN
+      expect(findLoinc("09005C", "血糖 Glucose AC")).toBe("1558-6"); // serum glucose
+    });
   });
 
   test("ABG CJK + period variants resolve", () => {

@@ -1756,8 +1756,16 @@
     "12056B": "20483-4",
     // 抗粒線體抗體 (AMA) — Mitochondria Ab [Titer] Serum
     // ── Urinalysis ────────────────────────────────────
-    "06012C": "5778-6",
-    // Urine appearance — Color
+    // v0.18.2 (2026-06-09, rule #10): 06012C 尿液一般檢查 is a FULL routine
+    // urinalysis PANEL (18 sub-analytes: dipstick + sediment microscopy),
+    // NOT a single "Color" test. The old 5778-6 value, combined with 06012C
+    // missing from DISPLAY_FIRST_CODES, short-circuited via findLoincDetailed
+    // Step A and silently collapsed all 18 sub-rows to 5778-6 "Color of
+    // Urine". Now a panel: 06012C ∈ DISPLAY_FIRST_CODES + PANEL_LOINC_MAP
+    // (URINALYSIS_ANALYTE_KEYS), so this value is only the Step-C best-effort
+    // panel fallback (cleanMatch=false → mis-tag canary stays visible).
+    "06012C": "24356-8",
+    // 尿液一般檢查 panel — Urinalysis Macro Panel (fallback)
     "06013C": "24356-8",
     // 尿生化 panel — Urinalysis macroscopic panel
     "07001C": "14563-1",
@@ -1864,6 +1872,11 @@
     // CBC panel
     "08013C",
     // CBC w/ auto diff panel
+    "06012C",
+    // 尿液一般檢查 — full routine UA panel (dipstick + microscopy).
+    // v0.18.2 (2026-06-09): promoted to fix the silent mis-tag where all 18
+    // sub-analytes collapsed to 5778-6 "Color of Urine". Shares the
+    // URINALYSIS_ANALYTE_KEYS table with 06013C (see PANEL_LOINC_MAP).
     "06013C",
     // Urinalysis macroscopic panel
     "09015C",
@@ -2178,180 +2191,214 @@
     crea: "2161-8",
     \u808C\u9178\u9150: "2161-8"
   };
+  var URINALYSIS_ANALYTE_KEYS = {
+    // Order matters: longer/more-specific keys before generic ones
+    // (matches _LOINC_MAP iteration semantics — first hit wins).
+    "specific gravity": "5811-5",
+    // Specific gravity Urine
+    "sp.gravity": "5811-5",
+    "sp gravity": "5811-5",
+    \u6BD4\u91CD: "5811-5",
+    "micro-albumin": "14957-5",
+    // Microalbumin Mass/vol Urine
+    microalbumin: "14957-5",
+    "malb(u)": "14957-5",
+    malb: "14957-5",
+    \u5FAE\u5C0F\u767D\u86CB\u767D: "14957-5",
+    // v0.12.1 (caught during v0.11.7 test re-run after LOINC_SHORT_TEXT
+    // for 20454-5 was added — both 微白蛋白 displays were silently
+    // routing to bare "蛋白" → 20454-5 (urine protein) instead of
+    // their correct microalbumin/UACR LOINCs). Longer specific keys
+    // ensure correct routing via _findLongestMatch.
+    \u5FAE\u767D\u86CB\u767D: "14957-5",
+    "\u5FAE\u767D\u86CB\u767D(\u5C3F)": "14957-5",
+    "\u5FAE\u767D\u86CB\u767D(\u5C3F)(\u534A\u5B9A\u91CF)": "14957-5",
+    "\u5FAE\u767D\u86CB\u767D(\u5C3F\u6DB2)": "14957-5",
+    \u5C3F\u5FAE\u91CF\u767D\u86CB\u767D: "14957-5",
+    \u5C3F\u767D\u86CB\u767D: "14957-5",
+    "u-malb": "14957-5",
+    uacr: "14959-1",
+    // Microalbumin/Creatinine ratio Urine
+    "\u5FAE\u767D\u86CB\u767D/\u808C\u9150\u9178\u6BD4\u503C": "14959-1",
+    "\u5FAE\u767D\u86CB\u767D/\u808C\u9150\u9178\u6BD4\u503C(\u534A\u5B9A\u91CF)": "14959-1",
+    "\u808C\u9150\u9178\u6BD4\u503C": "14959-1",
+    "\u808C\u9178\u9150\u6BD4\u503C": "14959-1",
+    "alb/cre": "14959-1",
+    "albumin/creatinine": "14959-1",
+    "u-acr": "14959-1",
+    "urine glucose": "5792-7",
+    sugar: "5792-7",
+    // NHI '尿糖' / 'Sugar' under 06013C
+    \u5C3F\u7CD6: "5792-7",
+    urobilinogen: "5818-0",
+    // Urobilinogen Urine Ql
+    \u5C3F\u81BD\u7D20\u539F: "5818-0",
+    bilirubin: "5770-3",
+    // Bilirubin Urine Ql
+    \u5C3F\u81BD\u7D05\u7D20: "5770-3",
+    // v0.13.1 (LOINC-based dedup migration audit 2026-05-30): bare
+    // "膽紅素" was missing — only the 尿- prefixed form was registered.
+    // PANEL_LOINC_MAP is code-scoped to 06013C urinalysis context, so
+    // adding the bare term here doesn't cross-pollute serum 膽紅素 (which
+    // routes via 09029C → NHI_TO_LOINC = 1975-2).
+    // WebFetch loinc.org/5770-3 verified 2026-06-02: Long Common Name
+    // "Bilirubin.total [Presence] in Urine by Test strip" — Component
+    // Bilirubin / Property PrThr / System Urine / Scale Ord / Method
+    // Test strip → correct urine-dipstick context for 06013C. ✅
+    \u81BD\u7D05\u7D20: "5770-3",
+    nitrite: "5802-4",
+    // Nitrite Urine
+    \u4E9E\u785D\u9178: "5802-4",
+    ketones: "5797-6",
+    // Ketones Urine
+    ketone: "5797-6",
+    \u916E\u9AD4: "5797-6",
+    protein: "20454-5",
+    // Protein Mass/vol Urine
+    \u5C3F\u86CB\u767D: "20454-5",
+    \u86CB\u767D: "20454-5",
+    leukocyte: "5799-2",
+    // Leukocytes Urine
+    leu: "5799-2",
+    \u767D\u8840\u7403\u916F\u9176: "5799-2",
+    // v0.11.11 (SMART app dev bug 7 2026-05-29): variant character 脢
+    // (not 酶) observed under 06013C in user's v0.11.9 bundle. Without
+    // this entry path-B missed and fell to global LOINC_MAP "白血球" →
+    // 6690-2 (blood WBC count) — wrong specimen + wrong analyte (4
+    // records affected).
+    \u767D\u8840\u7403\u916F\u8122: "5799-2",
+    \u767D\u8840\u7403\u8102\u9176: "5799-2",
+    // also seen — 脂 vs 酯
+    \u767D\u8840\u7403\u8102\u8122: "5799-2",
+    \u767D\u8840\u7403\u916F\u985E: "5799-2",
+    // observed in some HIS as descriptive name
+    blood: "5794-3",
+    // Hemoglobin Urine Ql
+    \u6F5B\u8840: "5794-3",
+    \u8272: "5778-6",
+    // Color of Urine (CJK substring)
+    color: "5778-6",
+    turbidity: "5767-9",
+    // Appearance of Urine
+    appearance: "5767-9",
+    \u5916\u89C0: "5767-9",
+    // v0.13.1 (app dev urinalysis A/B audit 2026-06-02): NHI B-channel
+    // ships "濁度" where A-channel ships "Turbidity". Without this key
+    // 濁度 fell to path-C panel default 24356-8 (Urinalysis complete
+    // panel) → diverged from Turbidity's 5767-9 → looked like a dup pair
+    // AND carried the wrong LOINC. WebFetch loinc.org/5767-9 verified
+    // 2026-06-02: Long Common Name "Appearance of Urine" — System Urine,
+    // Property Aper, Scale Nom. Taiwan urinalysis 濁度/Turbidity is the
+    // standard urine appearance/clarity test. ✅
+    \u6FC1\u5EA6: "5767-9",
+    ph: "5803-2",
+    // pH of Urine (urine-specific, NOT
+    // the arterial 11558-4 that the
+    // global map points to)
+    \u9178\u9E7C\u5EA6: "5803-2",
+    // v0.13.1 (same audit): B-channel "酸鹼值" vs A-channel "pH". Note
+    // 酸鹼值 (值) ≠ 酸鹼度 (度) — only the latter was registered, so 酸鹼值
+    // fell to panel default 24356-8. Code-scoped to 06013C so no clash
+    // with 09041B ABG's "酸鹼值" → 11558-4 (arterial pH). WebFetch
+    // loinc.org/5803-2 verified 2026-06-02: "pH of Urine by Test strip"
+    // — Component pH, System Urine. ✅
+    \u9178\u9E7C\u503C: "5803-2",
+    glucose: "5792-7",
+    // Last in this block so 'urine
+    // ── v0.11.4 audit — Taiwan dipstick abbrev variants ──
+    // Without these the abbreviated displays ("Bili" / "KET" / "OB" /
+    // "NIT" / "UBG" / "URO" / "SG" / "Colour" / "WBC esterase") fell
+    // to path-C and got LOINC 24356-8 (Urinalysis panel). Some also
+    // shadowed by global LOINC_MAP keys (e.g. "WBC esterase" matched
+    // global "wbc" → 6690-2 BLOOD WBC, wrong specimen).
+    "u-bili": "5770-3",
+    bili: "5770-3",
+    ket: "5797-6",
+    ob: "5794-3",
+    "ob.": "5794-3",
+    "occult blood": "5794-3",
+    nit: "5802-4",
+    ubg: "5818-0",
+    uro: "5818-0",
+    sg: "5811-5",
+    "s.g": "5811-5",
+    colour: "5778-6",
+    // UK spelling
+    "wbc esterase": "5799-2",
+    // blocks global "wbc" → 6690-2 shadow
+    // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): hospital
+    // 長庚嘉義 ships urine creatinine rows under NHI 06013C (尿生化
+    // panel) — NOT under 09015C as the v0.12.1 fix targeted. Without
+    // explicit urine variants here, "肌酸酐(尿液)(半定量)" routed via
+    // LOINC_MAP global "肌酸酐" → 2160-0 serum LOINC under 06013C
+    // billing (4 rows affected in user's v0.12.1 bundle). Mirror the
+    // same urine creatinine variants from PANEL_LOINC_MAP["09015C"]
+    // — longest-match guarantees urine LOINC 2161-8 wins over generic.
+    "\u808C\u9178\u9150(\u5C3F\u6DB2)(\u534A\u5B9A\u91CF)": "2161-8",
+    "\u808C\u9178\u9150(\u5C3F\u6DB2)": "2161-8",
+    "\u808C\u9178\u9150(\u5C3F)": "2161-8",
+    "\u808C\u9178\u9150(u)": "2161-8",
+    // ASCII keys ending in ")" fail \b regex boundary at end of match
+    // (same \b-non-word-char-no-boundary issue documented in v0.11.13
+    // APTT ratio fix). Use opening-paren-only form so \b at end fires
+    // on the word char preceding ")" — "creatinine(u" matches inside
+    // "creatinine(u)" with \b after "u".
+    "creatinine(u": "2161-8",
+    "creatinine(urine": "2161-8",
+    // v0.13.1 (app dev urinalysis A/B audit 2026-06-02): A-channel ships
+    // the abbreviation "CREA(U)(半定量)" — "creatinine(u" did NOT match
+    // (no "creatinine" substring in "crea(u)"), so it fell to global
+    // LOINC_MAP "crea" → 2160-0 SERUM creatinine while the B-channel
+    // "肌酸酐(尿液)" correctly got urine 2161-8. Add the abbreviated
+    // opening-paren form. Same verified LOINC 2161-8 "Creatinine
+    // [Mass/volume] in Urine" — WebFetch loinc.org/2161-8 confirmed
+    // 2026-06-02 (System Urine). ✅
+    "crea(u": "2161-8",
+    "crea(urine": "2161-8",
+    "u-creatinine": "2161-8",
+    "urine creatinine": "2161-8",
+    "creatinine, urine": "2161-8",
+    // ── Sediment microscopy sub-analytes (v0.18.2, 2026-06-09) ──
+    // 06012C 尿液一般檢查 also ships URINE SEDIMENT MICROSCOPY items the
+    // dipstick-only 06013C bundles never carried. Each LOINC WebFetch-
+    // verified at loinc.org 2026-06-09 (rule #5):
+    //   5787-7  Epithelial cells [#/area] Urine sed Microscopy HPF (Qn)
+    //   5821-4  Leukocytes [#/area] Urine sed Microscopy HPF (Qn)
+    //   5808-1  Erythrocytes [#/volume] Urine sed Microscopy HPF (Qn)
+    //   25145-4 Bacteria [Presence] Urine sed Light microscopy (Ord)
+    //   5783-6  Unidentified crystals [Presence] Urine sed (Ord)
+    // Count-form keys (白血球計數/紅血球計數) outrank the dipstick
+    // leukocyte-esterase key (白血球酯脢→5799-2) by longest-match; there is
+    // deliberately NO bare 白血球/紅血球/wbc/rbc key — it would shadow the
+    // esterase dipstick or fall through to the BLOOD CBC LOINCs in the
+    // global map (wrong specimen).
+    \u4E0A\u76AE\u7D30\u80DE: "5787-7",
+    "epi cell": "5787-7",
+    epithelial: "5787-7",
+    \u767D\u8840\u7403\u8A08\u6578: "5821-4",
+    \u7D05\u8840\u7403\u8A08\u6578: "5808-1",
+    \u7D30\u83CC: "25145-4",
+    bacteria: "25145-4",
+    \u7D50\u6676: "5783-6",
+    crystal: "5783-6",
+    crystals: "5783-6",
+    // 尿膽素元 — real-world 元/原 spelling variant of urobilinogen (the
+    // dipstick key above is 尿膽素原). English "Urobilinogen" already routes
+    // it; cover the CJK-only 元 form too.
+    \u5C3F\u81BD\u7D20\u5143: "5818-0",
+    \u81BD\u7D20\u5143: "5818-0"
+    // 黏液/Mucus intentionally UNMAPPED → falls to Step-C panel default
+    // 24356-8 (no clean generic urine-mucus LOINC on loinc.org; keeping it
+    // unmapped leaves the mis-tag canary visible per rule #8 vs guessing).
+  };
   var PANEL_LOINC_MAP = {
-    // ── Urinalysis (06013C) ──────────────────────────────
-    // All routine dipstick items reside on a single NHI billing code.
-    // Without this table they'd all collapse to the panel LOINC 24356-8,
-    // losing per-item granularity that's clinically useful (e.g.
-    // bilirubin vs urobilinogen for liver workup).
-    "06013C": {
-      // Order matters: longer/more-specific keys before generic ones
-      // (matches _LOINC_MAP iteration semantics — first hit wins).
-      "specific gravity": "5811-5",
-      // Specific gravity Urine
-      "sp.gravity": "5811-5",
-      "sp gravity": "5811-5",
-      \u6BD4\u91CD: "5811-5",
-      "micro-albumin": "14957-5",
-      // Microalbumin Mass/vol Urine
-      microalbumin: "14957-5",
-      "malb(u)": "14957-5",
-      malb: "14957-5",
-      \u5FAE\u5C0F\u767D\u86CB\u767D: "14957-5",
-      // v0.12.1 (caught during v0.11.7 test re-run after LOINC_SHORT_TEXT
-      // for 20454-5 was added — both 微白蛋白 displays were silently
-      // routing to bare "蛋白" → 20454-5 (urine protein) instead of
-      // their correct microalbumin/UACR LOINCs). Longer specific keys
-      // ensure correct routing via _findLongestMatch.
-      \u5FAE\u767D\u86CB\u767D: "14957-5",
-      "\u5FAE\u767D\u86CB\u767D(\u5C3F)": "14957-5",
-      "\u5FAE\u767D\u86CB\u767D(\u5C3F)(\u534A\u5B9A\u91CF)": "14957-5",
-      "\u5FAE\u767D\u86CB\u767D(\u5C3F\u6DB2)": "14957-5",
-      \u5C3F\u5FAE\u91CF\u767D\u86CB\u767D: "14957-5",
-      \u5C3F\u767D\u86CB\u767D: "14957-5",
-      "u-malb": "14957-5",
-      uacr: "14959-1",
-      // Microalbumin/Creatinine ratio Urine
-      "\u5FAE\u767D\u86CB\u767D/\u808C\u9150\u9178\u6BD4\u503C": "14959-1",
-      "\u5FAE\u767D\u86CB\u767D/\u808C\u9150\u9178\u6BD4\u503C(\u534A\u5B9A\u91CF)": "14959-1",
-      "\u808C\u9150\u9178\u6BD4\u503C": "14959-1",
-      "\u808C\u9178\u9150\u6BD4\u503C": "14959-1",
-      "alb/cre": "14959-1",
-      "albumin/creatinine": "14959-1",
-      "u-acr": "14959-1",
-      "urine glucose": "5792-7",
-      sugar: "5792-7",
-      // NHI '尿糖' / 'Sugar' under 06013C
-      \u5C3F\u7CD6: "5792-7",
-      urobilinogen: "5818-0",
-      // Urobilinogen Urine Ql
-      \u5C3F\u81BD\u7D20\u539F: "5818-0",
-      bilirubin: "5770-3",
-      // Bilirubin Urine Ql
-      \u5C3F\u81BD\u7D05\u7D20: "5770-3",
-      // v0.13.1 (LOINC-based dedup migration audit 2026-05-30): bare
-      // "膽紅素" was missing — only the 尿- prefixed form was registered.
-      // PANEL_LOINC_MAP is code-scoped to 06013C urinalysis context, so
-      // adding the bare term here doesn't cross-pollute serum 膽紅素 (which
-      // routes via 09029C → NHI_TO_LOINC = 1975-2).
-      // WebFetch loinc.org/5770-3 verified 2026-06-02: Long Common Name
-      // "Bilirubin.total [Presence] in Urine by Test strip" — Component
-      // Bilirubin / Property PrThr / System Urine / Scale Ord / Method
-      // Test strip → correct urine-dipstick context for 06013C. ✅
-      \u81BD\u7D05\u7D20: "5770-3",
-      nitrite: "5802-4",
-      // Nitrite Urine
-      \u4E9E\u785D\u9178: "5802-4",
-      ketones: "5797-6",
-      // Ketones Urine
-      ketone: "5797-6",
-      \u916E\u9AD4: "5797-6",
-      protein: "20454-5",
-      // Protein Mass/vol Urine
-      \u5C3F\u86CB\u767D: "20454-5",
-      \u86CB\u767D: "20454-5",
-      leukocyte: "5799-2",
-      // Leukocytes Urine
-      leu: "5799-2",
-      \u767D\u8840\u7403\u916F\u9176: "5799-2",
-      // v0.11.11 (SMART app dev bug 7 2026-05-29): variant character 脢
-      // (not 酶) observed under 06013C in user's v0.11.9 bundle. Without
-      // this entry path-B missed and fell to global LOINC_MAP "白血球" →
-      // 6690-2 (blood WBC count) — wrong specimen + wrong analyte (4
-      // records affected).
-      \u767D\u8840\u7403\u916F\u8122: "5799-2",
-      \u767D\u8840\u7403\u8102\u9176: "5799-2",
-      // also seen — 脂 vs 酯
-      \u767D\u8840\u7403\u8102\u8122: "5799-2",
-      \u767D\u8840\u7403\u916F\u985E: "5799-2",
-      // observed in some HIS as descriptive name
-      blood: "5794-3",
-      // Hemoglobin Urine Ql
-      \u6F5B\u8840: "5794-3",
-      \u8272: "5778-6",
-      // Color of Urine (CJK substring)
-      color: "5778-6",
-      turbidity: "5767-9",
-      // Appearance of Urine
-      appearance: "5767-9",
-      \u5916\u89C0: "5767-9",
-      // v0.13.1 (app dev urinalysis A/B audit 2026-06-02): NHI B-channel
-      // ships "濁度" where A-channel ships "Turbidity". Without this key
-      // 濁度 fell to path-C panel default 24356-8 (Urinalysis complete
-      // panel) → diverged from Turbidity's 5767-9 → looked like a dup pair
-      // AND carried the wrong LOINC. WebFetch loinc.org/5767-9 verified
-      // 2026-06-02: Long Common Name "Appearance of Urine" — System Urine,
-      // Property Aper, Scale Nom. Taiwan urinalysis 濁度/Turbidity is the
-      // standard urine appearance/clarity test. ✅
-      \u6FC1\u5EA6: "5767-9",
-      ph: "5803-2",
-      // pH of Urine (urine-specific, NOT
-      // the arterial 11558-4 that the
-      // global map points to)
-      \u9178\u9E7C\u5EA6: "5803-2",
-      // v0.13.1 (same audit): B-channel "酸鹼值" vs A-channel "pH". Note
-      // 酸鹼值 (值) ≠ 酸鹼度 (度) — only the latter was registered, so 酸鹼值
-      // fell to panel default 24356-8. Code-scoped to 06013C so no clash
-      // with 09041B ABG's "酸鹼值" → 11558-4 (arterial pH). WebFetch
-      // loinc.org/5803-2 verified 2026-06-02: "pH of Urine by Test strip"
-      // — Component pH, System Urine. ✅
-      \u9178\u9E7C\u503C: "5803-2",
-      glucose: "5792-7",
-      // Last in this block so 'urine
-      // ── v0.11.4 audit — Taiwan dipstick abbrev variants ──
-      // Without these the abbreviated displays ("Bili" / "KET" / "OB" /
-      // "NIT" / "UBG" / "URO" / "SG" / "Colour" / "WBC esterase") fell
-      // to path-C and got LOINC 24356-8 (Urinalysis panel). Some also
-      // shadowed by global LOINC_MAP keys (e.g. "WBC esterase" matched
-      // global "wbc" → 6690-2 BLOOD WBC, wrong specimen).
-      "u-bili": "5770-3",
-      bili: "5770-3",
-      ket: "5797-6",
-      ob: "5794-3",
-      "ob.": "5794-3",
-      "occult blood": "5794-3",
-      nit: "5802-4",
-      ubg: "5818-0",
-      uro: "5818-0",
-      sg: "5811-5",
-      "s.g": "5811-5",
-      colour: "5778-6",
-      // UK spelling
-      "wbc esterase": "5799-2",
-      // blocks global "wbc" → 6690-2 shadow
-      // v0.12.2 (SMART app dev v0.12.1 audit 2026-05-29): hospital
-      // 長庚嘉義 ships urine creatinine rows under NHI 06013C (尿生化
-      // panel) — NOT under 09015C as the v0.12.1 fix targeted. Without
-      // explicit urine variants here, "肌酸酐(尿液)(半定量)" routed via
-      // LOINC_MAP global "肌酸酐" → 2160-0 serum LOINC under 06013C
-      // billing (4 rows affected in user's v0.12.1 bundle). Mirror the
-      // same urine creatinine variants from PANEL_LOINC_MAP["09015C"]
-      // — longest-match guarantees urine LOINC 2161-8 wins over generic.
-      "\u808C\u9178\u9150(\u5C3F\u6DB2)(\u534A\u5B9A\u91CF)": "2161-8",
-      "\u808C\u9178\u9150(\u5C3F\u6DB2)": "2161-8",
-      "\u808C\u9178\u9150(\u5C3F)": "2161-8",
-      "\u808C\u9178\u9150(u)": "2161-8",
-      // ASCII keys ending in ")" fail \b regex boundary at end of match
-      // (same \b-non-word-char-no-boundary issue documented in v0.11.13
-      // APTT ratio fix). Use opening-paren-only form so \b at end fires
-      // on the word char preceding ")" — "creatinine(u" matches inside
-      // "creatinine(u)" with \b after "u".
-      "creatinine(u": "2161-8",
-      "creatinine(urine": "2161-8",
-      // v0.13.1 (app dev urinalysis A/B audit 2026-06-02): A-channel ships
-      // the abbreviation "CREA(U)(半定量)" — "creatinine(u" did NOT match
-      // (no "creatinine" substring in "crea(u)"), so it fell to global
-      // LOINC_MAP "crea" → 2160-0 SERUM creatinine while the B-channel
-      // "肌酸酐(尿液)" correctly got urine 2161-8. Add the abbreviated
-      // opening-paren form. Same verified LOINC 2161-8 "Creatinine
-      // [Mass/volume] in Urine" — WebFetch loinc.org/2161-8 confirmed
-      // 2026-06-02 (System Urine). ✅
-      "crea(u": "2161-8",
-      "crea(urine": "2161-8",
-      "u-creatinine": "2161-8",
-      "urine creatinine": "2161-8",
-      "creatinine, urine": "2161-8"
-    },
+    // ── Urinalysis: 06012C + 06013C share ONE analyte table ──────
+    // v0.18.2 (2026-06-09): both urinalysis panel codes route display-first
+    // through URINALYSIS_ANALYTE_KEYS. 06012C was previously NOT registered
+    // as a panel and short-circuited (NHI_TO_LOINC Step A) to 5778-6 "Color
+    // of Urine", collapsing all 18 sub-analytes. See rule #10.
+    "06012C": URINALYSIS_ANALYTE_KEYS,
+    "06013C": URINALYSIS_ANALYTE_KEYS,
     // ── ABG panel (09041B) ───────────────────────────────
     // 09041B has DISPLAY_FIRST_CODES but no PANEL_LOINC_MAP entry until
     // v0.11.4 — relied on global LOINC_MAP for routing, which works for
@@ -2928,12 +2975,43 @@
     egfr: "33914-3",
     hbsag: "5196-1",
     "anti-hcv": "16128-1",
-    // Urine protein (display fallback for the no-NHI-code path that
-    // comes from IHKE3402 vitals + adult-preventive supplements).
+    // ── Standalone urine dipstick tests (v0.18.2, 2026-06-09) ──────
+    // Scenario D: some patients have a SINGLE urine analyte billed under an
+    // unrecognized / batch code (e.g. 成人預防保健 code "21", or a hospital
+    // custom code) — NOT under the 06012C/06013C urinalysis panels. Those
+    // rows never reach PANEL_LOINC_MAP, so without specimen-qualified GLOBAL
+    // keys they'd fall to the panel default or a serum LOINC. Every key here
+    // MUST carry the 尿/urine qualifier — NEVER bare 蛋白/糖/protein/glucose
+    // (would shadow serum tests) and NEVER bare 尿 (v0.12.6 尿酸 mis-tag
+    // lesson, rule #7). Known serum codes short-circuit at findLoincDetailed
+    // Step A before this map is consulted, so these can't poach them.
+    // LOINCs reuse the urine-dipstick set already verified for 06013C.
     "urine protein": "20454-5",
-    // Protein Mass/vol Urine
+    // Protein [Presence] in Urine by Test strip
     "u-pro": "20454-5",
     \u5C3F\u86CB\u767D: "20454-5",
+    "urine glucose": "5792-7",
+    \u5C3F\u7CD6: "5792-7",
+    "urine ketone": "5797-6",
+    \u5C3F\u916E\u9AD4: "5797-6",
+    "urine bilirubin": "5770-3",
+    \u5C3F\u81BD\u7D05\u7D20: "5770-3",
+    "urine urobilinogen": "5818-0",
+    \u5C3F\u81BD\u7D20\u539F: "5818-0",
+    \u5C3F\u81BD\u7D20\u5143: "5818-0",
+    // 元/原 spelling variant
+    "urine nitrite": "5802-4",
+    \u5C3F\u4E9E\u785D\u9178\u9E7D: "5802-4",
+    "urine occult blood": "5794-3",
+    \u5C3F\u6F5B\u8840: "5794-3",
+    "urine leukocyte esterase": "5799-2",
+    \u5C3F\u767D\u8840\u7403\u916F\u8122: "5799-2",
+    \u5C3F\u767D\u8840\u7403\u916F\u9176: "5799-2",
+    // 脢/酶 variant
+    "urine specific gravity": "5811-5",
+    \u5C3F\u6BD4\u91CD: "5811-5",
+    "urine ph": "5803-2",
+    \u5C3F\u9178\u9E7C\u503C: "5803-2",
     // ABG panel components — 09041B parent code in NHI_TO_LOINC; each
     // member's display ("pCO2", "pO2", "HCO3", "TCO2", "SBE/ABE",
     // "SBC", "SAT" / "SaO2") falls to its own LOINC.
@@ -3026,6 +3104,15 @@
     "5794-3": "Hemoglobin Urine Ql",
     "5799-2": "Leukocytes Urine Ql",
     "24356-8": "Urinalysis Macro Panel",
+    // ── Urine sediment microscopy (06012C, v0.18.2 2026-06-09) ──────
+    // Canonical Long Common Names per loinc.org (WebFetch-verified
+    // 2026-06-09, rule #5). Component / Property / System / Scale / Method
+    // documented at the URINALYSIS_ANALYTE_KEYS microscopy block.
+    "5787-7": "Epithelial cells [#/area] in Urine sediment by Microscopy high power field",
+    "5821-4": "Leukocytes [#/area] in Urine sediment by Microscopy high power field",
+    "5808-1": "Erythrocytes [#/volume] in Urine sediment by Microscopy high power field",
+    "25145-4": "Bacteria [Presence] in Urine sediment by Light microscopy",
+    "5783-6": "Unidentified crystals [Presence] in Urine sediment by Light microscopy",
     // ALL entries below use the LOINC canonical 'Long Common Name'
     // as accepted by the TWNHIFHIR validator. Source: loinc.org for
     // each code, cross-checked against the validator's reported
