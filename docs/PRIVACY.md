@@ -1,6 +1,6 @@
 # Privacy Policy / 隱私權政策
 
-**Last updated / 最後更新**：2026-05-24
+**Last updated / 最後更新**：2026-06-12
 **Effective date / 生效日期**：2026-05-24
 
 ---
@@ -32,7 +32,7 @@ NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrom
 | 資料類別 | 來源 | 用途 | 儲存位置 |
 |---------|------|------|---------|
 | 醫療紀錄（就醫、用藥、檢驗、影像、過敏、預防接種等） | 健保署「健康存摺」API（使用者本人帳號） | 轉換為 FHIR R4 格式 | 瀏覽器記憶體 → 使用者選擇下載為 JSON 檔 或 上傳至使用者自架的本機後端 |
-| 個人識別資料（姓名、性別、出生日期、身分證字號） | 健保署「健康存摺」API + 使用者於 popup 自行填寫 | 產生 FHIR Patient 資源 | 同上；使用者偏好（性別、出生年、Backend URL 等）存於 `chrome.storage.local`（**僅本機，不會同步至 Google 帳號**）。產生的健康紀錄檔暫存於 `chrome.storage.session`（**關閉瀏覽器自動清除**，且最長 1 小時 TTL；user 下載完成立即清除） |
+| 個人識別資料（姓名、性別、出生日期、身分證字號） | 健保署「健康存摺」API + 使用者於 popup 自行填寫 | 產生 FHIR Patient 資源 | 同上；使用者偏好（性別、出生年、Backend URL 等）存於 `chrome.storage.local`（**僅本機，不會同步至 Google 帳號**）。產生的健康紀錄檔暫存於 `chrome.storage.local`（v0.14 起；因影像資料超過 session storage 上限，搭配 `unlimitedStorage` 權限。**僅本機，但重啟瀏覽器不會自動清除**）。暫存依下列事件先到先清除：使用者下載完成當下立即清除、使用者按「清除」、1 小時 TTL 自動清掃（Chrome 執行期間每 10 分鐘檢查一次；擴充功能啟動／更新時亦清掃）、或被下一次同步覆寫 |
 | 同步狀態與設定 | 擴充功能執行過程 | UI 狀態顯示 | `chrome.storage.local`（瀏覽器本地） |
 
 ### 四、資料外傳路徑
@@ -51,10 +51,11 @@ NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrom
 | 權限 | 用途 |
 |------|------|
 | `activeTab` | 在使用者點擊擴充功能圖示後，存取當前分頁以執行健保署 API 請求 |
-| `storage` | 保存使用者偏好設定與同步進度（僅本機） |
+| `storage` | 保存使用者偏好設定、同步進度，以及暫存待下載的健康紀錄檔（僅本機；清除機制見第三節） |
 | `scripting` | 將擷取邏輯注入健保署網域分頁，以使用 first-party cookie 呼叫 API |
 | `downloads` | 將產生的 FHIR Bundle JSON 儲存至使用者本機 |
-| `alarms` | 維持背景同步流程之心跳，避免 Chrome MV3 service worker 在長時間同步時被回收 |
+| `alarms` | 維持背景同步流程之心跳，避免 Chrome MV3 service worker 在長時間同步時被回收；並每 10 分鐘檢查、清除逾時（1 小時）的本機暫存健康紀錄檔 |
+| `unlimitedStorage` | 含影像的健康紀錄檔可能超過瀏覽器預設儲存配額，需要此權限才能在本機暫存（仍受上述 1 小時 TTL 與下載後立即清除機制管控） |
 | Host: `https://myhealthbank.nhi.gov.tw/*` | 擷取使用者本人的健保存摺紀錄 |
 | Host: `http://localhost/*`、`http://127.0.0.1/*` | （選用）將 FHIR 資料上傳至使用者自架的本機後端 |
 
@@ -75,6 +76,8 @@ NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrom
 ### 九、政策變更
 
 如政策有實質變更（例如新增資料收集），將更新本頁面之「最後更新」日期並於 GitHub repository 中標示。
+
+- 2026-06-12：更正暫存機制描述（健康紀錄檔自 v0.14 起實際暫存於 `chrome.storage.local` 並以下載完成／1 小時 TTL 清除，並非 `chrome.storage.session` 隨瀏覽器關閉清除）；補列 `unlimitedStorage` 權限；去識別化模式下 `Patient.id` 雜湊改以半遮身分證計算（v0.18.4）。
 
 ### 十、聯絡方式
 
@@ -113,7 +116,7 @@ The data below is **only processed on the user's own machine** and never leaves 
 | Data Category | Source | Purpose | Storage Location |
 |--------------|--------|---------|------------------|
 | Medical records (encounters, medications, lab results, imaging, allergies, immunizations, etc.) | NHI "My Health Bank" APIs (user's own account) | Convert to FHIR R4 | Browser memory → user-initiated download as JSON, or upload to user's self-hosted local backend |
-| Personal identifiers (name, sex, DOB, national ID) | NHI APIs + user input in popup | Generate FHIR Patient resource | Same as above; user preferences (sex, birth year, backend URL, etc.) live in `chrome.storage.local` (**browser-local only — never replicated to your Google account**). The generated health-record bundle is temporarily staged in `chrome.storage.session` (**wiped automatically when the browser closes**, with a 1-hour TTL; cleared the moment the user-initiated download completes) |
+| Personal identifiers (name, sex, DOB, national ID) | NHI APIs + user input in popup | Generate FHIR Patient resource | Same as above; user preferences (sex, birth year, backend URL, etc.) live in `chrome.storage.local` (**browser-local only — never replicated to your Google account**). The generated health-record bundle is temporarily staged in `chrome.storage.local` (since v0.14, with the `unlimitedStorage` permission, because imaging bundles exceed session storage's size cap; **browser-local only, but NOT wiped automatically when the browser closes**). The staged bundle is cleared by whichever happens first: the moment the user-initiated download completes, the user clicking "Clear", a 1-hour TTL sweep (checked every 10 minutes while Chrome runs, and at extension startup/update), or being overwritten by the next sync |
 | Sync state and settings | Extension runtime | UI state display | `chrome.storage.local` (browser-local) |
 
 ### 4. Data egress paths
@@ -130,10 +133,11 @@ Both paths are **user-initiated** with the destination **fully controlled by the
 | Permission | Purpose |
 |-----------|---------|
 | `activeTab` | Access the current tab after user clicks the Extension icon, to execute NHI API requests |
-| `storage` | Save user preferences and sync progress (local only) |
+| `storage` | Save user preferences, sync progress, and the temporarily staged health-record bundle (local only; clearing mechanism described in Section 3) |
 | `scripting` | Inject capture logic into NHI domain tabs so that first-party cookies are used for API calls |
 | `downloads` | Save the generated FHIR Bundle JSON to the user's local machine |
-| `alarms` | Keep service-worker heartbeat alive during long syncs to prevent MV3 worker termination |
+| `alarms` | Keep service-worker heartbeat alive during long syncs to prevent MV3 worker termination; also runs a 10-minute sweep that clears locally staged bundles older than the 1-hour TTL |
+| `unlimitedStorage` | Bundles that include imaging can exceed the browser's default storage quota; this permission allows local staging (still bounded by the 1-hour TTL and cleared-on-download mechanisms above) |
 | Host: `https://myhealthbank.nhi.gov.tw/*` | Read the user's own health records from NHI |
 | Host: `http://localhost/*`, `http://127.0.0.1/*` | (Optional) Upload FHIR data to the user's self-hosted local backend |
 
@@ -154,6 +158,8 @@ The Extension does not knowingly collect any data from children under 13.
 ### 9. Changes
 
 Material changes (e.g. introducing any data collection) will be reflected in the "Last updated" date above and announced in the GitHub repository.
+
+- 2026-06-12: corrected the staging-storage description (since v0.14 the bundle is staged in `chrome.storage.local` and cleared on download / 1-hour TTL, not in `chrome.storage.session` wiped on browser close); documented the `unlimitedStorage` permission; in de-identify mode, `Patient.id` is now hashed from the half-masked national ID (v0.18.4).
 
 ### 10. Contact
 

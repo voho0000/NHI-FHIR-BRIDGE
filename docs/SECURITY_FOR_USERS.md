@@ -2,7 +2,7 @@
 
 這份文件說明 NHI-FHIR Bridge 在資料安全上的設計與做法，盡量不用工程術語，方便評估是否適合自己使用。
 
-> 最後更新：2026-05-29（對應 bridge **v0.12.6**）
+> 最後更新：2026-06-12（對應 bridge **v0.18.4**）
 
 ---
 
@@ -45,9 +45,10 @@
 
 | 保護 | 對應的情境 |
 |------|--------------|
-| 暫存資料放在「瀏覽器階段儲存區」 | 關閉瀏覽器後，所有暫存自動清空 |
-| 下載完成後立刻清掉暫存 | 檔案落地的同時，瀏覽器內的副本就被清除 |
-| 1 小時自動清掃 | 若暫存放著沒下載也沒關瀏覽器，1 小時後也會清掉 |
+| 暫存資料只放在瀏覽器本機儲存區（`chrome.storage.local`） | 只存在你自己的電腦。誠實說明：**關閉瀏覽器不會自動清除**（v0.14 起，影像資料較大改放此區），靠下面幾種機制清除 — 暴露時間最多約 1 小時的 Chrome 執行時間，跟你下載到電腦的 .json 檔屬於同一級的保管問題 |
+| 下載完成後立刻清掉暫存 | 檔案落地的同時，瀏覽器內的副本就被清除；popup 上也有 🗑️ 按鈕可隨時手動清除 |
+| 1 小時自動清掃 | 若暫存放著沒下載，超過 1 小時就清掉（Chrome 執行期間每 10 分鐘檢查一次；瀏覽器重開、擴充功能更新時也會檢查）。下一次同步也會直接覆寫舊暫存 |
+| Sync 期間暫存的 NHI session token | 僅存本機、只用於背景影像查詢；30 分鐘 TTL，影像輪詢結束／逾時／登出即刪除 |
 | 隔離其他瀏覽器擴充功能 | 其他擴充功能無法假冒身份取得 bridge 的資料 |
 | 下載一律走「另存新檔」對話框 | 每次下載都會跳對話框確認儲存位置 + 檔名 |
 | 切換病人時清掉前一人的暫存 | 修改姓名 / 性別 / 生日會觸發暫存清除，多人共用同一瀏覽器不會混 |
@@ -146,15 +147,20 @@
 | **Backend 預設只綁 127.0.0.1 (loopback)** | 同網段其他電腦無法存取 |
 | **Dashboard 防 CSRF（檢查 Origin）** | 防止你開著 dashboard 時、被其他網頁偷觸發操作 |
 | **SMART App URL 必須是 https:// 或本機** | 防止輸入錯誤的 URL 把 launch token 送陌生網站 |
-| **FHIR PHI 端點走 SMART OAuth2 + PKCE** | 標準健康資料授權框架 |
-| **Patient.id 用 SHA-1 雜湊**（不放原始身分證） | 萬一資料庫被讀，URL 路徑不會直接洩漏身分證 |
-| **PHI 寫入端點（/sync, /fhir/import…）需要 `SYNC_API_KEY`** | 額外的存取保護 |
+| **FHIR PHI 端點走 SMART OAuth2 + PKCE**（設定 `SYNC_API_KEY` 後） | 標準健康資料授權框架 |
+| **Patient.id 用 SHA-1 雜湊**（不放原始身分證） | URL 路徑不會直接顯示身分證。誠實說明：未開啟去識別化時，這是身分證**全碼**的無鹽 SHA-1 — 身分證組合空間小，理論上可被離線暴力還原，所以**未去識別化的 bundle 不應公開散布**。開啟去識別化（v0.18.4 起）後，Patient.id 改由半遮後的身分證（如 `F12345XXXX`）計算雜湊，無法還原出全碼 |
+| **PHI 寫入端點（/sync, /fhir/import…）需要 `SYNC_API_KEY`**（設定後） | 額外的存取保護 |
+| **未設 key 時 CORS 鎖在 loopback** | 其他 Chrome 擴充功能、第三方網站即使在沒設 key 的模式下，也拿不到後端的 credentialed CORS 存取。但要誠實說：持有廣泛 host 權限的擴充功能、或任何本機程式，仍然可以直接連 localhost — 只有設 `SYNC_API_KEY` 才真正擋得住 |
+| **後端與 Dashboard proxy 都驗證 Host 標頭** | 防 DNS rebinding：惡意網站無法把自己的網域名稱指向 127.0.0.1 來繞過瀏覽器的同源保護 |
+
+> ⚠️ **未設定 `SYNC_API_KEY` 時（預設）**，任何能存取本機 loopback 的程式都能讀寫資料 — 這是單機自用模式的已知限制；多人／網路部署**必須**設 key。
 
 ## 想改預設配置時
 
-預設配置（backend 只綁本機 loopback、單人試用）就是安全的。如果你想客製化：
+預設配置（backend 只綁本機 loopback、單人試用）對「自己一台電腦、自己用」的情境是合理的。如果你想客製化：
 
 - 想開放 backend 給 LAN 其他電腦用 → 建議設個強的 `SYNC_API_KEY`
+- 想用外部 SMART App（包含 GitHub Pages 上的 demo「醫析 MediPrisma」）連後端 → **必須**先設定 `SYNC_API_KEY`（未設 key 時 CORS 鎖在 loopback，不再對外部網站開放）
 - 想多人 / 多病人臨床使用 → 超出這份文件範圍，請看 [ARCHITECTURE.md](https://github.com/voho0000/NHI-FHIR-BRIDGE/blob/main/docs/ARCHITECTURE.md)
 
 詳細技術設計見 [docs/ARCHITECTURE.md](https://github.com/voho0000/NHI-FHIR-BRIDGE/blob/main/docs/ARCHITECTURE.md)。

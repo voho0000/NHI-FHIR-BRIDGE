@@ -142,10 +142,11 @@ Capture personal medical records from Taiwan's NHI "My Health Bank" portal (myhe
 | 權限 | 一句話說明（複製這個） |
 |------|---------------------|
 | `activeTab` | 使用者點擊擴充功能圖示時，存取當前健保署分頁以執行 API 請求並擷取本人醫療紀錄。 |
-| `storage` | 在本機儲存使用者偏好設定（性別、出生年）與同步進度。資料僅存在 chrome.storage，不傳送至任何外部伺服器。 |
+| `storage` | 在本機儲存使用者偏好設定（性別、出生年）、同步進度，以及暫存待下載的健康紀錄檔（下載完成、使用者清除、或 1 小時 TTL 到期即刪除）。資料僅存在 chrome.storage，不傳送至任何外部伺服器。 |
 | `scripting` | 將資料擷取邏輯注入健保署網域分頁；必須在頁面 context 執行，才能使用瀏覽器既有的 first-party session cookie 呼叫健保署 API。 |
 | `downloads` | 將擷取轉換後的 FHIR Bundle JSON 檔儲存至使用者本機 Downloads 資料夾，由使用者點擊按鈕主動觸發。 |
-| `alarms` | 維持 Chrome MV3 service worker 在長時間同步（30 秒以上）過程中不被回收，確保資料完整擷取。 |
+| `alarms` | 維持 Chrome MV3 service worker 在長時間同步（30 秒以上）過程中不被回收，確保資料完整擷取；並每 10 分鐘執行清掃，刪除逾時（1 小時）的本機暫存健康紀錄檔。 |
+| `unlimitedStorage` | 含醫療影像的健康紀錄檔可能超過 chrome.storage 預設配額，需要此權限才能在本機暫存；暫存於下載完成或 1 小時 TTL 後即清除，不傳送至任何外部伺服器。 |
 
 ### Host permissions
 
@@ -244,7 +245,7 @@ https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html
 - [ ] Short description（繁中、英文）
 - [ ] Long description（繁中、英文）
 - [ ] Single purpose statement
-- [ ] 5 個 permission justifications
+- [ ] 6 個 permission justifications
 - [ ] 3 個 host permission justifications
 - [ ] Remote code: No
 - [ ] Privacy disclosure 勾選 PII + Health information
