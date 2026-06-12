@@ -3930,7 +3930,11 @@
     negative: ["NEG", "Negative"]
   };
   function mapInterpretation(interp) {
-    const key = (interp ?? "").toLowerCase();
+    let key = (interp ?? "").toLowerCase();
+    if (interp) {
+      if (interp.includes("\u7570\u5E38")) key = "abnormal";
+      else if (interp.includes("\u6B63\u5E38")) key = "normal";
+    }
     const entry = INTERP_TABLE[key];
     if (!entry) return null;
     return interpCoding(entry[0], entry[1]);

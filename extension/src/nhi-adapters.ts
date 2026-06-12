@@ -241,6 +241,17 @@ export function adaptMedicationFromDetail(drug, visit, options) {
   // mapper sets MedicationRequest.dosageInstruction[0].text. Empty →
   // no change (current behaviour preserved for fixtures that genuinely
   // lack the field). Safe scaffolding.
+  //
+  // Live raw-data audit 2026-06-13 (real IHKE3306S02 detail rows): the
+  // drug-row fields NHI actually returns are ONLY
+  //   order_code / drug_name / drug_name2 / order_drug_day / order_qty /
+  //   act / code_url / push_ROWID / show_push
+  // — none is a 用法/頻次/劑量 (frequency / sig / dosage) field. So this
+  // probe never fires at IHKE3306S02 and dosage_text stays "" in practice;
+  // 健保存摺 does NOT expose structured 用法 at this detail endpoint. The
+  // probe is kept as harmless forward-compat scaffolding in case a future
+  // endpoint ships one of these fields — do NOT claim dosage support on
+  // the strength of it.
   const dosageText =
     drug.drug_freq ||
     drug.druG_FREQ ||

@@ -387,7 +387,17 @@ const INTERP_TABLE: Record<string, [string, string]> = {
 export function mapInterpretation(
   interp: string | null | undefined,
 ): Record<string, string> | null {
-  const key = (interp ?? "").toLowerCase();
+  let key = (interp ?? "").toLowerCase();
+  // NHI ships Chinese interpretation strings — notably the 成人預防保健
+  // _DIAG_RESULT_TEXT fields: "正常" / "異常，建議：請洽詢醫師" (live raw-data
+  // audit 2026-06-13). Map the 正常/異常 marker to a canonical key so these
+  // get a coded interpretation (N / A) instead of text-only. Check 異常
+  // first — it is the substring that carries the abnormal signal; the
+  // verbose "異常，建議…" tail is advisory text, not a different result.
+  if (interp) {
+    if (interp.includes("異常")) key = "abnormal";
+    else if (interp.includes("正常")) key = "normal";
+  }
   const entry = INTERP_TABLE[key];
   if (!entry) return null;
   return interpCoding(entry[0], entry[1]);

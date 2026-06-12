@@ -887,3 +887,46 @@ describe("mapObservation — source_program → meta.tag", () => {
     expect(obs?.meta.tag).toBeUndefined();
   });
 });
+
+describe("mapObservation — NHI Chinese interpretation (成人預防保健, audit 2026-06-13)", () => {
+  // adaptAdultPreventive routes _DIAG_RESULT_TEXT ("正常" / "異常，建議：請洽
+  // 詢醫師") through reference_range; the mapper detects it as interpretation
+  // text and surfaces it via Observation.interpretation. Before the fix the
+  // 異常 string fell through mapInterpretation unmatched → text-only, no
+  // coded value. Now it carries a coded A (Abnormal) / N (Normal).
+  test("異常 → coded A (Abnormal) with original advisory text preserved", () => {
+    const obs = mapObservation(
+      {
+        code: "09015C",
+        display: "Creatinine",
+        value: "1.6",
+        unit: "mg/dL",
+        date: "2018-02-12",
+        reference_range: "異常，建議：請洽詢醫師",
+        source_program: "adult-preventive",
+      },
+      "patient-123",
+    );
+    const interp = obs?.interpretation?.[0];
+    expect(interp?.coding?.[0]?.code).toBe("A");
+    expect(interp?.text).toBe("異常，建議：請洽詢醫師");
+    // The advisory string must NOT have leaked into referenceRange.
+    expect(obs?.referenceRange).toBeUndefined();
+  });
+
+  test("正常 → coded N (Normal)", () => {
+    const obs = mapObservation(
+      {
+        code: "09025C",
+        display: "SGOT (AST)",
+        value: "25",
+        unit: "U/L",
+        date: "2018-02-12",
+        reference_range: "正常",
+        source_program: "adult-preventive",
+      },
+      "patient-123",
+    );
+    expect(obs?.interpretation?.[0]?.coding?.[0]?.code).toBe("N");
+  });
+});
