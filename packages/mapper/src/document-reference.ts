@@ -45,16 +45,18 @@ const LOINC_DISCHARGE_SUMMARY_DISPLAY = "Discharge summary";
 // US Core / FHIR R4 DocumentReference.category convention. "clinical-note"
 // is the closest standard categorization for a discharge summary; it's
 // the same value Apple Health and Epic SMART-on-FHIR endpoints use.
-const DOC_CATEGORY_SYSTEM = "http://hl7.org/fhir/us/core/CodeSystem/us-core-documentreference-category";
+const DOC_CATEGORY_SYSTEM =
+  "http://hl7.org/fhir/us/core/CodeSystem/us-core-documentreference-category";
 
 // Bridge runs in two environments — Chrome extension SW (browser-side
 // btoa, no Node Buffer) and Node ≥ 16 (vitest, backend-ts). The mapper
 // package's tsconfig is browser-only to keep it portable, so we reach
 // Node's Buffer via globalThis with a runtime-only typecheck rather
 // than depending on @types/node here.
-function getNodeBuffer():
-  | { from: (s: string, enc: string) => { toString: (e: string) => string }; byteLength: (s: string, e: string) => number }
-  | null {
+function getNodeBuffer(): {
+  from: (s: string, enc: string) => { toString: (e: string) => string };
+  byteLength: (s: string, e: string) => number;
+} | null {
   const g = globalThis as any;
   if (g && g.Buffer && typeof g.Buffer.from === "function") return g.Buffer;
   return null;
@@ -146,7 +148,10 @@ export function mapDischargeSummaryDocRef(
   const hospital = String(raw?.hospital ?? "").trim();
   const rowId = String(raw?.row_id ?? "").trim();
   const recordDate =
-    String(raw?.record_date ?? "").trim() || extractRecordDateIso(html) || dischargeDate || admissionDate;
+    String(raw?.record_date ?? "").trim() ||
+    extractRecordDateIso(html) ||
+    dischargeDate ||
+    admissionDate;
 
   // Encounter back-reference: recompute the inpatient Encounter ID
   // using the SAME stableId inputs as mapEncounter (date, class, hosp).
@@ -163,9 +168,7 @@ export function mapDischargeSummaryDocRef(
 
   const periodLabel =
     admissionDate && dischargeDate ? `${admissionDate}~${dischargeDate}` : admissionDate;
-  const title = hospital
-    ? `出院病摘 — ${hospital} ${periodLabel}`
-    : `出院病摘 ${periodLabel}`;
+  const title = hospital ? `出院病摘 — ${hospital} ${periodLabel}` : `出院病摘 ${periodLabel}`;
 
   const resource: Record<string, any> = {
     resourceType: "DocumentReference",
@@ -230,9 +233,7 @@ export function mapDischargeSummaryDocRef(
   // identifier system follows the same naming convention as the meta
   // tag above.
   if (rowId) {
-    resource.identifier = [
-      { system: "http://nhi-fhir-bridge/nhi-inpatient-row", value: rowId },
-    ];
+    resource.identifier = [{ system: "http://nhi-fhir-bridge/nhi-inpatient-row", value: rowId }];
   }
 
   return resource;

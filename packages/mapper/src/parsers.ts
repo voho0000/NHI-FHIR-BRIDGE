@@ -560,12 +560,7 @@ function _looksLikeInterpretationText(s: string): boolean {
   // range, or comparator (handled elsewhere).
   if (t.startsWith("[")) return false;
   if (t.includes("-") || t.includes("~") || /[<>≦≧≤≥]/.test(t)) return false;
-  return (
-    t.includes("建議") ||
-    t.includes("請洽詢") ||
-    t.includes("請聯絡") ||
-    t.includes("見備註")
-  );
+  return t.includes("建議") || t.includes("請洽詢") || t.includes("請聯絡") || t.includes("見備註");
 }
 
 /**

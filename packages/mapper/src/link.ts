@@ -64,9 +64,7 @@ function resourceHospital(r: Record<string, any>): string {
  * stay twice (IHKE3303 AMB billing entry + IHKE3309 IMP detail); the
  * IMP one is canonical, the AMB is a billing artefact.
  */
-export function dedupAdmissionDayAmb(
-  resources: Record<string, any>[],
-): Record<string, any>[] {
+export function dedupAdmissionDayAmb(resources: Record<string, any>[]): Record<string, any>[] {
   const impStarts = new Set<string>();
   for (const r of resources) {
     if (r.resourceType !== "Encounter") continue;
@@ -172,8 +170,7 @@ export function resolveSexStratifiedRanges(
     if (!match) continue;
 
     r.referenceRange = [match];
-    const valStr =
-      String((r.valueQuantity ?? {}).value ?? "") || String(r.valueString ?? "");
+    const valStr = String((r.valueQuantity ?? {}).value ?? "") || String(r.valueString ?? "");
     const newInterp = deriveInterpretation(valStr, r.valueQuantity ?? null, match);
     if (newInterp) {
       r.interpretation = [{ coding: [newInterp] }];

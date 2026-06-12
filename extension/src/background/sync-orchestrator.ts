@@ -10,7 +10,12 @@
 //   - "backend" → POST per-page_type items to /sync/upload-structured,
 //                 then export the cumulative bundle for the popup.
 
-import { dedupImagingItems, maskId, maskName } from "@nhi-fhir-bridge/mapper";
+import {
+  dedupImagingItems,
+  maskId,
+  maskName,
+  stripJpegMetadataBase64,
+} from "@nhi-fhir-bridge/mapper";
 import {
   // adaptEncounterFromMedExpense is invoked directly from the
   // IHKE3303S02 detail fan-out (overrides the registry's classHint
@@ -1185,6 +1190,23 @@ export async function runNhiApiSync({
     const idReplacement = maskId(patientOverride.id_no, "X");
     for (const key of Object.keys(byType)) {
       byType[key] = replaceNameDeep(byType[key], patientOverride.id_no, idReplacement);
+    }
+  }
+  // Audit P2-7 (2026-06-12): PACS-exported JPEGs can carry patient
+  // demographics in EXIF/COM metadata that field masking never touches.
+  // With the toggle on, strip those segments (pixels untouched) BEFORE
+  // the frames reach the local mapper or the backend upload — both read
+  // jpgBase64s off these items. Burned-in pixel text cannot be removed;
+  // the popup's de-identify disclaimer says so.
+  const drItems = (byType as Record<string, any[]>).diagnostic_reports;
+  if (maskEnabled && Array.isArray(drItems)) {
+    for (const item of drItems as any[]) {
+      if (Array.isArray(item?.jpgBase64s)) {
+        item.jpgBase64s = item.jpgBase64s.map((b64: string) => stripJpegMetadataBase64(b64));
+      }
+      if (typeof item?.jpgBase64 === "string") {
+        item.jpgBase64 = stripJpegMetadataBase64(item.jpgBase64);
+      }
     }
   }
 

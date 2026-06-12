@@ -83,9 +83,7 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
     const date = String(it.date ?? "");
     const hospital = String(it.hospital ?? "");
     const key =
-      code || date || hospital
-        ? `${code}|${date}|${hospital}`
-        : `__unknown_${unkCounter++}`;
+      code || date || hospital ? `${code}|${date}|${hospital}` : `__unknown_${unkCounter++}`;
     const arr = groups.get(key);
     if (arr) arr.push(it);
     else groups.set(key, [it]);
@@ -106,10 +104,7 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
     const byHash = new Map<string, T[]>();
     for (const it of group) {
       const frames = framesOf(it);
-      const h =
-        frames.length > 0
-          ? frameContentHash(frames[0]!)
-          : `__empty_${emptySentinel++}`;
+      const h = frames.length > 0 ? frameContentHash(frames[0]!) : `__empty_${emptySentinel++}`;
       const arr = byHash.get(h);
       if (arr) arr.push(it);
       else byHash.set(h, [it]);
@@ -238,9 +233,7 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
         const imgVal = (img as any)[k];
         const narrVal = (narr as any)[k];
         const isMissing =
-          imgVal == null ||
-          imgVal === "" ||
-          (Array.isArray(imgVal) && imgVal.length === 0);
+          imgVal == null || imgVal === "" || (Array.isArray(imgVal) && imgVal.length === 0);
         if (isMissing && narrVal != null && narrVal !== "") {
           (img as any)[k] = narrVal;
         }
@@ -324,9 +317,7 @@ export function dedupImagingItems<T extends ImagingItem>(items: T[]): T[] {
 
 function framesOf(item: ImagingItem): string[] {
   if (Array.isArray(item.jpgBase64s)) {
-    return item.jpgBase64s.filter(
-      (s) => typeof s === "string" && s.length > 0,
-    );
+    return item.jpgBase64s.filter((s) => typeof s === "string" && s.length > 0);
   }
   if (typeof item.jpgBase64 === "string" && item.jpgBase64.length > 0) {
     return [item.jpgBase64];
@@ -336,9 +327,7 @@ function framesOf(item: ImagingItem): string[] {
 
 function isNarrativeOnly(item: ImagingItem): boolean {
   return (
-    framesOf(item).length === 0 &&
-    typeof item.conclusion === "string" &&
-    item.conclusion.length > 0
+    framesOf(item).length === 0 && typeof item.conclusion === "string" && item.conclusion.length > 0
   );
 }
 

@@ -53,8 +53,7 @@ export const HIS_LOCAL_PATIENT_MRN = "https://nhi-fhir-bridge.local/IdentifierSy
 // without needing to know our private array-order convention).
 
 /** Bridge-defined kind dimension on Encounter.type. */
-export const ENCOUNTER_KIND_SYSTEM =
-  "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-kind";
+export const ENCOUNTER_KIND_SYSTEM = "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-kind";
 
 /** Bridge-defined channel (data origin) dimension on Encounter.type. */
 export const ENCOUNTER_CHANNEL_SYSTEM =

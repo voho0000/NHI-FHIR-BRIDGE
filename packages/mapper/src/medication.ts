@@ -8,9 +8,9 @@
  * (clinicians read 商品名 first).
  */
 
-import * as systems from "./systems";
 import { normalizeIcd10Cm } from "./condition";
 import { stableId } from "./helpers";
+import * as systems from "./systems";
 
 function isCjk(ch: string): boolean {
   // 一 (U+4E00) to 鿿 (U+9FFF) covers CJK Unified Ideographs.
@@ -141,8 +141,7 @@ export function mapMedicationRequest(
     resource.courseOfTherapyType = {
       coding: [
         {
-          system:
-            "http://terminology.hl7.org/CodeSystem/medicationrequest-course-of-therapy",
+          system: "http://terminology.hl7.org/CodeSystem/medicationrequest-course-of-therapy",
           code: "continuous",
           display: "Continuous long term therapy",
         },

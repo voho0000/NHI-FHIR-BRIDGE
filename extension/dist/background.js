@@ -520,8 +520,7 @@
         target: { tabId },
         func: async () => {
           const t = sessionStorage.getItem("token");
-          if (!t)
-            return false;
+          if (!t) return false;
           try {
             const r = await fetch("/api/ihke3000/ihke3410s01/page_load", {
               credentials: "same-origin",
@@ -547,15 +546,13 @@
         target: { tabId },
         func: async () => {
           const t = sessionStorage.getItem("token");
-          if (!t)
-            return null;
+          if (!t) return null;
           try {
             const r = await fetch("/api/ihke3000/ihke3410s01/page_load", {
               credentials: "same-origin",
               headers: { Accept: "application/json", Authorization: `Bearer ${t}` }
             });
-            if (!r.ok)
-              return null;
+            if (!r.ok) return null;
             const body = await r.json();
             return body?.cid || null;
           } catch {
@@ -563,8 +560,7 @@
           }
         }
       });
-      if (result && /^[A-Z][12]\d{8}$/.test(result))
-        cid = result;
+      if (result && /^[A-Z][12]\d{8}$/.test(result)) cid = result;
     } catch (e) {
       console.warn("[NHI sync] IHKE3410 cid fetch failed:", e?.message ?? e);
     }
@@ -579,6 +575,55 @@
       }
     }
     return resolved;
+  }
+
+  // ../packages/mapper/src/helpers.ts
+  var import_js_sha1 = __toESM(require_sha1(), 1);
+  function stableId(patientId, ...parts) {
+    return (0, import_js_sha1.sha1)([patientId, ...parts].join("|")).slice(0, 32);
+  }
+  function derivePatientId(nationalId) {
+    return (0, import_js_sha1.sha1)(["patient", nationalId].join("|")).slice(0, 32);
+  }
+  function maskId(id, char = "*") {
+    const s = (id ?? "").trim();
+    if (!s) return s;
+    if (/^[A-Z][12]\d{8}$/.test(s)) return s.slice(0, 6) + char.repeat(4);
+    if (s.startsWith("auto-")) return s;
+    if (s.length > 6) return s.slice(0, 2) + char.repeat(s.length - 4) + s.slice(-2);
+    return s;
+  }
+  function effectiveFhirPatientId(idNo, deidentify) {
+    return derivePatientId(deidentify ? maskId(idNo, "X") : idNo);
+  }
+  function deidBirthDate(iso) {
+    const s = (iso ?? "").trim();
+    if (!s) return s;
+    const m = /^(\d{4})\b/.exec(s);
+    return m ? `${m[1]}-01-01` : s;
+  }
+  function normalizeNarrativeForDedup(s) {
+    return (s ?? "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+  }
+  function maskName(name) {
+    const trimmed = (name ?? "").trim();
+    if (!trimmed || trimmed === "Unknown") return trimmed;
+    if (/\s/.test(trimmed)) {
+      const parts = trimmed.split(/\s+/);
+      if (parts.length === 1) return parts[0];
+      const first = parts[0];
+      const last = parts[parts.length - 1];
+      if (parts.length === 2) {
+        const lastMasked = last.length <= 1 ? last : `${last[0]}***`;
+        return `${first} ${lastMasked}`;
+      }
+      const middles = parts.slice(1, -1).map(() => "***");
+      return [first, ...middles, last].join(" ");
+    }
+    const chars = Array.from(trimmed);
+    if (chars.length <= 1) return trimmed;
+    if (chars.length === 2) return `${chars[0]}O`;
+    return chars[0] + "O".repeat(chars.length - 2) + chars[chars.length - 1];
   }
 
   // ../packages/mapper/src/systems.ts
@@ -600,73 +645,13 @@
   var ICD_10_CM = "http://hl7.org/fhir/sid/icd-10-cm";
   var ICD_10_PCS = "http://hl7.org/fhir/sid/icd-10-pcs";
 
-  // ../packages/mapper/src/helpers.ts
-  var import_js_sha1 = __toESM(require_sha1(), 1);
-  function stableId(patientId, ...parts) {
-    return (0, import_js_sha1.sha1)([patientId, ...parts].join("|")).slice(0, 32);
-  }
-  function derivePatientId(nationalId) {
-    return (0, import_js_sha1.sha1)(["patient", nationalId].join("|")).slice(0, 32);
-  }
-  function maskId(id, char = "*") {
-    const s = (id ?? "").trim();
-    if (!s)
-      return s;
-    if (/^[A-Z][12]\d{8}$/.test(s))
-      return s.slice(0, 6) + char.repeat(4);
-    if (s.startsWith("auto-"))
-      return s;
-    if (s.length > 6)
-      return s.slice(0, 2) + char.repeat(s.length - 4) + s.slice(-2);
-    return s;
-  }
-  function effectiveFhirPatientId(idNo, deidentify) {
-    return derivePatientId(deidentify ? maskId(idNo, "X") : idNo);
-  }
-  function deidBirthDate(iso) {
-    const s = (iso ?? "").trim();
-    if (!s)
-      return s;
-    const m = /^(\d{4})\b/.exec(s);
-    return m ? `${m[1]}-01-01` : s;
-  }
-  function normalizeNarrativeForDedup(s) {
-    return (s ?? "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
-  }
-  function maskName(name) {
-    const trimmed = (name ?? "").trim();
-    if (!trimmed || trimmed === "Unknown")
-      return trimmed;
-    if (/\s/.test(trimmed)) {
-      const parts = trimmed.split(/\s+/);
-      if (parts.length === 1)
-        return parts[0];
-      const first = parts[0];
-      const last = parts[parts.length - 1];
-      if (parts.length === 2) {
-        const lastMasked = last.length <= 1 ? last : `${last[0]}***`;
-        return `${first} ${lastMasked}`;
-      }
-      const middles = parts.slice(1, -1).map(() => "***");
-      return [first, ...middles, last].join(" ");
-    }
-    const chars = Array.from(trimmed);
-    if (chars.length <= 1)
-      return trimmed;
-    if (chars.length === 2)
-      return `${chars[0]}O`;
-    return chars[0] + "O".repeat(chars.length - 2) + chars[chars.length - 1];
-  }
-
   // ../packages/mapper/src/allergy.ts
   var ALLOWED_CATEGORIES = /* @__PURE__ */ new Set(["medication", "food", "environment", "biologic"]);
   var ALLOWED_CRITICALITY = /* @__PURE__ */ new Set(["high", "low", "unable-to-assess"]);
   function mapSystem(systemHint) {
     const s = typeof systemHint === "string" ? systemHint.toLowerCase() : "";
-    if (s.includes("snomed"))
-      return SNOMED_CT;
-    if (s.includes("rxnorm"))
-      return "http://www.nlm.nih.gov/research/umls/rxnorm";
+    if (s.includes("snomed")) return SNOMED_CT;
+    if (s.includes("rxnorm")) return "http://www.nlm.nih.gov/research/umls/rxnorm";
     return HIS_LOCAL_ALLERGEN_CODE;
   }
   function mapAllergyIntolerance(raw, patientId) {
@@ -720,8 +705,7 @@
   // ../packages/mapper/src/careplan.ts
   function mapCarePlan(raw, patientId) {
     const title = (raw.title ?? "").trim();
-    if (!title)
-      return null;
+    if (!title) return null;
     const status = raw.status === "completed" ? "completed" : "active";
     const start = (raw.period_start ?? "").trim();
     const end = (raw.period_end ?? "").trim();
@@ -745,10 +729,8 @@
     }
     if (start || end) {
       const period = {};
-      if (start)
-        period.start = `${start}T00:00:00+08:00`;
-      if (end)
-        period.end = `${end}T00:00:00+08:00`;
+      if (start) period.start = `${start}T00:00:00+08:00`;
+      if (end) period.end = `${end}T00:00:00+08:00`;
       resource.period = period;
     }
     const category = { text: "NHI \u7167\u8B77\u8A08\u756B" };
@@ -767,11 +749,9 @@
   // ../packages/mapper/src/condition.ts
   var ICD10_CATEGORY_RE = /^[A-Z][0-9A-Z]{2}$/;
   function normalizeIcd10Cm(code) {
-    if (!code || code.includes("."))
-      return code ?? "";
+    if (!code || code.includes(".")) return code ?? "";
     const s = code.trim().toUpperCase();
-    if (s.length <= 3)
-      return s;
+    if (s.length <= 3) return s;
     const head = s.slice(0, 3);
     const tail = s.slice(3);
     if (ICD10_CATEGORY_RE.test(head)) {
@@ -781,8 +761,7 @@
   }
   function mapSystem2(systemHint) {
     const s = typeof systemHint === "string" ? systemHint.toLowerCase() : "";
-    if (s.includes("snomed"))
-      return SNOMED_CT;
+    if (s.includes("snomed")) return SNOMED_CT;
     if (s.includes("icd-10") || s.includes("icd10")) {
       return ICD_10_CM;
     }
@@ -861,13 +840,10 @@
   };
   var LAB_UNIT_RE = /\d+(?:\.\d+)?\s*(?:%|mg\/dL|g\/dL|mmol\/L|U\/L|IU\/L|mIU\/L|ng\/mL|μg\/dL|ug\/dL|pg\/mL|fL|\/uL|10\^?\d+\/uL|x10\^?\d+\/uL|sec|秒|copies\/mL)/;
   function looksLikeLabValueOnly(conclusion) {
-    if (!conclusion)
-      return true;
+    if (!conclusion) return true;
     const text = conclusion.trim();
-    if (text.length > 100)
-      return false;
-    if (LAB_UNIT_RE.test(text))
-      return true;
+    if (text.length > 100) return false;
+    if (LAB_UNIT_RE.test(text)) return true;
     return false;
   }
   function _conclusionFingerprint(s) {
@@ -882,8 +858,7 @@
   function mapDiagnosticReport(raw, patientId) {
     const conclusion = (raw.conclusion ?? "").trim();
     const rawJpgs = Array.isArray(raw.jpgBase64s) ? raw.jpgBase64s.filter((s) => typeof s === "string" && s.length > 0) : typeof raw.jpgBase64 === "string" && raw.jpgBase64.length > 0 ? [raw.jpgBase64] : [];
-    if (!conclusion && rawJpgs.length === 0)
-      return null;
+    if (!conclusion && rawJpgs.length === 0) return null;
     const catKeyRaw = String(raw.category ?? "").toUpperCase();
     if (catKeyRaw === "LAB" && conclusion && looksLikeLabValueOnly(conclusion)) {
       return null;
@@ -911,8 +886,7 @@
         text: display
       }
     };
-    if (conclusion)
-      resource.conclusion = conclusion;
+    if (conclusion) resource.conclusion = conclusion;
     const catEntry = CATEGORY_MAP[catKeyRaw];
     if (catEntry) {
       const [catSys, catCode, catDisplay] = catEntry;
@@ -961,8 +935,7 @@
   var DOC_CATEGORY_SYSTEM = "http://hl7.org/fhir/us/core/CodeSystem/us-core-documentreference-category";
   function getNodeBuffer() {
     const g = globalThis;
-    if (g && g.Buffer && typeof g.Buffer.from === "function")
-      return g.Buffer;
+    if (g && g.Buffer && typeof g.Buffer.from === "function") return g.Buffer;
     return null;
   }
   function utf8ToBase64(s) {
@@ -977,8 +950,7 @@
   }
   function extractRecordDateIso(html) {
     const m = html.match(/記錄日期時間[：:][^0-9]*(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
-    if (!m)
-      return null;
+    if (!m) return null;
     const yyyy = m[1];
     const mm = String(m[2]).padStart(2, "0");
     const dd = String(m[3]).padStart(2, "0");
@@ -1003,12 +975,10 @@
   }
   function mapDischargeSummaryDocRef(raw, patientId) {
     const html = String(raw?.html ?? "");
-    if (!html || html.length < 10)
-      return null;
+    if (!html || html.length < 10) return null;
     const admissionDate = String(raw?.admission_date ?? "");
     const dischargeDate = String(raw?.discharge_date ?? "");
-    if (!admissionDate)
-      return null;
+    if (!admissionDate) return null;
     const hospital = String(raw?.hospital ?? "").trim();
     const rowId2 = String(raw?.row_id ?? "").trim();
     const recordDate = String(raw?.record_date ?? "").trim() || extractRecordDateIso(html) || dischargeDate || admissionDate;
@@ -1077,9 +1047,7 @@
       resource.custodian = { display: hospital };
     }
     if (rowId2) {
-      resource.identifier = [
-        { system: "http://nhi-fhir-bridge/nhi-inpatient-row", value: rowId2 }
-      ];
+      resource.identifier = [{ system: "http://nhi-fhir-bridge/nhi-inpatient-row", value: rowId2 }];
     }
     return resource;
   }
@@ -1098,8 +1066,7 @@
   function buildTypeEntry(text, system, codeMap) {
     const coding = { system, display: text };
     const code = codeMap[text];
-    if (code)
-      coding.code = code;
+    if (code) coding.code = code;
     return { text, coding: [coding] };
   }
   var ACTCODE_SYSTEM = "http://terminology.hl7.org/CodeSystem/v3-ActCode";
@@ -1126,24 +1093,20 @@
     const kind = (raw.kind ?? "").trim();
     const channel = (raw.channel ?? "").trim();
     const types = [];
-    if (kind)
-      types.push(buildTypeEntry(kind, ENCOUNTER_KIND_SYSTEM, KIND_CODE_MAP));
+    if (kind) types.push(buildTypeEntry(kind, ENCOUNTER_KIND_SYSTEM, KIND_CODE_MAP));
     if (channel) {
       types.push(buildTypeEntry(channel, ENCOUNTER_CHANNEL_SYSTEM, CHANNEL_CODE_MAP));
     }
     if (types.length === 0) {
       const typeDisplay = (raw.type_display ?? "").trim();
-      if (typeDisplay)
-        types.push({ text: typeDisplay });
+      if (typeDisplay) types.push({ text: typeDisplay });
     }
     if (types.length > 0) {
       resource.type = types;
     }
     const period = {};
-    if (raw.date)
-      period.start = `${raw.date}T00:00:00+08:00`;
-    if (raw.end_date)
-      period.end = `${raw.end_date}T00:00:00+08:00`;
+    if (raw.date) period.start = `${raw.date}T00:00:00+08:00`;
+    if (raw.end_date) period.end = `${raw.end_date}T00:00:00+08:00`;
     if (Object.keys(period).length > 0) {
       resource.period = period;
     }
@@ -1151,8 +1114,7 @@
     const provider = raw.provider ?? "";
     if (department || provider) {
       const participant = {};
-      if (provider)
-        participant.individual = { display: provider };
+      if (provider) participant.individual = { display: provider };
       resource.participant = Object.keys(participant).length > 0 ? [participant] : [];
       if (department) {
         resource.serviceType = { text: department };
@@ -1191,8 +1153,7 @@
       const code = (sec?.code ?? "").trim();
       const nameEn = (sec?.name_en ?? "").trim();
       const nameZh = (sec?.name_zh ?? "").trim();
-      if (!code && !nameEn && !nameZh)
-        continue;
+      if (!code && !nameEn && !nameZh) continue;
       const entry = {};
       if (code) {
         entry.coding = [
@@ -1224,8 +1185,7 @@
   function mapImmunization(raw, patientId) {
     const vaccineName = (raw.vaccine_name ?? "").trim();
     const date = (raw.date ?? "").trim();
-    if (!vaccineName || !date)
-      return null;
+    if (!vaccineName || !date) return null;
     const resource = {
       resourceType: "Immunization",
       // Stable id uses date + vaccine name + lot — same vaccine same day
@@ -1265,12 +1225,9 @@
     return cp >= 19968 && cp <= 40959;
   }
   function cjkChars(s) {
-    if (!s)
-      return 0;
+    if (!s) return 0;
     let n = 0;
-    for (const ch of s)
-      if (isCjk(ch))
-        n++;
+    for (const ch of s) if (isCjk(ch)) n++;
     return n;
   }
   var EN_CHUNK_G = /[A-Z][A-Z0-9.%/\-"'\s]{3,}/g;
@@ -1289,12 +1246,10 @@
     return longest.replace(/\s+/g, " ").trim().toLowerCase();
   }
   function medStatus(authoredIso, durationDays) {
-    if (!authoredIso)
-      return "completed";
+    if (!authoredIso) return "completed";
     const datePart = String(authoredIso).slice(0, 10);
     const parsed = /* @__PURE__ */ new Date(`${datePart}T00:00:00Z`);
-    if (Number.isNaN(parsed.getTime()))
-      return "completed";
+    if (Number.isNaN(parsed.getTime())) return "completed";
     let days;
     if (durationDays === null || durationDays === void 0 || durationDays === "") {
       days = null;
@@ -1302,8 +1257,7 @@
       const n = Number.parseInt(String(durationDays), 10);
       days = Number.isFinite(n) ? n : null;
     }
-    if (days === null)
-      days = 90;
+    if (days === null) days = 90;
     const end = new Date(parsed.getTime());
     end.setUTCDate(end.getUTCDate() + days);
     const today = /* @__PURE__ */ new Date();
@@ -1312,8 +1266,7 @@
   }
   function mapMedicationRequest(raw, patientId) {
     const drugName = (raw.drug_name ?? "").trim();
-    if (!drugName)
-      return null;
+    if (!drugName) return null;
     const medId = stableId(patientId, canonicalDrugKey(drugName), raw.date ?? "");
     const drugCode = (raw.code ?? "").trim();
     const coding = {
@@ -1354,8 +1307,7 @@
     const drugClassZh = (raw.drug_class_zh ?? "").trim();
     if (drugClass || drugClassZh) {
       const cat = {};
-      if (drugClass)
-        cat.coding = [{ display: drugClass }];
+      if (drugClass) cat.coding = [{ display: drugClass }];
       cat.text = drugClassZh || drugClass;
       resource.category = [cat];
     }
@@ -1366,15 +1318,13 @@
     const dosage = {};
     const parts = [];
     for (const k of ["dose", "unit", "frequency"]) {
-      if (raw[k])
-        parts.push(String(raw[k]));
+      if (raw[k]) parts.push(String(raw[k]));
     }
     if (parts.length > 0) {
       dosage.text = parts.join(" ");
     } else if (raw.dosage_text) {
       const t = String(raw.dosage_text).trim();
-      if (t)
-        dosage.text = t;
+      if (t) dosage.text = t;
     } else {
       const qtyRaw2 = raw.quantity;
       const qtyNum = qtyRaw2 !== null && qtyRaw2 !== void 0 && qtyRaw2 !== "" ? Number.parseFloat(String(qtyRaw2).replace(/,/g, "")) : Number.NaN;
@@ -1448,11 +1398,9 @@
   function mapMedicationsDedup(rawItems, patientId) {
     const byKey = /* @__PURE__ */ new Map();
     for (const item of rawItems) {
-      if (!item || typeof item !== "object")
-        continue;
+      if (!item || typeof item !== "object") continue;
       const drugName = (item.drug_name ?? "").trim();
-      if (!drugName)
-        continue;
+      if (!drugName) continue;
       const datePart = (item.date ?? "").slice(0, 10);
       const key = `${datePart}|${canonicalDrugKey(drugName)}`;
       const existing = byKey.get(key);
@@ -1467,8 +1415,7 @@
     const out = [];
     for (const item of byKey.values()) {
       const m = mapMedicationRequest(item, patientId);
-      if (m !== null)
-        out.push(m);
+      if (m !== null) out.push(m);
     }
     return out;
   }
@@ -2224,8 +2171,8 @@
     // Microalbumin/Creatinine ratio Urine
     "\u5FAE\u767D\u86CB\u767D/\u808C\u9150\u9178\u6BD4\u503C": "14959-1",
     "\u5FAE\u767D\u86CB\u767D/\u808C\u9150\u9178\u6BD4\u503C(\u534A\u5B9A\u91CF)": "14959-1",
-    "\u808C\u9150\u9178\u6BD4\u503C": "14959-1",
-    "\u808C\u9178\u9150\u6BD4\u503C": "14959-1",
+    \u808C\u9150\u9178\u6BD4\u503C: "14959-1",
+    \u808C\u9178\u9150\u6BD4\u503C: "14959-1",
     "alb/cre": "14959-1",
     "albumin/creatinine": "14959-1",
     "u-acr": "14959-1",
@@ -2592,17 +2539,17 @@
       "dlco/va": "19911-7",
       // DLCO/VA ratio
       "dlco/alveolar volume": "19911-7",
-      "kco": "19911-7",
+      kco: "19911-7",
       // Transfer coefficient (same as DLCO/VA)
       dlco: "24341-0",
       // Diffusing capacity for CO
       "dlco sb": "24341-0",
       // Single-breath variant
       \u4E00\u6C27\u5316\u78B3\u80BA\u7030\u6563\u91CF: "24341-0",
-      "va": "19850-7",
+      va: "19850-7",
       // Alveolar volume
       "alveolar volume": "19850-7",
-      "\u80BA\u6CE1\u5BB9\u7A4D": "19850-7"
+      \u80BA\u6CE1\u5BB9\u7A4D: "19850-7"
     },
     // ── Serum creatinine + eGFR piggyback (09015C) ──────
     // NHI bills creatinine under 09015C; Taiwan labs auto-calculate eGFR
@@ -3508,8 +3455,7 @@
     ["&amp;", "&"]
   ];
   function decodeHtmlEntities(s) {
-    if (!s.includes("&"))
-      return s;
+    if (!s.includes("&")) return s;
     let out = s;
     for (const [from, to] of HTML_ENTITIES) {
       if (out.includes(from)) {
@@ -3549,8 +3495,7 @@
     "-": null
   };
   function toUcum(unit) {
-    if (!unit)
-      return null;
+    if (!unit) return null;
     if (Object.prototype.hasOwnProperty.call(UCUM_OVERRIDES, unit)) {
       return UCUM_OVERRIDES[unit] ?? null;
     }
@@ -3566,21 +3511,17 @@
     return q;
   }
   function tryParseFloat(s) {
-    if (s === "" || s == null)
-      return null;
+    if (s === "" || s == null) return null;
     const trimmed = s.trim();
-    if (trimmed === "")
-      return null;
+    if (trimmed === "") return null;
     const n = Number(trimmed);
-    if (Number.isNaN(n))
-      return null;
+    if (Number.isNaN(n)) return null;
     return n;
   }
   function parseRangeMulti(rawRange, unit) {
     const decoded = decodeHtmlEntities((rawRange || "").trim());
     const s = translateFullwidth(decoded);
-    if (!s)
-      return [];
+    if (!s) return [];
     const lowBySex = {};
     const highBySex = {};
     let usedMulti = false;
@@ -3589,12 +3530,10 @@
       const lowBlob = m[1] ?? "";
       const highBlob = m[2] ?? "";
       for (const sm of lowBlob.matchAll(RR_SEX_NUM_G)) {
-        if (sm[1] && sm[2])
-          lowBySex[sm[1]] = sm[2];
+        if (sm[1] && sm[2]) lowBySex[sm[1]] = sm[2];
       }
       for (const sm of highBlob.matchAll(RR_SEX_NUM_G)) {
-        if (sm[1] && sm[2])
-          highBySex[sm[1]] = sm[2];
+        if (sm[1] && sm[2]) highBySex[sm[1]] = sm[2];
       }
       usedMulti = Object.keys(lowBySex).length > 0 || Object.keys(highBySex).length > 0;
     } else {
@@ -3622,13 +3561,11 @@
       const entries = [];
       const allSexKeys = [];
       for (const k of [...Object.keys(lowBySex), ...Object.keys(highBySex)]) {
-        if (!allSexKeys.includes(k))
-          allSexKeys.push(k);
+        if (!allSexKeys.includes(k)) allSexKeys.push(k);
       }
       for (const sexKey of allSexKeys) {
         const mapping = SEX_TO_FHIR[sexKey];
-        if (!mapping)
-          continue;
+        if (!mapping) continue;
         const [fhirCode, fhirDisplay] = mapping;
         const entry = {
           text: decoded,
@@ -3647,13 +3584,11 @@
         };
         if (sexKey in lowBySex) {
           const v = tryParseFloat(lowBySex[sexKey]);
-          if (v !== null)
-            entry.low = makeQuantity(v, unit);
+          if (v !== null) entry.low = makeQuantity(v, unit);
         }
         if (sexKey in highBySex) {
           const v = tryParseFloat(highBySex[sexKey]);
-          if (v !== null)
-            entry.high = makeQuantity(v, unit);
+          if (v !== null) entry.high = makeQuantity(v, unit);
         }
         entries.push(entry);
       }
@@ -3662,8 +3597,7 @@
         const out = [];
         for (const e of entries) {
           const c = e.appliesTo?.[0]?.coding?.[0]?.code;
-          if (!c || seen.has(c))
-            continue;
+          if (!c || seen.has(c)) continue;
           seen.add(c);
           out.push(e);
         }
@@ -3676,8 +3610,7 @@
   function parseRange(rawRange, unit) {
     const decoded = decodeHtmlEntities((rawRange || "").trim());
     const s = translateFullwidth(decoded);
-    if (!s)
-      return null;
+    if (!s) return null;
     if (_looksLikeInterpretationText(s)) {
       return { text: decoded, interpretationText: s };
     }
@@ -3693,13 +3626,11 @@
       const isLoEmpty = !lo || lo === "\u7121" || lo === "\u7A7A\u767D";
       if (hi && isLoEmpty) {
         const spec = _tryExtractSpecimenThreshold(hi, unit);
-        if (spec)
-          return { text: decoded, ...spec };
+        if (spec) return { text: decoded, ...spec };
       }
       if (lo && isHiEmpty) {
         const spec = _tryExtractSpecimenThreshold(lo, unit);
-        if (spec)
-          return { text: decoded, ...spec };
+        if (spec) return { text: decoded, ...spec };
       }
       if (lo && !_looksNumericLike(lo) && isHiEmpty) {
         return { text: lo };
@@ -3711,8 +3642,7 @@
         ["low", lo],
         ["high", hi]
       ]) {
-        if (!sideVal || sideVal === "\u7121" || sideVal === "\u7A7A\u767D")
-          continue;
+        if (!sideVal || sideVal === "\u7121" || sideVal === "\u7A7A\u767D") continue;
         const asFloat = tryParseFloat(sideVal);
         if (asFloat !== null) {
           entry[side] = makeQuantity(asFloat, unit);
@@ -3777,8 +3707,7 @@
     return entry;
   }
   function tryParseQuantity(rawValue, unit) {
-    if (rawValue === null || rawValue === void 0)
-      return null;
+    if (rawValue === null || rawValue === void 0) return null;
     let s = translateFullwidth(String(rawValue).trim());
     let comparator = null;
     const cm = s.match(COMPARATOR_RE);
@@ -3803,8 +3732,7 @@
         }
       }
     }
-    if (v === null)
-      return null;
+    if (v === null) return null;
     const ucumCode = toUcum(unit);
     const qty = {
       value: v,
@@ -3823,14 +3751,10 @@
   }
   function _looksLikeInterpretationText(s) {
     const t = s.trim();
-    if (!t)
-      return false;
-    if (t === "\u6B63\u5E38" || t === "\u7570\u5E38" || t === "\u967D\u6027" || t === "\u9670\u6027")
-      return true;
-    if (t.startsWith("["))
-      return false;
-    if (t.includes("-") || t.includes("~") || /[<>≦≧≤≥]/.test(t))
-      return false;
+    if (!t) return false;
+    if (t === "\u6B63\u5E38" || t === "\u7570\u5E38" || t === "\u967D\u6027" || t === "\u9670\u6027") return true;
+    if (t.startsWith("[")) return false;
+    if (t.includes("-") || t.includes("~") || /[<>≦≧≤≥]/.test(t)) return false;
     return t.includes("\u5EFA\u8B70") || t.includes("\u8ACB\u6D3D\u8A62") || t.includes("\u8ACB\u806F\u7D61") || t.includes("\u898B\u5099\u8A3B");
   }
   function _looksNumericLike(s) {
@@ -3838,13 +3762,11 @@
   }
   function _tryExtractSpecimenThreshold(s, unit) {
     const m = s.match(/^([^<>≦≧≤≥]+?)\s*([<>≦≧≤≥]=?)\s*([\d.]+)$/);
-    if (!m)
-      return null;
+    if (!m) return null;
     const specimen = (m[1] ?? "").trim();
     const op = (m[2] ?? "").trim();
     const v = tryParseFloat(m[3] ?? "");
-    if (!specimen || v === null)
-      return null;
+    if (!specimen || v === null) return null;
     const result = {
       appliesTo: [{ text: specimen }]
     };
@@ -3880,8 +3802,7 @@
     /正常血漿.*平均/
   ];
   function looksLikeQcControl(display) {
-    if (!display)
-      return false;
+    if (!display) return false;
     return QC_CONTROL_PATTERNS.some((re) => re.test(display));
   }
   var QUALITY_FLAG_PATTERNS = [
@@ -3906,28 +3827,21 @@
     /^註\s*[:：]/
   ];
   function looksLikeQualityFlag(display) {
-    if (!display)
-      return false;
+    if (!display) return false;
     return QUALITY_FLAG_PATTERNS.some((re) => re.test(display));
   }
   function looksLikeNarrativeRow(display) {
-    if (!display)
-      return false;
+    if (!display) return false;
     return NARRATIVE_ROW_PATTERNS.some((re) => re.test(display));
   }
   function normalizeFullwidth(s) {
-    if (!s)
-      return "";
-    return String(s).replace(
-      /[！-～]/g,
-      (ch) => String.fromCharCode(ch.charCodeAt(0) - 65248)
-    );
+    if (!s) return "";
+    return String(s).replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 65248));
   }
   var NHI_LAB_CODE_RE = /^\d{4,6}[A-Z]$/;
   function isAsciiOnly(s) {
     for (let i = 0; i < s.length; i++) {
-      if (s.charCodeAt(i) > 127)
-        return false;
+      if (s.charCodeAt(i) > 127) return false;
     }
     return true;
   }
@@ -3959,12 +3873,10 @@
     const combined = `${code} ${display}`.toLowerCase();
     if (code in PANEL_LOINC_MAP) {
       const hit2 = _findLongestMatch(combined, PANEL_LOINC_MAP[code]);
-      if (hit2)
-        return { loinc: hit2, cleanMatch: true };
+      if (hit2) return { loinc: hit2, cleanMatch: true };
     }
     const hit = _findLongestMatch(combined, LOINC_MAP);
-    if (hit)
-      return { loinc: hit, cleanMatch: true };
+    if (hit) return { loinc: hit, cleanMatch: true };
     if (code && code in NHI_TO_LOINC) {
       return { loinc: NHI_TO_LOINC[code] ?? null, cleanMatch: false };
     }
@@ -4020,25 +3932,20 @@
   function mapInterpretation(interp) {
     const key = (interp ?? "").toLowerCase();
     const entry = INTERP_TABLE[key];
-    if (!entry)
-      return null;
+    if (!entry) return null;
     return interpCoding(entry[0], entry[1]);
   }
   var POS_MARKERS = /^\s*(?:positive|pos|reactive|detected|abnormal|present|trace|[1-4]?\s*\+(?:\s*[\+\-])*)\s*(?:\(.*\))?\s*$/i;
   var NEG_MARKERS = /^\s*(?:negative|neg|nonreactive|non[-\s]?reactive|not[-\s]?detected|nd|absent|none|normal|0|[-—–]+)\s*(?:\(.*\))?\s*$/i;
   function classifyQualitative(text) {
-    if (text === null || text === void 0)
-      return null;
+    if (text === null || text === void 0) return null;
     let s = String(text).trim();
     if (s.startsWith("[") && s.endsWith("]")) {
       s = s.slice(1, -1).trim();
     }
-    if (!s)
-      return null;
-    if (NEG_MARKERS.test(s))
-      return "neg";
-    if (POS_MARKERS.test(s))
-      return "pos";
+    if (!s) return null;
+    if (NEG_MARKERS.test(s)) return "neg";
+    if (POS_MARKERS.test(s)) return "pos";
     return null;
   }
   function deriveInterpretation(valueRaw, qty, rr) {
@@ -4046,24 +3953,18 @@
       const v = qty.value;
       const lo = rr.low?.value;
       const hi = rr.high?.value;
-      if (typeof hi === "number" && v > hi)
-        return interpCoding("H", "High");
-      if (typeof lo === "number" && v < lo)
-        return interpCoding("L", "Low");
-      if (typeof lo === "number" || typeof hi === "number")
-        return interpCoding("N", "Normal");
+      if (typeof hi === "number" && v > hi) return interpCoding("H", "High");
+      if (typeof lo === "number" && v < lo) return interpCoding("L", "Low");
+      if (typeof lo === "number" || typeof hi === "number") return interpCoding("N", "Normal");
       return null;
     }
     const valKind = classifyQualitative(valueRaw);
     const refText = rr?.text ?? "";
     const refKind = classifyQualitative(refText);
-    if (valKind === null)
-      return null;
+    if (valKind === null) return null;
     if (refKind === "neg") {
-      if (valKind === "pos")
-        return interpCoding("A", "Abnormal");
-      if (valKind === "neg")
-        return interpCoding("N", "Normal");
+      if (valKind === "pos") return interpCoding("A", "Abnormal");
+      if (valKind === "neg") return interpCoding("N", "Normal");
     }
     return valKind === "pos" ? interpCoding("POS", "Positive") : interpCoding("NEG", "Negative");
   }
@@ -4200,7 +4101,7 @@
     // 球酯脢 wasn't blood 白血球. Longer keys take priority via
     // longest-match sorting.
     "\u5FAE\u767D\u86CB\u767D(\u5C3F)": "URINE_MICROALBUMIN",
-    "\u5FAE\u767D\u86CB\u767D": "URINE_MICROALBUMIN",
+    \u5FAE\u767D\u86CB\u767D: "URINE_MICROALBUMIN",
     "MALB(U)": "URINE_MICROALBUMIN",
     MICROALBUMIN: "URINE_MICROALBUMIN",
     \u767D\u86CB\u767D: "ALBUMIN",
@@ -4313,23 +4214,18 @@
     ])
   );
   function canonicalLabKey(display, code) {
-    if (!display)
-      return "";
+    if (!display) return "";
     const s = display.trim();
-    if (!s)
-      return "";
+    if (!s) return "";
     const sUpper = s.toUpperCase();
     if (code) {
       const codeUpper = code.toUpperCase();
       const scoped = CODE_SCOPED_SYNONYMS[codeUpper];
       if (scoped) {
-        if (scoped[sUpper])
-          return scoped[sUpper];
-        if (scoped[s])
-          return scoped[s];
+        if (scoped[sUpper]) return scoped[sUpper];
+        if (scoped[s]) return scoped[s];
         for (const key of CODE_SCOPED_CJK_KEYS_SORTED[codeUpper] ?? []) {
-          if (s.includes(key))
-            return scoped[key];
+          if (s.includes(key)) return scoped[key];
         }
       }
     }
@@ -4346,13 +4242,11 @@
     return s.toLowerCase().replace(/\s+/g, " ").trim();
   }
   function cjkChars2(s) {
-    if (!s)
-      return 0;
+    if (!s) return 0;
     let n = 0;
     for (const ch of s) {
       const cp = ch.codePointAt(0) ?? 0;
-      if (cp >= 19968 && cp <= 40959)
-        n++;
+      if (cp >= 19968 && cp <= 40959) n++;
     }
     return n;
   }
@@ -4360,22 +4254,19 @@
     let latin = 0;
     for (const ch of s) {
       const cp = ch.charCodeAt(0);
-      if (cp < 128 && /[A-Za-z]/.test(ch))
-        latin++;
+      if (cp < 128 && /[A-Za-z]/.test(ch)) latin++;
     }
     return latin >= 2 && cjkChars2(s) === 0;
   }
   function normalizeValueForDedup(v) {
-    if (v === null || v === void 0)
-      return "";
+    if (v === null || v === void 0) return "";
     let s = String(v).trim().toLowerCase();
     s = s.replace(/\([^)]*\)/g, "").trim();
     s = s.replace(/\s+/g, " ");
     return s;
   }
   function isMeaningfulValue(value) {
-    if (value === null || value === void 0)
-      return false;
+    if (value === null || value === void 0) return false;
     const s = String(value).trim();
     return s !== "" && s !== "\u2014" && s !== "-" && s !== "N/A" && s !== "null";
   }
@@ -4416,10 +4307,8 @@
     for (const it of items) {
       const k = `${normalizeValueForDedup(it.value)}|${String(it.display ?? "").toLowerCase().trim()}`;
       const group = byKey.get(k);
-      if (group)
-        group.push(it);
-      else
-        byKey.set(k, [it]);
+      if (group) group.push(it);
+      else byKey.set(k, [it]);
     }
     const out = [];
     for (const group of byKey.values()) {
@@ -4440,21 +4329,16 @@
   function filterLabRows(rawItems) {
     const out = [];
     for (const raw of rawItems) {
-      if (!raw || typeof raw !== "object")
-        continue;
+      if (!raw || typeof raw !== "object") continue;
       const display = raw.display || raw.code || "";
-      if (looksLikeQcControl(String(display)))
-        continue;
-      if (looksLikeQualityFlag(String(display)))
-        continue;
-      if (looksLikeNarrativeRow(String(display)))
-        continue;
+      if (looksLikeQcControl(String(display))) continue;
+      if (looksLikeQualityFlag(String(display))) continue;
+      if (looksLikeNarrativeRow(String(display))) continue;
       const value = raw.value;
       const interp = (raw.interpretation ?? "").toString().toLowerCase();
       const hasValue = isMeaningfulValue(value);
       const hasMeaningfulInterp = MEANINGFUL_INTERPS.has(interp);
-      if (!hasValue && !hasMeaningfulInterp)
-        continue;
+      if (!hasValue && !hasMeaningfulInterp) continue;
       out.push(raw);
     }
     return out;
@@ -4462,22 +4346,17 @@
   function pickFullerLabel(a, b) {
     const aa = (a ?? "").trim();
     const bb = (b ?? "").trim();
-    if (!aa)
-      return bb;
-    if (!bb)
-      return aa;
+    if (!aa) return bb;
+    if (!bb) return aa;
     const aCjk = cjkChars2(aa);
     const bCjk = cjkChars2(bb);
-    if (aCjk > 0 && bCjk === 0)
-      return aa;
-    if (bCjk > 0 && aCjk === 0)
-      return bb;
+    if (aCjk > 0 && bCjk === 0) return aa;
+    if (bCjk > 0 && aCjk === 0) return bb;
     return bb.length > aa.length ? bb : aa;
   }
   function pickFullerItemName(rows) {
     let best = "";
-    for (const r of rows)
-      best = pickFullerLabel(best, String(r.item_name ?? ""));
+    for (const r of rows) best = pickFullerLabel(best, String(r.item_name ?? ""));
     return best;
   }
   function dedupNhiCrossChannelPairs(items) {
@@ -4504,12 +4383,8 @@
         out.push(...group);
         continue;
       }
-      const aRows = group.filter(
-        (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "A"
-      );
-      const bRows = group.filter(
-        (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "B"
-      );
+      const aRows = group.filter((r) => String(r.nhi_source_channel ?? "").toUpperCase() === "A");
+      const bRows = group.filter((r) => String(r.nhi_source_channel ?? "").toUpperCase() === "B");
       if (aRows.length > 0 && bRows.length > 0) {
         const bItemName = pickFullerItemName(bRows);
         if (bItemName) {
@@ -4559,8 +4434,7 @@
       }
       const merged = { ...primary };
       for (const f of ["order_code", "order_name", "hospital", "code"]) {
-        if (!merged[f] && secondary[f])
-          merged[f] = secondary[f];
+        if (!merged[f] && secondary[f]) merged[f] = secondary[f];
       }
       byKey.set(key, merged);
     }
@@ -4588,18 +4462,14 @@
       const s = parts.systolic;
       const d = parts.diastolic;
       const primary = s ?? d;
-      if (!primary)
-        continue;
+      if (!primary) continue;
       const components = [];
       const tryAdd = (src, loinc, display) => {
-        if (!src)
-          return;
+        if (!src) return;
         const val = src.value;
-        if (val === null || val === void 0 || val === "" || val === "-" || val === "\u2014")
-          return;
+        if (val === null || val === void 0 || val === "" || val === "-" || val === "\u2014") return;
         const num = Number.parseFloat(String(val).replace(/,/g, ""));
-        if (!Number.isFinite(num))
-          return;
+        if (!Number.isFinite(num)) return;
         components.push({
           loinc,
           display,
@@ -4610,8 +4480,7 @@
       };
       tryAdd(s, "8480-6", "Systolic blood pressure");
       tryAdd(d, "8462-4", "Diastolic blood pressure");
-      if (components.length === 0)
-        continue;
+      if (components.length === 0) continue;
       const combined = { ...primary };
       combined.display = "Blood Pressure";
       combined.code = "";
@@ -4664,28 +4533,22 @@
   };
   function nhiCodeSpecimen(code) {
     const c = String(code ?? "").trim().toUpperCase();
-    if (!c)
-      return null;
-    if (c in NHI_CODE_SPECIMEN_OVERRIDE)
-      return NHI_CODE_SPECIMEN_OVERRIDE[c] ?? null;
+    if (!c) return null;
+    if (c in NHI_CODE_SPECIMEN_OVERRIDE) return NHI_CODE_SPECIMEN_OVERRIDE[c] ?? null;
     const prefix = c.slice(0, 2);
     return NHI_CODE_PREFIX_SPECIMEN[prefix] ?? null;
   }
   function inferSpecimen(orderName, display, code) {
     const displayStr = String(display ?? "");
     const orderStr = String(orderName ?? "");
-    if (URINE_MARKERS_RE.test(displayStr))
-      return "Urine";
+    if (URINE_MARKERS_RE.test(displayStr)) return "Urine";
     const blob = `${orderStr} ${displayStr}`.toLowerCase();
     for (const [pattern, label] of OTHER_SPECIMEN_RULES) {
-      if (pattern.test(blob))
-        return label;
+      if (pattern.test(blob)) return label;
     }
     const codeDefault = nhiCodeSpecimen(code);
-    if (codeDefault)
-      return codeDefault;
-    if (URINE_MARKERS_RE.test(orderStr))
-      return "Urine";
+    if (codeDefault) return codeDefault;
+    if (URINE_MARKERS_RE.test(orderStr)) return "Urine";
     return null;
   }
   var RATIO_TO_TIME_LOINC = {
@@ -4698,11 +4561,9 @@
   };
   var TIME_UNIT_RE = /^(?:sec|s|seconds?|秒)$/i;
   function structuralLoincFix(loinc, rawUnit) {
-    if (!loinc)
-      return loinc;
+    if (!loinc) return loinc;
     const sibling = RATIO_TO_TIME_LOINC[loinc];
-    if (!sibling)
-      return loinc;
+    if (!sibling) return loinc;
     const u = String(rawUnit ?? "").trim();
     if (TIME_UNIT_RE.test(u)) {
       return sibling;
@@ -4717,30 +4578,23 @@
   var NHI_SOURCE_CHANNEL_SYSTEM = "http://nhi-fhir-bridge/nhi-source-channel";
   function appendNhiSourceChannelTag(resource, raw) {
     const code = String(raw.nhi_source_channel ?? "").trim().toUpperCase();
-    if (!code)
-      return;
+    if (!code) return;
     const displayName = String(raw.nhi_source_channel_name ?? "").trim();
     const tag = {
       system: NHI_SOURCE_CHANNEL_SYSTEM,
       code
     };
-    if (displayName)
-      tag.display = displayName;
-    if (!resource.meta)
-      resource.meta = { versionId: "1", source: "nhi-fhir-bridge/scraper" };
-    if (!Array.isArray(resource.meta.tag))
-      resource.meta.tag = [];
+    if (displayName) tag.display = displayName;
+    if (!resource.meta) resource.meta = { versionId: "1", source: "nhi-fhir-bridge/scraper" };
+    if (!Array.isArray(resource.meta.tag)) resource.meta.tag = [];
     resource.meta.tag.push(tag);
   }
   var NHI_VISIT_DATE_SYSTEM = "http://nhi-fhir-bridge/nhi-visit-date";
   function appendNhiVisitDateTag(resource, raw) {
     const visitDate = String(raw.nhi_visit_date ?? "").trim();
-    if (!visitDate)
-      return;
-    if (!resource.meta)
-      resource.meta = { versionId: "1", source: "nhi-fhir-bridge/scraper" };
-    if (!Array.isArray(resource.meta.tag))
-      resource.meta.tag = [];
+    if (!visitDate) return;
+    if (!resource.meta) resource.meta = { versionId: "1", source: "nhi-fhir-bridge/scraper" };
+    if (!Array.isArray(resource.meta.tag)) resource.meta.tag = [];
     resource.meta.tag.push({
       system: NHI_VISIT_DATE_SYSTEM,
       code: visitDate
@@ -4775,8 +4629,7 @@
     );
   }
   function urineProteinLoincFix(loinc, rawValue, rawUnit) {
-    if (loinc !== URINE_PROTEIN_QUALITATIVE_LOINC)
-      return loinc;
+    if (loinc !== URINE_PROTEIN_QUALITATIVE_LOINC) return loinc;
     const v = String(rawValue ?? "").trim();
     const u = String(rawUnit ?? "").trim();
     if (URINE_PROTEIN_COMBINED_RE.test(v)) {
@@ -4791,25 +4644,21 @@
   var AMMONIA_MOLAR_LOINC = "16362-6";
   var AMMONIA_MOLAR_UNIT_RE = /mol\s*\/\s*l/i;
   function ammoniaLoincFix(loinc, rawUnit) {
-    if (loinc !== AMMONIA_MASS_LOINC)
-      return loinc;
+    if (loinc !== AMMONIA_MASS_LOINC) return loinc;
     const u = String(rawUnit ?? "").trim();
-    if (AMMONIA_MOLAR_UNIT_RE.test(u))
-      return AMMONIA_MOLAR_LOINC;
+    if (AMMONIA_MOLAR_UNIT_RE.test(u)) return AMMONIA_MOLAR_LOINC;
     return AMMONIA_MASS_LOINC;
   }
   function mapObservation(raw, patientId) {
     const display = raw.display || raw.code || "";
     const itemName = String(raw.item_name ?? "");
     const code = raw.code || "";
-    if (looksLikeQcControl(String(display)))
-      return null;
+    if (looksLikeQcControl(String(display))) return null;
     const value = raw.value;
     const interp = (raw.interpretation ?? "").toString().toLowerCase();
     const hasValue = isMeaningfulValue(value);
     const hasMeaningfulInterp = MEANINGFUL_INTERPS.has(interp);
-    if (!hasValue && !hasMeaningfulInterp)
-      return null;
+    if (!hasValue && !hasMeaningfulInterp) return null;
     const obsId = stableId(patientId, code, raw.date ?? "");
     const lookup = findLoincDetailed(code, display);
     let loinc = lookup.loinc;
@@ -4862,10 +4711,8 @@
     if (hasValue) {
       const unit = _canonicalizeUnit(display, code, raw.unit ?? "");
       const qty = tryParseQuantity(String(value), unit);
-      if (qty)
-        resource.valueQuantity = qty;
-      else
-        resource.valueString = String(value);
+      if (qty) resource.valueQuantity = qty;
+      else resource.valueString = String(value);
     }
     let _interpFromRange = null;
     if (raw.reference_range) {
@@ -4941,10 +4788,8 @@
         subject: { reference: `Patient/${patientId}` },
         component: componentResources
       };
-      if (date)
-        bpObs.effectiveDateTime = `${date}T00:00:00+08:00`;
-      if (hospital)
-        bpObs.performer = [{ display: hospital }];
+      if (date) bpObs.effectiveDateTime = `${date}T00:00:00+08:00`;
+      if (hospital) bpObs.performer = [{ display: hospital }];
       return bpObs;
     }
     const display = raw.display || raw.code || "";
@@ -5030,33 +4875,26 @@
       },
       subject: { reference: `Patient/${patientId}` }
     };
-    if (raw.date)
-      resource.effectiveDateTime = `${raw.date}T00:00:00+08:00`;
-    if (raw.hospital)
-      resource.performer = [{ display: raw.hospital }];
+    if (raw.date) resource.effectiveDateTime = `${raw.date}T00:00:00+08:00`;
+    if (raw.hospital) resource.performer = [{ display: raw.hospital }];
     const specimen = inferSpecimen(raw.order_name, raw.display, raw.code);
-    if (specimen)
-      resource.specimen = { display: specimen };
+    if (specimen) resource.specimen = { display: specimen };
     appendNhiSourceChannelTag(resource, raw);
     appendNhiVisitDateTag(resource, raw);
     const hasValue = isMeaningfulValue(value);
     if (hasValue) {
       const unit = _canonicalizeUnit(display, code, raw.unit ?? "");
       const qty = tryParseQuantity(String(value), unit);
-      if (qty)
-        resource.valueQuantity = qty;
-      else
-        resource.valueString = String(value);
+      if (qty) resource.valueQuantity = qty;
+      else resource.valueString = String(value);
     }
     let _interpFromRange = null;
     if (raw.reference_range) {
       const rrs = parseRangeMulti(String(raw.reference_range), raw.unit ?? "");
       const realRanges = rrs.filter((r) => !r.interpretationText);
-      if (realRanges.length > 0)
-        resource.referenceRange = realRanges;
+      if (realRanges.length > 0) resource.referenceRange = realRanges;
       const flagged = rrs.find((r) => r.interpretationText);
-      if (flagged?.interpretationText)
-        _interpFromRange = flagged.interpretationText;
+      if (flagged?.interpretationText) _interpFromRange = flagged.interpretationText;
     }
     const interpCodingResult = mapInterpretation(interp) || deriveInterpretation(
       value !== null && value !== void 0 ? String(value) : "",
@@ -5082,8 +4920,7 @@
       const hospital = raw.hospital ?? "";
       const key = `${groupKeyCode}|${date}|${hospital}`;
       const arr = groups.get(key);
-      if (arr)
-        arr.push(raw);
+      if (arr) arr.push(raw);
       else {
         groups.set(key, [raw]);
         keyMeta.set(key, { groupKeyCode: String(groupKeyCode), date, hospital });
@@ -5097,15 +4934,12 @@
       const seenObsIds = /* @__PURE__ */ new Set();
       for (const it of deduped) {
         const obs = buildObservation(it, patientId, meta.groupKeyCode);
-        if (!obs)
-          continue;
-        if (seenObsIds.has(obs.id))
-          continue;
+        if (!obs) continue;
+        if (seenObsIds.has(obs.id)) continue;
         seenObsIds.add(obs.id);
         obsResources.push(obs);
       }
-      if (obsResources.length === 0)
-        continue;
+      if (obsResources.length === 0) continue;
       const isBpPanel = deduped.every((it) => it.bp_components || it.display === "Blood Pressure");
       if (isBpPanel) {
         out.push(...obsResources);
@@ -5134,8 +4968,7 @@
           const loinc = obs.code?.coding?.find(
             (c) => c?.system === "http://loinc.org"
           )?.code;
-          if (loinc)
-            obsLoincs.add(loinc);
+          if (loinc) obsLoincs.add(loinc);
         }
         if (obsLoincs.size === 1) {
           panelLoinc = [...obsLoincs][0];
@@ -5191,10 +5024,8 @@
         subject: { reference: `Patient/${patientId}` },
         result: obsResources.map((o) => ({ reference: `Observation/${o.id}` }))
       };
-      if (meta.date)
-        dr.effectiveDateTime = `${meta.date}T00:00:00+08:00`;
-      if (meta.hospital)
-        dr.performer = [{ display: meta.hospital }];
+      if (meta.date) dr.effectiveDateTime = `${meta.date}T00:00:00+08:00`;
+      if (meta.hospital) dr.performer = [{ display: meta.hospital }];
       if (obsResources.length === 1 && obsResources[0]?.code) {
         const obs = obsResources[0];
         const obsLoinc = obs.code.coding?.find(
@@ -5219,17 +5050,14 @@
   // ../packages/mapper/src/procedure.ts
   function mapSystem3(systemHint) {
     const s = typeof systemHint === "string" ? systemHint.toLowerCase() : "";
-    if (s.includes("snomed"))
-      return SNOMED_CT;
-    if (s.includes("icd"))
-      return ICD_10_PCS;
+    if (s.includes("snomed")) return SNOMED_CT;
+    if (s.includes("icd")) return ICD_10_PCS;
     return HIS_LOCAL_PROCEDURE_CODE;
   }
   function mapProcedure(raw, patientId) {
     const note = (raw.note ?? "").trim();
     const bodySite = (raw.body_site ?? "").trim();
-    if (!note && !bodySite)
-      return null;
+    if (!note && !bodySite) return null;
     const display = raw.display ?? "Unknown Procedure";
     const displayZh = (raw.display_zh ?? "").trim() || display;
     const code = raw.code;
@@ -5293,22 +5121,18 @@
     return `${h >>> 0}:${b64.length}`;
   }
   function dedupImagingItems(items) {
-    if (!Array.isArray(items) || items.length === 0)
-      return items;
+    if (!Array.isArray(items) || items.length === 0) return items;
     let unkCounter = 0;
     const groups = /* @__PURE__ */ new Map();
     for (const it of items) {
-      if (!it)
-        continue;
+      if (!it) continue;
       const code = String(it.code ?? "");
       const date = String(it.date ?? "");
       const hospital = String(it.hospital ?? "");
       const key = code || date || hospital ? `${code}|${date}|${hospital}` : `__unknown_${unkCounter++}`;
       const arr = groups.get(key);
-      if (arr)
-        arr.push(it);
-      else
-        groups.set(key, [it]);
+      if (arr) arr.push(it);
+      else groups.set(key, [it]);
     }
     const out = [];
     for (const group of groups.values()) {
@@ -5322,10 +5146,8 @@
         const frames = framesOf(it);
         const h = frames.length > 0 ? frameContentHash(frames[0]) : `__empty_${emptySentinel++}`;
         const arr = byHash.get(h);
-        if (arr)
-          arr.push(it);
-        else
-          byHash.set(h, [it]);
+        if (arr) arr.push(it);
+        else byHash.set(h, [it]);
       }
       const merged = [];
       for (const bucket of byHash.values()) {
@@ -5342,8 +5164,7 @@
         for (const it of bucket) {
           for (const f of framesOf(it)) {
             const h = frameContentHash(f);
-            if (seenHashes.has(h))
-              continue;
+            if (seenHashes.has(h)) continue;
             seenHashes.add(h);
             unionFrames.push(f);
           }
@@ -5365,8 +5186,7 @@
         for (const kept of keptNarr) {
           const prevNorm = kept.norm;
           const prefixRelated = norm.length > 0 && prevNorm.length > 0 && (norm === prevNorm || norm.startsWith(prevNorm) || prevNorm.startsWith(norm));
-          if (!prefixRelated)
-            continue;
+          if (!prefixRelated) continue;
           const prev = collapsedMerged[kept.idx];
           const takeNew = norm.length > prevNorm.length || norm.length === prevNorm.length && (it.conclusion?.length ?? 0) > (prev.conclusion?.length ?? 0);
           if (takeNew) {
@@ -5396,8 +5216,7 @@
         }
         out.push(img);
         for (const it of collapsedMerged) {
-          if (it !== narr && it !== img)
-            out.push(it);
+          if (it !== narr && it !== img) out.push(it);
         }
       } else {
         out.push(...collapsedMerged);
@@ -5405,8 +5224,7 @@
     }
     function contentSignatureOf(item) {
       const frames = framesOf(item);
-      if (frames.length === 0)
-        return null;
+      if (frames.length === 0) return null;
       const hashes = frames.map(frameContentHash).sort();
       return hashes.join("|");
     }
@@ -5442,9 +5260,7 @@
   }
   function framesOf(item) {
     if (Array.isArray(item.jpgBase64s)) {
-      return item.jpgBase64s.filter(
-        (s) => typeof s === "string" && s.length > 0
-      );
+      return item.jpgBase64s.filter((s) => typeof s === "string" && s.length > 0);
     }
     if (typeof item.jpgBase64 === "string" && item.jpgBase64.length > 0) {
       return [item.jpgBase64];
@@ -5456,6 +5272,64 @@
   }
   function hasFrames(item) {
     return framesOf(item).length > 0;
+  }
+
+  // ../packages/mapper/src/jpeg-deid.ts
+  function stripJpegMetadata(bytes) {
+    if (bytes.length < 4 || bytes[0] !== 255 || bytes[1] !== 216) return bytes;
+    const keep = [[0, 2]];
+    let dropped = false;
+    let i = 2;
+    while (i + 1 < bytes.length) {
+      if (bytes[i] !== 255) return bytes;
+      const marker = bytes[i + 1] ?? 0;
+      if (marker === 218 || marker === 217) {
+        keep.push([i, bytes.length]);
+        i = bytes.length;
+        break;
+      }
+      if (marker === 1 || marker >= 208 && marker <= 215) {
+        keep.push([i, i + 2]);
+        i += 2;
+        continue;
+      }
+      if (i + 3 >= bytes.length) return bytes;
+      const len = (bytes[i + 2] ?? 0) << 8 | (bytes[i + 3] ?? 0);
+      const segEnd = i + 2 + len;
+      if (len < 2 || segEnd > bytes.length) return bytes;
+      if (marker === 225 || marker === 254) {
+        dropped = true;
+      } else {
+        keep.push([i, segEnd]);
+      }
+      i = segEnd;
+    }
+    if (!dropped) return bytes;
+    const total = keep.reduce((n, [s, e]) => n + (e - s), 0);
+    const out = new Uint8Array(total);
+    let o = 0;
+    for (const [s, e] of keep) {
+      out.set(bytes.subarray(s, e), o);
+      o += e - s;
+    }
+    return out;
+  }
+  function stripJpegMetadataBase64(b64) {
+    try {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const stripped = stripJpegMetadata(bytes);
+      if (stripped === bytes) return b64;
+      let s = "";
+      const CHUNK = 32768;
+      for (let i = 0; i < stripped.length; i += CHUNK) {
+        s += String.fromCharCode(...stripped.subarray(i, i + CHUNK));
+      }
+      return btoa(s);
+    } catch {
+      return b64;
+    }
   }
 
   // ../packages/mapper/src/link.ts
@@ -5477,8 +5351,7 @@
       "issued"
     ]) {
       const v = r[key];
-      if (v)
-        return String(v).slice(0, 10);
+      if (v) return String(v).slice(0, 10);
     }
     for (const key of ["effectivePeriod", "performedPeriod"]) {
       const period = r[key];
@@ -5490,56 +5363,45 @@
   }
   function resourceHospital(r) {
     for (const p of r.performer ?? []) {
-      if (!p || typeof p !== "object")
-        continue;
-      if (typeof p.display === "string" && p.display)
-        return p.display;
+      if (!p || typeof p !== "object") continue;
+      if (typeof p.display === "string" && p.display) return p.display;
       const actor = p.actor;
       if (actor && typeof actor === "object" && typeof actor.display === "string" && actor.display) {
         return actor.display;
       }
     }
     const req = r.requester ?? {};
-    if (req && typeof req === "object" && req.display)
-      return req.display;
+    if (req && typeof req === "object" && req.display) return req.display;
     return "";
   }
   function dedupAdmissionDayAmb(resources) {
     const impStarts = /* @__PURE__ */ new Set();
     for (const r of resources) {
-      if (r.resourceType !== "Encounter")
-        continue;
-      if ((r.class ?? {}).code !== "IMP")
-        continue;
+      if (r.resourceType !== "Encounter") continue;
+      if ((r.class ?? {}).code !== "IMP") continue;
       const hosp = (r.serviceProvider ?? {}).display ?? "";
       const start = String((r.period ?? {}).start ?? "").slice(0, 10);
-      if (hosp && start)
-        impStarts.add(`${hosp} ${start}`);
+      if (hosp && start) impStarts.add(`${hosp} ${start}`);
     }
-    if (impStarts.size === 0)
-      return resources;
+    if (impStarts.size === 0) return resources;
     return resources.filter((r) => {
       if (r.resourceType === "Encounter" && (r.class ?? {}).code === "AMB") {
         const hosp = (r.serviceProvider ?? {}).display ?? "";
         const start = String((r.period ?? {}).start ?? "").slice(0, 10);
-        if (impStarts.has(`${hosp} ${start}`))
-          return false;
+        if (impStarts.has(`${hosp} ${start}`)) return false;
       }
       return true;
     });
   }
   function linkEncountersInResources(candidates, resources) {
-    if (candidates.length === 0)
-      return;
+    if (candidates.length === 0) return;
     const exactIndex = /* @__PURE__ */ new Map();
     const impByHosp = /* @__PURE__ */ new Map();
     for (const e of candidates) {
-      if (e.resourceType !== "Encounter")
-        continue;
+      if (e.resourceType !== "Encounter") continue;
       const hosp = (e.serviceProvider ?? {}).display ?? "";
       const start = String((e.period ?? {}).start ?? "").slice(0, 10);
-      if (!hosp || !start)
-        continue;
+      if (!hosp || !start) continue;
       const key = `${hosp} ${start}`;
       const arr = exactIndex.get(key) ?? [];
       arr.push(e.id);
@@ -5554,41 +5416,31 @@
         }
       }
     }
-    if (exactIndex.size === 0 && impByHosp.size === 0)
-      return;
+    if (exactIndex.size === 0 && impByHosp.size === 0) return;
     for (const r of resources) {
-      if (!ENCOUNTER_LINKABLE.has(r.resourceType))
-        continue;
-      if (r.encounter || r.context)
-        continue;
+      if (!ENCOUNTER_LINKABLE.has(r.resourceType)) continue;
+      if (r.encounter || r.context) continue;
       const hosp = resourceHospital(r);
       const date = resourceDate(r);
-      if (!hosp || !date)
-        continue;
+      if (!hosp || !date) continue;
       const matches = [...exactIndex.get(`${hosp} ${date}`) ?? []];
       if (matches.length === 0) {
         for (const [start, end, eid] of impByHosp.get(hosp) ?? []) {
-          if (start <= date && date <= end)
-            matches.push(eid);
+          if (start <= date && date <= end) matches.push(eid);
         }
       }
-      if (matches.length !== 1)
-        continue;
+      if (matches.length !== 1) continue;
       r.encounter = { reference: `Encounter/${matches[0]}` };
     }
   }
   function resolveSexStratifiedRanges(patient, resources) {
-    if (!patient)
-      return;
+    if (!patient) return;
     const gender = String(patient.gender ?? "").toLowerCase();
-    if (gender !== "male" && gender !== "female")
-      return;
+    if (gender !== "male" && gender !== "female") return;
     for (const r of resources) {
-      if (r.resourceType !== "Observation")
-        continue;
+      if (r.resourceType !== "Observation") continue;
       const rrs = r.referenceRange ?? [];
-      if (rrs.length < 2)
-        continue;
+      if (rrs.length < 2) continue;
       let match = null;
       for (const entry of rrs) {
         for (const ap of entry.appliesTo ?? []) {
@@ -5598,14 +5450,11 @@
               break;
             }
           }
-          if (match)
-            break;
+          if (match) break;
         }
-        if (match)
-          break;
+        if (match) break;
       }
-      if (!match)
-        continue;
+      if (!match) continue;
       r.referenceRange = [match];
       const valStr = String((r.valueQuantity ?? {}).value ?? "") || String(r.valueString ?? "");
       const newInterp = deriveInterpretation(valStr, r.valueQuantity ?? null, match);
@@ -5619,8 +5468,7 @@
   var TW_NATIONAL_ID_RE = /^[A-Z][12]\d{8}$/;
   var MASKED_TW_ID_RE = /^[A-Z][12]\d{4}[X*]{4}$/;
   function looksLikeTwNationalId(value) {
-    if (!value)
-      return false;
+    if (!value) return false;
     return TW_NATIONAL_ID_RE.test(value.trim().toUpperCase());
   }
   function mapPatient(raw) {
@@ -5631,10 +5479,8 @@
     const address = (raw.address ?? null) || "";
     const [family, given] = splitName(nameText);
     const nameEntry = { use: "official", text: nameText };
-    if (family)
-      nameEntry.family = family;
-    if (given.length > 0)
-      nameEntry.given = given;
+    if (family) nameEntry.family = family;
+    if (given.length > 0) nameEntry.given = given;
     const resource = {
       resourceType: "Patient",
       id: patientId,
@@ -5650,8 +5496,7 @@
       gender: mapGender(raw.gender)
     };
     const birthDate = raw.birthDate;
-    if (birthDate)
-      resource.birthDate = birthDate;
+    if (birthDate) resource.birthDate = birthDate;
     if (phone) {
       resource.telecom = [{ system: "phone", use: "home", value: phone }];
     }
@@ -5662,8 +5507,7 @@
   }
   function splitName(fullName) {
     const name = (fullName ?? "").trim();
-    if (!name || name === "Unknown")
-      return ["", []];
+    if (!name || name === "Unknown") return ["", []];
     if (/\s/.test(name)) {
       const parts = name.split(/\s+/);
       return [parts[parts.length - 1], parts.slice(0, -1)];
@@ -5673,17 +5517,14 @@
   }
   function mapGender(gender) {
     const g = typeof gender === "string" ? gender.toLowerCase() : "";
-    if (["male", "m", "\u7537", "\u7537\u6027"].includes(g))
-      return "male";
-    if (["female", "f", "\u5973", "\u5973\u6027"].includes(g))
-      return "female";
+    if (["male", "m", "\u7537", "\u7537\u6027"].includes(g)) return "male";
+    if (["female", "f", "\u5973", "\u5973\u6027"].includes(g)) return "female";
     return "unknown";
   }
 
   // src/background/patient-override.ts
   function applyDateRangeToPath(path, dateRange) {
-    if (!dateRange || !dateRange.start && !dateRange.end)
-      return path;
+    if (!dateRange || !dateRange.start && !dateRange.end) return path;
     const s = (dateRange.start || "").slice(0, 10);
     const e = (dateRange.end || "").slice(0, 10);
     let p = path;
@@ -5723,10 +5564,8 @@
       identifier: effectiveId,
       name: displayName || effectiveId
     };
-    if (ov.birth_date)
-      raw.birthDate = ov.birth_date;
-    if (ov.gender)
-      raw.gender = ov.gender;
+    if (ov.birth_date) raw.birthDate = ov.birth_date;
+    if (ov.gender) raw.gender = ov.gender;
     const patient = mapPatient(raw);
     if (maskEnabled && patient.birthDate) {
       patient.birthDate = deidBirthDate(patient.birthDate);
@@ -5734,16 +5573,12 @@
     return patient;
   }
   function replaceNameDeep(value, needle, replacement) {
-    if (!needle || needle === replacement)
-      return value;
-    if (typeof value === "string")
-      return value.split(needle).join(replacement);
-    if (Array.isArray(value))
-      return value.map((v) => replaceNameDeep(v, needle, replacement));
+    if (!needle || needle === replacement) return value;
+    if (typeof value === "string") return value.split(needle).join(replacement);
+    if (Array.isArray(value)) return value.map((v) => replaceNameDeep(v, needle, replacement));
     if (value && typeof value === "object") {
       const out = {};
-      for (const k in value)
-        out[k] = replaceNameDeep(value[k], needle, replacement);
+      for (const k in value) out[k] = replaceNameDeep(value[k], needle, replacement);
       return out;
     }
     return value;
@@ -5777,8 +5612,7 @@
     const r = await fetch(expUrl, {
       headers: syncApiKey ? { "X-Sync-API-Key": syncApiKey } : {}
     });
-    if (!r.ok)
-      throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   }
   async function deletePartialPatientData(backend, syncApiKey, patientId, deidentify) {
@@ -5833,8 +5667,7 @@
   async function _paintDot() {
     try {
       const imageData = {};
-      for (const s of ICON_SIZES)
-        imageData[s] = await _buildDottedIcon(s);
+      for (const s of ICON_SIZES) imageData[s] = await _buildDottedIcon(s);
       await chrome.action.setIcon({ imageData });
     } catch {
     }
@@ -5860,8 +5693,7 @@
   async function restoreResultBadge() {
     try {
       const { [UNSEEN_KEY]: unseen } = await chrome.storage.local.get(UNSEEN_KEY);
-      if (unseen)
-        await _paintDot();
+      if (unseen) await _paintDot();
     } catch {
     }
   }
@@ -5871,8 +5703,7 @@
     try {
       const synced = await chrome.storage.sync.get(SYNC_KEYS_TO_MIGRATE);
       const present = Object.fromEntries(Object.entries(synced).filter(([, v]) => v !== void 0));
-      if (Object.keys(present).length === 0)
-        return;
+      if (Object.keys(present).length === 0) return;
       const local = await chrome.storage.local.get(Object.keys(present));
       const toWrite = Object.fromEntries(
         Object.entries(present).filter(([k]) => local[k] === void 0)
@@ -5888,8 +5719,7 @@
     try {
       const all = await chrome.storage.local.get(null);
       const stale = Object.keys(all).filter((k) => k.startsWith("__sampleBody_"));
-      if (stale.length)
-        await chrome.storage.local.remove(stale);
+      if (stale.length) await chrome.storage.local.remove(stale);
     } catch {
     }
   }
@@ -5898,8 +5728,7 @@
       const { [PENDING_BUNDLE_KEY]: pending } = await chrome.storage.local.get(PENDING_BUNDLE_KEY);
       if (!pending) {
         const orphanBytes = await chrome.storage.local.getBytesInUse(PENDING_BUNDLE_JSON_KEY);
-        if (orphanBytes > 0)
-          await chrome.storage.local.remove(PENDING_BUNDLE_JSON_KEY);
+        if (orphanBytes > 0) await chrome.storage.local.remove(PENDING_BUNDLE_JSON_KEY);
         return;
       }
       const age = Date.now() - (pending.generatedAt || 0);
@@ -5928,8 +5757,7 @@
 
   // src/background/imaging-prep-poll.ts
   async function startPrepPolling(patientId, initialCount, baseUrl, baselineReady = 0) {
-    if (!patientId || initialCount <= 0)
-      return;
+    if (!patientId || initialCount <= 0) return;
     const now = Date.now();
     const state = {
       patientId,
@@ -5961,15 +5789,13 @@
   async function _loadBearerToken(patientId) {
     const obj = await chrome.storage.local.get(NHI_BEARER_TOKEN_KEY);
     const stash = obj[NHI_BEARER_TOKEN_KEY];
-    if (!stash)
-      return null;
+    if (!stash) return null;
     if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS) {
       await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY).catch(() => {
       });
       return null;
     }
-    if (stash.patientId !== patientId)
-      return null;
+    if (stash.patientId !== patientId) return null;
     return stash.token || null;
   }
   async function _writeState(state) {
@@ -6037,8 +5863,7 @@
           nextStuck++;
         } else if (status === "1") {
           const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
-          if (seq && seq !== "-")
-            nextFetchable++;
+          if (seq && seq !== "-") nextFetchable++;
         }
       }
     } catch (e) {
@@ -6053,12 +5878,9 @@
     const gotNewBytes = nextFetchable > state.baselineReady;
     const nextCount = nextPreparing + nextStuck;
     let nextStatus;
-    if (nextPreparing > 0)
-      nextStatus = "polling";
-    else if (gotNewBytes)
-      nextStatus = "ready";
-    else
-      nextStatus = "unavailable";
+    if (nextPreparing > 0) nextStatus = "polling";
+    else if (gotNewBytes) nextStatus = "ready";
+    else nextStatus = "unavailable";
     await _writeState({
       ...state,
       count: nextCount,
@@ -6076,56 +5898,45 @@
 
   // src/nhi-adapters.ts
   function rocToISO(rocDate) {
-    if (!rocDate)
-      return "";
+    if (!rocDate) return "";
     const m = String(rocDate).match(/^(\d{2,3})[/.-](\d{1,2})[/.-](\d{1,2})/);
-    if (!m)
-      return "";
+    if (!m) return "";
     const y = Number.parseInt(m[1], 10) + 1911;
     return `${y}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
   }
   function rocChineseToISO(rocDate) {
-    if (!rocDate)
-      return "";
+    if (!rocDate) return "";
     const s = String(rocDate).trim();
     const m = s.match(/(\d{2,3})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/);
-    if (!m)
-      return rocToISO(s);
+    if (!m) return rocToISO(s);
     const y = Number.parseInt(m[1], 10) + 1911;
     return `${y}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
   }
   function pickEnglish(s) {
-    if (s === null || s === void 0)
-      return "";
+    if (s === null || s === void 0) return "";
     const str = String(s);
     const idx = str.indexOf("||");
-    if (idx === -1)
-      return str.trim();
+    if (idx === -1) return str.trim();
     const en = str.slice(idx + 2).trim();
     return en || str.slice(0, idx).trim();
   }
   function pickChinese(s) {
-    if (s === null || s === void 0)
-      return "";
+    if (s === null || s === void 0) return "";
     const str = String(s);
     const idx = str.indexOf("||");
-    if (idx === -1)
-      return str.trim();
+    if (idx === -1) return str.trim();
     const zh = str.slice(0, idx).trim();
     return zh || str.slice(idx + 2).trim();
   }
   function _cleanLabName(s) {
-    if (s === null || s === void 0)
-      return "";
+    if (s === null || s === void 0) return "";
     return String(s).trim().replace(/[,，;；]+\s*$/, "").trim();
   }
   function adaptLabItem(item) {
-    if (!item || typeof item !== "object")
-      return null;
+    if (!item || typeof item !== "object") return null;
     const date = rocToISO(item.reaL_INSPECT_DATE || item.real_inspect_date || item.funC_DATE);
     const value = item.assaY_VALUE;
-    if (!date || value === void 0 || value === null || value === "")
-      return null;
+    if (!date || value === void 0 || value === null || value === "") return null;
     const fullName = _cleanLabName(item.assaY_ITEM_NAME) || _cleanLabName(item.order_shortname) || _cleanLabName(item.ordeR_NAME);
     const orderCode = String(item.ordeR_CODE || "").trim();
     return {
@@ -6182,13 +5993,11 @@
     };
   }
   function adaptMedicationFromDetail(drug, visit, options) {
-    if (!drug || typeof drug !== "object")
-      return null;
+    if (!drug || typeof drug !== "object") return null;
     const date = rocToISO(visit?.func_DATE || visit?.func_date || "");
     const rawDrugName = drug.drug_name || drug.druG_NAME || "";
     const drug_name = pickEnglish(rawDrugName);
-    if (!date || !drug_name)
-      return null;
+    if (!date || !drug_name) return null;
     const end_date = rocToISO(visit?.cure_E_DATE || visit?.cure_e_date || "");
     const days = Number(drug.order_drug_day || drug.order_DRUG_DAY || 0);
     const is_chronic = !!options?.is_chronic;
@@ -6237,11 +6046,9 @@
     return null;
   }
   function adaptCatastrophicIllness(item) {
-    if (!item || typeof item !== "object")
-      return null;
+    if (!item || typeof item !== "object") return null;
     const display = pickEnglish(item.icD10CM_CNAME || item.icd10cm_cname || "");
-    if (!display)
-      return null;
+    if (!display) return null;
     return {
       display,
       code: "",
@@ -6255,19 +6062,15 @@
     };
   }
   function adaptAdultPreventive(row) {
-    if (!row || typeof row !== "object")
-      return null;
+    if (!row || typeof row !== "object") return null;
     const date = rocToISO(row.firsT_DIAG_DATE || "");
-    if (!date)
-      return null;
+    if (!date) return null;
     const hospital = row.hosP_ABBR || row.hosp_ABBR || "";
     const out = [];
     function push(display, value, unit, refRange, category, code) {
-      if (value === void 0 || value === null)
-        return;
+      if (value === void 0 || value === null) return;
       const v = String(value).trim();
-      if (v === "" || v === "\u2014")
-        return;
+      if (v === "" || v === "\u2014") return;
       out.push({
         date,
         hospital,
@@ -6328,12 +6131,10 @@
     return out;
   }
   function adaptInpatientEncounter(item, options) {
-    if (!item || typeof item !== "object")
-      return null;
+    if (!item || typeof item !== "object") return null;
     const start = rocToISO(item.in_DATE || item.func_DATE || "");
     const end = rocToISO(item.out_DATE || "");
-    if (!start)
-      return null;
+    if (!start) return null;
     const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
     const s02Primary = options?.primary_diagnosis;
     const icdCode = s02Primary?.code || item.icd9cm_CODE || item.icd9cm_code || "";
@@ -6366,11 +6167,9 @@
     };
   }
   function adaptEncounterFromMedExpense(item, classHint, options) {
-    if (!item || typeof item !== "object")
-      return null;
+    if (!item || typeof item !== "object") return null;
     const date = rocToISO(item.funC_DATE || item.func_DATE || item.func_date || "");
-    if (!date)
-      return null;
+    if (!date) return null;
     const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
     const s02Primary = options?.primary_diagnosis;
     const icdCode = s02Primary?.code || item.icD9CM_CODE || item.icd9cm_CODE || item.icd9cm_code || "";
@@ -6419,12 +6218,10 @@
     };
   }
   function adaptImmunization(item) {
-    if (!item || typeof item !== "object")
-      return null;
+    if (!item || typeof item !== "object") return null;
     const date = rocToISO(item.inoculatE_D || item.inoculate_d || "");
     const rawName = String(item.codE_CNAME || item.code_cname || "").trim();
-    if (!date || !rawName)
-      return null;
+    if (!date || !rawName) return null;
     const lotMatch = rawName.match(/[（(]\s*批號\s*([^)）]+?)\s*[)）]/);
     const lotNumber = lotMatch ? lotMatch[1].trim() : "";
     const cleanName = rawName.replace(/[（(]\s*批號\s*[^)）]+\s*[)）]/, "").trim();
@@ -6439,11 +6236,9 @@
     };
   }
   function adaptCarePlan(item) {
-    if (!item || typeof item !== "object")
-      return null;
+    if (!item || typeof item !== "object") return null;
     const title = String(item.mhbt_name || item.mhbT_NAME || "").trim();
-    if (!title)
-      return null;
+    if (!title) return null;
     const start = rocChineseToISO(item.case_date || item.casE_DATE || "");
     const end = rocChineseToISO(item.close_date || item.closE_DATE || "");
     return {
@@ -6462,11 +6257,9 @@
     };
   }
   function adaptAllergy(item) {
-    if (!item || typeof item !== "object")
-      return null;
+    if (!item || typeof item !== "object") return null;
     const allergen = item.allergen_name || item.alleR_NAME || item.medname || item.druG_NAME || item.allergen || "";
-    if (!allergen)
-      return null;
+    if (!allergen) return null;
     return {
       recorded_date: rocToISO(item.funC_DATE || item.recorD_DATE || ""),
       display: allergen,
@@ -6479,8 +6272,7 @@
     return null;
   }
   function adaptProcedureFromDetail(item) {
-    if (!item || typeof item !== "object")
-      return null;
+    if (!item || typeof item !== "object") return null;
     const subList = Array.isArray(item.sp_IHKE3308S04_data_list) ? item.sp_IHKE3308S04_data_list : [];
     const exeDate = subList.length > 0 ? subList[0].exe_S_DATE || subList[0].exe_s_date || "" : "";
     const date = rocToISO(exeDate || item.func_DATE || item.func_date || "");
@@ -6491,8 +6283,7 @@
     const stripCode = (s) => (s || "").replace(/^[A-Z0-9]+\//, "").trim();
     const display = stripCode(opName) || opName.trim();
     const display_zh = stripCode(opName_zh);
-    if (!date || !display)
-      return null;
+    if (!date || !display) return null;
     const reasonCode = item.icd9cm_CODE || item.icd9cm_code || "";
     const reasonName = (pickEnglish(item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || "") || "").replace(/^[A-Z0-9]+\//, "").trim();
     const noteParts = [];
@@ -6520,15 +6311,13 @@
     };
   }
   function adaptImagingReportFromDetail(item, ctx) {
-    if (!item || typeof item !== "object")
-      return null;
+    if (!item || typeof item !== "object") return null;
     const date = rocToISO(
       item.real_INSPECT_DATE || item.real_inspect_date || item.main_tit || item.main_TIT || item.func_DATE || item.func_date || ""
     );
     const display = pickEnglish(item.order_NAME || item.order_name || "");
     const conclusion = (item.desc || "").trim();
-    if (!date || !display || !conclusion)
-      return null;
+    if (!date || !display || !conclusion) return null;
     return {
       date,
       code: item.order_CODE || item.order_code || "",
@@ -6550,12 +6339,10 @@
     };
   }
   function adaptImageOnlyReportFromMeta(meta, ctx) {
-    if (!meta)
-      return null;
+    if (!meta) return null;
     const date = rocToISO(meta.date || meta.funcDate || "");
     const display = pickEnglish(meta.orderName || "");
-    if (!date || !display)
-      return null;
+    if (!date || !display) return null;
     return {
       date,
       code: meta.orderCode || "",
@@ -6754,8 +6541,7 @@
     const all = [patient];
     for (const pt of LOCAL_PAGE_TYPE_ORDER) {
       const items = byType[pt];
-      if (!items || items.length === 0)
-        continue;
+      if (!items || items.length === 0) continue;
       let mapped;
       if (GROUP_HANDLERS[pt]) {
         mapped = GROUP_HANDLERS[pt](items, pid);
@@ -6765,16 +6551,14 @@
       } else {
         continue;
       }
-      if (pt === "encounters")
-        mapped = dedupAdmissionDayAmb(mapped);
+      if (pt === "encounters") mapped = dedupAdmissionDayAmb(mapped);
       all.push(...mapped);
     }
     const seen = /* @__PURE__ */ new Set();
     const unique = [];
     for (const r of all) {
       const key = `${r.resourceType}/${r.id}`;
-      if (seen.has(key))
-        continue;
+      if (seen.has(key)) continue;
       seen.add(key);
       unique.push(r);
     }
@@ -6840,14 +6624,12 @@
 
   // src/background/nhi-detail-fetchers.ts
   async function fetchDetailsInTab(tabId, baseUrl, items, spec) {
-    if (items.length === 0)
-      return [];
+    if (items.length === 0) return [];
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId },
       func: async (base, reqs, cfg) => {
         const token = sessionStorage.getItem("token");
-        if (!token)
-          return { error: "SESSION_EXPIRED" };
+        if (!token) return { error: "SESSION_EXPIRED" };
         if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
           return { error: "SESSION_EXPIRED" };
         }
@@ -6864,10 +6646,8 @@
               headers: { Accept: "application/json", Authorization: auth }
             });
             clearTimeout(t);
-            if (r.status === 401 || r.status === 403)
-              return { error: "SESSION_EXPIRED" };
-            if (!r.ok)
-              return { error: `HTTP ${r.status}` };
+            if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
+            if (!r.ok) return { error: `HTTP ${r.status}` };
             return { body: await r.json() };
           } catch (e) {
             clearTimeout(t);
@@ -6885,35 +6665,26 @@
         }
         function ctypeSeq(rowCtype) {
           const seq = [];
-          if (cfg.useRowCtype && rowCtype)
-            seq.push(rowCtype);
+          if (cfg.useRowCtype && rowCtype) seq.push(rowCtype);
           for (const ct of cfg.ctypes) {
-            if (!seq.map(String).includes(String(ct)))
-              seq.push(ct);
+            if (!seq.map(String).includes(String(ct))) seq.push(ct);
           }
           return seq;
         }
         async function one(rowId2, rowCtype) {
           const seq = ctypeSeq(rowCtype);
-          if (cfg.presence === "none")
-            return await fetchOne(rowId2, seq[0]);
+          if (cfg.presence === "none") return await fetchOne(rowId2, seq[0]);
           let lastOk = null;
           for (const ct of seq) {
             const r = await fetchOne(rowId2, ct);
-            if (r.error === "SESSION_EXPIRED")
-              return r;
-            if (r.error)
-              continue;
-            if (hasData(r.body))
-              return r;
+            if (r.error === "SESSION_EXPIRED") return r;
+            if (r.error) continue;
+            if (hasData(r.body)) return r;
             lastOk = r;
           }
-          if (cfg.fallback === "fetch")
-            return await fetchOne(rowId2, cfg.fallbackCtype);
-          if (cfg.fallback === "last-ok")
-            return lastOk || { error: "no detail body" };
-          if (cfg.fallback === "null")
-            return null;
+          if (cfg.fallback === "fetch") return await fetchOne(rowId2, cfg.fallbackCtype);
+          if (cfg.fallback === "last-ok") return lastOk || { error: "no detail body" };
+          if (cfg.fallback === "null") return null;
           return { body: null };
         }
         const out = new Array(reqs.length);
@@ -6927,15 +6698,13 @@
           }
         }
         const ws = [];
-        for (let w = 0; w < CONC && w < reqs.length; w++)
-          ws.push(worker());
+        for (let w = 0; w < CONC && w < reqs.length; w++) ws.push(worker());
         await Promise.all(ws);
         return { results: out };
       },
       args: [baseUrl, items, spec]
     });
-    if (result?.error === "SESSION_EXPIRED")
-      throw new Error(SESSION_EXPIRED_ERROR);
+    if (result?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
     return result?.results || [];
   }
   var MEDICATION_SPEC = {
@@ -6994,15 +6763,13 @@
   function collectDrugs(results, spec, adaptOpts) {
     const drugs = [];
     for (const r of results) {
-      if (!r || r.error || !r.body)
-        continue;
+      if (!r || r.error || !r.body) continue;
       const main = Array.isArray(r.body[spec.mainDataKey]) ? r.body[spec.mainDataKey] : [];
       for (const visit of main) {
         const drugList = Array.isArray(visit[spec.drugListKey]) ? visit[spec.drugListKey] : [];
         for (const d of drugList) {
           const adapted = adaptMedicationFromDetail(d, visit, adaptOpts);
-          if (adapted)
-            drugs.push(adapted);
+          if (adapted) drugs.push(adapted);
         }
       }
     }
@@ -7037,8 +6804,7 @@
     const jpegCandidates = [];
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
-      if (!r || r.error || !r.body)
-        continue;
+      if (!r || r.error || !r.body) continue;
       const main = Array.isArray(r.body[IMAGING_SPEC.mainDataKey]) ? r.body[IMAGING_SPEC.mainDataKey] : [];
       const ctx = { rid: reqs[i]?.row_ID || "", ctype: String(reqs[i]?.ctype || "") };
       const listRow = visits[reqs[i]?.listIdx ?? -1];
@@ -7052,10 +6818,8 @@
       const isCandidate = hasReadyBytes || isPreparing || needsTrigger;
       for (const visit of main) {
         const adapted = adaptImagingReportFromDetail(visit, ctx);
-        if (adapted)
-          reports.push(adapted);
-        if (!isCandidate)
-          continue;
+        if (adapted) reports.push(adapted);
+        if (!isCandidate) continue;
         jpegCandidates.push({
           rid: ctx.rid,
           ctype: ctx.ctype,
@@ -7115,28 +6879,24 @@
     const results = await fetchDetailsInTab(tabId, baseUrl, reqs, PROCEDURE_SPEC);
     const procedures = [];
     for (const r of results) {
-      if (!r || r.error || !r.body)
-        continue;
+      if (!r || r.error || !r.body) continue;
       const main = Array.isArray(r.body[PROCEDURE_SPEC.mainDataKey]) ? r.body[PROCEDURE_SPEC.mainDataKey] : [];
       for (const row of main) {
         const adapted = adaptProcedureFromDetail(row);
-        if (adapted)
-          procedures.push(adapted);
+        if (adapted) procedures.push(adapted);
       }
     }
     return procedures;
   }
   async function fetchEncounterDetails({ tabId, baseUrl, visits }) {
     const reqs = visits.map((v, idx) => ({ idx, row_ID: v.roW_ID || v.row_ID || "" })).filter((r) => r.row_ID);
-    if (reqs.length === 0)
-      return /* @__PURE__ */ new Map();
+    if (reqs.length === 0) return /* @__PURE__ */ new Map();
     const results = await fetchDetailsInTab(tabId, baseUrl, reqs, ENCOUNTER_SPEC);
     return byVisitIndex(reqs, results);
   }
   async function fetchInpatientDetails({ tabId, baseUrl, visits }) {
     const reqs = visits.map((v, idx) => ({ idx, row_ID: v.row_ID || v.row_id || v.roW_ID || "" })).filter((r) => r.row_ID);
-    if (reqs.length === 0)
-      return /* @__PURE__ */ new Map();
+    if (reqs.length === 0) return /* @__PURE__ */ new Map();
     const results = await fetchDetailsInTab(tabId, baseUrl, reqs, INPATIENT_SPEC);
     return byVisitIndex(reqs, results);
   }
@@ -7167,8 +6927,7 @@
     _activeImagingTabId = tabId;
   }
   async function setStatus(partial) {
-    if (_cancelled)
-      return;
+    if (_cancelled) return;
     const prev = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] || {};
     const next = { ...prev, ...partial, ts: Date.now() };
     await chrome.storage.local.set({ [STORAGE_KEY]: next });
@@ -7217,8 +6976,7 @@
       if (r.status === 401 || r.status === 403) {
         return { error: "SESSION_EXPIRED" };
       }
-      if (!r.ok)
-        return { error: `HTTP ${r.status}` };
+      if (!r.ok) return { error: `HTTP ${r.status}` };
       return { body: await r.json() };
     } catch (e) {
       clearTimeout(t);
@@ -7228,8 +6986,7 @@
     }
   }
   async function triggerImagingRowsViaSwFetch(baseUrl, patientId, requests) {
-    if (!Array.isArray(requests) || requests.length === 0)
-      return [];
+    if (!Array.isArray(requests) || requests.length === 0) return [];
     const triggerable = requests.filter((r) => r.needsTrigger);
     const outcomes = requests.map((r) => ({
       rid: r.rid,
@@ -7237,10 +6994,8 @@
       ok: !r.needsTrigger,
       reason: r.needsTrigger ? "not-attempted" : void 0
     }));
-    if (triggerable.length === 0)
-      return outcomes;
-    if (isCancelled())
-      throw new Error(CANCEL_ERROR);
+    if (triggerable.length === 0) return outcomes;
+    if (isCancelled()) throw new Error(CANCEL_ERROR);
     const token = await loadBearerToken(patientId);
     if (!token) {
       throw new Error(SESSION_EXPIRED_ERROR);
@@ -7250,8 +7005,7 @@
     let successfulTriggers = 0;
     const scriptResults = [];
     for (const r of triggerable) {
-      if (isCancelled())
-        throw new Error(CANCEL_ERROR);
+      if (isCancelled()) throw new Error(CANCEL_ERROR);
       if (successfulTriggers >= MAX_TRIGGER_PER_SYNC_DEV) {
         scriptResults.push({
           rid: r.rid,
@@ -7406,14 +7160,12 @@
     return outcomes;
   }
   async function pollFetchImagingJpegs(tabId, baseUrl, requests, triggerOutcomes) {
-    if (!Array.isArray(requests) || requests.length === 0)
-      return [];
+    if (!Array.isArray(requests) || requests.length === 0) return [];
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId },
       func: async (base, reqs, outcomes, tuning) => {
         const token = sessionStorage.getItem("token");
-        if (!token)
-          return { error: "SESSION_EXPIRED" };
+        if (!token) return { error: "SESSION_EXPIRED" };
         if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
           return { error: "SESSION_EXPIRED" };
         }
@@ -7444,8 +7196,7 @@
             if (r.status === 401 || r.status === 403) {
               return { error: "SESSION_EXPIRED" };
             }
-            if (!r.ok)
-              return { error: `HTTP ${r.status}` };
+            if (!r.ok) return { error: `HTTP ${r.status}` };
             return { body: await r.json() };
           } catch (e) {
             clearTimeout(t);
@@ -7455,21 +7206,17 @@
           }
         }
         function readBase64Jpgs(body) {
-          if (!body || typeof body !== "object")
-            return [];
+          if (!body || typeof body !== "object") return [];
           if (Array.isArray(body.pics) && body.pics.length > 0) {
             const acc = [];
             for (const p of body.pics) {
-              if (typeof p === "string" && p.length > 1e3)
-                acc.push(p);
+              if (typeof p === "string" && p.length > 1e3) acc.push(p);
             }
-            if (acc.length > 0)
-              return acc;
+            if (acc.length > 0) return acc;
           }
           for (const k of ["img", "imG", "jpg", "base64", "imgBase64", "data"]) {
             const v = body[k];
-            if (typeof v === "string" && v.length > 1e3)
-              return [v];
+            if (typeof v === "string" && v.length > 1e3) return [v];
           }
           return [];
         }
@@ -7484,28 +7231,23 @@
           const results = [];
           for (let i = 0; i < items.length; i += size) {
             const batchResults = await Promise.all(items.slice(i, i + size).map(fn));
-            for (const r of batchResults)
-              results.push(r);
+            for (const r of batchResults) results.push(r);
           }
           return results;
         }
         function isTransientFetchError(errStr, gotBodyButNoBase64) {
-          if (gotBodyButNoBase64)
-            return true;
-          if (!errStr)
-            return false;
+          if (gotBodyButNoBase64) return true;
+          if (!errStr) return false;
           return errStr.includes("timeout") || errStr.includes("HTTP 5") || errStr.includes("HTTP 429") || errStr.includes("Failed to fetch") || errStr.includes("NetworkError");
         }
         async function fetchJpgWithRetry(seqNo, attempts) {
           let lastErr = "";
           for (let attempt = 1; attempt <= attempts; attempt++) {
             const r = await fetchJpg(seqNo);
-            if (r.error === "SESSION_EXPIRED")
-              return r;
+            if (r.error === "SESSION_EXPIRED") return r;
             if (!r.error) {
               const b64s = readBase64Jpgs(r.body);
-              if (b64s.length > 0)
-                return { body: r.body, b64s };
+              if (b64s.length > 0) return { body: r.body, b64s };
               if (attempt < attempts && isTransientFetchError("", true)) {
                 await sleep(1500);
                 continue;
@@ -7524,8 +7266,7 @@
         async function refreshSeqMap() {
           const url = `${base}/api/ihke3000/ihke3408s01/page_load?s_type=&s_sort=A1&_=${Date.now()}`;
           const r = await httpGetJson(url);
-          if (r.error || !r.body)
-            return /* @__PURE__ */ new Map();
+          if (r.error || !r.body) return /* @__PURE__ */ new Map();
           const list = r.body.sp_IHKE3408S01_data || [];
           const m = /* @__PURE__ */ new Map();
           for (const row of list) {
@@ -7570,8 +7311,7 @@
             return;
           }
           const r = await fetchJpgWithRetry(seqNo, STEP_A_RETRY_ATTEMPTS);
-          if (r.error === "SESSION_EXPIRED")
-            return;
+          if (r.error === "SESSION_EXPIRED") return;
           if (r.error) {
             if (it.isPreparingRow) {
               out[it.i].outcome = "triggered-waiting";
@@ -7604,8 +7344,7 @@
           const r = await httpGetJson(url);
           const seqMap = /* @__PURE__ */ new Map();
           const shapeMap = /* @__PURE__ */ new Map();
-          if (r.error || !r.body)
-            return { seqMap, shapeMap };
+          if (r.error || !r.body) return { seqMap, shapeMap };
           const list = r.body.sp_IHKE3408S01_data || [];
           for (const row of list) {
             const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
@@ -7619,8 +7358,7 @@
                 const date = String(row?.real_INSPECT_DATE ?? row?.real_inspect_date ?? "");
                 const hospital = String(row?.hosp_ABBR ?? row?.hosp_abbr ?? "");
                 const sig = `${code}|${date}|${hospital}|${oriType}`;
-                if (!shapeMap.has(sig))
-                  shapeMap.set(sig, []);
+                if (!shapeMap.has(sig)) shapeMap.set(sig, []);
                 shapeMap.get(sig).push({ rid, seq });
               }
             }
@@ -7642,8 +7380,7 @@
           const meta = req.mainMeta || {};
           const sig = `${meta.orderCode || ""}|${meta.date || ""}|${meta.hospital || ""}|${req.ctype || ""}`;
           const candidates = shapeMap.get(sig);
-          if (!candidates || candidates.length === 0)
-            return null;
+          if (!candidates || candidates.length === 0) return null;
           for (const c of candidates) {
             if (!consumedRids.has(c.rid)) {
               consumedRids.add(c.rid);
@@ -7659,10 +7396,8 @@
           const assignments = [];
           for (const i of pending) {
             const r = resolveSeqForReq(reqs[i], seqMap, shapeMap);
-            if (r)
-              assignments.push({ i, seq: r.seq, rid: r.rid });
-            else
-              stillPending.push(i);
+            if (r) assignments.push({ i, seq: r.seq, rid: r.rid });
+            else stillPending.push(i);
           }
           await runBatched(assignments, STEP_C_BATCH_SIZE, async (a) => {
             const r = await fetchJpg(a.seq);
@@ -7685,8 +7420,7 @@
           });
           pending.length = 0;
           pending.push(...stillPending);
-          if (pending.length === 0)
-            break;
+          if (pending.length === 0) break;
           await sleep(tuning.pollIntervalMs);
         }
         if (pending.length > 0) {
@@ -7694,13 +7428,11 @@
           const assignments = [];
           for (const i of pending) {
             const r = resolveSeqForReq(reqs[i], seqMap, shapeMap);
-            if (r)
-              assignments.push({ i, seq: r.seq, rid: r.rid });
+            if (r) assignments.push({ i, seq: r.seq, rid: r.rid });
           }
           await runBatched(assignments, STEP_C_BATCH_SIZE, async (a) => {
             const r = await fetchJpg(a.seq);
-            if (r.error)
-              return;
+            if (r.error) return;
             const b64s = readBase64Jpgs(r.body);
             if (b64s.length > 0) {
               out[a.i].iplCaseSeqNo = a.seq;
@@ -7731,13 +7463,11 @@
     return `${PENDING_IMAGING_KEY_PREFIX}${patientId}`;
   }
   async function loadPendingImaging(patientId) {
-    if (!patientId)
-      return [];
+    if (!patientId) return [];
     const key = pendingKey(patientId);
     const obj = await chrome.storage.local.get(key);
     const stash = obj[key];
-    if (!stash || !Array.isArray(stash.rows))
-      return [];
+    if (!stash || !Array.isArray(stash.rows)) return [];
     const now = Date.now();
     const fresh = stash.rows.filter(
       (r) => r && typeof r.rid === "string" && typeof r.ctype === "string" && typeof r.triggeredAt === "number" && now - r.triggeredAt < PENDING_IMAGING_TTL_MS
@@ -7754,8 +7484,7 @@
     return fresh;
   }
   async function appendPendingImaging(patientId, newRows) {
-    if (!patientId || newRows.length === 0)
-      return;
+    if (!patientId || newRows.length === 0) return;
     const key = pendingKey(patientId);
     const existing = await loadPendingImaging(patientId);
     const now = Date.now();
@@ -7765,8 +7494,7 @@
     }
     let updated = 0;
     for (const r of newRows) {
-      if (!r.rid || !r.ctype)
-        continue;
+      if (!r.rid || !r.ctype) continue;
       const k = `${r.rid}|${r.ctype}`;
       const found = byKey.get(k);
       if (found) {
@@ -7784,13 +7512,11 @@
     }
   }
   async function removePendingImaging(patientId, removeKeys) {
-    if (!patientId || removeKeys.size === 0)
-      return;
+    if (!patientId || removeKeys.size === 0) return;
     const key = pendingKey(patientId);
     const existing = await loadPendingImaging(patientId);
     const remaining = existing.filter((r) => !removeKeys.has(`${r.rid}|${r.ctype}`));
-    if (remaining.length === existing.length)
-      return;
+    if (remaining.length === existing.length) return;
     if (remaining.length === 0) {
       await chrome.storage.local.remove(key);
     } else {
@@ -7821,15 +7547,13 @@
   async function loadBearerToken(patientId) {
     const obj = await chrome.storage.local.get(NHI_BEARER_TOKEN_KEY);
     const stash = obj[NHI_BEARER_TOKEN_KEY];
-    if (!stash)
-      return null;
+    if (!stash) return null;
     if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS) {
       await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY).catch(() => {
       });
       return null;
     }
-    if (stash.patientId !== patientId)
-      return null;
+    if (stash.patientId !== patientId) return null;
     return stash.token || null;
   }
   async function swFetchNhiJson(url, token, timeoutMs = 15e3) {
@@ -7850,8 +7574,7 @@
       if (r.status === 401 || r.status === 403) {
         return { error: "SESSION_EXPIRED" };
       }
-      if (!r.ok)
-        return { error: `HTTP ${r.status}` };
+      if (!r.ok) return { error: `HTTP ${r.status}` };
       return { body: await r.json() };
     } catch (e) {
       clearTimeout(t);
@@ -7861,25 +7584,20 @@
     }
   }
   function readBase64JpgsFromBody(body) {
-    if (!body || typeof body !== "object")
-      return [];
+    if (!body || typeof body !== "object") return [];
     if (Array.isArray(body.pics) && body.pics.length > 0) {
       const acc = [];
       for (const p of body.pics) {
-        if (typeof p === "string" && p.length > 1e3)
-          acc.push(p);
+        if (typeof p === "string" && p.length > 1e3) acc.push(p);
       }
-      if (acc.length > 0)
-        return acc;
+      if (acc.length > 0) return acc;
     }
     return [];
   }
   async function sweepPendingImaging(baseUrl, patientId) {
-    if (!patientId)
-      return [];
+    if (!patientId) return [];
     const pending = await loadPendingImaging(patientId);
-    if (pending.length === 0)
-      return [];
+    if (pending.length === 0) return [];
     const token = await loadBearerToken(patientId);
     if (!token) {
       console.warn(
@@ -7906,8 +7624,7 @@
       const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? row?.IPL_CASE_SEQ_NO ?? "");
       const rid = String(row?.row_ID ?? row?.rowid ?? row?.rowID ?? row?.roW_ID ?? "");
       const oriType = String(row?.ori_TYPE ?? row?.ori_type ?? "");
-      if (rid)
-        oriTypeByRid.set(rid, oriType);
+      if (rid) oriTypeByRid.set(rid, oriType);
       if (seq && seq !== "-" && rid) {
         seqByRid.set(rid, seq);
         rowsWithSeq++;
@@ -7954,8 +7671,7 @@
       const results = [];
       for (let i = 0; i < items.length; i += size) {
         const batchResults = await Promise.all(items.slice(i, i + size).map(fn));
-        for (const r of batchResults)
-          results.push(r);
+        for (const r of batchResults) results.push(r);
       }
       return results;
     }
@@ -8031,14 +7747,12 @@
       return /* @__PURE__ */ new Map();
     }
     const reqs = candidates.filter((c) => c?.rowId);
-    if (reqs.length === 0)
-      return /* @__PURE__ */ new Map();
+    if (reqs.length === 0) return /* @__PURE__ */ new Map();
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId },
       func: async (base, items) => {
         const token = sessionStorage.getItem("token");
-        if (!token)
-          return { error: "SESSION_EXPIRED" };
+        if (!token) return { error: "SESSION_EXPIRED" };
         if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
           return { error: "SESSION_EXPIRED" };
         }
@@ -8055,14 +7769,11 @@
               headers: { Accept: "application/json", Authorization: auth }
             });
             clearTimeout(t);
-            if (r.status === 401 || r.status === 403)
-              return { error: "SESSION_EXPIRED" };
-            if (!r.ok)
-              return { error: `HTTP ${r.status}` };
+            if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
+            if (!r.ok) return { error: `HTTP ${r.status}` };
             const body = await r.json();
             const html = body && typeof body.file_name === "string" && body.file_name.length > 0 ? body.file_name : null;
-            if (!html)
-              return { error: "no html in body" };
+            if (!html) return { error: "no html in body" };
             return { html };
           } catch (e) {
             clearTimeout(t);
@@ -8077,8 +7788,7 @@
             const i = next++;
             await new Promise((r) => setTimeout(r, Math.random() * 50));
             const item = items[i];
-            if (!item)
-              continue;
+            if (!item) continue;
             const res = await fetchOne(item.rowId, item.ctype);
             if ("html" in res && typeof res.html === "string") {
               out[i] = { rowId: item.rowId, html: res.html };
@@ -8088,8 +7798,7 @@
           }
         }
         const ws = [];
-        for (let w = 0; w < CONC && w < items.length; w++)
-          ws.push(worker());
+        for (let w = 0; w < CONC && w < items.length; w++) ws.push(worker());
         await Promise.all(ws);
         return { results: out };
       },
@@ -8125,8 +7834,7 @@
         target: { tabId },
         func: async (specs) => {
           const token = sessionStorage.getItem("token");
-          if (!token)
-            return [{ error: "SESSION_EXPIRED" }];
+          if (!token) return [{ error: "SESSION_EXPIRED" }];
           const auth = `Bearer ${token}`;
           if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
             return [{ error: "SESSION_EXPIRED" }];
@@ -8146,8 +7854,7 @@
               if (r.status === 401 || r.status === 403) {
                 return { name: s.name, error: "SESSION_EXPIRED" };
               }
-              if (!r.ok)
-                return { name: s.name, error: `HTTP ${r.status}` };
+              if (!r.ok) return { name: s.name, error: `HTTP ${r.status}` };
               if (!ct.includes("application/json")) {
                 return { name: s.name, error: `non-JSON (ct=${ct})` };
               }
@@ -8160,8 +7867,7 @@
               return { name: s.name, body };
             } catch (e) {
               clearTimeout(timer);
-              if (e.name === "AbortError")
-                return { name: s.name, error: "timeout 60s" };
+              if (e.name === "AbortError") return { name: s.name, error: "timeout 60s" };
               return { name: s.name, error: String(e?.message || e) };
             }
           }
@@ -8205,21 +7911,18 @@
         target: { tabId },
         func: async (baseUrl, maxA, intMs) => {
           const token = sessionStorage.getItem("token");
-          if (!token)
-            return { error: "SESSION_EXPIRED" };
+          if (!token) return { error: "SESSION_EXPIRED" };
           if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
             return { error: "SESSION_EXPIRED" };
           }
           const auth = `Bearer ${token}`;
           const HELPER_RE = /select|option|dropdown|filter|sort|lookup/i;
           function rowsOf(body) {
-            if (body && Array.isArray(body.sp_IHKE3408S01_data))
-              return body.sp_IHKE3408S01_data;
+            if (body && Array.isArray(body.sp_IHKE3408S01_data)) return body.sp_IHKE3408S01_data;
             if (body && typeof body === "object") {
               for (const k of Object.keys(body)) {
                 const v = body[k];
-                if (Array.isArray(v) && !HELPER_RE.test(k))
-                  return v;
+                if (Array.isArray(v) && !HELPER_RE.test(k)) return v;
               }
             }
             return [];
@@ -8242,10 +7945,8 @@
                   "X-Requested-With": "XMLHttpRequest"
                 }
               });
-              if (r.status === 401 || r.status === 403)
-                return { error: "SESSION_EXPIRED" };
-              if (!r.ok)
-                return { error: `HTTP ${r.status}` };
+              if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
+              if (!r.ok) return { error: `HTTP ${r.status}` };
               return { body: await r.json() };
             } catch (e) {
               return { error: `FETCH_EXCEPTION: ${e?.message || e}` };
@@ -8257,8 +7958,7 @@
           while (attempts < maxA) {
             const res = await fetchOnce();
             attempts++;
-            if (res.error === "SESSION_EXPIRED")
-              return { error: "SESSION_EXPIRED", attempts };
+            if (res.error === "SESSION_EXPIRED") return { error: "SESSION_EXPIRED", attempts };
             if (res.error) {
               lastErr = res.error;
             } else {
@@ -8267,8 +7967,7 @@
                 return { body: res.body, attempts, stillUnresolved: false };
               }
             }
-            if (attempts < maxA)
-              await new Promise((r) => setTimeout(r, intMs));
+            if (attempts < maxA) await new Promise((r) => setTimeout(r, intMs));
           }
           if (lastBody !== null) {
             return { body: lastBody, attempts, stillUnresolved: hasUnresolved(rowsOf(lastBody)) };
@@ -8280,8 +7979,7 @@
     } catch (e) {
       throw new Error(`executeScript failed: ${e.message}`);
     }
-    if (out?.error === "SESSION_EXPIRED")
-      throw new Error(SESSION_EXPIRED_ERROR);
+    if (out?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
     if (!out || out.error) {
       return {
         rows: [],
@@ -8297,23 +7995,17 @@
     };
   }
   function extractList(body) {
-    if (Array.isArray(body))
-      return body;
-    if (!body || typeof body !== "object")
-      return [];
+    if (Array.isArray(body)) return body;
+    if (!body || typeof body !== "object") return [];
     let arrayKeys = Object.entries(body).filter(
       ([_, v]) => Array.isArray(v)
     );
-    if (arrayKeys.length === 0)
-      return [];
-    if (arrayKeys.length === 1)
-      return arrayKeys[0][1];
+    if (arrayKeys.length === 0) return [];
+    if (arrayKeys.length === 1) return arrayKeys[0][1];
     const HELPER_RE = /select|option|dropdown|filter|sort|lookup/i;
     const dataKeys = arrayKeys.filter(([k]) => !HELPER_RE.test(k));
-    if (dataKeys.length === 1)
-      return dataKeys[0][1];
-    if (dataKeys.length === 0)
-      return arrayKeys[0][1];
+    if (dataKeys.length === 1) return dataKeys[0][1];
+    if (dataKeys.length === 0) return arrayKeys[0][1];
     arrayKeys = dataKeys;
     const merged = [];
     for (const [k, v] of arrayKeys) {
@@ -8337,12 +8029,9 @@
       const items = [];
       for (const it of list) {
         const r2 = ep.adapt(it);
-        if (r2 === null || r2 === void 0)
-          continue;
+        if (r2 === null || r2 === void 0) continue;
         if (Array.isArray(r2)) {
-          for (const x of r2)
-            if (x)
-              items.push(x);
+          for (const x of r2) if (x) items.push(x);
         } else {
           items.push(r2);
         }
@@ -8365,8 +8054,7 @@
 
   // src/background/s02-detail.ts
   function pickS02MainRow(body) {
-    if (!body || typeof body !== "object")
-      return null;
+    if (!body || typeof body !== "object") return null;
     for (const k of Object.keys(body)) {
       if (/^ihke\d+S02_main_data$/i.test(k) && Array.isArray(body[k]) && body[k].length > 0) {
         return body[k][0];
@@ -8376,53 +8064,42 @@
   }
   function classFromS02Detail(body) {
     const main = pickS02MainRow(body);
-    if (!main)
-      return null;
+    if (!main) return null;
     const tn = String(main.hosp_DATA_TYPE_NAME || "");
-    if (tn.includes("\u6025"))
-      return "EMER";
-    if (tn.includes("\u4F4F\u9662"))
-      return "IMP";
+    if (tn.includes("\u6025")) return "EMER";
+    if (tn.includes("\u4F4F\u9662")) return "IMP";
     return "AMB";
   }
   function primaryIcdFromS02Detail(body) {
     const main = pickS02MainRow(body);
-    if (!main)
-      return null;
+    if (!main) return null;
     const codeName = main.icd9cm_CODE_CNAME || main.icd9cm_code_cname || "";
-    if (!codeName)
-      return null;
+    if (!codeName) return null;
     const code = main.icd9cm_CODE || main.icd9cm_code || "";
     const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
     const pickHalf = (s, half) => {
       const str = String(s || "");
       const idx = str.indexOf("||");
-      if (idx === -1)
-        return str.trim();
-      if (half === "zh")
-        return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
+      if (idx === -1) return str.trim();
+      if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
       return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
     };
     const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
     const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
-    if (!code && !name_en && !name_zh)
-      return null;
+    if (!code && !name_en && !name_zh) return null;
     return { code, name_en, name_zh };
   }
   function secondaryIcdsFromS02Detail(body) {
     const main = pickS02MainRow(body);
-    if (!main)
-      return [];
+    if (!main) return [];
     const list = Array.isArray(main.icdcode_data) ? main.icdcode_data : [];
     const out = [];
     const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
     const pickHalf = (s, half) => {
       const str = String(s || "");
       const idx = str.indexOf("||");
-      if (idx === -1)
-        return str.trim();
-      if (half === "zh")
-        return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
+      if (idx === -1) return str.trim();
+      if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
       return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
     };
     for (const item of list) {
@@ -8431,8 +8108,7 @@
       const code = codeMatch ? codeMatch[1] : "";
       const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
       const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
-      if (!code && !name_en && !name_zh)
-        continue;
+      if (!code && !name_en && !name_zh) continue;
       out.push({ code, name_en, name_zh });
     }
     return out;
@@ -8514,8 +8190,7 @@
     const pharmacyRowIds = /* @__PURE__ */ new Set();
     for (const name of ["medications", "chronic_prescriptions"]) {
       const idx = NHI_API_ENDPOINTS.findIndex((e) => e.name === name);
-      if (idx < 0 || settled[idx]?.status !== "fulfilled")
-        continue;
+      if (idx < 0 || settled[idx]?.status !== "fulfilled") continue;
       for (const v of settled[idx].value.rawList || []) {
         const id = v.row_ID || v.rowid || v.rowID;
         const oriTypeName = v.ori_TYPE_NAME || v.ori_type_name || "";
@@ -8547,8 +8222,7 @@
               primary_diagnosis: primaryDiagnosis,
               secondary_diagnoses: secondaryDiagnoses
             });
-            if (it)
-              reAdapted.push(it);
+            if (it) reAdapted.push(it);
           }
           settled[encIdx].value.items = reAdapted;
           settled[encIdx].value.raw_count = reAdapted.length;
@@ -8581,16 +8255,13 @@
               primary_diagnosis: primaryDiagnosis,
               secondary_diagnoses: secondaryDiagnoses
             });
-            if (it)
-              reAdapted.push(it);
+            if (it) reAdapted.push(it);
             const mainRow = pickS02MainRow(detail);
             const hasXml = String(mainRow?.has_XML || mainRow?.has_xml || "").toUpperCase() === "Y";
-            if (!hasXml)
-              continue;
+            if (!hasXml) continue;
             const v = visits[i];
             const rowId2 = String(v?.row_ID || v?.row_id || v?.roW_ID || "");
-            if (!rowId2)
-              continue;
+            if (!rowId2) continue;
             dischargeCandidatesRaw.push({
               rowId: rowId2,
               // ctype=3 (住院) — same value the detail page_load uses.
@@ -8698,11 +8369,9 @@
           const STUCK_RETRY_MS = 10 * 60 * 1e3;
           const _nowForRetry = Date.now();
           polledCandidates = imagingJpegCandidates.filter((c) => {
-            if (!c.needsTrigger)
-              return true;
+            if (!c.needsTrigger) return true;
             const triggeredAt = pendingTriggeredAt.get(`${c.rid}|${c.ctype}`);
-            if (triggeredAt === void 0)
-              return true;
+            if (triggeredAt === void 0) return true;
             return _nowForRetry - triggeredAt >= STUCK_RETRY_MS;
           });
         }
@@ -8712,8 +8381,7 @@
     }
     let imagingPromise = null;
     const _imagingStartedAt = Date.now();
-    if (isCancelled())
-      throw new Error(CANCEL_ERROR);
+    if (isCancelled()) throw new Error(CANCEL_ERROR);
     if (fetchImagingEnabled && polledCandidates.length > 0) {
       const _toTrigger = polledCandidates.filter((c) => c.needsTrigger).length;
       await setStatus({
@@ -8782,8 +8450,7 @@
           settled[chronicIdx].value.raw_count = drugItems.length;
           for (const v of visits) {
             const id = v.row_ID || v.rowid || v.rowID;
-            if (id)
-              chronicRowIds.add(id);
+            if (id) chronicRowIds.add(id);
           }
         } catch (e) {
           errors.push(`chronic prescriptions detail: ${e.message}`);
@@ -8841,13 +8508,11 @@
         );
         const mergedMap = /* @__PURE__ */ new Map();
         for (const r of jpegResults.pollRes ?? []) {
-          if (!r)
-            continue;
+          if (!r) continue;
           mergedMap.set(`${r.rid}|${r.ctype}`, r);
         }
         for (const r of jpegResults.sweepRes ?? []) {
-          if (!r)
-            continue;
+          if (!r) continue;
           const k = `${r.rid}|${r.ctype}`;
           const existing = mergedMap.get(k);
           if (!existing || Array.isArray(r.jpgBase64s) && r.jpgBase64s.length > 0) {
@@ -8907,23 +8572,20 @@
           ).length;
           const fetchFailReasonCounts = /* @__PURE__ */ new Map();
           for (const r of allResults) {
-            if (r?.outcome !== "fetch-failed")
-              continue;
+            if (r?.outcome !== "fetch-failed") continue;
             const reason = String(r.error || "unknown");
             fetchFailReasonCounts.set(reason, (fetchFailReasonCounts.get(reason) ?? 0) + 1);
           }
           settled[imgIdx].value.jpegFetchFailReasons = Array.from(fetchFailReasonCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
           const resultByKey = /* @__PURE__ */ new Map();
           for (const r of allResults) {
-            if (!Array.isArray(r?.jpgBase64s) || r.jpgBase64s.length === 0)
-              continue;
+            if (!Array.isArray(r?.jpgBase64s) || r.jpgBase64s.length === 0) continue;
             resultByKey.set(`${r.rid}|${r.ctype}`, r);
           }
           const items = settled[imgIdx].value.items || [];
           const matchedKeys = /* @__PURE__ */ new Set();
           for (const item of items) {
-            if (!item)
-              continue;
+            if (!item) continue;
             const key = `${item.rid || ""}|${item.ctype || ""}`;
             const match = resultByKey.get(key);
             if (match) {
@@ -8933,8 +8595,7 @@
             }
           }
           for (const cand of imagingJpegCandidates) {
-            if (cand.hasNarrativeReport)
-              continue;
+            if (cand.hasNarrativeReport) continue;
             const key = `${cand.rid}|${cand.ctype}`;
             const match = resultByKey.get(key);
             if (!match || !Array.isArray(match.jpgBase64s) || match.jpgBase64s.length === 0) {
@@ -8944,8 +8605,7 @@
               rid: cand.rid,
               ctype: cand.ctype
             });
-            if (!synth)
-              continue;
+            if (!synth) continue;
             synth.jpgBase64s = match.jpgBase64s;
             synth.iplCaseSeqNo = match.iplCaseSeqNo || null;
             items.push(synth);
@@ -8958,8 +8618,7 @@
               const pendingKeysSet = new Set(pendingImagingRows.map((p) => `${p.rid}|${p.ctype}`));
               const removeKeys = /* @__PURE__ */ new Set();
               for (const k of matchedKeys) {
-                if (pendingKeysSet.has(k))
-                  removeKeys.add(k);
+                if (pendingKeysSet.has(k)) removeKeys.add(k);
               }
               if (removeKeys.size > 0) {
                 await removePendingImaging(patientOverride.id_no, removeKeys);
@@ -8990,8 +8649,7 @@
         continue;
       }
       const { items, raw_count } = s.value;
-      if (raw_count === 0)
-        continue;
+      if (raw_count === 0) continue;
       let line;
       if (items.length > raw_count && raw_count > 0) {
         line = `${label}\uFF1A${raw_count} \u7B46 \u2192 ${items.length} \u9805`;
@@ -9027,10 +8685,8 @@
         parts.push(`${trigFail} \u89F8\u767C\u5931\u6557`);
         parts.push(`${silentFail} \u5065\u5EB7\u5B58\u647A\u62D2\u6536`);
         parts.push(`${fetchFail} \u6293\u53D6\u5931\u6557`);
-        if (capSkipped > 0)
-          parts.push(`${capSkipped} dev-cap-skip`);
-        if (timeout > 0)
-          parts.push(`${timeout} timeout`);
+        if (capSkipped > 0) parts.push(`${capSkipped} dev-cap-skip`);
+        if (timeout > 0) parts.push(`${timeout} timeout`);
         imagingLine += ` \xB7 ${parts.join(" / ")}`;
         const reasons = s.value.jpegTriggerFailReasons;
         if (Array.isArray(reasons) && reasons.length > 0) {
@@ -9062,12 +8718,10 @@
       }
       if (ep.name === "inpatient" && dischargeCandidates > 0) {
         const parts = [`${dischargeFetched}/${dischargeCandidates} \u51FA\u9662\u75C5\u6458`];
-        if (dischargeFetchFailed > 0)
-          parts.push(`${dischargeFetchFailed} \u6293\u53D6\u5931\u6557`);
+        if (dischargeFetchFailed > 0) parts.push(`${dischargeFetchFailed} \u6293\u53D6\u5931\u6557`);
         breakdown.push(`\u3000${parts.join(" / ")}`);
       }
-      if (items.length === 0)
-        continue;
+      if (items.length === 0) continue;
       byType[ep.page_type] = byType[ep.page_type] || [];
       byType[ep.page_type].push(...items);
     }
@@ -9099,11 +8753,21 @@
         byType[key] = replaceNameDeep(byType[key], patientOverride.id_no, idReplacement);
       }
     }
+    const drItems = byType.diagnostic_reports;
+    if (maskEnabled && Array.isArray(drItems)) {
+      for (const item of drItems) {
+        if (Array.isArray(item?.jpgBase64s)) {
+          item.jpgBase64s = item.jpgBase64s.map((b64) => stripJpegMetadataBase64(b64));
+        }
+        if (typeof item?.jpgBase64 === "string") {
+          item.jpgBase64 = stripJpegMetadataBase64(item.jpgBase64);
+        }
+      }
+    }
     let total = 0;
     let _localFilename = null;
     if (mode === "local") {
-      if (isCancelled())
-        throw new Error(CANCEL_ERROR);
+      if (isCancelled()) throw new Error(CANCEL_ERROR);
       await setStatus({ progress: "\u{1F9EC} \u8F49\u63DB\u70BA\u5065\u5EB7\u7D00\u9304\u6A94\u2026", totalResources: 0 });
       let bundle;
       try {
@@ -9130,8 +8794,7 @@
     } else {
       const uploadOverride = maskEnabled ? deidentifyOverride(patientOverride) : patientOverride;
       for (const [page_type, items] of Object.entries(byType)) {
-        if (isCancelled())
-          throw new Error(CANCEL_ERROR);
+        if (isCancelled()) throw new Error(CANCEL_ERROR);
         await setStatus({
           progress: `\u2B06\uFE0F \u4E0A\u50B3 ${ENDPOINT_LABEL_ZH[page_type] ?? page_type}\uFF08${items.length} \u7B46\uFF09\u2026`,
           totalResources: total
@@ -9263,8 +8926,7 @@
   migrateSyncToLocal();
   restoreResultBadge();
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (sender?.id !== chrome.runtime.id)
-      return;
+    if (sender?.id !== chrome.runtime.id) return;
     if (msg?.type === "startNhiApiSync") {
       runNhiApiSync(msg.payload).then(
         () => {

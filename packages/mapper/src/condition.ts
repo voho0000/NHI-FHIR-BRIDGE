@@ -6,8 +6,8 @@
  * back into NHI's un-dotted codes ("E1122" → "E11.22").
  */
 
-import * as systems from "./systems";
 import { stableId } from "./helpers";
+import * as systems from "./systems";
 
 // ICD-10-CM canonical form is 'XXX.YYY[A-Z]' (category 3 chars + optional
 // dot + subdivision + optional 7th-character extension). NHI 健保 sends

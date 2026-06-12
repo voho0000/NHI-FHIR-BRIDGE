@@ -698,8 +698,8 @@ const URINALYSIS_ANALYTE_KEYS: Record<string, string> = {
   uacr: "14959-1", // Microalbumin/Creatinine ratio Urine
   "微白蛋白/肌酐酸比值": "14959-1",
   "微白蛋白/肌酐酸比值(半定量)": "14959-1",
-  "肌酐酸比值": "14959-1",
-  "肌酸酐比值": "14959-1",
+  肌酐酸比值: "14959-1",
+  肌酸酐比值: "14959-1",
   "alb/cre": "14959-1",
   "albumin/creatinine": "14959-1",
   "u-acr": "14959-1",
@@ -1039,13 +1039,13 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
   "17009B": {
     "dlco/va": "19911-7", // DLCO/VA ratio
     "dlco/alveolar volume": "19911-7",
-    "kco": "19911-7", // Transfer coefficient (same as DLCO/VA)
+    kco: "19911-7", // Transfer coefficient (same as DLCO/VA)
     dlco: "24341-0", // Diffusing capacity for CO
     "dlco sb": "24341-0", // Single-breath variant
     一氧化碳肺瀰散量: "24341-0",
-    "va": "19850-7", // Alveolar volume
+    va: "19850-7", // Alveolar volume
     "alveolar volume": "19850-7",
-    "肺泡容積": "19850-7",
+    肺泡容積: "19850-7",
   },
 
   // ── Serum creatinine + eGFR piggyback (09015C) ──────
@@ -1599,8 +1599,7 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "2143-6": "Cortisol [Mass/volume] in Serum or Plasma",
   "2132-9": "Cobalamin (Vitamin B12) [Mass/volume] in Serum or Plasma",
   "2284-8": "Folate [Mass/volume] in Serum or Plasma",
-  "83112-3":
-    "Prostate specific Ag [Mass/volume] in Serum or Plasma by Immunoassay",
+  "83112-3": "Prostate specific Ag [Mass/volume] in Serum or Plasma by Immunoassay",
   "4544-3": "Hematocrit [Volume Fraction] of Blood by Automated count",
   "57021-8": "CBC W Auto Differential panel - Blood",
   "24317-0": "Hemogram and platelets WO differential panel - Blood",
@@ -1612,10 +1611,8 @@ export const LOINC_DISPLAY: Record<string, string> = {
   // the universal document-type entry across all care settings).
   "18842-5": "Discharge summary",
   // ── Chemistry / liver / renal ────────────────────
-  "1920-8":
-    "Aspartate aminotransferase [Enzymatic activity/volume] in Serum or Plasma",
-  "1742-6":
-    "Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma",
+  "1920-8": "Aspartate aminotransferase [Enzymatic activity/volume] in Serum or Plasma",
+  "1742-6": "Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma",
   "2160-0": "Creatinine [Mass/volume] in Serum or Plasma",
   "2161-8": "Creatinine [Mass/volume] in Urine",
   "33914-3":
@@ -1628,19 +1625,15 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "1968-7": "Bilirubin.direct [Mass/volume] in Serum or Plasma",
   "1751-7": "Albumin [Mass/volume] in Serum or Plasma",
   "2885-2": "Protein [Mass/volume] in Serum or Plasma", // v0.11.11 — Total Protein
-  "2532-0":
-    "Lactate dehydrogenase [Enzymatic activity/volume] in Serum or Plasma",
-  "6768-6":
-    "Alkaline phosphatase [Enzymatic activity/volume] in Serum or Plasma",
-  "2324-2":
-    "Gamma glutamyl transferase [Enzymatic activity/volume] in Serum or Plasma",
+  "2532-0": "Lactate dehydrogenase [Enzymatic activity/volume] in Serum or Plasma",
+  "6768-6": "Alkaline phosphatase [Enzymatic activity/volume] in Serum or Plasma",
+  "2324-2": "Gamma glutamyl transferase [Enzymatic activity/volume] in Serum or Plasma",
   "17861-6": "Calcium [Mass/volume] in Serum or Plasma",
   // ── Lipid panel ──────────────────────────────────
   "2093-3": "Cholesterol [Mass/volume] in Serum or Plasma",
   "2571-8": "Triglyceride [Mass/volume] in Serum or Plasma",
   "2085-9": "Cholesterol in HDL [Mass/volume] in Serum or Plasma",
-  "13457-7":
-    "Cholesterol in LDL [Mass/volume] in Serum or Plasma by calculation",
+  "13457-7": "Cholesterol in LDL [Mass/volume] in Serum or Plasma by calculation",
   // ── Thyroid / hormones ───────────────────────────
   "3016-3": "Thyrotropin [Units/volume] in Serum or Plasma",
   "3024-7": "Thyroxine (T4) free [Mass/volume] in Serum or Plasma",
@@ -1650,16 +1643,14 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "83096-8": "Estradiol (E2) [Mass/volume] in Serum or Plasma by Immunoassay",
   // ── Cardiac / inflammation ───────────────────────
   "10839-9": "Troponin I.cardiac [Mass/volume] in Serum or Plasma",
-  "33762-6":
-    "Natriuretic peptide.B prohormone N-Terminal [Mass/volume] in Serum or Plasma",
+  "33762-6": "Natriuretic peptide.B prohormone N-Terminal [Mass/volume] in Serum or Plasma",
   "1988-5": "C reactive protein [Mass/volume] in Serum or Plasma",
   "33959-8": "Procalcitonin [Mass/volume] in Serum or Plasma",
   // ── Hepatitis / serology ─────────────────────────
   "5195-3": "Hepatitis B virus surface Ag [Presence] in Serum",
   "5196-1": "Hepatitis B virus surface Ag [Units/volume] in Serum",
   "16128-1": "Hepatitis C virus Ab [Presence] in Serum",
-  "13955-0":
-    "Hepatitis C virus Ab [Presence] in Serum or Plasma by Immunoassay",
+  "13955-0": "Hepatitis C virus Ab [Presence] in Serum or Plasma by Immunoassay",
   // ── Virology (audit 2026-05-19) ──────────────────
   "7853-5": "Cytomegalovirus IgM Ab [Units/volume] in Serum or Plasma",
   // ── Tumor markers / proteins (audit 2026-05-19) ──
@@ -1669,22 +1660,19 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "10331-7": "Rh [Type] in Blood",
   "890-4": "Blood group antibody screen [Presence] in Serum or Plasma",
   // ── Coagulation ──────────────────────────────────
-  "5902-2":
-    "Prothrombin time (PT) in Platelet poor plasma by Coagulation assay",
+  "5902-2": "Prothrombin time (PT) in Platelet poor plasma by Coagulation assay",
   // v0.11.9 audit: previously labelled "Prothrombin time (PT) Control...".
   // loinc.org canonical is actually "Prothrombin time (PT) actual/Normal..."
   // (Component=Prothrombin time actual/Normal, Property=RelTime — a RATIO,
   // not a control reading). See PANEL_LOINC_MAP['08026C'] comment.
-  "5894-1":
-    "Prothrombin time (PT) actual/Normal in Platelet poor plasma by Coagulation assay",
+  "5894-1": "Prothrombin time (PT) actual/Normal in Platelet poor plasma by Coagulation assay",
   "6301-6": "INR in Platelet poor plasma by Coagulation assay",
   "14979-9": "aPTT in Platelet poor plasma by Coagulation assay",
   // v0.11.9 (SMART app dev report 2026-05-29): added APTT ratio LOINC.
   // 08036C bills both APTT (seconds, 14979-9) AND APTT ratio (63561-5) as
   // sub-rows; without per-LOINC display, the ratio row inherited APTT
   // time's display and looked like a fatal coagulation reading.
-  "63561-5":
-    "aPTT in Platelet poor plasma by Coagulation assay --actual/normal",
+  "63561-5": "aPTT in Platelet poor plasma by Coagulation assay --actual/normal",
   "30240-6": "Fibrin D-dimer [Mass/volume] in Platelet poor plasma",
   // ── Body fluid (16008C panel members; v0.9.10) ───
   "26466-3": "Leukocytes [#/volume] in Body fluid by Manual count",
@@ -1738,14 +1726,11 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "10861-3": "Progesterone receptor [Mass/mass] in Tissue",
   "10886-0": "Prostate Specific Ag Free [Mass/volume] in Serum or Plasma",
   "24108-3": "Cancer Ag 19-9 [Units/volume] in Serum or Plasma",
-  "83113-1":
-    "Prostate Specific Ag Free [Mass/volume] in Serum or Plasma by Immunoassay",
+  "83113-1": "Prostate Specific Ag Free [Mass/volume] in Serum or Plasma by Immunoassay",
   // Hepatitis / virology
-  "5197-9":
-    "Hepatitis B virus surface Ag [Presence] in Serum by Radioimmunoassay (RIA)",
+  "5197-9": "Hepatitis B virus surface Ag [Presence] in Serum by Radioimmunoassay (RIA)",
   "14118-4": "Lactate [Mass/volume] in Serum or Plasma",
-  "80383-3":
-    "Influenza virus B Ag [Presence] in Upper respiratory specimen by Rapid immunoassay",
+  "80383-3": "Influenza virus B Ag [Presence] in Upper respiratory specimen by Rapid immunoassay",
   "94558-4":
     "SARS-CoV-2 (COVID-19) Ag [Presence] in Respiratory system specimen by Rapid immunoassay",
   // Immunology / autoimmune
@@ -1755,8 +1740,7 @@ export const LOINC_DISPLAY: Record<string, string> = {
   // serology methods for the same anti-cardiolipin antibody. Display
   // follows the LOINC's own canonical name (VDRL) per FHIR R4.
   "5292-8": "Reagin Ab [Presence] in Serum by VDRL",
-  "15189-4":
-    "Kappa light chains/Lambda light chains [Mass Ratio] in Serum",
+  "15189-4": "Kappa light chains/Lambda light chains [Mass Ratio] in Serum",
   // 16124-0 (Cryptococcus sp Ab) removed — it was only referenced by the
   // buggy 12056B mapping (see NHI_TO_LOINC); no NHI code legitimately maps
   // to it (12069B Cryptococcus Ag is left unmapped). 20483-4 is its
@@ -1771,8 +1755,7 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "14130-9": "Estrogen receptor [Moles/mass] in Tissue",
   "14196-0": "Reticulocytes [#/volume] in Blood",
   "35672-5": "Bilirubin.direct/Bilirubin.total in Serum or Plasma",
-  "83052-1":
-    "PD-L1 by clone 22C3 [Presence] in Tissue by Immune stain",
+  "83052-1": "PD-L1 by clone 22C3 [Presence] in Tissue by Immune stain",
   // ABG / Pulmonary
   "24341-0": "Gas and Carbon Monoxide Panel - Arterial blood",
   "44596-5": "IgG Ag [Presence] in Skin by Immunofluorescence",
@@ -1783,8 +1766,7 @@ export const LOINC_DISPLAY: Record<string, string> = {
   // sync whichever ammoniaLoincFix() selects based on the row's unit.
   "22763-7": "Ammonia [Mass/volume] in Plasma",
   "16362-6": "Ammonia [Moles/volume] in Plasma",
-  "14563-1":
-    "Hemoglobin [Presence] in Stool from gastrointestinal --1st specimen",
+  "14563-1": "Hemoglobin [Presence] in Stool from gastrointestinal --1st specimen",
   "2276-4": "Ferritin [Mass/volume] in Serum or Plasma",
   "2458-8": "IgA [Mass/volume] in Serum or Plasma",
   "2465-3": "IgG [Mass/volume] in Serum or Plasma",
@@ -1797,13 +1779,11 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "19113-0": "IgE [Units/volume] in Serum or Plasma",
   "19123-9": "Magnesium [Mass/volume] in Serum or Plasma",
   // Stool / GI
-  "58453-2":
-    "Hemoglobin [Mass/volume] in Stool from gastrointestinal lower by Immunoassay",
+  "58453-2": "Hemoglobin [Mass/volume] in Stool from gastrointestinal lower by Immunoassay",
   // Microbiology
   "600-7": "Bacteria identified in Blood by Culture",
   // SPE panel parent
-  "90991-1":
-    "Protein electrophoresis and M protein isotype panel - Serum or Plasma",
+  "90991-1": "Protein electrophoresis and M protein isotype panel - Serum or Plasma",
 };
 
 // ── _LOINC_SHORT_TEXT ─────────────────────────────────────
@@ -1912,18 +1892,18 @@ export const LOINC_SHORT_TEXT: Record<string, string> = {
   // Short labels chosen to match clinical convention (Taiwan EHR
   // standard column headers). NOT LOINC's verbose long name — that
   // already lives in coding[loinc].display per LOINC_DISPLAY.
-  "770-8":  "Neutrophils %",
-  "736-9":  "Lymphocytes %",
+  "770-8": "Neutrophils %",
+  "736-9": "Lymphocytes %",
   "5905-5": "Monocytes %",
-  "713-8":  "Eosinophils %",
-  "706-2":  "Basophils %",
+  "713-8": "Eosinophils %",
+  "706-2": "Basophils %",
   "4544-3": "HCT",
-  "718-7":  "Hb",
-  "777-3":  "Platelet",
-  "787-2":  "MCV",
-  "786-4":  "MCHC",
-  "788-0":  "RDW",
-  "789-8":  "RBC",
+  "718-7": "Hb",
+  "777-3": "Platelet",
+  "787-2": "MCV",
+  "786-4": "MCHC",
+  "788-0": "RDW",
+  "789-8": "RBC",
 };
 
 // v0.13 (app dev MediPrisma soft request 2026-05-30) — LOINCs eligible

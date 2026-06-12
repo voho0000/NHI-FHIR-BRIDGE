@@ -14,12 +14,11 @@
  * but content is identical.
  */
 
-import * as systems from "./systems";
 import { stableId } from "./helpers";
 import {
+  CBC_CANONICAL_TEXT_LOINCS,
   DISPLAY_FIRST_CODES,
   LOINC_DISPLAY,
-  CBC_CANONICAL_TEXT_LOINCS,
   LOINC_MAP,
   LOINC_SHORT_TEXT,
   NHI_CODE_PANEL_NAME,
@@ -34,6 +33,7 @@ import {
   toUcum,
   tryParseQuantity,
 } from "./parsers";
+import * as systems from "./systems";
 
 // ── Imaging detection — REMOVED in v0.11.6 ──────────────────────────
 //
@@ -166,9 +166,7 @@ function looksLikeNarrativeRow(display: string): boolean {
 // display-text equivalent.
 function normalizeFullwidth(s: string | undefined | null): string {
   if (!s) return "";
-  return String(s).replace(/[！-～]/g, (ch) =>
-    String.fromCharCode(ch.charCodeAt(0) - 0xfee0),
-  );
+  return String(s).replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
 }
 
 // ── LOINC lookup ─────────────────────────────────────────────────────
@@ -213,10 +211,7 @@ function _keywordMatches(key: string, combined: string): boolean {
 // makes the more specific key win regardless of insertion order, so
 // the brittle "long must appear before short" comments scattered
 // through LOINC_MAP become unnecessary.
-function _findLongestMatch(
-  combined: string,
-  table: Record<string, string>,
-): string | null {
+function _findLongestMatch(combined: string, table: Record<string, string>): string | null {
   let bestLoinc: string | null = null;
   let bestKeyLen = 0;
   for (const [key, loinc] of Object.entries(table)) {
@@ -581,7 +576,7 @@ const LAB_SYNONYMS: Record<string, string> = {
   // 球酯脢 wasn't blood 白血球. Longer keys take priority via
   // longest-match sorting.
   "微白蛋白(尿)": "URINE_MICROALBUMIN",
-  "微白蛋白": "URINE_MICROALBUMIN",
+  微白蛋白: "URINE_MICROALBUMIN",
   "MALB(U)": "URINE_MICROALBUMIN",
   MICROALBUMIN: "URINE_MICROALBUMIN",
   白蛋白: "ALBUMIN",
@@ -709,10 +704,7 @@ const CODE_SCOPED_CJK_KEYS_SORTED: Record<string, string[]> = Object.fromEntries
   ]),
 );
 
-export function canonicalLabKey(
-  display: string | null | undefined,
-  code?: string | null,
-): string {
+export function canonicalLabKey(display: string | null | undefined, code?: string | null): string {
   if (!display) return "";
   const s = display.trim();
   if (!s) return "";
@@ -810,8 +802,7 @@ function isMeaningfulValue(value: unknown): boolean {
 // Also enables dedup collapse: two INR rows with placeholder unit
 // "空白空白" and "-" but same value collide after cleaning since
 // dedupeCrossFormat key includes unit.
-const PLACEHOLDER_UNIT_RE =
-  /^(?:空白空白|空白|n\/a|n\.a\.?|nil|無|null|none|未|—|–|-{1,3})$/i;
+const PLACEHOLDER_UNIT_RE = /^(?:空白空白|空白|n\/a|n\.a\.?|nil|無|null|none|未|—|–|-{1,3})$/i;
 
 function _canonicalizeUnit(display: string, _code: string, rawUnit: string): string {
   let u = (rawUnit ?? "").trim();
@@ -1017,9 +1008,7 @@ function pickFullerItemName(rows: Record<string, any>[]): string {
   return best;
 }
 
-function dedupNhiCrossChannelPairs(
-  items: Record<string, any>[],
-): Record<string, any>[] {
+function dedupNhiCrossChannelPairs(items: Record<string, any>[]): Record<string, any>[] {
   // v0.13.1 (app dev follow-up 2026-05-30): replace canonical-based
   // grouping with LOINC-based grouping. Root cause analysis:
   //
@@ -1114,12 +1103,8 @@ function dedupNhiCrossChannelPairs(
       out.push(...group);
       continue;
     }
-    const aRows = group.filter(
-      (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "A",
-    );
-    const bRows = group.filter(
-      (r) => String(r.nhi_source_channel ?? "").toUpperCase() === "B",
-    );
+    const aRows = group.filter((r) => String(r.nhi_source_channel ?? "").toUpperCase() === "A");
+    const bRows = group.filter((r) => String(r.nhi_source_channel ?? "").toUpperCase() === "B");
     // Cross-channel detected (any A AND any B): keep all A rows
     // (numeric refRange more clinically useful), drop all B rows.
     // This handles 1A+1B / 2A+2B / 3A+3B / 2A+1B / 1A+2B uniformly.
@@ -1370,7 +1355,9 @@ const NHI_CODE_SPECIMEN_OVERRIDE: Readonly<Record<string, string>> = {
 };
 
 function nhiCodeSpecimen(code: string | null | undefined): string | null {
-  const c = String(code ?? "").trim().toUpperCase();
+  const c = String(code ?? "")
+    .trim()
+    .toUpperCase();
   if (!c) return null;
   if (c in NHI_CODE_SPECIMEN_OVERRIDE) return NHI_CODE_SPECIMEN_OVERRIDE[c] ?? null;
   const prefix = c.slice(0, 2);
@@ -1442,10 +1429,7 @@ const RATIO_TO_TIME_LOINC: Record<string, string> = {
 };
 const TIME_UNIT_RE = /^(?:sec|s|seconds?|秒)$/i;
 
-function structuralLoincFix(
-  loinc: string | null,
-  rawUnit: unknown,
-): string | null {
+function structuralLoincFix(loinc: string | null, rawUnit: unknown): string | null {
   if (!loinc) return loinc;
   const sibling = RATIO_TO_TIME_LOINC[loinc];
   if (!sibling) return loinc;
@@ -1479,8 +1463,7 @@ function structuralLoincFix(
 // corrections are allowed.
 const URINE_PROTEIN_QUALITATIVE_LOINC = "20454-5";
 const URINE_PROTEIN_QUANTITATIVE_LOINC = "2888-6";
-const URINE_PROTEIN_COMBINED_RE =
-  /^(?:[\d.]+\+|trace|positive|negative|\+|-)\s*[(（]/i;
+const URINE_PROTEIN_COMBINED_RE = /^(?:[\d.]+\+|trace|positive|negative|\+|-)\s*[(（]/i;
 const URINE_PROTEIN_NUMERIC_RE = /^[\d.]+$/;
 const URINE_PROTEIN_MASS_UNIT_RE = /^mg\s*\/\s*d\s*l$/i;
 
@@ -1504,11 +1487,10 @@ const URINE_PROTEIN_MASS_UNIT_RE = /^mg\s*\/\s*d\s*l$/i;
 // match the upstream orI_TYPE values verbatim for trivial round-trip.
 const NHI_SOURCE_CHANNEL_SYSTEM = "http://nhi-fhir-bridge/nhi-source-channel";
 
-function appendNhiSourceChannelTag(
-  resource: Record<string, any>,
-  raw: Record<string, any>,
-): void {
-  const code = String(raw.nhi_source_channel ?? "").trim().toUpperCase();
+function appendNhiSourceChannelTag(resource: Record<string, any>, raw: Record<string, any>): void {
+  const code = String(raw.nhi_source_channel ?? "")
+    .trim()
+    .toUpperCase();
   if (!code) return;
   const displayName = String(raw.nhi_source_channel_name ?? "").trim();
   const tag: Record<string, string> = {
@@ -1548,10 +1530,7 @@ function appendNhiSourceChannelTag(
 // nhi-source-channel tag).
 const NHI_VISIT_DATE_SYSTEM = "http://nhi-fhir-bridge/nhi-visit-date";
 
-function appendNhiVisitDateTag(
-  resource: Record<string, any>,
-  raw: Record<string, any>,
-): void {
+function appendNhiVisitDateTag(resource: Record<string, any>, raw: Record<string, any>): void {
   const visitDate = String(raw.nhi_visit_date ?? "").trim();
   if (!visitDate) return;
   if (!resource.meta) resource.meta = { versionId: "1", source: "nhi-fhir-bridge/scraper" };
@@ -1667,9 +1646,7 @@ function resolveObsCodeText(
   itemName?: string,
 ): string {
   const shortTextAllowed =
-    !!loinc &&
-    !!LOINC_SHORT_TEXT[loinc] &&
-    (!CBC_CANONICAL_TEXT_LOINCS.has(loinc) || cleanMatch);
+    !!loinc && !!LOINC_SHORT_TEXT[loinc] && (!CBC_CANONICAL_TEXT_LOINCS.has(loinc) || cleanMatch);
   const shortText = shortTextAllowed && loinc ? LOINC_SHORT_TEXT[loinc] : undefined;
   return normalizeFullwidth(
     resolveHumanLabel({
@@ -1725,10 +1702,7 @@ const AMMONIA_MOLAR_LOINC = "16362-6";
 // per-litre molar unit. Mass units (µg/dL / mg/dL) contain no "mol".
 const AMMONIA_MOLAR_UNIT_RE = /mol\s*\/\s*l/i;
 
-function ammoniaLoincFix(
-  loinc: string | null,
-  rawUnit: unknown,
-): string | null {
+function ammoniaLoincFix(loinc: string | null, rawUnit: unknown): string | null {
   if (loinc !== AMMONIA_MASS_LOINC) return loinc;
   const u = String(rawUnit ?? "").trim();
   if (AMMONIA_MOLAR_UNIT_RE.test(u)) return AMMONIA_MOLAR_LOINC;
@@ -2310,8 +2284,7 @@ function groupByOrderCode(
     // concept as entered or chosen by the user") so normalising for
     // halfwidth + clean LOINC short text there is fine — that's where
     // SMART apps surface the human label.
-    const drCodingDisplay =
-      orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || panelTitle;
+    const drCodingDisplay = orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || panelTitle;
     const drText = normalizeFullwidth(panelTitle);
 
     const dr: Record<string, any> = {

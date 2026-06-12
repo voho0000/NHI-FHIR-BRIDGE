@@ -6,8 +6,8 @@
  * that would duplicate a proper Observation.
  */
 
-import * as systems from "./systems";
 import { normalizeNarrativeForDedup, stableId } from "./helpers";
+import * as systems from "./systems";
 
 const V2_0074 = "http://terminology.hl7.org/CodeSystem/v2-0074";
 
@@ -210,8 +210,7 @@ export function mapDiagnosticReport(
       // SMART app rendering the list has something useful to display
       // for each attachment without having to count. Single-frame
       // studies keep the raw display untouched.
-      const title =
-        rawJpgs.length > 1 ? `${display} (frame ${i + 1}/${rawJpgs.length})` : display;
+      const title = rawJpgs.length > 1 ? `${display} (frame ${i + 1}/${rawJpgs.length})` : display;
       return {
         contentType: "image/jpeg",
         data: b64,

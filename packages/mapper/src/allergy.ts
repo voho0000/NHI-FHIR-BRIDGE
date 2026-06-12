@@ -4,8 +4,8 @@
  * Port of `backend/app/mapper/allergy.py`.
  */
 
-import * as systems from "./systems";
 import { stableId } from "./helpers";
+import * as systems from "./systems";
 
 const ALLOWED_CATEGORIES = new Set(["medication", "food", "environment", "biologic"]);
 const ALLOWED_CRITICALITY = new Set(["high", "low", "unable-to-assess"]);

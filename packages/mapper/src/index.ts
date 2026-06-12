@@ -28,6 +28,7 @@ export {
   DISPLAY_FIRST_CODES,
 } from "./loinc-tables";
 export * from "./immunization";
+export * from "./jpeg-deid";
 export * from "./link";
 export * from "./medication";
 export * from "./observation";
