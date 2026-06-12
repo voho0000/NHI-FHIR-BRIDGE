@@ -35,6 +35,12 @@ function tokenUrlsafe(bytes: number): string {
  * some clients also probe the authorization base) and must return
  * identical JSON so SMART apps see the same capability set
  * regardless of which path they hit.
+ *
+ * Only advertise what is actually implemented (audit 2026-06-12 P3):
+ * no id_token is ever issued (so no sso-openid-connect capability and
+ * no openid/fhirUser scopes) and no refresh_token is ever issued (so
+ * no online_access/offline_access scopes). Advertising them makes
+ * conforming clients mis-negotiate.
  */
 export function buildSmartConfiguration(baseUrl: string): Record<string, unknown> {
   return {
@@ -47,17 +53,8 @@ export function buildSmartConfiguration(baseUrl: string): Record<string, unknown
       "client-public",
       "context-standalone-patient",
       "permission-patient",
-      "sso-openid-connect",
     ],
-    scopes_supported: [
-      "openid",
-      "fhirUser",
-      "launch",
-      "launch/patient",
-      "patient/*.read",
-      "online_access",
-      "offline_access",
-    ],
+    scopes_supported: ["launch", "launch/patient", "patient/*.read"],
     response_types_supported: ["code"],
     code_challenge_methods_supported: ["S256"],
   };
@@ -90,10 +87,11 @@ export class SMARTAuthServer {
     if (!token) return null;
     const ctx = this.launchContexts.get(token);
     if (!ctx) return null;
-    if (ctx.expiresAt < new Date()) {
-      this.launchContexts.delete(token);
-      return null;
-    }
+    // Single-use (audit 2026-06-12 P3): consume the token on first
+    // resolve so a leaked launch token can't be replayed for the rest
+    // of its 10-minute TTL.
+    this.launchContexts.delete(token);
+    if (ctx.expiresAt < new Date()) return null;
     return ctx.patientId;
   }
 
@@ -110,12 +108,10 @@ export class SMARTAuthServer {
    */
   seedDemoClients(dbi: DB = defaultDb): void {
     // Demo client (localhost dev frontend).
-    const demoUris = [
-      "http://localhost:3001/callback",
-      "http://localhost:3001/launch",
-      "http://localhost:3000/callback",
-      "http://localhost:3000/launch",
-    ];
+    // /launch entries pruned 2026-06-12 — they were redirect URIs
+    // pointing at the (now removed) pre-PKCE frontend /launch page;
+    // OAuth redirect_uris are callbacks, not launch entry points.
+    const demoUris = ["http://localhost:3001/callback", "http://localhost:3000/callback"];
     const demoExisting = this.getClient("demo-smart-app", dbi);
     if (!demoExisting) {
       dbi

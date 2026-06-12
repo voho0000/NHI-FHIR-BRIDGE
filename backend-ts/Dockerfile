@@ -37,8 +37,17 @@ COPY backend-ts/src                   ./backend-ts/src
 COPY backend-ts/drizzle               ./backend-ts/drizzle
 
 WORKDIR /app/backend-ts
-RUN mkdir -p /app/data
+# chown so the `node` user can write the SQLite DB. A NEW named volume
+# (ehr_data) copies this ownership on first mount; a volume created by a
+# pre-USER-directive image keeps its old root-owned files — fix once with:
+#   docker compose run --rm --user root backend chown -R node:node /app/data
+RUN mkdir -p /app/data && chown -R node:node /app/data
 
 EXPOSE 8010
+
+# Drop root (audit 2026-06-12 P2-5). `node` (uid 1000) ships with the
+# official node base images; /app stays root-owned read-only, which is
+# fine — the only writable path the app needs is /app/data above.
+USER node
 
 CMD ["npx", "tsx", "src/main.ts"]

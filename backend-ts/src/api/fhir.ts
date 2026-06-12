@@ -198,6 +198,15 @@ fhirApi.get("/export", requireSyncApiKey, (c) => {
 
 // ── Import (PHI write — SYNC_API_KEY-gated) ──────────────────────────
 
+// FHIR R4 Resource.id syntax (§2.26.1.1). Anything else is rejected —
+// it would also break the /<type>/<id> read routes and fullUrl building.
+const FHIR_ID_RE = /^[A-Za-z0-9\-.]{1,64}$/;
+
+// Resource types this server stores and serves back. Reuses the route
+// table above (single source of truth) — importing a type we have no
+// routes for would create write-only rows no client can ever read.
+const IMPORTABLE_RESOURCE_TYPES = new Set(["Patient", ...PER_PATIENT_RESOURCES]);
+
 fhirApi.post("/import", requireSyncApiKey, async (c) => {
   let body: any;
   try {
@@ -220,6 +229,26 @@ fhirApi.post("/import", requireSyncApiKey, async (c) => {
     }
   } else {
     return c.json({ detail: "Unexpected body type" }, 400);
+  }
+
+  // Validate BEFORE any upsert so a bad bundle never partially imports
+  // (audit 2026-06-12 P3). Entries without resourceType+id keep the
+  // historical "skipped" semantics; entries that WOULD import must
+  // carry a known type and a spec-valid id.
+  for (let i = 0; i < resources.length; i++) {
+    const r = resources[i];
+    if (!(r && typeof r === "object" && r.resourceType && r.id)) continue;
+    if (!IMPORTABLE_RESOURCE_TYPES.has(r.resourceType)) {
+      return c.json({ detail: `Entry ${i}: unsupported resourceType "${r.resourceType}"` }, 400);
+    }
+    if (typeof r.id !== "string" || !FHIR_ID_RE.test(r.id)) {
+      return c.json(
+        {
+          detail: `Entry ${i}: invalid Resource.id (must match [A-Za-z0-9\\-\\.]{1,64} per FHIR R4)`,
+        },
+        400,
+      );
+    }
   }
 
   let imported = 0;

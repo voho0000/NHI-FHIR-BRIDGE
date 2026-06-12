@@ -19,6 +19,7 @@ smartApi.get("/.well-known/smart-configuration", (c) => {
 });
 
 smartApi.get("/authorize", async (c) => {
+  const responseType = c.req.query("response_type") ?? "";
   const clientId = c.req.query("client_id") ?? "";
   const redirectUri = c.req.query("redirect_uri") ?? "";
   const scope = c.req.query("scope") ?? "";
@@ -28,13 +29,22 @@ smartApi.get("/authorize", async (c) => {
   const launch = c.req.query("launch") ?? null;
   const aud = c.req.query("aud") ?? null;
 
-  // Validate aud against our public FHIR base. Prevents a malicious SMART
-  // app from luring the user to authorize against a different server.
-  if (aud) {
-    const normalize = (u: string) => u.replace(/\/+$/, "");
-    if (normalize(aud) !== normalize(settings.FHIR_BASE_URL)) {
-      return c.json({ detail: `aud must equal ${settings.FHIR_BASE_URL}` }, 400);
-    }
+  // aud is REQUIRED — SMART App Launch obliges clients to send it, and
+  // validating it prevents a malicious SMART app from luring the user
+  // to authorize against a different server. (audit 2026-06-12 P3:
+  // `if (aud)` made the check skippable by simply omitting the param.)
+  if (!aud) {
+    return c.json(
+      {
+        error: "invalid_request",
+        detail: `aud is required and must equal ${settings.FHIR_BASE_URL}`,
+      },
+      400,
+    );
+  }
+  const normalize = (u: string) => u.replace(/\/+$/, "");
+  if (normalize(aud) !== normalize(settings.FHIR_BASE_URL)) {
+    return c.json({ detail: `aud must equal ${settings.FHIR_BASE_URL}` }, 400);
   }
 
   const client = smartAuth.getClient(clientId);
@@ -44,6 +54,16 @@ smartApi.get("/authorize", async (c) => {
   const allowedUris = client.redirectUris ?? [];
   if (!allowedUris.includes(redirectUri)) {
     return c.json({ detail: "Invalid redirect_uri" }, 400);
+  }
+
+  // Only the authorization-code flow is implemented. RFC 6749 §4.1.2.1:
+  // once redirect_uri is validated, an unsupported response_type is
+  // reported via error redirect (the client/redirect_uri checks above
+  // already direct-400 when we have no trustworthy redirect target).
+  if (responseType !== "code") {
+    const errParams = new URLSearchParams({ error: "unsupported_response_type" });
+    if (state) errParams.set("state", state);
+    return c.redirect(`${redirectUri}?${errParams.toString()}`, 302);
   }
 
   // PKCE mandatory for public clients (SMART App Launch IG §1.0.2).
@@ -57,9 +77,11 @@ smartApi.get("/authorize", async (c) => {
         400,
       );
     }
-    if (codeChallengeMethod !== "S256" && codeChallengeMethod !== "plain") {
+    // S256 only — discovery advertises S256 only, and 'plain' defeats
+    // PKCE's interception protection (audit 2026-06-12 P3).
+    if (codeChallengeMethod !== "S256") {
       return c.json(
-        { detail: "code_challenge_method must be 'S256' (recommended) or 'plain'." },
+        { error: "invalid_request", detail: "code_challenge_method must be 'S256'." },
         400,
       );
     }
@@ -73,7 +95,14 @@ smartApi.get("/authorize", async (c) => {
   // who can hit this endpoint).
   let patientId = smartAuth.resolveLaunchContext(launch);
   if (!patientId) {
-    if (settings.SYNC_API_KEY) {
+    // Dev/POC escape hatch (audit 2026-06-12 P2-3): auto-picking the
+    // first patient in the store is a PHI disclosure, so it requires
+    // BOTH keyless mode AND the explicit env opt-in
+    // SMART_DEV_AUTOSELECT_PATIENT=1 (read from process.env at request
+    // time; intentionally NOT in settings so it stays a dev-only knob).
+    const devAutoselect =
+      !settings.SYNC_API_KEY && process.env.SMART_DEV_AUTOSELECT_PATIENT === "1";
+    if (!devAutoselect) {
       return c.json(
         {
           detail:
@@ -82,8 +111,6 @@ smartApi.get("/authorize", async (c) => {
         400,
       );
     }
-    // Dev/POC mode (SYNC_API_KEY empty): preserve old behavior of picking
-    // the first patient so local SMART app demos still work end-to-end.
     const patients = fhirServer.listAll("Patient");
     patientId = patients.length > 0 ? (patients[0]!.id as string) : null;
   }

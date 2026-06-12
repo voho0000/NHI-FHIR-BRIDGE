@@ -198,9 +198,7 @@ describe("effectiveFhirPatientId (audit P1-1)", () => {
   test("matches what the backend derives after deidentifyOverride pre-masks id_no", () => {
     // Backend path: extension masks id_no with X before upload, backend
     // hashes what it receives — both paths must land on the same id.
-    expect(derivePatientId(maskId(PATIENT_ID, "X"))).toBe(
-      effectiveFhirPatientId(PATIENT_ID, true),
-    );
+    expect(derivePatientId(maskId(PATIENT_ID, "X"))).toBe(effectiveFhirPatientId(PATIENT_ID, true));
   });
 });
 
