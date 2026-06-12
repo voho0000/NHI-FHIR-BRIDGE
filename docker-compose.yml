@@ -49,13 +49,17 @@ services:
       - ./packages/mapper/src:/app/packages/mapper/src
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # Public backend URL — NEXT_PUBLIC_* vars are inlined into the
+        # client bundle at BUILD time (the frontend image runs
+        # `next build`), so this must be a build arg, not a runtime env.
+        # Used by the SMART on FHIR launch flow (iss, /smart/authorize).
+        NEXT_PUBLIC_API_URL: http://localhost:8010
     ports:
       - "127.0.0.1:3010:3000"
     environment:
-      # Public backend URL — exposed to the browser via NEXT_PUBLIC_*.
-      # Used by the SMART on FHIR launch flow (iss, /smart/authorize).
-      NEXT_PUBLIC_API_URL: http://localhost:8010
       # Internal backend URL — server-side only. Used by the dashboard's
       # /api/backend/[...path] proxy to forward PHI calls with the API key.
       BACKEND_INTERNAL_URL: http://backend:8010

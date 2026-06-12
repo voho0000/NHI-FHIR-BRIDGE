@@ -1,0 +1,7 @@
+# Keep host build artifacts and deps out of the Docker build context —
+# the builder stage runs its own npm ci + next build.
+node_modules
+.next
+tsconfig.tsbuildinfo
+Dockerfile
+.dockerignore

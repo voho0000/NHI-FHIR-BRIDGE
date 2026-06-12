@@ -43,20 +43,38 @@ export default function Dashboard() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [logs, setLogs] = useState<SyncLog[]>([]);
 
+  // Backend reachability (audit P2-9): without this flag, a stopped Docker
+  // container looks identical to "no data yet" — fetch failures silently
+  // left the empty-state placeholders on screen. Any fetch success clears
+  // it; any failure raises the offline banner below.
+  const [backendDown, setBackendDown] = useState(false);
+
   // Import/export state
   const [importMsg, setImportMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchPatients = useCallback(async () => {
-    const res = await fetch(`${API}/fhir/Patient`);
-    const data = await res.json();
-    setPatients(data.entry?.map((e: { resource: Patient }) => e.resource) ?? []);
+    try {
+      const res = await fetch(`${API}/fhir/Patient`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setPatients(data.entry?.map((e: { resource: Patient }) => e.resource) ?? []);
+      setBackendDown(false);
+    } catch {
+      setBackendDown(true);
+    }
   }, []);
 
   const fetchLogs = useCallback(async () => {
-    const res = await fetch(`${API}/sync/logs`, { headers: authHeaders() });
-    setLogs(await res.json());
+    try {
+      const res = await fetch(`${API}/sync/logs`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setLogs(await res.json());
+      setBackendDown(false);
+    } catch {
+      setBackendDown(true);
+    }
   }, []);
 
   const clearLogs = useCallback(async () => {
@@ -147,23 +165,27 @@ export default function Dashboard() {
     }
   };
 
-  const launchSmartApp = async (patientId?: string) => {
+  const launchSmartApp = async (patientId: string) => {
     const launchUrl = "https://voho0000.github.io/medical-note-smart-on-fhir/smart/launch";
-    let launchToken = crypto.randomUUID();
-    if (patientId) {
-      try {
-        const res = await fetch(`${API}/smart/launch-context`, {
-          method: "POST",
-          headers: authHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({ patient_id: patientId }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          launchToken = data.launch;
-        }
-      } catch {
-        // fall back to default launch context
-      }
+    // The launch token MUST come from the backend (audit F17) — a made-up
+    // token can never pass /smart/authorize, so opening the SMART app with
+    // one just strands the user on an OAuth error page. Fail loudly instead.
+    let launchToken: string;
+    try {
+      const res = await fetch(`${API}/smart/launch-context`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ patient_id: patientId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? JSON.stringify(data));
+      launchToken = data.launch;
+    } catch (err) {
+      alert(
+        `❌ 無法建立 SMART 啟動授權：${err instanceof Error ? err.message : String(err)}\n\n` +
+        `請確認後端伺服器是否啟動（docker compose up -d）後再試一次。`
+      );
+      return;
     }
     // SMART app needs the public backend URL — it will OAuth-redirect
     // users through it and call /fhir/* directly with a Bearer token.
@@ -174,6 +196,13 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Backend-offline banner (audit P2-9) */}
+      {backendDown && (
+        <div className="bg-amber-50 border border-amber-300 text-amber-800 rounded-lg px-4 py-3 text-sm">
+          ⚠️ 連不上本機伺服器 — 請確認 Docker 容器是否啟動（docker compose up -d）
+        </div>
+      )}
+
       {/* FHIR Patients */}
       <section>
         <div className="flex items-center justify-between mb-3">
@@ -448,14 +477,6 @@ export default function Dashboard() {
             className="bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded text-gray-700 transition"
           >
             SMART Configuration
-          </a>
-          <a
-            href={`${API}/docs`}
-            target="_blank"
-            rel="noreferrer"
-            className="bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded text-blue-700 transition"
-          >
-            API Docs (Swagger)
           </a>
           <button
             onClick={() => exportBundle()}
