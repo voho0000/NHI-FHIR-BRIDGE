@@ -1,6 +1,6 @@
 {
-  "_source": "IHKE3409S01 (其他檢驗結果) — single row captured live from NHI",
-  "_note": "Inpatient case: funC_DATE (admission) and reaL_INSPECT_DATE (sample collection) differ by 4 days. This is the row that exposed the v0.6.1 lab-date bug.",
+  "_source": "IHKE3409S01 (其他檢驗結果) — single-row NHI response shape",
+  "_note": "Inpatient case: funC_DATE (admission) and reaL_INSPECT_DATE (sample collection) differ by 4 days. This is the row pattern that exposed the v0.6.1 lab-date bug. Sanitized 2026-06-12: dates year-shifted per file, provider/contact identifiers replaced with synthetics — rows are to be treated as fully synthetic.",
   "rownum": 66,
   "orI_TYPE": "A",
   "orI_TYPE_NAME": "特約醫事機構不定期上傳",
@@ -15,9 +15,9 @@
   "short_CONSULT_VALUE": "[70][140]",
   "hosP_ABBR": "長庚嘉義",
   "hosP_ID": "1140010510",
-  "funC_DATE": "114/05/18",
-  "assaY_UPLOAD_DATE": "114/05/22",
-  "reaL_INSPECT_DATE": "114/05/22",
+  "funC_DATE": "111/05/18",
+  "assaY_UPLOAD_DATE": "111/05/22",
+  "reaL_INSPECT_DATE": "111/05/22",
   "assaY_MARK": "1",
   "hosp_url": "https://info.nhi.gov.tw/inae1000/inae1000s03?id=1140010510",
   "show_ALL": false

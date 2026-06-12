@@ -1,13 +1,13 @@
 {
-  "_source": "IHKE3301S05 (處置/手術) main_data — two rows captured live from NHI",
-  "_note": "List endpoint only — no op_CODE (ICD-10-PCS) and no actual procedure-performed date. The real fields live on IHKE3308S02 detail (see ihke3308-procedure-{inpatient,outpatient}.json). adaptProcedureListStub returns null for these rows; the row_ids drive the IHKE3308S02 fan-out.",
+  "_source": "IHKE3301S05 (處置/手術) main_data — two-row NHI response shape",
+  "_note": "List endpoint only — no op_CODE (ICD-10-PCS) and no actual procedure-performed date. The real fields live on IHKE3308S02 detail (see ihke3308-procedure-{inpatient,outpatient}.json). adaptProcedureListStub returns null for these rows; the row_ids drive the IHKE3308S02 fan-out. Sanitized 2026-06-12: dates year-shifted per file, provider/contact identifiers replaced with synthetics — rows are to be treated as fully synthetic.",
   "main_data": [
     {
       "hosp_url": "https://info.nhi.gov.tw/inae1000/inae1000s03?id=0601160016",
       "ori_type_name": "住院",
       "hosp_id": "0601160016",
-      "func_date": "105/09/23",
-      "out_date": "105/09/26",
+      "func_date": "103/09/23",
+      "out_date": "103/09/26",
       "hosp_abbr": "臺北榮總",
       "icd9cm_code": "H35372",
       "ori_type": "3",
@@ -19,7 +19,7 @@
       "hosp_url": "https://info.nhi.gov.tw/inae1000/inae1000s03?id=1122010012",
       "ori_type_name": "門診",
       "hosp_id": "1122010012",
-      "func_date": "105/01/14",
+      "func_date": "103/01/14",
       "out_date": "--",
       "hosp_abbr": "嘉基醫院",
       "icd9cm_code": "H4011X0",

@@ -1,46 +1,46 @@
 {
-  "_source": "IHKE3203S01 (預防接種紀錄 / 疫苗) — live shape captured from NHI",
-  "_note": "Real anonymized capture: 6 vaccinations across flu (no batch number) + COVID-19 (BNT, Moderna, AstraZeneca with batch numbers). No PII in this NHI response. Trimmed nothing — every row pattern preserved for adapter coverage (batch-present vs batch-absent; nested parens for bivalent vaccine).",
+  "_source": "IHKE3203S01 (預防接種紀錄 / 疫苗) — NHI response shape",
+  "_note": "6 vaccinations across flu (no batch number) + COVID-19 (BNT, Moderna, AstraZeneca with batch numbers). No PII in this NHI response. Every row pattern kept for adapter coverage (batch-present vs batch-absent; nested parens for bivalent vaccine). Sanitized 2026-06-12: dates year-shifted per file, provider/contact identifiers replaced with synthetics — rows are to be treated as fully synthetic.",
   "sP_IHKE3203S01": [
     {
       "rownum": 1,
-      "inoculatE_D": "112/12/27",
+      "inoculatE_D": "113/12/27",
       "codE_CNAME": "流感疫苗",
       "hosP_ABBR": "臺北榮民總醫院",
       "source": "疾病管制署"
     },
     {
       "rownum": 2,
-      "inoculatE_D": "111/10/24",
+      "inoculatE_D": "112/10/24",
       "codE_CNAME": "流感疫苗",
       "hosP_ABBR": "臺北榮民總醫院",
       "source": "疾病管制署"
     },
     {
       "rownum": 3,
-      "inoculatE_D": "111/10/13",
-      "codE_CNAME": "莫德納Spikevax雙價疫苗(O/O_BA.1)(批號035E22A)",
+      "inoculatE_D": "112/10/13",
+      "codE_CNAME": "莫德納Spikevax雙價疫苗(O/O_BA.1)(批號047F31B)",
       "hosP_ABBR": "臺北榮民總醫院",
       "source": "疾病管制署"
     },
     {
       "rownum": 4,
-      "inoculatE_D": "111/01/07",
-      "codE_CNAME": "輝瑞/BNT COVID-19疫苗(批號1I070A)",
+      "inoculatE_D": "112/01/07",
+      "codE_CNAME": "輝瑞/BNT COVID-19疫苗(批號2J081B)",
       "hosP_ABBR": "臺北榮民總醫院",
       "source": "疾病管制署"
     },
     {
       "rownum": 5,
-      "inoculatE_D": "110/07/23",
-      "codE_CNAME": "COVID-19疫苗(AstraZeneca)(批號D006A)",
+      "inoculatE_D": "111/07/23",
+      "codE_CNAME": "COVID-19疫苗(AstraZeneca)(批號E117B)",
       "hosP_ABBR": "臺北榮民總醫院",
       "source": "疾病管制署"
     },
     {
       "rownum": 6,
-      "inoculatE_D": "110/05/14",
-      "codE_CNAME": "COVID-19疫苗(AstraZeneca)(批號CTMAV513)",
+      "inoculatE_D": "111/05/14",
+      "codE_CNAME": "COVID-19疫苗(AstraZeneca)(批號CTMAV624)",
       "hosP_ABBR": "臺北榮民總醫院",
       "source": "疾病管制署"
     }

@@ -1,18 +1,18 @@
 {
-  "_source": "IHKE3306S02 (處方藥品 detail) — single inpatient admission, real shape from NHI",
-  "_note": "5-day admission 114/05/18~05/22, NHI bundles every drug used during the stay into one row. func_DATE is admission, cure_E_DATE is discharge. Live capture had 14 drugs — trimmed here to 3 representative entries (PPI, IV fluid, hemostatic) for test brevity. Regression for the case where all 14 drugs were dated to admission day with no record of the actual usage window. PII intact (no patient identifiers in this NHI response).",
+  "_source": "IHKE3306S02 (處方藥品 detail) — single inpatient admission, NHI response shape",
+  "_note": "5-day admission 111/05/18~05/22, NHI bundles every drug used during the stay into one row. func_DATE is admission, cure_E_DATE is discharge. Original shape had 14 drugs — trimmed here to 3 representative entries (PPI, IV fluid, hemostatic) for test brevity. Regression for the case where all 14 drugs were dated to admission day with no record of the actual usage window. No patient identifiers in this NHI response. Sanitized 2026-06-12: dates year-shifted per file, provider/contact identifiers replaced with synthetics — rows are to be treated as fully synthetic.",
   "main_data_visit": {
     "rowid": "AAOZsAAIBAALXDJAAH",
-    "main_tit": "114/05/18 ~ 114/05/22　住院||2025/05/18 ~ 2025/05/22　Inpatient",
+    "main_tit": "111/05/18 ~ 111/05/22　住院||2022/05/18 ~ 2022/05/22　Inpatient",
     "hosp_url": "https://info.nhi.gov.tw/inae1000/inae1000s03?id=1140010510",
     "hosp_ID": "1140010510",
     "hosp_ABBR": "長庚嘉義",
     "ori_TYPE_NAME": "住院",
     "icd9cm_CODE": "R042",
     "icd9cm_CODE_CNAME": "R042/咳血||R042/Hemoptysis",
-    "func_DATE": "114/05/18||2025/05/18",
+    "func_DATE": "111/05/18||2022/05/18",
     "func_SEQ_NO": "0021",
-    "cure_E_DATE": "114/05/22||2025/05/22",
+    "cure_E_DATE": "111/05/22||2022/05/22",
     "ori_TYPE": "申報"
   },
   "drugs": [

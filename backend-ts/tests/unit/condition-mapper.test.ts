@@ -85,7 +85,7 @@ describe("mapCondition", () => {
       {
         display: "攝護腺惡性腫瘤",
         category: "problem-list-item",
-        onset_date: "2022-11-16",
+        onset_date: "2020-11-16",
       },
       PATIENT_ID,
     );
@@ -102,8 +102,8 @@ describe("mapCondition", () => {
   });
 
   test("recordedDate maps with TW timezone when present", () => {
-    const r = mapCondition({ display: "x", recorded_date: "2022-11-16" }, PATIENT_ID);
-    expect(r.recordedDate).toBe("2022-11-16T00:00:00+08:00");
+    const r = mapCondition({ display: "x", recorded_date: "2020-11-16" }, PATIENT_ID);
+    expect(r.recordedDate).toBe("2020-11-16T00:00:00+08:00");
   });
 
   test("stableId falls back to display when no code (two same-day code-less rows must not collide)", () => {

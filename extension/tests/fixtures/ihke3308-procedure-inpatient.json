@@ -1,8 +1,8 @@
 {
-  "_source": "IHKE3308S02 (處置/手術 detail) — single row captured live from NHI",
-  "_note": "Inpatient case: admit 105/09/23, discharge 105/09/26 (range encoded in main_tit). The actual procedure execution date lives on sp_IHKE3308S04_data_list[].exe_S_DATE — in this case 105/09/23 (same as admission), but the field semantically IS the performed-date and would differ for procedures done mid-stay. row_ID matches the inpatient entry in ihke3301s05-procedures.json fixture to make the list→detail round-trip explicit. No PII in this payload (op_CODE + icd9cm_CODE are public billing codes; hospital names already appear in other fixtures).",
+  "_source": "IHKE3308S02 (處置/手術 detail) — single-row NHI response shape",
+  "_note": "Inpatient case: admit 103/09/23, discharge 103/09/26 (range encoded in main_tit). The actual procedure execution date lives on sp_IHKE3308S04_data_list[].exe_S_DATE — in this case 103/09/23 (same as admission), but the field semantically IS the performed-date and would differ for procedures done mid-stay. row_ID matches the inpatient entry in ihke3301s05-procedures.json fixture to make the list→detail round-trip explicit. No PII in this payload (op_CODE + icd9cm_CODE are public billing codes; hospital names already appear in other fixtures). Sanitized 2026-06-12: dates year-shifted per file, provider/contact identifiers replaced with synthetics — rows are to be treated as fully synthetic.",
   "rowid": "AAF9xlAILAANeYPAAS",
-  "main_tit": "105/09/23 ~ 105/09/26｜住院||2016/09/23 ~ 2016/09/26｜INPATIENT",
+  "main_tit": "103/09/23 ~ 103/09/26｜住院||2014/09/23 ~ 2014/09/26｜INPATIENT",
   "hosp_url": "https://info.nhi.gov.tw/inae1000/inae1000s03?id=0601160016",
   "hosp_ID": "0601160016",
   "hosp_ABBR": "臺北榮總",
@@ -13,12 +13,12 @@
   "op_CODE": "08B53ZZ",
   "op_CODE_CNAME": "08B53ZZ/經皮左側玻璃體部分切除術||08B53ZZ/Excision of Left Vitreous, Percutaneous Approach",
   "func_SEQ_NO": "0044",
-  "func_DATE": "105/09/23",
+  "func_DATE": "103/09/23",
   "part_AMT": "5,740",
   "appl_DOT": "51,898",
   "sp_IHKE3308S04_data_list": [
     {
-      "exe_S_DATE": "105/09/23||2016/09/23",
+      "exe_S_DATE": "103/09/23||2014/09/23",
       "order_CODE_NAME": "微創玻璃體黃斑部手術||Microincision vitreomacular surgery",
       "order_CODE": "86412B",
       "code_CNAME": "",

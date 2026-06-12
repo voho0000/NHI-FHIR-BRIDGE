@@ -8,15 +8,18 @@
  * privacy risk for shared / demo / test bundles. These tests pin the fix:
  * when the toggle is on, identifier.value is half-masked (matching the
  * filename) and birthDate is year-only (Jan-1 normalized), while Patient.id
- * (a salted hash) stays stable so intra-bundle references don't shift.
+ * (a hash) stays stable so intra-bundle references don't shift.
  */
 import { describe, expect, test } from "vitest";
 import * as systems from "@nhi-fhir-bridge/mapper";
 
+// SYNTHETIC identity — id_no is deliberately checksum-INVALID (scripts/
+// check-no-real-twid.mjs gates CI on this). Never put a real or
+// checksum-valid TWID in test data.
 const OV = {
   id_no: "F223456789",
   name: "王測試",
-  birth_date: "1958-06-15",
+  birth_date: "1962-04-15",
   gender: "female",
 };
 
@@ -26,7 +29,7 @@ describe("buildOverridePatient — de-identify toggle OFF (faithful transport)",
     const p = buildOverridePatient(OV, false);
     expect(p.identifier[0].value).toBe("F223456789");
     expect(p.identifier[0].system).toBe(systems.TW_NATIONAL_ID);
-    expect(p.birthDate).toBe("1958-06-15");
+    expect(p.birthDate).toBe("1962-04-15");
     expect(p.name[0].text).toBe("王測試");
   });
 });
@@ -43,7 +46,7 @@ describe("buildOverridePatient — de-identify toggle ON", () => {
   test("birthDate keeps year, normalizes to Jan 1 (SMART-app-parseable)", async () => {
     const { buildOverridePatient } = await import("../src/background/patient-override.ts");
     const p = buildOverridePatient(OV, true);
-    expect(p.birthDate).toBe("1958-01-01");
+    expect(p.birthDate).toBe("1962-01-01");
     expect(/^\d{4}-\d{2}-\d{2}$/.test(p.birthDate)).toBe(true);
   });
 
@@ -53,7 +56,7 @@ describe("buildOverridePatient — de-identify toggle ON", () => {
     expect(p.name[0].text).toBe("王O試");
   });
 
-  test("Patient.id (salted hash) is identical masked vs unmasked — references stay stable", async () => {
+  test("Patient.id (hash) is identical masked vs unmasked — references stay stable", async () => {
     const { buildOverridePatient } = await import("../src/background/patient-override.ts");
     const masked = buildOverridePatient(OV, true);
     const plain = buildOverridePatient(OV, false);
@@ -75,7 +78,7 @@ describe("deidentifyOverride — backend-upload path (v0.18.3)", () => {
     const { deidentifyOverride } = await import("../src/background/patient-override.ts");
     const out = deidentifyOverride({ ...OV, gender: "female" });
     expect(out.id_no).toBe("F22345XXXX");
-    expect(out.birth_date).toBe("1958-01-01");
+    expect(out.birth_date).toBe("1962-01-01");
     expect(out.name).toBe("王O試");
     expect(out.gender).toBe("female"); // untouched
   });

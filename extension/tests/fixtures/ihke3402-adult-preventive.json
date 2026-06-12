@@ -1,7 +1,7 @@
 {
-  "_source": "IHKE3402S01 (成人預防保健結果) — live capture from NHI, single row + sentinel '-' row that NHI returns as 'no other screenings'",
-  "_note": "Real-world example. The hbsag='1', antI_HCV='1', urinE_PROTEIN='0' are STATUS CODES, not values — the corresponding _TEXT fields ('陰性' / '陰性' / '-') are the actual results. Adapter must use _TEXT or downstream UI shows numeric codes as if they were lab values.",
-  "firsT_DIAG_DATE": "111/11/07",
+  "_source": "IHKE3402S01 (成人預防保健結果) — NHI response shape, single row + sentinel '-' row that NHI returns as 'no other screenings'",
+  "_note": "The hbsag='1', antI_HCV='1', urinE_PROTEIN='0' are STATUS CODES, not values — the corresponding _TEXT fields ('陰性' / '陰性' / '-') are the actual results. Adapter must use _TEXT or downstream UI shows numeric codes as if they were lab values. Sanitized 2026-06-12: dates year-shifted per file, provider/contact identifiers replaced with synthetics — rows are to be treated as fully synthetic.",
+  "firsT_DIAG_DATE": "113/11/07",
   "height": "170",
   "weight": "70",
   "bmi": "24",

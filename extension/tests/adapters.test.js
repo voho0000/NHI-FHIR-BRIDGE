@@ -249,7 +249,7 @@ describe("adaptLabItem", () => {
   test("end-to-end fixture: live IHKE3409 row produces expected shape", () => {
     const fixture = readFixture("ihke3409-lab-inpatient.json");
     expect(adaptLabItem(fixture)).toEqual({
-      date: "2025-05-22",
+      date: "2022-05-22",
       order_code: "09140C",
       order_name: "血液及體液葡萄糖-餐後",
       // v0.17: 檢驗檢查項目名稱 (assaY_ITEM_NAME), surfaced separately from
@@ -275,7 +275,7 @@ describe("adaptLabItem", () => {
       // (which uses reaL_INSPECT_DATE). 4-day visit-vs-inspect gap in
       // this fixture (5/18 visit, 5/22 inspect) — a normal inpatient
       // admission window pattern.
-      nhi_visit_date: "2025-05-18",
+      nhi_visit_date: "2022-05-18",
     });
   });
 
@@ -362,37 +362,37 @@ describe("adaptLabItem", () => {
 describe("adaptImagingReportFromDetail", () => {
   test("date prefers real_INSPECT_DATE when present", () => {
     const item = {
-      func_DATE: "115/01/14",
-      real_INSPECT_DATE: "115/01/16",
-      assay_UPLOAD_DATE: "115/02/24 12:03",
+      func_DATE: "113/01/14",
+      real_INSPECT_DATE: "113/01/16",
+      assay_UPLOAD_DATE: "113/02/24 12:03",
       order_NAME: "CT",
       desc: "report body",
     };
-    expect(adaptImagingReportFromDetail(item).date).toBe("2026-01-16");
+    expect(adaptImagingReportFromDetail(item).date).toBe("2024-01-16");
   });
 
   test("date falls back to func_DATE when real_INSPECT_DATE is null", () => {
     const item = {
-      func_DATE: "115/01/14",
+      func_DATE: "113/01/14",
       real_INSPECT_DATE: null,
-      assay_UPLOAD_DATE: "115/02/24 12:03",
+      assay_UPLOAD_DATE: "113/02/24 12:03",
       order_NAME: "CT",
       desc: "report body",
     };
-    expect(adaptImagingReportFromDetail(item).date).toBe("2026-01-14");
+    expect(adaptImagingReportFromDetail(item).date).toBe("2024-01-14");
   });
 
   test("date never uses assay_UPLOAD_DATE (would be weeks after the real exam)", () => {
     const item = {
-      func_DATE: "115/01/14",
+      func_DATE: "113/01/14",
       real_INSPECT_DATE: null,
-      assay_UPLOAD_DATE: "115/02/24 12:03",
+      assay_UPLOAD_DATE: "113/02/24 12:03",
       order_NAME: "CT",
       desc: "report body",
     };
     // The output date must match func_DATE, NOT the upload date.
-    expect(adaptImagingReportFromDetail(item).date).toBe("2026-01-14");
-    expect(adaptImagingReportFromDetail(item).date).not.toBe("2026-02-24");
+    expect(adaptImagingReportFromDetail(item).date).toBe("2024-01-14");
+    expect(adaptImagingReportFromDetail(item).date).not.toBe("2024-02-24");
   });
 
   test("date prefers main_tit over func_DATE when real_INSPECT_DATE is null", () => {
@@ -400,15 +400,15 @@ describe("adaptImagingReportFromDetail", () => {
     // func_DATE is the order day (wrong as exam date), main_tit is the
     // sign-off / exam day (correct).
     const item = {
-      main_tit: "113/02/29",
-      func_DATE: "113/01/31",
+      main_tit: "109/02/29",
+      func_DATE: "109/01/31",
       real_INSPECT_DATE: null,
-      assay_UPLOAD_DATE: "113/03/12 03:01",
+      assay_UPLOAD_DATE: "109/03/12 03:01",
       order_NAME: "ECG",
       desc: "SINUS RHYTHM",
     };
-    expect(adaptImagingReportFromDetail(item).date).toBe("2024-02-29");
-    expect(adaptImagingReportFromDetail(item).date).not.toBe("2024-01-31");
+    expect(adaptImagingReportFromDetail(item).date).toBe("2020-02-29");
+    expect(adaptImagingReportFromDetail(item).date).not.toBe("2020-01-31");
   });
 
   test("date still falls back to func_DATE when main_tit also missing", () => {
@@ -416,36 +416,36 @@ describe("adaptImagingReportFromDetail", () => {
     // real_INSPECT_DATE shouldn't be dropped — func_DATE keeps the
     // resource alive even if the date may be the order day.
     const item = {
-      func_DATE: "115/01/14",
+      func_DATE: "113/01/14",
       real_INSPECT_DATE: null,
       main_tit: null,
-      assay_UPLOAD_DATE: "115/02/24 12:03",
+      assay_UPLOAD_DATE: "113/02/24 12:03",
       order_NAME: "CT",
       desc: "report body",
     };
-    expect(adaptImagingReportFromDetail(item).date).toBe("2026-01-14");
+    expect(adaptImagingReportFromDetail(item).date).toBe("2024-01-14");
   });
 
   test("issued field parses assay_UPLOAD_DATE date portion (drops time)", () => {
     const item = {
-      func_DATE: "115/01/14",
-      assay_UPLOAD_DATE: "115/02/24 12:03",
+      func_DATE: "113/01/14",
+      assay_UPLOAD_DATE: "113/02/24 12:03",
       order_NAME: "CT",
       desc: "report body",
     };
-    expect(adaptImagingReportFromDetail(item).issued).toBe("2026-02-24");
+    expect(adaptImagingReportFromDetail(item).issued).toBe("2024-02-24");
   });
 
   test("returns null when desc (report body) is missing — no narrative = no DR", () => {
     expect(adaptImagingReportFromDetail({
-      func_DATE: "115/01/14",
+      func_DATE: "113/01/14",
       order_NAME: "CT",
     })).toBeNull();
   });
 
   test("returns null when order_NAME is missing", () => {
     expect(adaptImagingReportFromDetail({
-      func_DATE: "115/01/14",
+      func_DATE: "113/01/14",
       desc: "body",
     })).toBeNull();
   });
@@ -453,8 +453,8 @@ describe("adaptImagingReportFromDetail", () => {
   test("end-to-end fixture: live IHKE3408S02 row produces expected date / category / issued", () => {
     const fixture = readFixture("ihke3408-imaging-detail.json");
     const r = adaptImagingReportFromDetail(fixture);
-    expect(r.date).toBe("2026-01-14");
-    expect(r.issued).toBe("2026-02-24");
+    expect(r.date).toBe("2024-01-14");
+    expect(r.issued).toBe("2024-02-24");
     expect(r.category).toBe("RAD");
     expect(r.display).toContain("電腦斷層造影");
     expect(r.code).toBe("33070B");
@@ -468,8 +468,8 @@ describe("adaptImagingReportFromDetail", () => {
     // sign-off / actual exam day.
     const fixture = readFixture("ihke3408-ecg-delayed-signoff.json");
     const r = adaptImagingReportFromDetail(fixture);
-    expect(r.date).toBe("2024-02-29");
-    expect(r.issued).toBe("2024-03-12");
+    expect(r.date).toBe("2020-02-29");
+    expect(r.issued).toBe("2020-03-12");
     expect(r.category).toBe("RAD");
     expect(r.code).toBe("18001C");
     expect(r.hospital).toBe("臺北榮總");
@@ -481,7 +481,7 @@ describe("adaptImagingReportFromDetail", () => {
 describe("adaptProcedureListStub", () => {
   test("always returns null; the list endpoint only provides row_ids that drive the IHKE3308S02 fan-out", () => {
     expect(adaptProcedureListStub()).toBeNull();
-    expect(adaptProcedureListStub({ func_date: "105/09/23", op_code_cname: "X" })).toBeNull();
+    expect(adaptProcedureListStub({ func_date: "103/09/23", op_code_cname: "X" })).toBeNull();
   });
 });
 
@@ -506,21 +506,21 @@ describe("adaptProcedureFromDetail", () => {
 
   test("date falls back to func_DATE when sub-list is empty", () => {
     const item = {
-      func_DATE: "105/09/23",
+      func_DATE: "103/09/23",
       op_CODE: "08B53ZZ",
       op_CODE_CNAME: "08B53ZZ/X||08B53ZZ/X",
       sp_IHKE3308S04_data_list: [],
     };
-    expect(adaptProcedureFromDetail(item).date).toBe("2016-09-23");
+    expect(adaptProcedureFromDetail(item).date).toBe("2014-09-23");
   });
 
   test("display strips leading <CODE>/ prefix from English op_CODE_CNAME", () => {
     const item = {
-      func_DATE: "105/09/23",
+      func_DATE: "103/09/23",
       op_CODE: "08B53ZZ",
       op_CODE_CNAME: "08B53ZZ/經皮左側玻璃體部分切除術||08B53ZZ/Excision of Left Vitreous, Percutaneous Approach",
       sp_IHKE3308S04_data_list: [
-        { exe_S_DATE: "105/09/23", order_CODE_NAME: "Y||Y" },
+        { exe_S_DATE: "103/09/23", order_CODE_NAME: "Y||Y" },
       ],
     };
     expect(adaptProcedureFromDetail(item).display).toBe(
@@ -530,11 +530,11 @@ describe("adaptProcedureFromDetail", () => {
 
   test("emits op_CODE as code + icd-10-pcs system hint", () => {
     const item = {
-      func_DATE: "105/09/23",
+      func_DATE: "103/09/23",
       op_CODE: "08B53ZZ",
       op_CODE_CNAME: "08B53ZZ/X||08B53ZZ/X",
       sp_IHKE3308S04_data_list: [
-        { exe_S_DATE: "105/09/23", order_CODE_NAME: "Y||Y" },
+        { exe_S_DATE: "103/09/23", order_CODE_NAME: "Y||Y" },
       ],
     };
     const r = adaptProcedureFromDetail(item);
@@ -544,14 +544,14 @@ describe("adaptProcedureFromDetail", () => {
 
   test("note carries reason + each sub-list NHI 醫令碼 (so mapper's note-or-body_site filter keeps it)", () => {
     const item = {
-      func_DATE: "105/09/23",
+      func_DATE: "103/09/23",
       op_CODE: "08B53ZZ",
       op_CODE_CNAME: "08B53ZZ/X||08B53ZZ/X",
       icd9cm_CODE: "H35372",
       icd9cm_CODE_CNAME: "H35372/左側眼黃斑部皺褶||H35372/Puckering of macula, left eye",
       sp_IHKE3308S04_data_list: [
         {
-          exe_S_DATE: "105/09/23",
+          exe_S_DATE: "103/09/23",
           order_CODE: "86412B",
           order_CODE_NAME: "微創玻璃體黃斑部手術||Microincision vitreomacular surgery",
         },
@@ -564,8 +564,8 @@ describe("adaptProcedureFromDetail", () => {
 
   test("returns null when display can't be derived", () => {
     expect(adaptProcedureFromDetail({
-      func_DATE: "105/09/23",
-      sp_IHKE3308S04_data_list: [{ exe_S_DATE: "105/09/23" }],
+      func_DATE: "103/09/23",
+      sp_IHKE3308S04_data_list: [{ exe_S_DATE: "103/09/23" }],
     })).toBeNull();
   });
 
@@ -578,7 +578,7 @@ describe("adaptProcedureFromDetail", () => {
 
   test("end-to-end fixture: inpatient IHKE3308S02 row", () => {
     const r = adaptProcedureFromDetail(readFixture("ihke3308-procedure-inpatient.json"));
-    expect(r.date).toBe("2016-09-23");
+    expect(r.date).toBe("2014-09-23");
     expect(r.code).toBe("08B53ZZ");
     expect(r.display).toBe("Excision of Left Vitreous, Percutaneous Approach");
     expect(r.system).toBe("icd-10-pcs");
@@ -589,7 +589,7 @@ describe("adaptProcedureFromDetail", () => {
 
   test("end-to-end fixture: outpatient IHKE3308S02 row (null icd9cm_CODE_CNAME tolerated)", () => {
     const r = adaptProcedureFromDetail(readFixture("ihke3308-procedure-outpatient.json"));
-    expect(r.date).toBe("2016-01-14");
+    expect(r.date).toBe("2014-01-14");
     expect(r.code).toBe("3E0C3GC");
     expect(r.display).toBe("Introduction of Other Therapeutic Substance into Eye, Percutaneous Approach");
     expect(r.hospital).toBe("嘉基醫院");
@@ -678,8 +678,8 @@ describe("adaptMedicationFromDetail", () => {
     );
     expect(adapted).toHaveLength(3);
     for (const r of adapted) {
-      expect(r.date).toBe("2025-05-18");
-      expect(r.end_date).toBe("2025-05-22");
+      expect(r.date).toBe("2022-05-18");
+      expect(r.end_date).toBe("2022-05-22");
       expect(r.hospital).toBe("長庚嘉義");
       // v0.8.0 stripped "<code>/" prefix from indication strings so
       // downstream FHIR text doesn't double-print "R042 R042/...".
@@ -757,16 +757,16 @@ describe("adaptCatastrophicIllness", () => {
     expect(
       adaptCatastrophicIllness({
         icD10CM_CNAME: "攝護腺惡性腫瘤",
-        valiD_S_DATE: "111/11/16",
-        valiD_E_DATE: "116/11/15",
+        valiD_S_DATE: "109/11/16",
+        valiD_E_DATE: "114/11/15",
         hosP_ABBR: "臺北榮總",
       }),
     ).toEqual({
       display: "攝護腺惡性腫瘤",
       code: "",
       system: "",
-      onset_date: "2022-11-16",
-      recorded_date: "2022-11-16",
+      onset_date: "2020-11-16",
+      recorded_date: "2020-11-16",
       category: "problem-list-item",
       severity: "Severe (重大傷病)",
       hospital: "臺北榮總",
@@ -790,15 +790,15 @@ describe("adaptCatastrophicIllness", () => {
     // abatementDateTime.
     const r = adaptCatastrophicIllness({
       icD10CM_CNAME: "攝護腺惡性腫瘤",
-      valiD_S_DATE: "111/11/16",
-      valiD_E_DATE: "116/11/15",
+      valiD_S_DATE: "109/11/16",
+      valiD_E_DATE: "114/11/15",
     });
     expect(Object.keys(r)).not.toContain("abatement_date");
     expect(Object.keys(r)).not.toContain("abatementDateTime");
   });
 
   test("returns null when icD10CM_CNAME is missing (no name = useless row)", () => {
-    expect(adaptCatastrophicIllness({ valiD_S_DATE: "111/11/16" })).toBeNull();
+    expect(adaptCatastrophicIllness({ valiD_S_DATE: "109/11/16" })).toBeNull();
   });
 
   test("returns null on null / non-object input", () => {
@@ -816,7 +816,7 @@ describe("adaptCatastrophicIllness", () => {
   test("handles bilingual icD10CM_CNAME (中文||English) by preferring English", () => {
     const r = adaptCatastrophicIllness({
       icD10CM_CNAME: "攝護腺惡性腫瘤||Malignant neoplasm of prostate",
-      valiD_S_DATE: "111/11/16",
+      valiD_S_DATE: "109/11/16",
     });
     expect(r.display).toBe("Malignant neoplasm of prostate");
   });
@@ -1150,13 +1150,13 @@ describe("adaptEncounterFromMedExpense", () => {
 describe("adaptImmunization", () => {
   test("simple vaccine with no batch (flu)", () => {
     const r = adaptImmunization({
-      inoculatE_D: "112/12/27",
+      inoculatE_D: "113/12/27",
       codE_CNAME: "流感疫苗",
       hosP_ABBR: "臺北榮民總醫院",
       source: "疾病管制署",
     });
     expect(r).toEqual({
-      date: "2023-12-27",
+      date: "2024-12-27",
       vaccine_name: "流感疫苗",
       lot_number: "",
       hospital: "臺北榮民總醫院",
@@ -1166,35 +1166,35 @@ describe("adaptImmunization", () => {
 
   test("COVID-19 vaccine with batch — extracts lot, strips suffix", () => {
     const r = adaptImmunization({
-      inoculatE_D: "111/01/07",
-      codE_CNAME: "輝瑞/BNT COVID-19疫苗(批號1I070A)",
+      inoculatE_D: "112/01/07",
+      codE_CNAME: "輝瑞/BNT COVID-19疫苗(批號2J081B)",
       hosP_ABBR: "臺北榮民總醫院",
       source: "疾病管制署",
     });
     expect(r.vaccine_name).toBe("輝瑞/BNT COVID-19疫苗");
-    expect(r.lot_number).toBe("1I070A");
+    expect(r.lot_number).toBe("2J081B");
   });
 
   test("nested parens — keeps non-batch group, strips batch one only", () => {
     // 莫德納雙價疫苗 has two parens: (O/O_BA.1) for valent + (批號XXX)
     // for lot. Only the 批號 paren should be removed.
     const r = adaptImmunization({
-      inoculatE_D: "111/10/13",
-      codE_CNAME: "莫德納Spikevax雙價疫苗(O/O_BA.1)(批號035E22A)",
+      inoculatE_D: "112/10/13",
+      codE_CNAME: "莫德納Spikevax雙價疫苗(O/O_BA.1)(批號047F31B)",
       hosP_ABBR: "X",
     });
     expect(r.vaccine_name).toBe("莫德納Spikevax雙價疫苗(O/O_BA.1)");
-    expect(r.lot_number).toBe("035E22A");
+    expect(r.lot_number).toBe("047F31B");
   });
 
   test("AstraZeneca format — manufacturer in name parens stays", () => {
     const r = adaptImmunization({
-      inoculatE_D: "110/07/23",
-      codE_CNAME: "COVID-19疫苗(AstraZeneca)(批號D006A)",
+      inoculatE_D: "111/07/23",
+      codE_CNAME: "COVID-19疫苗(AstraZeneca)(批號E117B)",
       hosP_ABBR: "X",
     });
     expect(r.vaccine_name).toBe("COVID-19疫苗(AstraZeneca)");
-    expect(r.lot_number).toBe("D006A");
+    expect(r.lot_number).toBe("E117B");
   });
 
   test("returns null when date missing", () => {
@@ -1202,7 +1202,7 @@ describe("adaptImmunization", () => {
   });
 
   test("returns null when codE_CNAME missing", () => {
-    expect(adaptImmunization({ inoculatE_D: "112/12/27" })).toBeNull();
+    expect(adaptImmunization({ inoculatE_D: "113/12/27" })).toBeNull();
   });
 
   test("returns null on null / non-object input", () => {
@@ -1220,13 +1220,13 @@ describe("adaptImmunization", () => {
     expect(rows[0].lot_number).toBe("");
     expect(rows[1].lot_number).toBe("");
     // COVID rows: batch extracted, dates correct
-    expect(rows[2].lot_number).toBe("035E22A");
-    expect(rows[3].lot_number).toBe("1I070A");
-    expect(rows[4].lot_number).toBe("D006A");
-    expect(rows[5].lot_number).toBe("CTMAV513");
+    expect(rows[2].lot_number).toBe("047F31B");
+    expect(rows[3].lot_number).toBe("2J081B");
+    expect(rows[4].lot_number).toBe("E117B");
+    expect(rows[5].lot_number).toBe("CTMAV624");
     // Dates are ROC → ISO
-    expect(rows[0].date).toBe("2023-12-27");
-    expect(rows[5].date).toBe("2021-05-14");
+    expect(rows[0].date).toBe("2024-12-27");
+    expect(rows[5].date).toBe("2022-05-14");
     // Hospital + source preserved on every row
     for (const r of rows) {
       expect(r.hospital).toBe("臺北榮民總醫院");
@@ -1378,7 +1378,7 @@ describe("adaptAdultPreventive", () => {
 
   test("all chemistry / liver / renal / hepatitis fields carry their NHI 醫令碼", () => {
     const row = {
-      firsT_DIAG_DATE: "111/11/07",
+      firsT_DIAG_DATE: "113/11/07",
       cho: "199",     // 09001C
       bloD_TG: "93",  // 09004C
       hdl: "42",      // 09043C
@@ -1424,7 +1424,7 @@ describe("adaptAdultPreventive", () => {
     // a defunct schema field that always returns empty or "-". Emitting
     // a "Urine UA" Observation from it was fabricating data.
     const out = adaptAdultPreventive({
-      firsT_DIAG_DATE: "111/11/07",
+      firsT_DIAG_DATE: "113/11/07",
       urinE_UA: "-",
       urinE_UA_DIAG_RESULT_TEXT: "-",
       urinE_UA_DIAG_ACID: "5.5",
@@ -1443,7 +1443,7 @@ describe("adaptAdultPreventive", () => {
     // hbsaG_TEXT="陰性". User-reported v0.6.x bug was observation
     // value = "1" (gets parsed as quantity 1) instead of "陰性".
     const row = {
-      firsT_DIAG_DATE: "111/11/07",
+      firsT_DIAG_DATE: "113/11/07",
       hbsag: "1",
       hbsaG_TEXT: "陰性",
       hbV_RESULT_TEXT: "陰性",
@@ -1463,7 +1463,7 @@ describe("adaptAdultPreventive", () => {
     // status code would have emitted a false-positive observation
     // claiming "HBsAg = 3", which is the bug we're avoiding.)
     const row = {
-      firsT_DIAG_DATE: "111/11/07",
+      firsT_DIAG_DATE: "113/11/07",
       hbsag: "3",
       hbsaG_TEXT: "",
     };
@@ -1473,7 +1473,7 @@ describe("adaptAdultPreventive", () => {
 
   test("Anti-HCV observation value uses antI_HCV_TEXT, not the numeric status code", () => {
     const row = {
-      firsT_DIAG_DATE: "111/11/07",
+      firsT_DIAG_DATE: "113/11/07",
       antI_HCV: "1",
       antI_HCV_TEXT: "陰性",
       hcV_RESULT_TEXT: "陰性",
@@ -1490,7 +1490,7 @@ describe("adaptAdultPreventive", () => {
     // not a 0 mg/dL measurement. The _TEXT field carries the clinical
     // convention ("-" / "±" / "1+" / "2+" / "3+"). Same family of bug.
     const row = {
-      firsT_DIAG_DATE: "111/11/07",
+      firsT_DIAG_DATE: "113/11/07",
       urinE_PROTEIN: "0",
       urinE_PROTEIN_TEXT: "-",
     };

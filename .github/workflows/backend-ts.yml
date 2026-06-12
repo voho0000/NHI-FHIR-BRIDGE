@@ -20,6 +20,9 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: PHI guard — no checksum-valid TWID in tracked files
+        run: node scripts/check-no-real-twid.mjs
+
       - name: Install (workspaces)
         run: npm ci
 
@@ -61,3 +64,6 @@ jobs:
           test -f extension/dist/popup.js
           # background.js must contain bundled mapper symbols
           grep -q "linkEncountersInResources" extension/dist/background.js
+
+      - name: Verify committed extension/dist matches src (no drift)
+        run: git diff --exit-code extension/dist

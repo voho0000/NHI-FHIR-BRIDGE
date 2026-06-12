@@ -37,11 +37,11 @@ describe("mapImmunization", () => {
       {
         date: "2022-01-07",
         vaccine_name: "輝瑞/BNT COVID-19疫苗",
-        lot_number: "1I070A",
+        lot_number: "2J081B",
       },
       PID,
     );
-    expect(r!.lotNumber).toBe("1I070A");
+    expect(r!.lotNumber).toBe("2J081B");
   });
 
   test("lotNumber omitted when batch absent (flu)", () => {

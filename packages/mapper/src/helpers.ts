@@ -82,9 +82,9 @@ export function maskId(id: string | null | undefined, char = "*"): string {
 
 /**
  * De-identify a birth date by keeping only the year and normalizing the
- * month/day to January 1st: `1958-06-15` → `1958-01-01`.
+ * month/day to January 1st: `1962-04-15` → `1962-01-01`.
  *
- * Why Jan-1 instead of year-only (`1958`)? FHIR `Patient.birthDate` (type
+ * Why Jan-1 instead of year-only (`1962`)? FHIR `Patient.birthDate` (type
  * `date`) permits a bare `YYYY`, but many SMART apps parse birthDate with
  * `new Date()` or assume `YYYY-MM-DD` precision and break on a year-only
  * value. A full `YYYY-01-01` date parses everywhere while leaking the same
@@ -98,8 +98,8 @@ export function maskId(id: string | null | undefined, char = "*"): string {
  * bundle still carries hospital names + exact visit dates), not full
  * anonymization. Callers gate this behind the de-identify toggle.
  *
- * Inputs already coarser than a full date (`1958`, `1958-03`) still
- * normalize to `1958-01-01`. Empty / unparseable input passes through.
+ * Inputs already coarser than a full date (`1962`, `1962-04`) still
+ * normalize to `1962-01-01`. Empty / unparseable input passes through.
  */
 export function deidBirthDate(iso: string | null | undefined): string {
   const s = (iso ?? "").trim();

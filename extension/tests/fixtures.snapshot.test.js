@@ -38,13 +38,13 @@ describe("adapter fixture snapshots", () => {
     expect(adaptLabItem(load("ihke3409-lab-inpatient.json"))).toMatchInlineSnapshot(`
       {
         "code": "09140C",
-        "date": "2025-05-22",
+        "date": "2022-05-22",
         "display": "FINGER SUGAR",
         "hospital": "長庚嘉義",
         "item_name": "FINGER SUGAR",
         "nhi_source_channel": "A",
         "nhi_source_channel_name": "特約醫事機構不定期上傳",
-        "nhi_visit_date": "2025-05-18",
+        "nhi_visit_date": "2022-05-18",
         "order_code": "09140C",
         "order_name": "血液及體液葡萄糖-餐後",
         "reference_range": "[70][140]",
@@ -69,10 +69,10 @@ describe("adapter fixture snapshots", () => {
       2. Senile cortical atrophy and cerebral small vessel disease.
       3. Pan-paranasal sinusitis.",
         "ctype": "",
-        "date": "2026-01-14",
+        "date": "2024-01-14",
         "display": "電腦斷層造影  －  無造影劑",
         "hospital": "長庚嘉義",
-        "issued": "2026-02-24",
+        "issued": "2024-02-24",
         "rid": "",
         "system": "",
       }
@@ -89,7 +89,7 @@ describe("adapter fixture snapshots", () => {
       {
         "body_site": "",
         "code": "08B53ZZ",
-        "date": "2016-09-23",
+        "date": "2014-09-23",
         "display": "Excision of Left Vitreous, Percutaneous Approach",
         "display_zh": "經皮左側玻璃體部分切除術",
         "hospital": "臺北榮總",
@@ -104,7 +104,7 @@ describe("adapter fixture snapshots", () => {
       {
         "body_site": "",
         "code": "3E0C3GC",
-        "date": "2016-01-14",
+        "date": "2014-01-14",
         "display": "Introduction of Other Therapeutic Substance into Eye, Percutaneous Approach",
         "display_zh": "經皮眼睛其他治療物質輸入",
         "hospital": "嘉基醫院",
@@ -181,8 +181,8 @@ describe("adapter fixture snapshots", () => {
         "code": "",
         "display": "攝護腺惡性腫瘤",
         "hospital": "臺北榮總",
-        "onset_date": "2022-11-16",
-        "recorded_date": "2022-11-16",
+        "onset_date": "2020-11-16",
+        "recorded_date": "2020-11-16",
         "severity": "Severe (重大傷病)",
         "system": "",
       }

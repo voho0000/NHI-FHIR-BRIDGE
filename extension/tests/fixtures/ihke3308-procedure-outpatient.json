@@ -1,8 +1,8 @@
 {
-  "_source": "IHKE3308S02 (處置/手術 detail) — single OPD row captured live from NHI",
-  "_note": "Outpatient case: same-day procedure at OPD visit (105/01/14). icd9cm_CODE present but CNAME is null (NHI doesn't always ship the diagnosis label even when the code is set). row_ID matches the outpatient entry in ihke3301s05-procedures.json fixture.",
+  "_source": "IHKE3308S02 (處置/手術 detail) — single OPD-row NHI response shape",
+  "_note": "Outpatient case: same-day procedure at OPD visit (103/01/14). icd9cm_CODE present but CNAME is null (NHI doesn't always ship the diagnosis label even when the code is set). row_ID matches the outpatient entry in ihke3301s05-procedures.json fixture. Sanitized 2026-06-12: dates year-shifted per file, provider/contact identifiers replaced with synthetics — rows are to be treated as fully synthetic.",
   "rowid": "AAFxzWAAIAAIATTAAY",
-  "main_tit": "105/01/14｜門診||2016/01/14｜OUTPATIENT",
+  "main_tit": "103/01/14｜門診||2014/01/14｜OUTPATIENT",
   "hosp_url": "https://info.nhi.gov.tw/inae1000/inae1000s03?id=1122010012",
   "hosp_ID": "1122010012",
   "hosp_ABBR": "嘉基醫院",
@@ -13,12 +13,12 @@
   "op_CODE": "3E0C3GC",
   "op_CODE_CNAME": "3E0C3GC/經皮眼睛其他治療物質輸入||3E0C3GC/Introduction of Other Therapeutic Substance into Eye, Percutaneous Approach",
   "func_SEQ_NO": "0001",
-  "func_DATE": "105/01/14",
+  "func_DATE": "103/01/14",
   "part_AMT": "440",
   "appl_DOT": "28,390",
   "sp_IHKE3308S04_data_list": [
     {
-      "exe_S_DATE": "105/01/14||2016/01/14",
+      "exe_S_DATE": "103/01/14||2014/01/14",
       "order_CODE_NAME": "玻璃體內注射||Intravitreous injection",
       "order_CODE": "86201C",
       "code_CNAME": "",
