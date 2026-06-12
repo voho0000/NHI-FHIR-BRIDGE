@@ -182,31 +182,57 @@ export async function refetchImagingListUntilResolved({
           });
         }
         async function fetchOnce() {
-          const sep = baseUrl.includes("?") ? "&" : "?";
-          const r = await fetch(`${baseUrl}${sep}_=${Date.now()}`, {
-            method: "GET",
-            credentials: "same-origin",
-            headers: {
-              Accept: "application/json",
-              Authorization: auth,
-              "X-Requested-With": "XMLHttpRequest",
-            },
-          });
-          if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
-          if (!r.ok) return { error: `HTTP ${r.status}` };
-          return { body: await r.json() };
+          try {
+            const sep = baseUrl.includes("?") ? "&" : "?";
+            const r = await fetch(`${baseUrl}${sep}_=${Date.now()}`, {
+              method: "GET",
+              credentials: "same-origin",
+              headers: {
+                Accept: "application/json",
+                Authorization: auth,
+                "X-Requested-With": "XMLHttpRequest",
+              },
+            });
+            if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
+            if (!r.ok) return { error: `HTTP ${r.status}` };
+            return { body: await r.json() };
+          } catch (e: any) {
+            // Transient network / non-JSON blip during NHI's re-prep. Do NOT
+            // let it reject the whole injected function — Chrome surfaces a
+            // rejected async injection as result:null, which the SW side then
+            // hard-crashed on ("Cannot read properties of null (reading
+            // 'body')"). Returning a structured error keeps the poll alive.
+            return { error: `FETCH_EXCEPTION: ${e?.message || e}` };
+          }
         }
-        let res: any = await fetchOnce();
-        if (res.error) return res;
-        let attempts = 1;
-        while (hasUnresolved(rowsOf(res.body)) && attempts < maxA) {
-          await new Promise((r) => setTimeout(r, intMs));
-          const next: any = await fetchOnce();
-          if (next.error) return { ...next, attempts };
-          res = next;
+        // Poll the full budget, RESILIENT to transient per-attempt errors. The
+        // old loop returned on the FIRST mid-poll error, abandoning a list
+        // still mid-confirmation (NHI's "資料準備中" first-entry state, esp.
+        // after the ~1wk image cache expired) — so no row ever reached A/1
+        // and bridge reported "no downloadable image" for studies that DO
+        // have one. Now a single failed/blank refetch just waits and retries;
+        // we only bail early on SESSION_EXPIRED or once a row exposes A/1.
+        let lastBody: any = null;
+        let lastErr: string | null = null;
+        let attempts = 0;
+        while (attempts < maxA) {
+          const res: any = await fetchOnce();
           attempts++;
+          if (res.error === "SESSION_EXPIRED") return { error: "SESSION_EXPIRED", attempts };
+          if (res.error) {
+            lastErr = res.error;
+          } else {
+            lastBody = res.body;
+            if (!hasUnresolved(rowsOf(res.body))) {
+              return { body: res.body, attempts, stillUnresolved: false };
+            }
+          }
+          if (attempts < maxA) await new Promise((r) => setTimeout(r, intMs));
         }
-        return { body: res.body, attempts, stillUnresolved: hasUnresolved(rowsOf(res.body)) };
+        if (lastBody !== null) {
+          return { body: lastBody, attempts, stillUnresolved: hasUnresolved(rowsOf(lastBody)) };
+        }
+        return { error: lastErr || "NO_RESULT", attempts };
       },
       args: [url, maxAttempts, intervalMs],
     });
@@ -214,8 +240,18 @@ export async function refetchImagingListUntilResolved({
     throw new Error(`executeScript failed: ${e.message}`);
   }
   if (out?.error === "SESSION_EXPIRED") throw new Error(SESSION_EXPIRED_ERROR);
-  if (out?.error) {
-    return { rows: [], attempts: out.attempts ?? 0, stillUnresolved: true, error: out.error };
+  // out is null/undefined when the injected function still managed to reject
+  // despite the in-page try/catch (e.g. the tab navigated mid-poll). Treat any
+  // non-resolving outcome as a soft miss → caller keeps the original list
+  // snapshot; never crash the imaging step. The function contract is already
+  // "Non-fatal — any failure falls back to the original snapshot."
+  if (!out || out.error) {
+    return {
+      rows: [],
+      attempts: out?.attempts ?? 0,
+      stillUnresolved: true,
+      error: out?.error || "EMPTY_RESULT",
+    };
   }
   return {
     rows: extractList(out.body),

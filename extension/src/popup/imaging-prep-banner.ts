@@ -18,7 +18,7 @@ import { apiSyncNhi } from "./sync-client.js";
 
 const IMAGING_PREP_STATE_KEY = "imagingPrepState";
 
-type ImagingPrepStatus = "polling" | "ready" | "timeout" | "session-expired";
+type ImagingPrepStatus = "polling" | "ready" | "unavailable" | "timeout" | "session-expired";
 
 interface ImagingPrepState {
   patientId: string;
@@ -47,22 +47,48 @@ function _render(state: ImagingPrepState | null): void {
     return;
   }
   banner.hidden = false;
-  banner.dataset.state = state.status;
   const title = els.prepTitle as HTMLElement;
   const progress = els.prepProgress as HTMLElement;
   const cta = els.prepCtaBtn as HTMLButtonElement;
-  if (state.status === "ready") {
+  // Client-side enforcement of the 30-min cap. The SW poll's own timeout only
+  // fires while chrome.alarms keeps ticking — but the alarm can stop (SW
+  // evicted without wake / laptop sleep / extension reload), freezing a
+  // "polling" state whose elapsed time then climbs forever ("已等候 139 分
+  // 鐘"). Re-derive the status here so the banner never claims it's still
+  // preparing past the deadline, regardless of whether the alarm fired.
+  const IMAGING_PREP_MAX_MS = 30 * 60 * 1000;
+  const overdue = Date.now() - state.startedAt >= IMAGING_PREP_MAX_MS;
+  const status: ImagingPrepStatus =
+    state.status === "polling" && overdue ? "timeout" : state.status;
+  banner.dataset.state = status;
+  if (status === "ready") {
     title.textContent = "✅ 影像已備齊";
     progress.textContent = `健保署已準備好 ${state.initialCount} 張影像，按下方按鈕取得最新資料。`;
     cta.hidden = false;
-  } else if (state.status === "timeout") {
-    title.textContent = "⏱ 等候逾時（已過 30 分鐘）";
-    progress.textContent = `仍有 ${state.count} 張影像未準備完成；可關閉此提示，稍後手動再按「取得健康存摺資料」。`;
+  } else if (status === "unavailable") {
+    // Reached only when NONE of the triggered images became fetchable
+    // (gotNewBytes=false) — rows stuck at "A" (phantoms) or resolved to "2"
+    // (no image). Show initialCount (how many we waited on), NOT state.count
+    // (= preparing+stuck), which is 0 in the "2" case → the nonsensical
+    // "有 0 張無法備齊". Re-syncing won't help, so no CTA.
+    title.textContent = "ℹ️ 部分影像健保署無法提供";
+    progress.textContent = `有 ${state.initialCount} 張影像健保署目前無法備齊（常見於較舊的檢查），這些項目只會有文字報告，其餘資料已可下載。`;
     cta.hidden = true;
-  } else if (state.status === "session-expired") {
+  } else if (status === "timeout") {
+    // Past the 30-min cap (alarm-fired OR client-side override above). The
+    // count can be stale/0 when the override fires, so fall back to
+    // initialCount. CTA lets the user retry once in case NHI caught up.
+    title.textContent = "⏱ 等候逾時（已超過 30 分鐘）";
+    progress.textContent = `仍有 ${state.count || state.initialCount} 張影像尚未備齊，健保署可能無法提供。可按下方按鈕再試一次，或關閉此提示（文字報告已可下載）。`;
+    cta.hidden = false;
+  } else if (status === "session-expired") {
+    // The poll's stashed token expired — re-logging into 健保存摺 refreshes the
+    // NHI tab but NOT this stashed token, so the banner can't clear itself.
+    // A fresh sync re-stashes a token and clears this state. Surface the CTA
+    // so the user has a one-click recovery right here (after re-login).
     title.textContent = "🔒 健保存摺登入逾時";
-    progress.textContent = "請回到健保存摺分頁重新登入後，再按「取得健康存摺資料」即可繼續。";
-    cta.hidden = true;
+    progress.textContent = "請先回到健保存摺分頁重新登入，再按下方按鈕即可繼續取得。";
+    cta.hidden = false;
   } else {
     // polling
     title.textContent = "🖼️ 健保署準備中";

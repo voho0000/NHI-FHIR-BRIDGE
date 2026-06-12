@@ -69,3 +69,22 @@ describe("buildOverridePatient — de-identify toggle ON", () => {
     expect(p.identifier[0].value).toBe("F22345XXXX");
   });
 });
+
+describe("deidentifyOverride — backend-upload path (v0.18.3)", () => {
+  test("masks id_no, birth_date and name; leaves other fields", async () => {
+    const { deidentifyOverride } = await import("../src/background/patient-override.ts");
+    const out = deidentifyOverride({ ...OV, gender: "female" });
+    expect(out.id_no).toBe("F22345XXXX");
+    expect(out.birth_date).toBe("1958-01-01");
+    expect(out.name).toBe("王O試");
+    expect(out.gender).toBe("female"); // untouched
+  });
+
+  test("tolerates missing fields without crashing", async () => {
+    const { deidentifyOverride } = await import("../src/background/patient-override.ts");
+    const out = deidentifyOverride({ id_no: "F223456789" });
+    expect(out.id_no).toBe("F22345XXXX");
+    expect(out.name).toBeUndefined();
+    expect(out.birth_date).toBeUndefined();
+  });
+});

@@ -34,6 +34,7 @@ import {
   NHI_HOST,
   PENDING_BUNDLE_JSON_KEY,
   PENDING_BUNDLE_KEY,
+  SESSION_EXPIRED_ERROR,
 } from "./constants.js";
 import { startPrepPolling, stopPrepPolling } from "./imaging-prep-poll.js";
 import {
@@ -89,7 +90,12 @@ import {
   fetchNhiListsInTab,
   refetchImagingListUntilResolved,
 } from "./nhi-list-fetch.js";
-import { applyDateRangeToPath, isMaskEnabled, replaceNameDeep } from "./patient-override.js";
+import {
+  applyDateRangeToPath,
+  deidentifyOverride,
+  isMaskEnabled,
+  replaceNameDeep,
+} from "./patient-override.js";
 import {
   classFromS02Detail,
   pickS02MainRow,
@@ -103,6 +109,24 @@ import {
   setStatus,
   withProgressTimer,
 } from "./sync-state.js";
+
+const SESSION_EXPIRED_HINT =
+  "健保存摺登入逾時（電腦休眠或閒置太久），請回健保存摺分頁重新登入，再按一次「取得健康存摺資料」即可補齊。";
+
+// Final pass over the breakdown's failure list: swap the internal
+// SESSION_EXPIRED_ERROR sentinel ("__SESSION_EXPIRED__") for plain wording.
+// It was leaking raw to the UI when the bearer token expired mid-sync — e.g.
+// the laptop slept / was closed during a long imaging wait and the NHI
+// session timed out. Done as ONE pass over the whole array (not per
+// catch-site) so the sentinel is humanised no matter which endpoint's catch
+// composed the line.
+function _humanizeErrors(errs: string[]): string[] {
+  return errs.map((line) =>
+    line.includes(SESSION_EXPIRED_ERROR)
+      ? line.split(SESSION_EXPIRED_ERROR).join(SESSION_EXPIRED_HINT)
+      : line,
+  );
+}
 
 export async function runNhiApiSync({
   tabId,
@@ -434,7 +458,11 @@ export async function runNhiApiSync({
             refetchImagingListUntilResolved({
               tabId,
               url: imagingUrl,
-              maxAttempts: 5,
+              // 8×3s ≈ 24s. A first entry after the ~1wk image cache expires
+              // re-confirms the list slower than a brand-new patient (~10s),
+              // so give it more headroom — only costs latency when image
+              // download is on AND the list is genuinely still preparing.
+              maxAttempts: 8,
               intervalMs: 3000,
             }),
         );
@@ -565,7 +593,7 @@ export async function runNhiApiSync({
         );
         return await pollFetchImagingJpegs(tabId, BASE, polledCandidates, triggerOutcomes);
       } catch (e: any) {
-        errors.push(`imaging: ${e.message}`);
+        errors.push(`影像取得：${e?.message ?? e}`);
         return [] as any[];
       }
     })();
@@ -573,7 +601,7 @@ export async function runNhiApiSync({
   if (fetchImagingEnabled && pendingImagingRows.length > 0 && patientOverride.id_no) {
     imagingSweepPromise = sweepPendingImagingWithTimeout(BASE, patientOverride.id_no, 60_000).catch(
       (e) => {
-        errors.push(`前次影像補抓: ${e.message}`);
+        errors.push(`前次影像補抓：${e?.message ?? e}`);
         return [] as any[];
       },
     );
@@ -1188,15 +1216,17 @@ export async function runNhiApiSync({
       }
     }
   } else {
-    // Build the override we send to backend with the maybe-masked name
-    // so backend's auto-created Patient + the per-item subject.display
-    // see the same value the user opted into. Items themselves were
-    // already scrubbed above (byType pass), so this just covers the
-    // override-derived Patient.
-    const uploadOverride =
-      maskEnabled && patientOverride.name
-        ? { ...patientOverride, name: maskName(patientOverride.name) }
-        : patientOverride;
+    // Build the override we send to backend so its auto-created Patient
+    // matches the de-identification the user opted into. v0.18.3: extend
+    // the mask to the SAME three fields as the local-bundle path
+    // (buildOverridePatient) — name + 身分證 + 生日 — so a de-identified
+    // backend upload never carries the real ID/DOB either. Backend's
+    // buildOverridePatient derives Patient.id (hash), identifier.value AND
+    // the subject-reference key all from this id_no, so masking it here
+    // de-identifies the resource while keeping its references internally
+    // consistent. Items themselves were already scrubbed above (byType
+    // name+id pass). Default OFF — real-data uploads are unaffected.
+    const uploadOverride = maskEnabled ? deidentifyOverride(patientOverride) : patientOverride;
     for (const [page_type, items] of Object.entries(byType as Record<string, any[]>)) {
       if (isCancelled()) throw new Error(CANCEL_ERROR);
       await setStatus({
@@ -1344,7 +1374,7 @@ export async function runNhiApiSync({
     elapsedMs: _elapsedMs,
     // Per-endpoint breakdown for the popup's '查看明細' collapsible.
     breakdown: _fullBreakdown,
-    errors,
+    errors: _humanizeErrors(errors),
     histno: patientOverride.id_no,
     mode,
     localFilename: _localFilename,
@@ -1363,7 +1393,21 @@ export async function runNhiApiSync({
   // Counts only — NEVER fetches bytes or modifies the stashed bundle.
   if (fetchImagingEnabled && patientOverride.id_no && _waitingCount > 0 && !errors.length) {
     try {
-      await startPrepPolling(patientOverride.id_no, _waitingCount, BASE);
+      // Baseline = images already fetchable ("1" + real seq) in THIS sync's
+      // list, captured before the triggered rows can prepare. The poll then
+      // declares "ready" only when the live fetchable count rises ABOVE this
+      // (a real 0→1) — not when "0"/"A" merely vanish (which also happens on
+      // 0→"2" no-image or a phantom revert).
+      const _imgList: any[] =
+        (imgIdx >= 0 && settled[imgIdx]?.status === "fulfilled"
+          ? (settled[imgIdx] as any).value?.rawList
+          : null) ?? [];
+      const _baselineReady = _imgList.filter((row) => {
+        const st = String(row?.jpG_STATUS ?? row?.jpg_STATUS ?? "");
+        const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
+        return st === "1" && seq !== "" && seq !== "-";
+      }).length;
+      await startPrepPolling(patientOverride.id_no, _waitingCount, BASE, _baselineReady);
     } catch (e) {
       console.warn("[imaging-prep-poll] start failed:", e);
     }
@@ -1377,10 +1421,14 @@ export async function runNhiApiSync({
     try {
       await postSyncLog(backend, syncApiKey, {
         status: errors.length ? "partial" : "success",
-        patient_id: patientOverride.id_no || "",
-        // /sync/log lands in the dashboard's sync-history row. Only
-        // mask when the user has opted in — otherwise dashboard sees
-        // the raw name they typed (consistent with "民眾自用" default).
+        // /sync/log lands in the dashboard's sync-history row. When the user
+        // opted into de-identification, mask BOTH the id and the name here
+        // too (v0.18.3) so the real 身分證 never reaches the backend on the
+        // de-id path. Default OFF → dashboard sees the raw values they typed
+        // (consistent with "民眾自用").
+        patient_id: maskEnabled
+          ? maskId(patientOverride.id_no || "", "X")
+          : patientOverride.id_no || "",
         patient_name: maskEnabled
           ? maskName(patientOverride.name || "")
           : patientOverride.name || "",
@@ -1389,7 +1437,7 @@ export async function runNhiApiSync({
         date_range: dateRangeLabel || "",
         elapsed_ms: _elapsedMs,
         started_at: new Date(_t0).toISOString(),
-        errors,
+        errors: _humanizeErrors(errors),
       });
     } catch (e) {
       console.warn("[NHI sync] failed to write history log:", e);

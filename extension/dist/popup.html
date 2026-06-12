@@ -803,6 +803,12 @@
       background: #fff7ed;
       border-color: #fed7aa;
     }
+    /* "unavailable" = NHI can't prepare the image (phantom). Muted/neutral
+       so it reads as a settled informational note, not an active prep. */
+    .prep-banner[data-state="unavailable"] {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+    }
     .prep-close {
       position: absolute;
       top: 6px;
@@ -830,16 +836,42 @@
       color: #075985;
     }
     .prep-banner[data-state="ready"] .prep-title { color: #166534; }
+    .prep-banner[data-state="unavailable"] .prep-title { color: #475569; }
     .prep-banner[data-state="timeout"] .prep-title,
     .prep-banner[data-state="session-expired"] .prep-title { color: #9a3412; }
     .prep-progress {
       color: #334155;
     }
+    /* CTA lives inside the green "影像已備齊" success banner (only shown in
+       the ready state). Styled as a green-tinted OUTLINE — not solid blue —
+       so it harmonizes with its banner instead of stacking a second loud
+       blue button next to the solid-blue 下載 primary below. Single solid
+       accent on screen = the download. */
     .prep-cta {
       align-self: flex-start;
-      padding: 6px 12px;
+      padding: 7px 14px;
       font-size: 12px;
-      margin-top: 2px;
+      font-weight: 600;
+      margin-top: 4px;
+      background: white;
+      color: #166534;
+      border: 1px solid #86efac;
+    }
+    .prep-cta:hover:not(:disabled) {
+      background: #dcfce7;
+      border-color: #4ade80;
+    }
+    /* In the amber warning banners (timeout / session-expired) the same CTA
+       retints to match its container instead of staying success-green. */
+    .prep-banner[data-state="timeout"] .prep-cta,
+    .prep-banner[data-state="session-expired"] .prep-cta {
+      color: #9a3412;
+      border-color: #fed7aa;
+    }
+    .prep-banner[data-state="timeout"] .prep-cta:hover:not(:disabled),
+    .prep-banner[data-state="session-expired"] .prep-cta:hover:not(:disabled) {
+      background: #fff7ed;
+      border-color: #fdba74;
     }
 
     /* ── Status banner ─────────────────────────────────────────────── */
@@ -1644,7 +1676,7 @@
             <div class="prep-body">
               <div class="prep-title" id="prep-title">🖼️ 健保署準備中</div>
               <div class="prep-progress" id="prep-progress"></div>
-              <button class="btn-primary prep-cta" id="prep-cta-btn" hidden>
+              <button class="prep-cta" id="prep-cta-btn" hidden>
                 立即取得健康存摺資料
               </button>
             </div>

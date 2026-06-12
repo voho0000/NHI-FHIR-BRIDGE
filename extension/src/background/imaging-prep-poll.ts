@@ -33,13 +33,19 @@ import {
   NHI_BEARER_TOKEN_TTL_MS,
 } from "./constants.js";
 
-export type ImagingPrepStatus = "polling" | "ready" | "timeout" | "session-expired";
+export type ImagingPrepStatus = "polling" | "ready" | "unavailable" | "timeout" | "session-expired";
 
 export interface ImagingPrepState {
   patientId: string;
   startedAt: number; // epoch ms when polling started
   initialCount: number; // waiting count at sync end (for progress display)
-  count: number; // last polled status=0 count
+  // # already-fetchable ("1") rows captured at sync time, BEFORE the
+  // triggered rows could prepare. "ready" requires the live fetchable count
+  // to climb ABOVE this — i.e. a genuine 0→1 transition produced new bytes —
+  // not merely the disappearance of "0" (which also happens on 0→"2"
+  // no-image or a phantom 0→"A" revert).
+  baselineReady: number;
+  count: number; // # rows still not fetchable we're waiting on ("0" or "A")
   lastPolledAt: number; // epoch ms of last successful poll (0 = never)
   pollAttempts: number; // # poll cycles executed
   status: ImagingPrepStatus;
@@ -58,6 +64,7 @@ export async function startPrepPolling(
   patientId: string,
   initialCount: number,
   baseUrl: string,
+  baselineReady = 0,
 ): Promise<void> {
   if (!patientId || initialCount <= 0) return;
   const now = Date.now();
@@ -65,6 +72,7 @@ export async function startPrepPolling(
     patientId,
     startedAt: now,
     initialCount,
+    baselineReady,
     count: initialCount,
     lastPolledAt: 0,
     pollAttempts: 0,
@@ -150,7 +158,9 @@ export async function pollPrepCount(): Promise<void> {
   // Cache-bust forces NHI's CDN to revalidate so we see fresh
   // jpG_STATUS values. Without it the list can lag by minutes.
   const url = `${baseUrl}/api/ihke3000/ihke3408s01/page_load?s_type=&s_sort=A1&_=${Date.now()}`;
-  let nextCount = state.count;
+  let nextPreparing = 0;
+  let nextStuck = 0;
+  let nextFetchable = 0;
   try {
     const r = await fetch(url, {
       method: "GET",
@@ -179,12 +189,26 @@ export async function pollPrepCount(): Promise<void> {
     }
     const body = await r.json();
     const list = (body && (body.sp_IHKE3408S01_data as unknown[])) || [];
-    let c = 0;
     for (const row of list) {
       const status = String((row as any)?.jpG_STATUS ?? (row as any)?.jpg_STATUS ?? "");
-      if (status === "0") c++;
+      // "0" = NHI prep actively in flight. "A" = needs (re-)trigger — but
+      // the sync already triggered every "A" row to "0", so an "A" that
+      // REAPPEARS during the poll is a row NHI accepted then reverted
+      // instead of advancing to "1" (fetchable): a phantom it can't prepare.
+      // "1" + a real seq = bytes are actually fetchable. We track all three:
+      // "ready" is decided by the FETCHABLE count rising above the sync-time
+      // baseline (a real 0→1), NOT by "0"/"A" merely vanishing — which also
+      // happens on 0→"2" (no image) or a phantom 0→"A" revert, and used to
+      // FALSELY flip the banner to "✅ 影像已備齊" → re-sync re-triggers → loop.
+      if (status === "0") {
+        nextPreparing++;
+      } else if (status === "A") {
+        nextStuck++;
+      } else if (status === "1") {
+        const seq = String((row as any)?.ipL_CASE_SEQ_NO ?? (row as any)?.ipl_CASE_SEQ_NO ?? "");
+        if (seq && seq !== "-") nextFetchable++;
+      }
     }
-    nextCount = c;
   } catch (e: any) {
     await _writeState({
       ...state,
@@ -194,16 +218,30 @@ export async function pollPrepCount(): Promise<void> {
     });
     return;
   }
-  const isReady = nextCount === 0;
+  // polling     = still actively preparing (any "0") → revisit next tick.
+  // ready       = no longer preparing AND the fetchable ("1") count climbed
+  //               above the sync-time baseline → the triggered images really
+  //               became fetchable (a true 0→1), so re-syncing WILL fold them
+  //               in and the "立即取得" CTA is trustworthy.
+  // unavailable = no longer preparing but NO new fetchable bytes appeared —
+  //               the rows reverted to "A" (phantoms) or resolved to "2"
+  //               (no image). Re-syncing won't help, so say so honestly and
+  //               stop the alarm instead of looping a false "已備齊".
+  const gotNewBytes = nextFetchable > state.baselineReady;
+  const nextCount = nextPreparing + nextStuck;
+  let nextStatus: ImagingPrepStatus;
+  if (nextPreparing > 0) nextStatus = "polling";
+  else if (gotNewBytes) nextStatus = "ready";
+  else nextStatus = "unavailable";
   await _writeState({
     ...state,
     count: nextCount,
     pollAttempts: state.pollAttempts + 1,
     lastPolledAt: Date.now(),
-    status: isReady ? "ready" : "polling",
+    status: nextStatus,
     error: undefined,
   });
-  if (isReady) {
+  if (nextStatus !== "polling") {
     await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {});
   }
 }

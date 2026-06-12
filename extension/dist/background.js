@@ -5791,7 +5791,7 @@
   }
 
   // src/background/imaging-prep-poll.ts
-  async function startPrepPolling(patientId, initialCount, baseUrl) {
+  async function startPrepPolling(patientId, initialCount, baseUrl, baselineReady = 0) {
     if (!patientId || initialCount <= 0)
       return;
     const now = Date.now();
@@ -5799,6 +5799,7 @@
       patientId,
       startedAt: now,
       initialCount,
+      baselineReady,
       count: initialCount,
       lastPolledAt: 0,
       pollAttempts: 0,
@@ -5857,7 +5858,9 @@
       return;
     }
     const url = `${baseUrl}/api/ihke3000/ihke3408s01/page_load?s_type=&s_sort=A1&_=${Date.now()}`;
-    let nextCount = state.count;
+    let nextPreparing = 0;
+    let nextStuck = 0;
+    let nextFetchable = 0;
     try {
       const r = await fetch(url, {
         method: "GET",
@@ -5885,13 +5888,18 @@
       }
       const body = await r.json();
       const list = body && body.sp_IHKE3408S01_data || [];
-      let c = 0;
       for (const row of list) {
         const status = String(row?.jpG_STATUS ?? row?.jpg_STATUS ?? "");
-        if (status === "0")
-          c++;
+        if (status === "0") {
+          nextPreparing++;
+        } else if (status === "A") {
+          nextStuck++;
+        } else if (status === "1") {
+          const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
+          if (seq && seq !== "-")
+            nextFetchable++;
+        }
       }
-      nextCount = c;
     } catch (e) {
       await _writeState({
         ...state,
@@ -5901,16 +5909,24 @@
       });
       return;
     }
-    const isReady = nextCount === 0;
+    const gotNewBytes = nextFetchable > state.baselineReady;
+    const nextCount = nextPreparing + nextStuck;
+    let nextStatus;
+    if (nextPreparing > 0)
+      nextStatus = "polling";
+    else if (gotNewBytes)
+      nextStatus = "ready";
+    else
+      nextStatus = "unavailable";
     await _writeState({
       ...state,
       count: nextCount,
       pollAttempts: state.pollAttempts + 1,
       lastPolledAt: Date.now(),
-      status: isReady ? "ready" : "polling",
+      status: nextStatus,
       error: void 0
     });
-    if (isReady) {
+    if (nextStatus !== "polling") {
       await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
       });
     }
@@ -6657,6 +6673,14 @@
     } catch {
       return false;
     }
+  }
+  function deidentifyOverride(ov) {
+    return {
+      ...ov,
+      name: ov?.name ? maskName(ov.name) : ov?.name,
+      id_no: ov?.id_no ? maskId(ov.id_no, "X") : ov?.id_no,
+      birth_date: ov?.birth_date ? deidBirthDate(ov.birth_date) : ov?.birth_date
+    };
   }
   function buildOverridePatient(ov, maskEnabled) {
     const displayName = maskEnabled ? maskName(ov.name || "") : ov.name || "";
@@ -8174,35 +8198,49 @@
             });
           }
           async function fetchOnce() {
-            const sep = baseUrl.includes("?") ? "&" : "?";
-            const r = await fetch(`${baseUrl}${sep}_=${Date.now()}`, {
-              method: "GET",
-              credentials: "same-origin",
-              headers: {
-                Accept: "application/json",
-                Authorization: auth,
-                "X-Requested-With": "XMLHttpRequest"
-              }
-            });
-            if (r.status === 401 || r.status === 403)
-              return { error: "SESSION_EXPIRED" };
-            if (!r.ok)
-              return { error: `HTTP ${r.status}` };
-            return { body: await r.json() };
+            try {
+              const sep = baseUrl.includes("?") ? "&" : "?";
+              const r = await fetch(`${baseUrl}${sep}_=${Date.now()}`, {
+                method: "GET",
+                credentials: "same-origin",
+                headers: {
+                  Accept: "application/json",
+                  Authorization: auth,
+                  "X-Requested-With": "XMLHttpRequest"
+                }
+              });
+              if (r.status === 401 || r.status === 403)
+                return { error: "SESSION_EXPIRED" };
+              if (!r.ok)
+                return { error: `HTTP ${r.status}` };
+              return { body: await r.json() };
+            } catch (e) {
+              return { error: `FETCH_EXCEPTION: ${e?.message || e}` };
+            }
           }
-          let res = await fetchOnce();
-          if (res.error)
-            return res;
-          let attempts = 1;
-          while (hasUnresolved(rowsOf(res.body)) && attempts < maxA) {
-            await new Promise((r) => setTimeout(r, intMs));
-            const next = await fetchOnce();
-            if (next.error)
-              return { ...next, attempts };
-            res = next;
+          let lastBody = null;
+          let lastErr = null;
+          let attempts = 0;
+          while (attempts < maxA) {
+            const res = await fetchOnce();
             attempts++;
+            if (res.error === "SESSION_EXPIRED")
+              return { error: "SESSION_EXPIRED", attempts };
+            if (res.error) {
+              lastErr = res.error;
+            } else {
+              lastBody = res.body;
+              if (!hasUnresolved(rowsOf(res.body))) {
+                return { body: res.body, attempts, stillUnresolved: false };
+              }
+            }
+            if (attempts < maxA)
+              await new Promise((r) => setTimeout(r, intMs));
           }
-          return { body: res.body, attempts, stillUnresolved: hasUnresolved(rowsOf(res.body)) };
+          if (lastBody !== null) {
+            return { body: lastBody, attempts, stillUnresolved: hasUnresolved(rowsOf(lastBody)) };
+          }
+          return { error: lastErr || "NO_RESULT", attempts };
         },
         args: [url, maxAttempts, intervalMs]
       });
@@ -8211,8 +8249,13 @@
     }
     if (out?.error === "SESSION_EXPIRED")
       throw new Error(SESSION_EXPIRED_ERROR);
-    if (out?.error) {
-      return { rows: [], attempts: out.attempts ?? 0, stillUnresolved: true, error: out.error };
+    if (!out || out.error) {
+      return {
+        rows: [],
+        attempts: out?.attempts ?? 0,
+        stillUnresolved: true,
+        error: out?.error || "EMPTY_RESULT"
+      };
     }
     return {
       rows: extractList(out.body),
@@ -8363,6 +8406,12 @@
   }
 
   // src/background/sync-orchestrator.ts
+  var SESSION_EXPIRED_HINT = "\u5065\u4FDD\u5B58\u647A\u767B\u5165\u903E\u6642\uFF08\u96FB\u8166\u4F11\u7720\u6216\u9592\u7F6E\u592A\u4E45\uFF09\uFF0C\u8ACB\u56DE\u5065\u4FDD\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\uFF0C\u518D\u6309\u4E00\u6B21\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\u3002";
+  function _humanizeErrors(errs) {
+    return errs.map(
+      (line) => line.includes(SESSION_EXPIRED_ERROR) ? line.split(SESSION_EXPIRED_ERROR).join(SESSION_EXPIRED_HINT) : line
+    );
+  }
   async function runNhiApiSync({
     tabId,
     mode,
@@ -8571,7 +8620,11 @@
             () => refetchImagingListUntilResolved({
               tabId,
               url: imagingUrl,
-              maxAttempts: 5,
+              // 8×3s ≈ 24s. A first entry after the ~1wk image cache expires
+              // re-confirms the list slower than a brand-new patient (~10s),
+              // so give it more headroom — only costs latency when image
+              // download is on AND the list is genuinely still preparing.
+              maxAttempts: 8,
               intervalMs: 3e3
             })
           );
@@ -8643,7 +8696,7 @@
           );
           return await pollFetchImagingJpegs(tabId, BASE, polledCandidates, triggerOutcomes);
         } catch (e) {
-          errors.push(`imaging: ${e.message}`);
+          errors.push(`\u5F71\u50CF\u53D6\u5F97\uFF1A${e?.message ?? e}`);
           return [];
         }
       })();
@@ -8651,7 +8704,7 @@
     if (fetchImagingEnabled && pendingImagingRows.length > 0 && patientOverride.id_no) {
       imagingSweepPromise = sweepPendingImagingWithTimeout(BASE, patientOverride.id_no, 6e4).catch(
         (e) => {
-          errors.push(`\u524D\u6B21\u5F71\u50CF\u88DC\u6293: ${e.message}`);
+          errors.push(`\u524D\u6B21\u5F71\u50CF\u88DC\u6293\uFF1A${e?.message ?? e}`);
           return [];
         }
       );
@@ -9042,7 +9095,7 @@
         }
       }
     } else {
-      const uploadOverride = maskEnabled && patientOverride.name ? { ...patientOverride, name: maskName(patientOverride.name) } : patientOverride;
+      const uploadOverride = maskEnabled ? deidentifyOverride(patientOverride) : patientOverride;
       for (const [page_type, items] of Object.entries(byType)) {
         if (isCancelled())
           throw new Error(CANCEL_ERROR);
@@ -9111,7 +9164,7 @@
       elapsedMs: _elapsedMs,
       // Per-endpoint breakdown for the popup's '查看明細' collapsible.
       breakdown: _fullBreakdown,
-      errors,
+      errors: _humanizeErrors(errors),
       histno: patientOverride.id_no,
       mode,
       localFilename: _localFilename
@@ -9119,7 +9172,13 @@
     await showResultBadge(total);
     if (fetchImagingEnabled && patientOverride.id_no && _waitingCount > 0 && !errors.length) {
       try {
-        await startPrepPolling(patientOverride.id_no, _waitingCount, BASE);
+        const _imgList = (imgIdx >= 0 && settled[imgIdx]?.status === "fulfilled" ? settled[imgIdx].value?.rawList : null) ?? [];
+        const _baselineReady = _imgList.filter((row) => {
+          const st = String(row?.jpG_STATUS ?? row?.jpg_STATUS ?? "");
+          const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
+          return st === "1" && seq !== "" && seq !== "-";
+        }).length;
+        await startPrepPolling(patientOverride.id_no, _waitingCount, BASE, _baselineReady);
       } catch (e) {
         console.warn("[imaging-prep-poll] start failed:", e);
       }
@@ -9128,17 +9187,19 @@
       try {
         await postSyncLog(backend, syncApiKey, {
           status: errors.length ? "partial" : "success",
-          patient_id: patientOverride.id_no || "",
-          // /sync/log lands in the dashboard's sync-history row. Only
-          // mask when the user has opted in — otherwise dashboard sees
-          // the raw name they typed (consistent with "民眾自用" default).
+          // /sync/log lands in the dashboard's sync-history row. When the user
+          // opted into de-identification, mask BOTH the id and the name here
+          // too (v0.18.3) so the real 身分證 never reaches the backend on the
+          // de-id path. Default OFF → dashboard sees the raw values they typed
+          // (consistent with "民眾自用").
+          patient_id: maskEnabled ? maskId(patientOverride.id_no || "", "X") : patientOverride.id_no || "",
           patient_name: maskEnabled ? maskName(patientOverride.name || "") : patientOverride.name || "",
           total,
           breakdown,
           date_range: dateRangeLabel || "",
           elapsed_ms: _elapsedMs,
           started_at: new Date(_t0).toISOString(),
-          errors
+          errors: _humanizeErrors(errors)
         });
       } catch (e) {
         console.warn("[NHI sync] failed to write history log:", e);

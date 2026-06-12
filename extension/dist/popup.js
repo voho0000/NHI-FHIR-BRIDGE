@@ -3048,22 +3048,29 @@
       return;
     }
     banner.hidden = false;
-    banner.dataset.state = state2.status;
     const title = els.prepTitle;
     const progress = els.prepProgress;
     const cta = els.prepCtaBtn;
-    if (state2.status === "ready") {
+    const IMAGING_PREP_MAX_MS = 30 * 60 * 1e3;
+    const overdue = Date.now() - state2.startedAt >= IMAGING_PREP_MAX_MS;
+    const status = state2.status === "polling" && overdue ? "timeout" : state2.status;
+    banner.dataset.state = status;
+    if (status === "ready") {
       title.textContent = "\u2705 \u5F71\u50CF\u5DF2\u5099\u9F4A";
       progress.textContent = `\u5065\u4FDD\u7F72\u5DF2\u6E96\u5099\u597D ${state2.initialCount} \u5F35\u5F71\u50CF\uFF0C\u6309\u4E0B\u65B9\u6309\u9215\u53D6\u5F97\u6700\u65B0\u8CC7\u6599\u3002`;
       cta.hidden = false;
-    } else if (state2.status === "timeout") {
-      title.textContent = "\u23F1 \u7B49\u5019\u903E\u6642\uFF08\u5DF2\u904E 30 \u5206\u9418\uFF09";
-      progress.textContent = `\u4ECD\u6709 ${state2.count} \u5F35\u5F71\u50CF\u672A\u6E96\u5099\u5B8C\u6210\uFF1B\u53EF\u95DC\u9589\u6B64\u63D0\u793A\uFF0C\u7A0D\u5F8C\u624B\u52D5\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u3002`;
+    } else if (status === "unavailable") {
+      title.textContent = "\u2139\uFE0F \u90E8\u5206\u5F71\u50CF\u5065\u4FDD\u7F72\u7121\u6CD5\u63D0\u4F9B";
+      progress.textContent = `\u6709 ${state2.initialCount} \u5F35\u5F71\u50CF\u5065\u4FDD\u7F72\u76EE\u524D\u7121\u6CD5\u5099\u9F4A\uFF08\u5E38\u898B\u65BC\u8F03\u820A\u7684\u6AA2\u67E5\uFF09\uFF0C\u9019\u4E9B\u9805\u76EE\u53EA\u6703\u6709\u6587\u5B57\u5831\u544A\uFF0C\u5176\u9918\u8CC7\u6599\u5DF2\u53EF\u4E0B\u8F09\u3002`;
       cta.hidden = true;
-    } else if (state2.status === "session-expired") {
+    } else if (status === "timeout") {
+      title.textContent = "\u23F1 \u7B49\u5019\u903E\u6642\uFF08\u5DF2\u8D85\u904E 30 \u5206\u9418\uFF09";
+      progress.textContent = `\u4ECD\u6709 ${state2.count || state2.initialCount} \u5F35\u5F71\u50CF\u5C1A\u672A\u5099\u9F4A\uFF0C\u5065\u4FDD\u7F72\u53EF\u80FD\u7121\u6CD5\u63D0\u4F9B\u3002\u53EF\u6309\u4E0B\u65B9\u6309\u9215\u518D\u8A66\u4E00\u6B21\uFF0C\u6216\u95DC\u9589\u6B64\u63D0\u793A\uFF08\u6587\u5B57\u5831\u544A\u5DF2\u53EF\u4E0B\u8F09\uFF09\u3002`;
+      cta.hidden = false;
+    } else if (status === "session-expired") {
       title.textContent = "\u{1F512} \u5065\u4FDD\u5B58\u647A\u767B\u5165\u903E\u6642";
-      progress.textContent = "\u8ACB\u56DE\u5230\u5065\u4FDD\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\u5F8C\uFF0C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u7E7C\u7E8C\u3002";
-      cta.hidden = true;
+      progress.textContent = "\u8ACB\u5148\u56DE\u5230\u5065\u4FDD\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\uFF0C\u518D\u6309\u4E0B\u65B9\u6309\u9215\u5373\u53EF\u7E7C\u7E8C\u53D6\u5F97\u3002";
+      cta.hidden = false;
     } else {
       title.textContent = "\u{1F5BC}\uFE0F \u5065\u4FDD\u7F72\u6E96\u5099\u4E2D";
       progress.textContent = `\u5269 ${state2.count} / ${state2.initialCount} \u5F35 \xB7 ${_elapsedText(state2)}`;

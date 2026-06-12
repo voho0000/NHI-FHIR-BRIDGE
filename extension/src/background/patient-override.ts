@@ -43,6 +43,21 @@ export async function isMaskEnabled() {
   }
 }
 
+// De-identify the popup-supplied override object (id_no / name / birth_date)
+// for the BACKEND-upload path. v0.18.3: the backend's own buildOverridePatient
+// derives Patient.id (hash) + identifier.value + the subject-reference key all
+// from id_no, so masking id_no here de-identifies the backend-created Patient
+// while keeping its references internally consistent — same three fields as the
+// local-bundle path. Caller gates on the mask toggle; this is a pure transform.
+export function deidentifyOverride(ov) {
+  return {
+    ...ov,
+    name: ov?.name ? maskName(ov.name) : ov?.name,
+    id_no: ov?.id_no ? maskId(ov.id_no, "X") : ov?.id_no,
+    birth_date: ov?.birth_date ? deidBirthDate(ov.birth_date) : ov?.birth_date,
+  };
+}
+
 export function buildOverridePatient(ov, maskEnabled) {
   const displayName = maskEnabled ? maskName(ov.name || "") : ov.name || "";
   // Phase-1 migration: birthDate/gender added below.
