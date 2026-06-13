@@ -3,6 +3,17 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.18.11 重點 — 2026-06-14
+
+- **LOINC 正確性 audit 收尾**：對全部 ~132 個不重複 LOINC 對應做完整(非抽查)複驗，修正幾個低頻檢驗的對應錯誤(每個替代碼都經 loinc.org 親自查證)。**完全不影響數值／日期／院所／單位，純對應層修正**：
+  - **體液(漿液 16008C)白血球分類**：嗜中性球先前掛到一個**根本不存在的碼** `10328-6`(任何 FHIR／LOINC 驗證器都會打槍)→ 改 `26513-2` Neutrophils/Leukocytes in Body fluid；淋巴球先前誤掛**血液**變異淋巴球 `13046-8`(檢體＋分析物雙錯)→ 改體液 `11031-2`；體液顏色先前借用**尿液**顏色碼 `5778-6` → 改 `6824-7` Color of Body fluid。
+  - **流感 A 快篩**：先前誤掛流感 **B** 抗原碼 `80383-3` → 改流感 A `80382-5`(Influenza virus A Ag, rapid IA)。
+  - **免疫電泳(12103B)**：先前掛到**尿液** free light chain panel `95801-7` → 改血清 `25700-6` Immunofixation for Serum or Plasma。
+  - **睪固酮(27021B)**：NHI 名稱未標「free／游離」→ 視為總量，改 `2986-8`(原為 free `2991-8`)。
+  - **HER2(12195B)**：ISH(基因)vs IHC(蛋白)無法從 NHI 資料確認屬何種 → **移除 LOINC**，落到 NHI 醫令碼＋原始名稱(不確定就不發碼，避免方法錯誤的誤導碼)。
+  - **CBC panel(08011C)**：`24317-0`(loinc.org 標示 discouraged)→ 遷移現用等義碼 `58410-2` CBC panel - Blood by Automated count。
+- 流程教訓已寫入專案規則：找「錯碼」可靠，但**建議的「正確替代碼」必須親自 WebFetch 複驗**(本輪即抓到先前審查 agent 建議的 2 個替代碼其實是錯的)。詳見 `docs/LOINC_AUDIT_2026-06-13.md`。
+
 ## 0.18.10 重點 — 2026-06-13
 
 - **檢驗報告(panel)標題補上 LOINC 英文名**：像「尿一般檢查」這種 panel,先前報告容器只帶 NHI 中文碼名,英文版 App 找不到英文標題、只好退化顯示第一個項目(例如整份尿檢被標成「PROT」)。現在 panel 報告會多帶一組已驗證的 LOINC 編碼＋英文名(例：`24356-8 Urinalysis complete panel`),英文 App 就能正確顯示報告名稱。NHI 中文碼名完整保留;此為既有「每個檢驗項目都掛 LOINC」政策補上漏掉的容器層,不新增健康存摺沒有的數值。
