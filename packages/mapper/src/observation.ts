@@ -2315,6 +2315,33 @@ function groupByOrderCode(
     const drCodingDisplay = orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || panelTitle;
     const drText = normalizeFullwidth(panelTitle);
 
+    // DR.code primary coding = the NHI billing code + its catalog name
+    // (Chinese, faithful). v0.18.10: ALSO carry the panel-level LOINC with
+    // its English display when the NHI code has a verified NHI_TO_LOINC
+    // mapping. This is the SAME LOINC terminology mapping the bridge
+    // already puts on every member Observation — the DR was the one lab
+    // resource missing it, so English SMART apps had no English panel
+    // title and fell back to the first analyte's short name (urinalysis
+    // panel shown as "PROT" instead of "Urinalysis Macro Panel"). NHI
+    // code + Chinese display stay primary; the LOINC display is loinc.org's
+    // official Long Common Name (LOINC_DISPLAY), not a bridge-invented
+    // translation — faithful per the "rules of the system" contract.
+    const drCodings: Record<string, any>[] = [
+      {
+        system: drCodeSystem,
+        code: String(meta.groupKeyCode) || "UNKNOWN",
+        display: drCodingDisplay,
+      },
+    ];
+    const drPanelLoinc = NHI_TO_LOINC[groupCodeStr];
+    if (drPanelLoinc && LOINC_DISPLAY[drPanelLoinc]) {
+      drCodings.push({
+        system: systems.LOINC,
+        code: drPanelLoinc,
+        display: LOINC_DISPLAY[drPanelLoinc],
+      });
+    }
+
     const dr: Record<string, any> = {
       resourceType: "DiagnosticReport",
       id: drId,
@@ -2332,13 +2359,7 @@ function groupByOrderCode(
         },
       ],
       code: {
-        coding: [
-          {
-            system: drCodeSystem,
-            code: String(meta.groupKeyCode) || "UNKNOWN",
-            display: drCodingDisplay,
-          },
-        ],
+        coding: drCodings,
         text: drText,
       },
       subject: { reference: `Patient/${patientId}` },

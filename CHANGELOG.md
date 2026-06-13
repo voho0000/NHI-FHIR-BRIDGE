@@ -3,6 +3,10 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.18.10 重點 — 2026-06-13
+
+- **檢驗報告(panel)標題補上 LOINC 英文名**：像「尿一般檢查」這種 panel,先前報告容器只帶 NHI 中文碼名,英文版 App 找不到英文標題、只好退化顯示第一個項目(例如整份尿檢被標成「PROT」)。現在 panel 報告會多帶一組已驗證的 LOINC 編碼＋英文名(例：`24356-8 Urinalysis Macro Panel`),英文 App 就能正確顯示報告名稱。NHI 中文碼名完整保留;此為既有「每個檢驗項目都掛 LOINC」政策補上漏掉的容器層,不新增健康存摺沒有的數值。
+
 ## 0.18.9 重點 — 2026-06-13
 
 - **癌症篩檢中英雙語化**：篩檢名稱(7 種)現在帶英文 `display`、中文留 `text`；常見結果(無異常／異常／陽性／陰性…)做成雙語 `valueCodeableConcept` 並附 FHIR interpretation 旗標(N/A/POS/NEG),讓英文版 App 能全英文呈現「Colorectal Cancer Screening — Normal」並標紅綠。表內查無的結果一律維持中文原樣(不亂翻)；乳攝 BI-RADS 等自由文字敘述放進 `note`、原樣保留(NHI 只有中文、不做機器翻譯以免 PHI 外流)。癌篩改用獨立 mapper(不再走檢驗管線)。

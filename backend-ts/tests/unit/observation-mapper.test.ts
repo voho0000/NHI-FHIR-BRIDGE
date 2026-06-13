@@ -205,6 +205,63 @@ describe("mapObservationsGrouped (panel grouping)", () => {
     );
     expect(observations).toEqual([]);
   });
+
+  // v0.18.10: the panel DR carries the panel-level LOINC (English display)
+  // as a second coding alongside the NHI code, so English SMART apps have
+  // an English panel title instead of falling back to the first analyte
+  // (urinalysis panel was shown as "PROT"). Same LOINC mapping already on
+  // every member Observation.
+  test("panel DR carries LOINC coding with English display (06012C → 24356-8)", () => {
+    const items = [
+      {
+        code: "06012C",
+        order_name: "尿一般檢查（包括蛋白、糖…）",
+        display: "PROT",
+        value: "Negative",
+        date: "2026-06-08",
+        hospital: "新北市聯醫",
+      },
+      {
+        code: "06012C",
+        order_name: "尿一般檢查（包括蛋白、糖…）",
+        display: "WBC",
+        value: "10-19",
+        date: "2026-06-08",
+        hospital: "新北市聯醫",
+      },
+    ];
+    const dr = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "DiagnosticReport",
+    );
+    expect(dr).toBeDefined();
+    const codings = dr?.code?.coding ?? [];
+    // NHI code stays primary (faithful), LOINC added as a second coding.
+    expect(codings[0]?.code).toBe("06012C");
+    const loinc = codings.find((c: any) => c.system === "http://loinc.org");
+    expect(loinc?.code).toBe("24356-8");
+    expect(loinc?.display).toBe("Urinalysis Macro Panel"); // loinc.org LCN, not a bridge guess
+    // Chinese panel title preserved in text.
+    expect(dr?.code?.text).toContain("尿一般檢查");
+  });
+
+  test("free-text-coded panel DR gets NO LOINC coding (no fabrication)", () => {
+    const items = [
+      {
+        code: "",
+        order_name: "Some Local Test",
+        display: "Foo",
+        value: "1",
+        unit: "x",
+        date: "2026-06-08",
+        hospital: "X醫院",
+      },
+    ];
+    const dr = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "DiagnosticReport",
+    );
+    const hasLoinc = (dr?.code?.coding ?? []).some((c: any) => c.system === "http://loinc.org");
+    expect(hasLoinc).toBe(false);
+  });
 });
 
 describe("canonicalLabKey", () => {

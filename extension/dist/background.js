@@ -5091,6 +5091,21 @@
       const drCodeSystem = NHI_LAB_CODE_RE.test(String(meta.groupKeyCode) ?? "") ? NHI_MEDICAL_ORDER_CODE : HIS_LOCAL_LAB_CODE;
       const drCodingDisplay = orderName || NHI_CODE_PANEL_NAME[groupCodeStr] || panelTitle;
       const drText = normalizeFullwidth(panelTitle);
+      const drCodings = [
+        {
+          system: drCodeSystem,
+          code: String(meta.groupKeyCode) || "UNKNOWN",
+          display: drCodingDisplay
+        }
+      ];
+      const drPanelLoinc = NHI_TO_LOINC[groupCodeStr];
+      if (drPanelLoinc && LOINC_DISPLAY[drPanelLoinc]) {
+        drCodings.push({
+          system: LOINC,
+          code: drPanelLoinc,
+          display: LOINC_DISPLAY[drPanelLoinc]
+        });
+      }
       const dr = {
         resourceType: "DiagnosticReport",
         id: drId,
@@ -5108,13 +5123,7 @@
           }
         ],
         code: {
-          coding: [
-            {
-              system: drCodeSystem,
-              code: String(meta.groupKeyCode) || "UNKNOWN",
-              display: drCodingDisplay
-            }
-          ],
+          coding: drCodings,
           text: drText
         },
         subject: { reference: `Patient/${patientId}` },
