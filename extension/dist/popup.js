@@ -537,7 +537,15 @@
     localState: byId("local-state"),
     pushLocalBtn: byId("push-local-btn"),
     syncStatusHint: byId("sync-status-hint"),
-    maskNameEnabled: byId("mask-name-enabled"),
+    // De-identify export is a segmented toggle (same .mode-toggle as 影像).
+    // maskNameEnabled points at the 開啟 radio → `.checked` and the
+    // maskNameEnabled storage key are unchanged for every reader. maskNameOff
+    // restores the off-state on load; maskNameToggle is the radiogroup container
+    // the change listener binds to; maskDeidDetail is the on-reveal detail block.
+    maskNameEnabled: byId("mask-name-on"),
+    maskNameOff: byId("mask-name-off"),
+    maskNameToggle: byId("mask-name-toggle"),
+    maskDeidDetail: byId("mask-deid-detail"),
     backendModeEnabled: byId("backend-mode-enabled"),
     // Imaging download is a segmented toggle (same .mode-toggle as 輸出方式).
     // fetchImagingEnabled points at the "一併下載" radio so `.checked` keeps its
@@ -2520,17 +2528,23 @@
     _refreshButtonStates();
     setStatus("\u5DF2\u6E05\u9664\u75C5\u4EBA\u8CC7\u6599", "info");
   }
+  function syncDeidDetail(enabled) {
+    if (els.maskDeidDetail) els.maskDeidDetail.hidden = !enabled;
+  }
   async function loadMaskNameEnabled() {
     const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
     _maskNameEnabled = maskNameEnabled === true;
     if (els.maskNameEnabled) els.maskNameEnabled.checked = _maskNameEnabled;
+    if (els.maskNameOff) els.maskNameOff.checked = !_maskNameEnabled;
+    syncDeidDetail(_maskNameEnabled);
   }
   function _maybeMask(name) {
     return _maskNameEnabled ? maskName(name) : name || "";
   }
   async function onMaskNameToggle() {
-    _maskNameEnabled = els.maskNameEnabled.checked;
+    _maskNameEnabled = els.maskNameEnabled?.checked === true;
     await chrome.storage.local.set({ maskNameEnabled: _maskNameEnabled });
+    syncDeidDetail(_maskNameEnabled);
     refreshOverrideSummary();
   }
 
@@ -3272,7 +3286,7 @@
   els.syncApiKey.addEventListener("change", () => {
     chrome.storage.local.set({ syncApiKey: els.syncApiKey.value.trim() });
   });
-  els.maskNameEnabled?.addEventListener("change", onMaskNameToggle);
+  els.maskNameToggle?.addEventListener("change", onMaskNameToggle);
   els.fetchImagingToggle?.addEventListener("change", onFetchImagingToggle);
   els.smartAppUrl.addEventListener("change", onSmartAppUrlChange);
   els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);

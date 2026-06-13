@@ -312,10 +312,20 @@ export async function clearPatientOverride() {
   setStatus("已清除病人資料", "info");
 }
 
+// The masking detail + ⚠️ warning only matter once 去識別化 is 開啟, so they
+// reveal with the toggle (hidden by default → compact card).
+function syncDeidDetail(enabled: boolean) {
+  if (els.maskDeidDetail) els.maskDeidDetail.hidden = !enabled;
+}
+
 export async function loadMaskNameEnabled() {
   const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
   _maskNameEnabled = maskNameEnabled === true;
+  // Segmented toggle: set both radios (the 關閉 radio doesn't auto-check when
+  // only the 開啟 radio is cleared).
   if (els.maskNameEnabled) els.maskNameEnabled.checked = _maskNameEnabled;
+  if (els.maskNameOff) els.maskNameOff.checked = !_maskNameEnabled;
+  syncDeidDetail(_maskNameEnabled);
 }
 
 export function _maybeMask(name) {
@@ -325,8 +335,9 @@ export function _maybeMask(name) {
 // Mask-name toggle change handler (wired in the entry). Mutates the
 // module-private _maskNameEnabled so it stays a single source of truth.
 export async function onMaskNameToggle() {
-  _maskNameEnabled = els.maskNameEnabled.checked;
+  _maskNameEnabled = els.maskNameEnabled?.checked === true;
   await chrome.storage.local.set({ maskNameEnabled: _maskNameEnabled });
+  syncDeidDetail(_maskNameEnabled);
   // Re-render popup chrome (summary line is the only spot that reads
   // _maybeMask reactively; everywhere else samples it just-in-time).
   refreshOverrideSummary();

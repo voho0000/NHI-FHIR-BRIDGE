@@ -117,6 +117,20 @@
     }
     .imaging-jpg-note strong { font-weight: 600; }
 
+    /* De-identify detail — same contextual reveal as the imaging note,
+       shown only when 去識別化 is 開啟. Warning line in amber. */
+    .deid-detail {
+      margin-top: 8px;
+      background: #eff6ff;
+      border: 0.5px solid #bfdbfe;
+      border-radius: 6px;
+      padding: 7px 9px;
+      font-size: 11px;
+      color: #1e40af;
+      line-height: 1.55;
+    }
+    .deid-detail .deid-warn { color: #92400e; }
+
     /* Two-line layout for the download bundle meta: filename on top
        (truncates with ellipsis if it can't fit), size/age on a second
        lighter line below. Avoids the bundle metadata wrapping mid-name. */
@@ -666,25 +680,6 @@
     }
     .patient-card-body .field { margin-bottom: 10px; }
 
-    /* Inline checkbox tucked under an input (used for the "mask name on
-       export" toggle next to 姓名). Smaller / quieter than .toggle-row
-       in the settings panel so it doesn't compete with the field above. */
-    .inline-toggle {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-top: 6px;
-      font-size: 12px;
-      color: #374151;
-      cursor: pointer;
-      user-select: none;
-    }
-    .inline-toggle input[type="checkbox"] {
-      width: 14px; height: 14px;
-      margin: 0;
-      accent-color: #2563eb;
-      flex-shrink: 0;
-    }
 
     /* Subtle multi-line hint that explains the value-prop of the field
        above (e.g. "why fill real name"). Smaller + lighter than .help. */
@@ -1539,21 +1534,37 @@
             </div>
           </div>
 
-          <!-- Name with inline mask-on-export choice. Explains WHY filling
-               the real name is useful (de-identification of narrative
-               fields), and puts the toggle right next to the input so
-               the user doesn't have to dig through "進階設定" to find it. -->
           <div class="field">
             <div class="label">姓名 <span class="required">*</span></div>
             <input type="text" id="ov-name" placeholder="例：陳志明" required />
-            <label class="inline-toggle">
-              <input type="checkbox" id="mask-name-enabled" />
-              <span>輸出時去識別化（姓名／身分證／生日）</span>
-            </label>
-            <div class="field-hint">
-              勾選後：姓名遮成「陳O明」、身分證遮成「F22345XXXX」、生日只留年份（如 1962-01-01）、影像附件剝除
-              EXIF／註解 metadata。分享、展示或測試前建議勾選。<br />
-              ⚠️ 檔案仍含醫院名稱與就醫日期；影像畫面內若烙印病人資訊也無法移除 — 屬有限去識別，請勿當完全匿名公開散布。
+          </div>
+
+          <!-- De-identify on export. Segmented toggle (same .mode-toggle as
+               step 3's 影像 / 輸出方式) instead of a bare checkbox, so it shares
+               the app's control grammar. The masking detail + ⚠️ warning reveal
+               only when 開啟 — keeps the card compact. els points maskNameEnabled
+               at the 開啟 radio, so `.checked` and the maskNameEnabled storage
+               key stay unchanged for every reader (sync / background). -->
+          <div class="field">
+            <div class="label" style="display:flex;align-items:center;gap:6px;">
+              去識別化
+              <span class="help-icon"
+                    data-tip="想把健康資料拿去分享、展示或測試前建議開啟。&#10;會遮去姓名／身分證／生日並剝除影像 metadata，但屬有限去識別（檔案仍含醫院名稱與就醫日期）。">ⓘ</span>
+            </div>
+            <div class="mode-toggle" id="mask-name-toggle" role="radiogroup"
+                 aria-label="輸出時是否去識別化（姓名／身分證／生日）">
+              <label class="mode-opt" title="預設：姓名／身分證／生日原樣輸出。">
+                <input type="radio" name="mask-name" id="mask-name-off" value="off" checked />
+                關閉
+              </label>
+              <label class="mode-opt" title="遮去姓名／身分證／生日並剝除影像 metadata。">
+                <input type="radio" name="mask-name" id="mask-name-on" value="on" />
+                開啟
+              </label>
+            </div>
+            <div class="deid-detail" id="mask-deid-detail" hidden>
+              開啟後：姓名遮成「陳O明」、身分證「F22345XXXX」、生日只留年份（如 1962-01-01）、影像附件剝除 EXIF／註解 metadata。<br />
+              <span class="deid-warn">⚠️ 檔案仍含醫院名稱與就醫日期；影像畫面內若烙印病人資訊也無法移除 — 屬有限去識別，請勿當完全匿名公開散布。</span>
             </div>
           </div>
 
@@ -1821,8 +1832,8 @@
         <span class="settings-view-title">進階設定</span>
       </div>
       <div class="settings-view-card">
-        <!-- mask-name-enabled lives in step 2's name field now —
-             adjacent to the input it actually affects. -->
+        <!-- The 去識別化 toggle lives in step 2's patient card now —
+             adjacent to the fields it actually affects. -->
         <div class="field">
           <label class="toggle-row">
             <input type="checkbox" id="backend-mode-enabled" />

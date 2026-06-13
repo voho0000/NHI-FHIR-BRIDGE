@@ -62,7 +62,15 @@ export const els = {
   localState: byId("local-state"),
   pushLocalBtn: byId("push-local-btn"),
   syncStatusHint: byId("sync-status-hint"),
-  maskNameEnabled: byId("mask-name-enabled"),
+  // De-identify export is a segmented toggle (same .mode-toggle as 影像).
+  // maskNameEnabled points at the 開啟 radio → `.checked` and the
+  // maskNameEnabled storage key are unchanged for every reader. maskNameOff
+  // restores the off-state on load; maskNameToggle is the radiogroup container
+  // the change listener binds to; maskDeidDetail is the on-reveal detail block.
+  maskNameEnabled: byId("mask-name-on"),
+  maskNameOff: byId("mask-name-off"),
+  maskNameToggle: byId("mask-name-toggle"),
+  maskDeidDetail: byId("mask-deid-detail"),
   backendModeEnabled: byId("backend-mode-enabled"),
   // Imaging download is a segmented toggle (same .mode-toggle as 輸出方式).
   // fetchImagingEnabled points at the "一併下載" radio so `.checked` keeps its
