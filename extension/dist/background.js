@@ -1878,8 +1878,14 @@
     //   'Taenia solium larva Ab' (verified loinc.org/7850-1/). 7853-5
     //   verified as the canonical CMV IgM LOINC (Component=Cytomegalovirus
     //   Ab.IgM, Property=ACnc) — loinc.org/7853-5/.
-    "14066C": "80383-3",
-    // Influenza A — Ag Respiratory
+    // 2026-06-13 LOINC audit: was 80383-3, which is Influenza virus *B* Ag —
+    // an A/B swap (bridge intent is Influenza A). 80382-5 = Influenza virus A
+    // Ag [Presence] in Upper respiratory specimen by Rapid immunoassay
+    // (WebFetch-verified, Ord/IA.rapid). NOTE: if NHI 14066C is actually a
+    // combined A+B rapid test, the B result has no separate code here — only
+    // the A antigen is mapped; revisit if a real 14066C row shows otherwise.
+    "14066C": "80382-5",
+    // 流感病毒抗原 A — Influenza virus A Ag, rapid IA, resp upper
     "14084C": "94558-4"
     // SARS-CoV-2 Ag — Respiratory
     // 12184C CMV DNA quant PCR — previously mapped to LOINC 88157-3 which
@@ -3360,7 +3366,7 @@
     // Hepatitis / virology
     "5197-9": "Hepatitis B virus surface Ag [Presence] in Serum by Radioimmunoassay (RIA)",
     "14118-4": "Lactate [Mass/volume] in Serum or Plasma",
-    "80383-3": "Influenza virus B Ag [Presence] in Upper respiratory specimen by Rapid immunoassay",
+    "80382-5": "Influenza virus A Ag [Presence] in Upper respiratory specimen by Rapid immunoassay",
     "94558-4": "SARS-CoV-2 (COVID-19) Ag [Presence] in Respiratory system specimen by Rapid immunoassay",
     // Immunology / autoimmune
     "5048-4": "Nuclear Ab [Titer] in Serum by Immunofluorescence",
