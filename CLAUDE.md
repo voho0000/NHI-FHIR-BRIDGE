@@ -48,6 +48,8 @@ Checklist:
    - Document findings inline as code comments
    - Add LOINC_DISPLAY entry (Long Common Name) at the same time
    - Add LOINC_SHORT_TEXT entry too if the LOINC will appear in DR title / code.text override paths
+   - **Verify the NEGATIVE too (added 2026-06-13, 尿黏液 post-mortem).** Before LEAVING an analyte unmapped because "no clean LOINC exists," you must WebFetch-search loinc.org for that Component and confirm none fits — asserting a negative without searching is how 黏液/Mucus shipped uncoded for months when 8247-9 existed all along. Multi-axis selection among candidates: match Scale (Qn count vs Ord presence) + System (Urine vs Urine sed) + Method to the ACTUAL result shape AND to how sibling analytes in the same panel are already coded.
+   - **Panel-default LOINC is suppressed on the Observation output (added 2026-06-13).** When a DISPLAY_FIRST panel sub-analyte's display matches no analyte key, `findLoincDetailed` still returns the panel's own LOINC with `cleanMatch=false` (needed internally — it's the grouping key that dedups NHI A+B unresolved-analyte pairs), BUT `isPanelDefaultFallback()` strips it from the emitted `Observation.code.coding` so apps never see a panel code mis-tagged onto an analyte (e.g. 24356-8 "Urinalysis complete panel" on a single sub-row). The obs degrades to NHI-code-only + raw display. The panel-level LOINC still rides on the `DiagnosticReport.code` (correct — the DR IS the panel). Never re-introduce the panel LOINC into per-analyte output coding.
 
 6. **Faithful transport principle.** User-defined (2026-05-28):
    > 我的 faithful transport 是不能亂加健康存摺上沒有的 data，或者亂改，但 LOINC 對應是可以的。

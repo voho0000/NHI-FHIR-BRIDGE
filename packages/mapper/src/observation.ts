@@ -293,6 +293,29 @@ export function findLoincDetailed(
   return { loinc: null, cleanMatch: false };
 }
 
+// True when the LOINC came from the Step-C panel-default fallback: a
+// DISPLAY_FIRST panel sub-analyte whose display matched no analyte key, so
+// findLoincDetailed returned the PANEL's own LOINC (cleanMatch=false). That
+// LOINC is correct for the panel DiagnosticReport, but on the INDIVIDUAL
+// Observation it's a panel-on-analyte mis-tag (e.g. 尿黏液 carrying 24356-8
+// "Urinalysis complete panel"; v0.18.2 had no clean Mucus LOINC). 2026-06-13
+// (SMART app dev report): we still compute it internally — it's the grouping
+// key that dedups NHI A+B unresolved-analyte pairs (see the "Both A and B
+// unknown LOINC → still deduped" test) — but we SUPPRESS it from the emitted
+// Observation.code so apps never see the wrong code; the obs degrades to
+// NHI-code-only (the NHI billing code + raw display), which is honest.
+export function isPanelDefaultFallback(
+  code: string,
+  lookup: { loinc: string | null; cleanMatch: boolean },
+): boolean {
+  return (
+    !lookup.cleanMatch &&
+    lookup.loinc != null &&
+    DISPLAY_FIRST_CODES.has(code) &&
+    lookup.loinc === NHI_TO_LOINC[code]
+  );
+}
+
 /**
  * Build the Observation.code.coding[] list.
  * Priority: LOINC → NHI 醫令代碼 → local fallback.
@@ -1780,6 +1803,10 @@ export function mapObservation(
   // v0.13.5: ammonia mass-vs-molar LOINC per unit — see ammoniaLoincFix() docstring
   loinc = ammoniaLoincFix(loinc, raw.unit);
 
+  // 2026-06-13: suppress a panel-default fallback LOINC from the emitted
+  // coding (panel-on-analyte mis-tag). See isPanelDefaultFallback().
+  const emittedLoinc = isPanelDefaultFallback(code, lookup) ? null : loinc;
+
   const resource: Record<string, any> = {
     resourceType: "Observation",
     id: obsId,
@@ -1800,7 +1827,7 @@ export function mapObservation(
       coding: buildCodings(
         code,
         display,
-        loinc,
+        emittedLoinc,
         String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || undefined,
         itemName,
       ),
@@ -2012,6 +2039,11 @@ function buildObservation(
   // LOINC per the row's unit — see ammoniaLoincFix() docstring.
   loinc = ammoniaLoincFix(loinc, raw.unit);
 
+  // 2026-06-13: do NOT emit a panel-default fallback LOINC on the
+  // Observation (panel-on-analyte mis-tag). `loinc` is kept for the
+  // internal dedup/grouping; `emittedLoinc` is what reaches code.coding.
+  const emittedLoinc = isPanelDefaultFallback(code, lookup) ? null : loinc;
+
   const catCode = raw.category || "laboratory";
   const CAT_DISPLAY: Record<string, string> = {
     laboratory: "Laboratory",
@@ -2053,7 +2085,7 @@ function buildObservation(
       coding: buildCodings(
         code,
         display,
-        loinc,
+        emittedLoinc,
         String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || undefined,
         itemName,
       ),

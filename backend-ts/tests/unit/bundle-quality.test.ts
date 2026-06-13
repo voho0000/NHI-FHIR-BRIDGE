@@ -3921,8 +3921,18 @@ describe("CI v0.13 — CBC obs.code.text canonicalization", () => {
     const unknownLoinc = (unknown.code.coding ?? []).find(
       (c: any) => c.system === "http://loinc.org",
     )?.code;
-    // Routes to panel default for 08011C, NOT a leaf CBC LOINC.
-    expect(unknownLoinc).toBe("24317-0");
+    // 2026-06-13: the panel-default LOINC (24317-0, a PANEL code) is now
+    // SUPPRESSED from the emitted Observation.code — an unrouted panel
+    // sub-analyte degrades to NHI-code-only rather than carrying the
+    // panel-on-analyte mis-tag. The canary signal is now "NHI code + raw
+    // display, NO LOINC" (honest unrouted marker). Internal grouping still
+    // uses 24317-0 (see the A+B dedup test below).
+    expect(unknownLoinc).toBeUndefined();
+    // NHI billing code is still present (faithful), with the raw display.
+    const nhiCoding = (unknown.code.coding ?? []).find((c: any) =>
+      String(c.system).includes("nhi-medical-order-code"),
+    );
+    expect(nhiCoding?.code).toBe("08011C");
   });
 
   test("Non-CBC LOINC (4548-4 HbA1c) keeps v0.11.10 'always canonicalize' behavior", () => {

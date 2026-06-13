@@ -3986,6 +3986,9 @@
     }
     return { loinc: null, cleanMatch: false };
   }
+  function isPanelDefaultFallback(code, lookup) {
+    return !lookup.cleanMatch && lookup.loinc != null && DISPLAY_FIRST_CODES.has(code) && lookup.loinc === NHI_TO_LOINC[code];
+  }
   function buildCodings(code, display, loinc, nhiPanelName, itemName) {
     const codings = [];
     if (loinc) {
@@ -4783,6 +4786,7 @@
     loinc = structuralLoincFix(loinc, raw.unit);
     loinc = urineProteinLoincFix(loinc, value, raw.unit);
     loinc = ammoniaLoincFix(loinc, raw.unit);
+    const emittedLoinc = isPanelDefaultFallback(code, lookup) ? null : loinc;
     const resource = {
       resourceType: "Observation",
       id: obsId,
@@ -4803,7 +4807,7 @@
         coding: buildCodings(
           code,
           display,
-          loinc,
+          emittedLoinc,
           String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || void 0,
           itemName
         ),
@@ -4925,6 +4929,7 @@
     loinc = structuralLoincFix(loinc, raw.unit);
     loinc = urineProteinLoincFix(loinc, value, raw.unit);
     loinc = ammoniaLoincFix(loinc, raw.unit);
+    const emittedLoinc = isPanelDefaultFallback(code, lookup) ? null : loinc;
     const catCode = raw.category || "laboratory";
     const CAT_DISPLAY = {
       laboratory: "Laboratory",
@@ -4964,7 +4969,7 @@
         coding: buildCodings(
           code,
           display,
-          loinc,
+          emittedLoinc,
           String(raw.order_name ?? "") || NHI_CODE_PANEL_NAME[code] || void 0,
           itemName
         ),
