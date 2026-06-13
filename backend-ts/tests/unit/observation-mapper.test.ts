@@ -774,18 +774,21 @@ describe("findLoinc", () => {
     expect(findLoinc("16008C", "WBC")).toBe("26466-3");
   });
 
-  test("v0.9.10 — SF.Neutrophil under 16008C → 10328-6 (Body fluid)", () => {
-    expect(findLoinc("16008C", "SF.Neutrophil")).toBe("10328-6");
-    expect(findLoinc("16008C", "Neutrophil")).toBe("10328-6");
+  // 2026-06-14 LOINC audit: body-fluid differential corrected.
+  // Was 10328-6 (NON-EXISTENT) / 13046-8 (Variant lymphocytes in *Blood*)
+  // / 5778-6 (Color of *Urine*) — all loinc.org-verified replacements.
+  test("LOINC audit — SF.Neutrophil under 16008C → 26513-2 (Neutrophils/Leukocytes Body fluid)", () => {
+    expect(findLoinc("16008C", "SF.Neutrophil")).toBe("26513-2");
+    expect(findLoinc("16008C", "Neutrophil")).toBe("26513-2");
   });
 
-  test("v0.9.10 — SF.Lympho under 16008C → 13046-8 (Body fluid)", () => {
-    expect(findLoinc("16008C", "SF.Lympho")).toBe("13046-8");
-    expect(findLoinc("16008C", "Lymphocyte")).toBe("13046-8");
+  test("LOINC audit — SF.Lympho under 16008C → 11031-2 (Lymphocytes/Leukocytes Body fluid)", () => {
+    expect(findLoinc("16008C", "SF.Lympho")).toBe("11031-2");
+    expect(findLoinc("16008C", "Lymphocyte")).toBe("11031-2");
   });
 
-  test("v0.9.10 — SF.Color under 16008C → 5778-6", () => {
-    expect(findLoinc("16008C", "SF.Color")).toBe("5778-6");
+  test("LOINC audit — SF.Color under 16008C → 6824-7 (Color of Body fluid, not Urine)", () => {
+    expect(findLoinc("16008C", "SF.Color")).toBe("6824-7");
   });
 
   test('findLoinc("14032C", "HBsAg") routes through NHI_TO_LOINC and returns correct HBsAg LOINC', () => {

@@ -1420,31 +1420,38 @@
     // shorter generic keys (e.g. global "wbc" → 6690-2 blood WBC)
     // can't shadow the body-fluid specific LOINCs. Each LOINC verified
     // at loinc.org:
-    //   5778-6  Color of Urine (re-used for body-fluid color; cell-counter
-    //           descriptive LOINC, specimen-agnostic in practice)
-    //   26466-3 Leukocytes [#/volume] in Body fluid by Manual count
-    //   10328-6 Neutrophils/100 leukocytes in Body fluid
-    //   13046-8 Lymphocytes [#/volume] in Body fluid
-    // The "sf.*" notation matches Taiwan LIS prefixes ("SF" = Synovial
-    // Fluid) that appear in raw display text.
+    // 2026-06-14 LOINC audit — all loinc.org-verified, replacing two wrong
+    // re-uses + one non-existent code:
+    //   6824-7  Color of Body fluid (Nom; replaced 5778-6 = Color of *Urine*)
+    //   26466-3 Leukocytes [#/volume] in Body fluid (absolute WBC — kept)
+    //   26513-2 Neutrophils/Leukocytes in Body fluid (NFr %; replaced the
+    //           NON-EXISTENT 10328-6 — any validator would reject it)
+    //   11031-2 Lymphocytes/Leukocytes in Body fluid (NFr %; replaced
+    //           13046-8 which is Variant lymphocytes in *Blood* — wrong
+    //           system AND wrong analyte)
+    // Differential mapped as % (NFr) per serous-fluid reporting convention
+    // (the prior 10328-6 comment also intended "/100 leukocytes"). If a real
+    // 16008C row reports the diff as absolute #/volume, revisit to the
+    // [#/volume] Body fluid variants. The "sf.*" notation matches Taiwan LIS
+    // prefixes ("SF" = Synovial Fluid) that appear in raw display text.
     "16008C": {
-      "sf.neutrophil": "10328-6",
-      "sf neutrophil": "10328-6",
-      neutrophil: "10328-6",
-      "sf.lympho": "13046-8",
-      "sf lympho": "13046-8",
-      "sf.lymphocyte": "13046-8",
-      lymphocyte: "13046-8",
-      lymphocytes: "13046-8",
+      "sf.neutrophil": "26513-2",
+      "sf neutrophil": "26513-2",
+      neutrophil: "26513-2",
+      "sf.lympho": "11031-2",
+      "sf lympho": "11031-2",
+      "sf.lymphocyte": "11031-2",
+      lymphocyte: "11031-2",
+      lymphocytes: "11031-2",
       "sf.wbc": "26466-3",
       "sf wbc": "26466-3",
       wbc: "26466-3",
       leukocyte: "26466-3",
       leukocytes: "26466-3",
-      "sf.color": "5778-6",
-      "sf color": "5778-6",
-      color: "5778-6",
-      \u984F\u8272: "5778-6"
+      "sf.color": "6824-7",
+      "sf color": "6824-7",
+      color: "6824-7",
+      \u984F\u8272: "6824-7"
     },
     // ── CBC with auto diff (08013C) ──────────────────────
     // 08013C reports each cell type as a PERCENT of leukocytes (per 100),

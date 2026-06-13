@@ -73,3 +73,26 @@ bridge 不該臆測 —— 這幾個 loinc.org 對不上,但**正確替代碼取
 - 整體 ~132 個不重複 LOINC 中,絕大多數(化學、電解質、酵素、腫瘤標記、肝炎、血型、免疫球蛋白等)**正確無誤**。問題集中在低頻的肺功能(DLCO)、流式 CD、蛋白電泳、體液(sf)、與少數方法/檢體混淆。
 
 **流程教訓(已寫入 rule #5)**:agent 找「錯碼」很可靠,但**建議的「正確替代碼」不可盡信,必須親自 WebFetch 複驗**(這次就抓到 2 個 agent 建議的替代碼是錯的)。
+
+---
+
+## E. 2026-06-14 後續處理(B/C 段收尾)
+
+病人(探針病例)實際只有 35 筆檢驗,B/C 段這些低頻專科碼**都不在其健保存摺**,故無法用真實 row 反查 NHI 項目名稱。改以 loinc.org 親自複驗 + 臨床判斷處理,逐碼自驗替代碼(rule #5):
+
+| 項目 | 原碼 | 改為 | 驗證 / 理由 | commit |
+|---|---|---|---|---|
+| 14066C 流感A | `80383-3` | `80382-5` | 80383-3 是流感 **B**(A/B 對調);80382-5 = Influenza A Ag rapid IA ✓ | `d619f3a` |
+| 27021B 睪固酮 | `2991-8`(free) | `2986-8` | NHI 名稱無「free/游離」→ unqualified = 總量;2986-8 Testosterone [Mass/vol] S/P ✓ | (本批) |
+| 12103B 免疫電泳 | `95801-7`(尿 free-LC panel) | `25700-6` | 血清 IFE → Immunofixation for Ser/Plas, Nom ✓ | (本批) |
+| sf color (16008C) | `5778-6`(尿色) | `6824-7` | Color of Body fluid, Nom ✓ | (本批) |
+| sf lympho | `13046-8`(**血液**變異淋巴) | `11031-2` | Lymphocytes/Leukocytes in Body fluid, NFr% ✓(雙軸皆錯,親驗確認) | (本批) |
+| sf neutrophil | `10328-6`(**不存在**) | `26513-2` | Neutrophils/Leukocytes in Body fluid, NFr% ✓(validator 必掛的硬錯) | (本批) |
+
+**未改(現碼可接受)**:
+- **14032C HBsAg `5196-1`** — 成人健檢 HBsAg 確為定性(Presence/Ord),現碼正確,僅舊註解誤寫「Mass/vol」。不動。
+- **12160B κ/λ `15189-4`** — 總 light-chain ratio,作為 κ/λ 比值的合理預設;無 NHI 確認 IgG-subclass 特異前不臆測。不動。
+- **12204B 白血球表面標記 `20584-9`** — 已是 panel(CD3/4/8/19/56 子項各自正確對碼,含 CD8 8101-8 修正);20584-9 僅 panel-level 被抑制 fallback,不進 per-analyte 輸出。不動。
+
+**仍待你確認 NHI scope(唯一剩項)**:
+- **12195B Her-2/neu** — 現碼 `18474-7`(IHC 蛋白);bridge 註解寫 ISH(基因擴增)。**18474-7 IHC 是 HER2 首線檢測的合理保守預設**,故先留;若 12195B 實際 billing 是 **ISH**(FISH/CISH 基因 copy),需改基因擴增碼。健保存摺無此 row,請你在 VGH 計費系統對一下項目名稱再定。

@@ -42,7 +42,9 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "24007B": "1995-0", // 血漿游離鈣 — Calcium ionized Moles/vol S/P
   // ── Hormones ──────────────────────────────────────
   "09121C": "2986-8", // 睪丸酯醇免疫分析 — Testosterone Mass/vol S/P
-  "27021B": "2991-8", // 睪丸脂醇放射免疫分析 — Testosterone Free S/P
+  // 2026-06-14 audit: NHI name "睪固酮/睪丸脂醇" carries no "free/游離" →
+  // unqualified testosterone = TOTAL. Was 2991-8 (Testosterone *Free*).
+  "27021B": "2986-8", // 睪丸脂醇放射免疫分析 — Testosterone total [Mass/vol] S/P
   // 09125C / 09127C corrected after dual-reviewer audit — the earlier
   // values (3016-3 was TSH, 10501-5 was LH) were just wrong copy-
   // pastes. Source for the new values: TWNHIFHIR PAS ConceptMap.
@@ -75,7 +77,10 @@ export const NHI_TO_LOINC: Record<string, string> = {
   // 2472-9/ 2026-06-03. Symmetric with IgG 12025B→2465-3, IgA 12027B→2458-8.
   "12028B": "2472-9", // IgM 免疫擴散法 — Mass/vol S/P
   "12029B": "2472-9", // IgM 免疫比濁法 — Mass/vol S/P
-  "12103B": "95801-7", // 免疫電泳分析
+  // 2026-06-14 audit: was 95801-7 = "Ig light chains.free and IFE panel -
+  // *Urine*" (wrong specimen + free-LC panel). Serum immunofixation →
+  // 25700-6 Immunofixation for Serum or Plasma (Nom, loinc.org-verified).
+  "12103B": "25700-6", // 免疫電泳分析 — Immunofixation for Serum/Plasma
   "12160B": "15189-4", // IgG κ/λ
   "12171B": "17351-8", // 抗嗜中性球細胞質抗體 (ANCA)
   "12204B": "20584-9", // 白血球表面標記 — Lymphocyte subset panel
@@ -1238,31 +1243,38 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
   // shorter generic keys (e.g. global "wbc" → 6690-2 blood WBC)
   // can't shadow the body-fluid specific LOINCs. Each LOINC verified
   // at loinc.org:
-  //   5778-6  Color of Urine (re-used for body-fluid color; cell-counter
-  //           descriptive LOINC, specimen-agnostic in practice)
-  //   26466-3 Leukocytes [#/volume] in Body fluid by Manual count
-  //   10328-6 Neutrophils/100 leukocytes in Body fluid
-  //   13046-8 Lymphocytes [#/volume] in Body fluid
-  // The "sf.*" notation matches Taiwan LIS prefixes ("SF" = Synovial
-  // Fluid) that appear in raw display text.
+  // 2026-06-14 LOINC audit — all loinc.org-verified, replacing two wrong
+  // re-uses + one non-existent code:
+  //   6824-7  Color of Body fluid (Nom; replaced 5778-6 = Color of *Urine*)
+  //   26466-3 Leukocytes [#/volume] in Body fluid (absolute WBC — kept)
+  //   26513-2 Neutrophils/Leukocytes in Body fluid (NFr %; replaced the
+  //           NON-EXISTENT 10328-6 — any validator would reject it)
+  //   11031-2 Lymphocytes/Leukocytes in Body fluid (NFr %; replaced
+  //           13046-8 which is Variant lymphocytes in *Blood* — wrong
+  //           system AND wrong analyte)
+  // Differential mapped as % (NFr) per serous-fluid reporting convention
+  // (the prior 10328-6 comment also intended "/100 leukocytes"). If a real
+  // 16008C row reports the diff as absolute #/volume, revisit to the
+  // [#/volume] Body fluid variants. The "sf.*" notation matches Taiwan LIS
+  // prefixes ("SF" = Synovial Fluid) that appear in raw display text.
   "16008C": {
-    "sf.neutrophil": "10328-6",
-    "sf neutrophil": "10328-6",
-    neutrophil: "10328-6",
-    "sf.lympho": "13046-8",
-    "sf lympho": "13046-8",
-    "sf.lymphocyte": "13046-8",
-    lymphocyte: "13046-8",
-    lymphocytes: "13046-8",
+    "sf.neutrophil": "26513-2",
+    "sf neutrophil": "26513-2",
+    neutrophil: "26513-2",
+    "sf.lympho": "11031-2",
+    "sf lympho": "11031-2",
+    "sf.lymphocyte": "11031-2",
+    lymphocyte: "11031-2",
+    lymphocytes: "11031-2",
     "sf.wbc": "26466-3",
     "sf wbc": "26466-3",
     wbc: "26466-3",
     leukocyte: "26466-3",
     leukocytes: "26466-3",
-    "sf.color": "5778-6",
-    "sf color": "5778-6",
-    color: "5778-6",
-    顏色: "5778-6",
+    "sf.color": "6824-7",
+    "sf color": "6824-7",
+    color: "6824-7",
+    顏色: "6824-7",
   },
 
   // ── CBC with auto diff (08013C) ──────────────────────
@@ -1514,7 +1526,7 @@ export const LOINC_MAP: Record<string, string> = {
   sao2: "2713-6",
   sat: "2713-6", // NHI display shows just "SAT"
   // Synovial / body-fluid components (16008C parent above).
-  "sf.color": "5778-6", // Color of Body fluid (reuse Urine color spec OK)
+  "sf.color": "6824-7", // Color of Body fluid (loinc.org-verified; was 5778-6 = Urine)
   // NOTE: 8255-2 / 13948-5 previously listed here both turned out
   // to be unrelated LOINCs (verified loinc.org — 8255-2 is
   // 'Service comment 13', 13948-5 is 'Coccidioides immitis IgM
@@ -1522,9 +1534,9 @@ export const LOINC_MAP: Record<string, string> = {
   // LOINCs in our table yet — falling through to code.text-only
   // is safer than emitting a misleading LOINC. To add later,
   // verify each against loinc.org first.
-  "sf.wbc": "26466-3", // WBC #/vol Body fluid
-  "sf.neutrophil": "10328-6", // Neutrophils/100 leukocytes in Body fluid
-  "sf.lympho": "13046-8", // Lymphocytes #/vol Body fluid
+  "sf.wbc": "26466-3", // Leukocytes [#/volume] in Body fluid (absolute)
+  "sf.neutrophil": "26513-2", // Neutrophils/Leukocytes in Body fluid (was non-existent 10328-6)
+  "sf.lympho": "11031-2", // Lymphocytes/Leukocytes in Body fluid (was 13046-8 = Blood variant)
 };
 
 // ── _LOINC_DISPLAY ────────────────────────────────────────
@@ -1707,8 +1719,9 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "30240-6": "Fibrin D-dimer [Mass/volume] in Platelet poor plasma",
   // ── Body fluid (16008C panel members; v0.9.10) ───
   "26466-3": "Leukocytes [#/volume] in Body fluid by Manual count",
-  "10328-6": "Neutrophils/100 leukocytes in Body fluid",
-  "13046-8": "Lymphocytes [#/volume] in Body fluid",
+  "26513-2": "Neutrophils/Leukocytes in Body fluid",
+  "11031-2": "Lymphocytes/Leukocytes in Body fluid",
+  "6824-7": "Color of Body fluid",
   // ── SPE fractions (09065B; v0.10.0) ──────────────
   "2865-7": "Albumin [Mass/volume] in Serum or Plasma by Electrophoresis",
   // 2026-06-13 LOINC audit: prior codes 2867-3/2868-1/2869-9/2871-5 were
@@ -1789,7 +1802,7 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "17351-8": "Neutrophil cytoplasmic Ab [Presence] in Serum",
   "20584-9": "Leukocytes [#/volume] in Specimen by Automated count",
   "47286-0": "Differential panel - Bone marrow",
-  "95801-7": "Immunoglobulin light chains.free and IFE panel - Urine",
+  "25700-6": "Immunofixation for Serum or Plasma",
   // Pathology / IHC
   "18474-7": "HER2 Ag [Presence] in Tissue by Immune stain",
   "14130-9": "Estrogen receptor [Moles/mass] in Tissue",
@@ -1813,7 +1826,6 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "2500-7": "Iron binding capacity [Mass/volume] in Serum or Plasma",
   "2692-2": "Osmolality of Serum or Plasma", // typo fix from 2692-7
   "2777-1": "Phosphate [Mass/volume] in Serum or Plasma",
-  "2991-8": "Testosterone Free [Mass/volume] in Serum or Plasma",
   "3040-3": "Lipase [Enzymatic activity/volume] in Serum or Plasma",
   "19113-0": "IgE [Units/volume] in Serum or Plasma",
   "19123-9": "Magnesium [Mass/volume] in Serum or Plasma",
