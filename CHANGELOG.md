@@ -3,6 +3,12 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.18.7 重點 — 2026-06-13
+
+- **新增「癌症篩檢」擷取（先前完全沒抓到）**：大腸癌／口腔癌／乳癌／子宮頸癌／肺癌／婦女 HPV／胃幽門桿菌 7 種篩檢結果現在會正確匯入（每筆轉成一個 FHIR Observation）。先前因為抓錯端點（只抓到分類選單頁），這些資料一筆都沒進健康紀錄檔。
+- **健檢「正常／異常」判讀加上標準代碼**：成人預防保健的異常項目現在帶有 FHIR interpretation 代碼（A＝異常、N＝正常），SMART App 可以據此標紅；原本只有文字、App 無法判斷。
+- 用藥「用法／頻次」：實測確認健保存摺此端點不提供結構化用法，已在程式註明（非缺陷，是 NHI 資料本身沒有）。
+
 ## 0.18.6 重點 — 2026-06-13
 
 - **安裝權限精簡（為上架 Chrome Web Store 準備）**：存取「本機伺服器（localhost）」的權限改為**按需請求**。一般使用者（只下載健康紀錄檔）安裝時，Chrome 只會要求一個權限「存取健保署健康存摺網站」，更乾淨、更容易信任。只有當你在 ⚙️ 進階設定主動勾「啟用本機伺服器模式」時，才會跳出對話框請求 localhost 權限（按拒絕會自動取消勾選）。後端模式功能完全保留，不必另外安裝完整版。既有使用者升級**不受影響、不會跳新權限對話框**（移除安裝權限不需重新授權）。

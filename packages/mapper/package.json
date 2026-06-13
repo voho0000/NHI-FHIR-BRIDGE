@@ -1,6 +1,6 @@
 {
   "name": "@nhi-fhir-bridge/mapper",
-  "version": "0.18.6",
+  "version": "0.18.7",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
