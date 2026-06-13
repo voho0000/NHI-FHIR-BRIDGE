@@ -1317,6 +1317,20 @@
       font-weight: 600;
     }
 
+    /* White-field variant — segmented toggle that lives inside the step 2
+       patient form. Matches the white bordered inputs (生日/性別/姓名) instead
+       of the grey settings-panel track used in step 3, so it doesn't read as
+       a foreign control dropped into the data form. Selected option is a
+       light-blue chip (ringed so it reads on the white track). */
+    .mode-toggle.mode-toggle-field {
+      background: #fff;
+      border-color: #d1d5db;
+    }
+    .mode-toggle.mode-toggle-field .mode-opt:has(input:checked) {
+      background: #eff6ff;
+      box-shadow: inset 0 0 0 1px #bfdbfe;
+    }
+
     /* ── Meta region (disclaimer + meta, persistent across all steps) ──
        Single low-key callout card. Header row carries "免責聲明" on the
        left and utility meta (Dashboard link + version) on the right at
@@ -1551,7 +1565,7 @@
               <span class="help-icon"
                     data-tip="想把健康資料拿去分享、展示或測試前建議開啟。&#10;會遮去姓名／身分證／生日並剝除影像 metadata，但屬有限去識別（檔案仍含醫院名稱與就醫日期）。">ⓘ</span>
             </div>
-            <div class="mode-toggle" id="mask-name-toggle" role="radiogroup"
+            <div class="mode-toggle mode-toggle-field" id="mask-name-toggle" role="radiogroup"
                  aria-label="輸出時是否去識別化（姓名／身分證／生日）">
               <label class="mode-opt" title="預設：姓名／身分證／生日原樣輸出。">
                 <input type="radio" name="mask-name" id="mask-name-off" value="off" checked />
