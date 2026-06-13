@@ -1089,8 +1089,8 @@
     // PLT, WBC). Without per-item LOINCs under the panel, MCV / MCHC /
     // RDW were being shadowed:
     //   • MCV "平均紅血球容積" → matched global "紅血球" → 789-8 (RBC) ✗
-    //   • MCHC "MCHC" → no key matched → fell back to panel 24317-0 ✗
-    //   • RDW → no key matched → fell back to panel 24317-0 ✗
+    //   • MCHC "MCHC" → no key matched → fell back to panel 58410-2 ✗
+    //   • RDW → no key matched → fell back to panel 58410-2 ✗
     //   • Basophil / Lymphocyte / Monocyte → fell to "白血球" → 6690-2 ✗
     // Panel-scoped table runs BEFORE the global one so the longer,
     // specific CJK / ASCII keys win. All LOINCs verified at loinc.org

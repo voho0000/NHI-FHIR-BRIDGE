@@ -161,7 +161,11 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "08004C": "4544-3", // HCT — Hematocrit volume fraction Blood
   "08008C": "14196-0", // Reticulocyte — Reticulocytes/100 RBC
   "08010C": "711-2", // Eosinophil count — #/vol Blood
-  "08011C": "24317-0", // CBC panel — Hematology panel Blood
+  // 2026-06-13: was 24317-0 (DISCOURAGED by loinc.org). 58410-2 is the
+  // active replacement — "CBC panel - Blood by Automated count" (CBC WO
+  // differential, same semantics; WebFetch-verified). Used as the 08011C
+  // panel-level DR LOINC / Step-C fallback.
+  "08011C": "58410-2", // 全套血液檢查I(八項)— CBC panel (no diff), auto count
   "08026C": "6301-6", // PT/INR — INR Platelet poor plasma
   "08036C": "14979-9", // APTT — Platelet poor plasma
   // v0.12.0 audit fix: 2692-7 typo; LOINC 2692-7 does NOT exist in the
@@ -399,7 +403,7 @@ export const DISPLAY_FIRST_CODES: ReadonlySet<string> = new Set([
 //     hospital LIS labelling swaps (bug report 2026-05-27 Part 5).
 // Each LOINC verified at loinc.org. "ht" / "h.t." added v0.9.10 — they
 // were missing under 08011C, causing rows displayed as "Ht" to fall
-// back to the panel LOINC 24317-0 (Hemogram panel) which SMART app
+// back to the panel LOINC 58410-2 (Hemogram panel) which SMART app
 // pivot-by-LOINC then dropped from per-analyte trend columns.
 const CBC_COMPONENT_KEYS: Record<string, string> = {
   // Hemoglobin — variant CJK 血色素 / 血紅蛋白 added v0.11.4 audit
@@ -911,8 +915,8 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
   // PLT, WBC). Without per-item LOINCs under the panel, MCV / MCHC /
   // RDW were being shadowed:
   //   • MCV "平均紅血球容積" → matched global "紅血球" → 789-8 (RBC) ✗
-  //   • MCHC "MCHC" → no key matched → fell back to panel 24317-0 ✗
-  //   • RDW → no key matched → fell back to panel 24317-0 ✗
+  //   • MCHC "MCHC" → no key matched → fell back to panel 58410-2 ✗
+  //   • RDW → no key matched → fell back to panel 58410-2 ✗
   //   • Basophil / Lymphocyte / Monocyte → fell to "白血球" → 6690-2 ✗
   // Panel-scoped table runs BEFORE the global one so the longer,
   // specific CJK / ASCII keys win. All LOINCs verified at loinc.org
@@ -1623,7 +1627,7 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "83112-3": "Prostate specific Ag [Mass/volume] in Serum or Plasma by Immunoassay",
   "4544-3": "Hematocrit [Volume Fraction] of Blood by Automated count",
   "57021-8": "CBC W Auto Differential panel - Blood",
-  "24317-0": "Hemogram and platelets WO differential panel - Blood",
+  "58410-2": "CBC panel - Blood by Automated count",
   // ── Clinical Documents ───────────────────────────
   // v0.16+ (2026-06-05): discharge summary DocumentReference.type.
   // Verified at loinc.org/18842-5/ — Component=Discharge summary note,
