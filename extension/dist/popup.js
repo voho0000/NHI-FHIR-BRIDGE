@@ -1030,10 +1030,18 @@
     // dipstick key above is 尿膽素原). English "Urobilinogen" already routes
     // it; cover the CJK-only 元 form too.
     \u5C3F\u81BD\u7D20\u5143: "5818-0",
-    \u81BD\u7D20\u5143: "5818-0"
-    // 黏液/Mucus intentionally UNMAPPED → falls to Step-C panel default
-    // 24356-8 (no clean generic urine-mucus LOINC on loinc.org; keeping it
-    // unmapped leaves the mis-tag canary visible per rule #8 vs guessing).
+    \u81BD\u7D20\u5143: "5818-0",
+    // 黏液/Mucus → 8247-9 (2026-06-13, SMART app dev report + WebFetch).
+    // CORRECTION: the prior comment claimed "no clean generic urine-mucus
+    // LOINC" and left 黏液 unmapped → it fell to the Step-C panel default
+    // 24356-8, which is the "Urinalysis complete PANEL" code, NOT a mucus
+    // analyte. The app dev correctly flagged that as a panel-on-analyte
+    // mis-tag. loinc.org/8247-9 (rule #5, WebFetch-verified): Component
+    // "Mucus", Property "PrThr", System "Urine sed", Scale "Ord", Method
+    // "Microscopy.light" — a single-observation urine-sediment mucus code
+    // matching the qualitative (Negative/Present) result NHI ships. ✅
+    \u9ECF\u6DB2: "8247-9",
+    mucus: "8247-9"
   };
   var PANEL_LOINC_MAP = {
     // ── Urinalysis: 06012C + 06013C share ONE analyte table ──────
