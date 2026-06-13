@@ -1161,20 +1161,20 @@
     // SMART app pivot-by-LOINC merged everything into one column.
     "09065B": {
       // Specific fractions — long names first (longest-match wins)
-      "alpha-1 globulin": "2867-3",
-      "alpha 1 globulin": "2867-3",
-      "\u03B11-globulin": "2867-3",
-      \u03B11: "2867-3",
-      "alpha-2 globulin": "2868-1",
-      "alpha 2 globulin": "2868-1",
-      "\u03B12-globulin": "2868-1",
-      \u03B12: "2868-1",
-      "beta globulin": "2869-9",
-      "\u03B2-globulin": "2869-9",
-      \u03B2: "2869-9",
-      "gamma globulin": "2871-5",
-      "\u03B3-globulin": "2871-5",
-      \u03B3: "2871-5",
+      "alpha-1 globulin": "2865-4",
+      "alpha 1 globulin": "2865-4",
+      "\u03B11-globulin": "2865-4",
+      \u03B11: "2865-4",
+      "alpha-2 globulin": "2868-8",
+      "alpha 2 globulin": "2868-8",
+      "\u03B12-globulin": "2868-8",
+      \u03B12: "2868-8",
+      "beta globulin": "2871-2",
+      "\u03B2-globulin": "2871-2",
+      \u03B2: "2871-2",
+      "gamma globulin": "2874-6",
+      "\u03B3-globulin": "2874-6",
+      \u03B3: "2874-6",
       "a/g ratio": "1759-0",
       // Albumin/Globulin ratio
       "a/g": "1759-0",
@@ -1211,9 +1211,9 @@
       // match, so combined ratio keys must outrank bare cd3/cd4/cd8 by
       // length to avoid CD3 winning over the CD3+/CD4+ ratio entry.
       "cd3+/cd4": "8123-2",
-      // CD3+/CD4+ ratio → CD4 helper LOINC
-      "cd3+/cd8": "8128-1",
-      // CD3+/CD8+ ratio → CD8 helper LOINC
+      // CD3+CD4+ (T4 helper) cells/cells
+      "cd3+/cd8": "8101-8",
+      // CD3+CD8+ (T8 suppressor) cells/cells (was deprecated/wrong 8128-1)
       "cd4/cd8 ratio": "54218-3",
       "cd4/cd8": "54218-3",
       "cd8/cd4": "54218-3",
@@ -1223,8 +1223,8 @@
       // CD3 #/area in Blood
       cd4: "8123-2",
       // CD4 #/area in Blood
-      cd8: "8128-1",
-      // CD8 #/area in Blood
+      cd8: "8101-8",
+      // CD3+CD8+ (T8 suppressor) cells/cells (was deprecated/wrong 8128-1)
       cd19: "8118-2",
       // CD19 #/area in Blood (B cell)
       cd16: "8112-5",
@@ -1238,20 +1238,21 @@
     // loinc.org. Pulmonary function rarely surfaces in 健康存摺 but the
     // panel exists for completeness.
     "17009B": {
-      "dlco/va": "19911-7",
-      // DLCO/VA ratio
-      "dlco/alveolar volume": "19911-7",
-      kco: "19911-7",
-      // Transfer coefficient (same as DLCO/VA)
-      dlco: "24341-0",
-      // Diffusing capacity for CO
-      "dlco sb": "24341-0",
-      // Single-breath variant
-      \u4E00\u6C27\u5316\u78B3\u80BA\u7030\u6563\u91CF: "24341-0",
-      va: "19850-7",
-      // Alveolar volume
-      "alveolar volume": "19850-7",
-      \u80BA\u6CE1\u5BB9\u7A4D: "19850-7"
+      // 2026-06-13 LOINC audit: all three sub-rows were WRONG and scrambled —
+      // DLCO→24341-0 (an arterial-blood-gas PANEL), KCO→19911-7 (plain DLCO),
+      // VA→19850-7 (inspiratory capacity). Corrected (WebFetch loinc.org, rule
+      // #5): DLCO=19911-7, DLCO/VA(KCO)=19914-1. VA (肺泡容積) has no clean
+      // single-analyte LOINC found → left UNMAPPED per rule #7 (NHI-code-only
+      // beats a wrong code), longest-match keys ordered so the ratio wins.
+      "dlco/va": "19914-1",
+      // DLCO/VA = transfer coefficient (KCO)
+      "dlco/alveolar volume": "19914-1",
+      kco: "19914-1",
+      dlco: "19911-7",
+      // Diffusion capacity.carbon monoxide
+      "dlco sb": "19911-7",
+      // single-breath DLCO
+      \u4E00\u6C27\u5316\u78B3\u80BA\u7030\u6563\u91CF: "19911-7"
     },
     // ── Serum creatinine + eGFR piggyback (09015C) ──────
     // NHI bills creatinine under 09015C; Taiwan labs auto-calculate eGFR

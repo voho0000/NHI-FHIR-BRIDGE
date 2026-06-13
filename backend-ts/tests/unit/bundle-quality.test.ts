@@ -1370,7 +1370,9 @@ describe("CI v0.11.4 — display-variant coverage (proactive audit)", () => {
     // trailing + from keys → "cd3+/cd4" key matches the "cd3+/cd4"
     // prefix of display "CD3+/CD4+".
     expect(findLoinc("12204B", "CD3+/CD4+")).toBe("8123-2"); // CD4
-    expect(findLoinc("12204B", "CD3+/CD8+")).toBe("8128-1"); // CD8
+    // 2026-06-13 LOINC audit: CD8 was the DEPRECATED/wrong 8128-1 (CD4/100
+    // cells); corrected to 8101-8 (CD3+CD8+ suppressor T cells/cells).
+    expect(findLoinc("12204B", "CD3+/CD8+")).toBe("8101-8"); // CD8
   });
 });
 

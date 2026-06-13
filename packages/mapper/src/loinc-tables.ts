@@ -94,9 +94,11 @@ export const NHI_TO_LOINC: Record<string, string> = {
   "27062B": "10861-3", // 黃體激素接受體 (PR)
   "30103B": "83052-1", // PD-L1 IHC
   // ── Audiology / pulmonary ─────────────────────────
-  "17009B": "24341-0", // 一氧化碳肺瀰散量 — DLCO panel (sub-rows
-  // routed via DISPLAY_FIRST_CODES + PANEL_LOINC_MAP since v0.10.0;
-  // this entry is fallback for empty display)
+  // 2026-06-13 LOINC audit: was 24341-0 (an arterial-blood-gas PANEL, wrong).
+  // 19911-7 = Diffusion capacity.carbon monoxide — the panel's primary
+  // analyte (DLCO); used only as the panel-level DR LOINC / Step-C fallback.
+  "17009B": "19911-7", // 一氧化碳肺瀰散量 — DLCO panel (sub-rows routed via
+  // DISPLAY_FIRST_CODES + PANEL_LOINC_MAP since v0.10.0)
   // 22001C 純音聽力檢查 — previously mapped to LOINC 45498-3 which is
   // actually 'Hearing [Minimum Data Set]' (an MDS long-term-care survey
   // item, NOT a pure-tone audiometry measurement; verified loinc.org/
@@ -976,20 +978,20 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
   // SMART app pivot-by-LOINC merged everything into one column.
   "09065B": {
     // Specific fractions — long names first (longest-match wins)
-    "alpha-1 globulin": "2867-3",
-    "alpha 1 globulin": "2867-3",
-    "α1-globulin": "2867-3",
-    α1: "2867-3",
-    "alpha-2 globulin": "2868-1",
-    "alpha 2 globulin": "2868-1",
-    "α2-globulin": "2868-1",
-    α2: "2868-1",
-    "beta globulin": "2869-9",
-    "β-globulin": "2869-9",
-    β: "2869-9",
-    "gamma globulin": "2871-5",
-    "γ-globulin": "2871-5",
-    γ: "2871-5",
+    "alpha-1 globulin": "2865-4",
+    "alpha 1 globulin": "2865-4",
+    "α1-globulin": "2865-4",
+    α1: "2865-4",
+    "alpha-2 globulin": "2868-8",
+    "alpha 2 globulin": "2868-8",
+    "α2-globulin": "2868-8",
+    α2: "2868-8",
+    "beta globulin": "2871-2",
+    "β-globulin": "2871-2",
+    β: "2871-2",
+    "gamma globulin": "2874-6",
+    "γ-globulin": "2874-6",
+    γ: "2874-6",
     "a/g ratio": "1759-0", // Albumin/Globulin ratio
     "a/g": "1759-0",
     "alb/glb": "1759-0",
@@ -1024,8 +1026,8 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     // also need careful ordering — _findLongestMatch picks longest
     // match, so combined ratio keys must outrank bare cd3/cd4/cd8 by
     // length to avoid CD3 winning over the CD3+/CD4+ ratio entry.
-    "cd3+/cd4": "8123-2", // CD3+/CD4+ ratio → CD4 helper LOINC
-    "cd3+/cd8": "8128-1", // CD3+/CD8+ ratio → CD8 helper LOINC
+    "cd3+/cd4": "8123-2", // CD3+CD4+ (T4 helper) cells/cells
+    "cd3+/cd8": "8101-8", // CD3+CD8+ (T8 suppressor) cells/cells (was deprecated/wrong 8128-1)
     "cd4/cd8 ratio": "54218-3",
     "cd4/cd8": "54218-3",
     "cd8/cd4": "54218-3",
@@ -1033,7 +1035,7 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
     "cd16/cd56": "8112-5",
     cd3: "8124-0", // CD3 #/area in Blood
     cd4: "8123-2", // CD4 #/area in Blood
-    cd8: "8128-1", // CD8 #/area in Blood
+    cd8: "8101-8", // CD3+CD8+ (T8 suppressor) cells/cells (was deprecated/wrong 8128-1)
     cd19: "8118-2", // CD19 #/area in Blood (B cell)
     cd16: "8112-5", // CD16 + CD56 (NK cell)
     cd56: "8125-7", // CD56 #/area in Blood (NK cell)
@@ -1045,15 +1047,18 @@ export const PANEL_LOINC_MAP: Record<string, Record<string, string>> = {
   // loinc.org. Pulmonary function rarely surfaces in 健康存摺 but the
   // panel exists for completeness.
   "17009B": {
-    "dlco/va": "19911-7", // DLCO/VA ratio
-    "dlco/alveolar volume": "19911-7",
-    kco: "19911-7", // Transfer coefficient (same as DLCO/VA)
-    dlco: "24341-0", // Diffusing capacity for CO
-    "dlco sb": "24341-0", // Single-breath variant
-    一氧化碳肺瀰散量: "24341-0",
-    va: "19850-7", // Alveolar volume
-    "alveolar volume": "19850-7",
-    肺泡容積: "19850-7",
+    // 2026-06-13 LOINC audit: all three sub-rows were WRONG and scrambled —
+    // DLCO→24341-0 (an arterial-blood-gas PANEL), KCO→19911-7 (plain DLCO),
+    // VA→19850-7 (inspiratory capacity). Corrected (WebFetch loinc.org, rule
+    // #5): DLCO=19911-7, DLCO/VA(KCO)=19914-1. VA (肺泡容積) has no clean
+    // single-analyte LOINC found → left UNMAPPED per rule #7 (NHI-code-only
+    // beats a wrong code), longest-match keys ordered so the ratio wins.
+    "dlco/va": "19914-1", // DLCO/VA = transfer coefficient (KCO)
+    "dlco/alveolar volume": "19914-1",
+    kco: "19914-1",
+    dlco: "19911-7", // Diffusion capacity.carbon monoxide
+    "dlco sb": "19911-7", // single-breath DLCO
+    一氧化碳肺瀰散量: "19911-7",
   },
 
   // ── Serum creatinine + eGFR piggyback (09015C) ──────
@@ -1696,22 +1701,31 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "13046-8": "Lymphocytes [#/volume] in Body fluid",
   // ── SPE fractions (09065B; v0.10.0) ──────────────
   "2865-7": "Albumin [Mass/volume] in Serum or Plasma by Electrophoresis",
-  "2867-3": "Globulin.alpha 1 [Mass/volume] in Serum or Plasma by Electrophoresis",
-  "2868-1": "Globulin.alpha 2 [Mass/volume] in Serum or Plasma by Electrophoresis",
-  "2869-9": "Globulin.beta [Mass/volume] in Serum or Plasma by Electrophoresis",
-  "2871-5": "Globulin.gamma [Mass/volume] in Serum or Plasma by Electrophoresis",
+  // 2026-06-13 LOINC audit: prior codes 2867-3/2868-1/2869-9/2871-5 were
+  // INVALID (bad check digits, non-existent on loinc.org). Corrected to the
+  // verified serum-EP globulin fraction codes (WebFetch loinc.org, rule #5).
+  "2865-4": "Alpha 1 globulin [Mass/volume] in Serum or Plasma by Electrophoresis",
+  "2868-8": "Alpha 2 globulin [Mass/volume] in Serum or Plasma by Electrophoresis",
+  "2871-2": "Beta globulin [Mass/volume] in Serum or Plasma by Electrophoresis",
+  "2874-6": "Gamma globulin [Mass/volume] in Serum or Plasma by Electrophoresis",
   "1759-0": "Albumin/Globulin [Mass Ratio] in Serum or Plasma",
   // ── Flow cytometry CD (12204B; v0.10.0) ──────────
   "8124-0": "CD3 cells [#/area] in Blood",
   "8123-2": "CD4 cells [#/area] in Blood",
-  "8128-1": "CD8 cells [#/area] in Blood",
+  // 2026-06-13 LOINC audit: prior code 8128-1 was DEPRECATED and actually
+  // "CD4 cells/100 cells" (wrong analyte). 8101-8 = CD3+CD8+ suppressor T
+  // cells, the CD8 analyte (WebFetch loinc.org, rule #5).
+  "8101-8": "CD3+CD8+ (T8 suppressor) cells/cells in Blood",
   "8118-2": "CD19 cells [#/area] in Blood",
   "8125-7": "CD56 cells [#/area] in Blood",
   "8112-5": "CD16+CD56 cells [#/area] in Blood",
   "54218-3": "CD4/CD8 [Ratio] in Blood",
-  // ── DLCO (17009B; v0.10.0) ───────────────────────
-  "19850-7": "Alveolar volume [Volume]",
-  "19911-7": "Transfer factor coefficient for carbon monoxide (DLCO/VA)",
+  // ── DLCO (17009B; v0.10.0; codes corrected 2026-06-13 LOINC audit) ──
+  // Was scrambled: 19850-7 (mislabeled "alveolar volume"; really Inspiratory
+  // capacity) and 19911-7 (mislabeled as the DLCO/VA ratio; really plain
+  // DLCO). 19850-7 + 24341-0 are now unused (removed). Verified LCNs:
+  "19911-7": "Diffusion capacity.carbon monoxide",
+  "19914-1": "Diffusion capacity/Alveolar volume by Single breath.carbon monoxide+Helium",
   // ── Vital signs (IHKE3402) ───────────────────────
   "8302-2": "Body height",
   "29463-7": "Body weight",
@@ -1773,7 +1787,6 @@ export const LOINC_DISPLAY: Record<string, string> = {
   "35672-5": "Bilirubin.direct/Bilirubin.total in Serum or Plasma",
   "83052-1": "PD-L1 by clone 22C3 [Presence] in Tissue by Immune stain",
   // ABG / Pulmonary
-  "24341-0": "Gas and Carbon Monoxide Panel - Arterial blood",
   "44596-5": "IgG Ag [Presence] in Skin by Immunofluorescence",
   // Chemistry (general)
   "1927-3": "Base excess in Venous blood by calculation",

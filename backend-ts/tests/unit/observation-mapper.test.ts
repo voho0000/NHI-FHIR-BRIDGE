@@ -492,11 +492,13 @@ describe("findLoinc", () => {
   // (NHI code, display) → LOINC pattern as Part 6.
 
   test("v0.10.0 — SPE 09065B fractions resolve to per-fraction LOINCs", () => {
+    // 2026-06-13 LOINC audit: the 4 globulin codes were INVALID (bad check
+    // digits) — corrected to the verified serum-EP fraction codes.
     expect(findLoinc("09065B", "Albumin")).toBe("2865-7");
-    expect(findLoinc("09065B", "Alpha-1 globulin")).toBe("2867-3");
-    expect(findLoinc("09065B", "Alpha-2 globulin")).toBe("2868-1");
-    expect(findLoinc("09065B", "Beta globulin")).toBe("2869-9");
-    expect(findLoinc("09065B", "Gamma globulin")).toBe("2871-5");
+    expect(findLoinc("09065B", "Alpha-1 globulin")).toBe("2865-4");
+    expect(findLoinc("09065B", "Alpha-2 globulin")).toBe("2868-8");
+    expect(findLoinc("09065B", "Beta globulin")).toBe("2871-2");
+    expect(findLoinc("09065B", "Gamma globulin")).toBe("2874-6");
     expect(findLoinc("09065B", "A/G ratio")).toBe("1759-0");
     expect(findLoinc("09065B", "")).toBe("90991-1"); // fallback to panel LOINC
   });
@@ -504,18 +506,23 @@ describe("findLoinc", () => {
   test("v0.10.0 — Flow cytometry 12204B CD markers route to per-CD LOINCs", () => {
     expect(findLoinc("12204B", "CD3")).toBe("8124-0");
     expect(findLoinc("12204B", "CD4")).toBe("8123-2");
-    expect(findLoinc("12204B", "CD8")).toBe("8128-1");
+    // 2026-06-13 LOINC audit: CD8 was deprecated/wrong 8128-1 → 8101-8.
+    expect(findLoinc("12204B", "CD8")).toBe("8101-8");
     expect(findLoinc("12204B", "CD19")).toBe("8118-2");
     expect(findLoinc("12204B", "CD56")).toBe("8125-7");
     expect(findLoinc("12204B", "CD4/CD8")).toBe("54218-3");
-    expect(findLoinc("12204B", "")).toBe("20584-9"); // fallback
+    expect(findLoinc("12204B", "")).toBe("20584-9"); // panel fallback (see audit: 12204B itself flagged)
   });
 
   test("v0.10.0 — DLCO 17009B sub-items route to per-item LOINCs", () => {
-    expect(findLoinc("17009B", "DLCO")).toBe("24341-0");
-    expect(findLoinc("17009B", "VA")).toBe("19850-7");
-    expect(findLoinc("17009B", "DLCO/VA")).toBe("19911-7");
-    expect(findLoinc("17009B", "")).toBe("24341-0"); // fallback (same as DLCO)
+    // 2026-06-13 LOINC audit: all three sub-codes were wrong/scrambled.
+    // DLCO=19911-7, DLCO/VA(KCO)=19914-1. VA has no clean LOINC → left
+    // unmapped (falls to the panel default 19911-7 internally; suppressed
+    // from per-analyte output coding).
+    expect(findLoinc("17009B", "DLCO")).toBe("19911-7");
+    expect(findLoinc("17009B", "DLCO/VA")).toBe("19914-1");
+    expect(findLoinc("17009B", "VA")).toBe("19911-7"); // unmapped → panel default
+    expect(findLoinc("17009B", "")).toBe("19911-7"); // panel default
   });
 
   // ── v0.9.10 Part 6 — multi-hospital LOINC audit ─────────────────
