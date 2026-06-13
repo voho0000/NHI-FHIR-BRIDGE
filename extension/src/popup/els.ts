@@ -65,6 +65,9 @@ export const els = {
   maskNameEnabled: byId("mask-name-enabled"),
   backendModeEnabled: byId("backend-mode-enabled"),
   fetchImagingEnabled: byId("fetch-imaging-enabled"),
+  // JPG≠DICOM reminder — revealed only when imaging download is enabled
+  // (imaging-toggle.ts toggles [hidden]).
+  imagingJpgNote: byId("imaging-jpg-note"),
   openNhiSection: byId("open-nhi-section"),
   openNhiBtn: byId("open-nhi-btn"),
   nhiNeedsLoginSection: byId("nhi-needs-login-section"),

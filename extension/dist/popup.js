@@ -540,6 +540,9 @@
     maskNameEnabled: byId("mask-name-enabled"),
     backendModeEnabled: byId("backend-mode-enabled"),
     fetchImagingEnabled: byId("fetch-imaging-enabled"),
+    // JPG≠DICOM reminder — revealed only when imaging download is enabled
+    // (imaging-toggle.ts toggles [hidden]).
+    imagingJpgNote: byId("imaging-jpg-note"),
     openNhiSection: byId("open-nhi-section"),
     openNhiBtn: byId("open-nhi-btn"),
     nhiNeedsLoginSection: byId("nhi-needs-login-section"),
@@ -3122,16 +3125,23 @@
   }
 
   // src/popup/imaging-toggle.ts
-  async function loadFetchImagingEnabled() {
-    const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
-    if (els.fetchImagingEnabled) {
-      els.fetchImagingEnabled.checked = fetchImagingEnabled === true;
+  function syncJpgNote(enabled) {
+    if (els.imagingJpgNote) {
+      els.imagingJpgNote.hidden = !enabled;
     }
   }
+  async function loadFetchImagingEnabled() {
+    const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
+    const enabled = fetchImagingEnabled === true;
+    if (els.fetchImagingEnabled) {
+      els.fetchImagingEnabled.checked = enabled;
+    }
+    syncJpgNote(enabled);
+  }
   async function onFetchImagingToggle() {
-    await chrome.storage.local.set({
-      fetchImagingEnabled: els.fetchImagingEnabled.checked === true
-    });
+    const enabled = els.fetchImagingEnabled.checked === true;
+    await chrome.storage.local.set({ fetchImagingEnabled: enabled });
+    syncJpgNote(enabled);
   }
 
   // src/popup/tooltip.ts

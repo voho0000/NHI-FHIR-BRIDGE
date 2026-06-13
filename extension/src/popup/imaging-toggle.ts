@@ -8,15 +8,26 @@
 // of the startNhiApiSync payload.
 import { els } from "./els.js";
 
-export async function loadFetchImagingEnabled() {
-  const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
-  if (els.fetchImagingEnabled) {
-    els.fetchImagingEnabled.checked = fetchImagingEnabled === true;
+// The JPG≠DICOM reminder is only relevant once the user opts into imaging,
+// so it tracks the checkbox state (hidden when off → zero footprint for the
+// common text-report-only path).
+function syncJpgNote(enabled: boolean) {
+  if (els.imagingJpgNote) {
+    els.imagingJpgNote.hidden = !enabled;
   }
 }
 
+export async function loadFetchImagingEnabled() {
+  const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
+  const enabled = fetchImagingEnabled === true;
+  if (els.fetchImagingEnabled) {
+    els.fetchImagingEnabled.checked = enabled;
+  }
+  syncJpgNote(enabled);
+}
+
 export async function onFetchImagingToggle() {
-  await chrome.storage.local.set({
-    fetchImagingEnabled: els.fetchImagingEnabled.checked === true,
-  });
+  const enabled = els.fetchImagingEnabled.checked === true;
+  await chrome.storage.local.set({ fetchImagingEnabled: enabled });
+  syncJpgNote(enabled);
 }

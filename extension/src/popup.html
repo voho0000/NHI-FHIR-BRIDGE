@@ -103,6 +103,20 @@
       line-height: 1.5;
     }
 
+    /* JPG≠DICOM reminder — only visible when imaging download is on.
+       Soft info tint so the opt-in user notices it without it shouting. */
+    .imaging-jpg-note {
+      font-size: 11px;
+      line-height: 1.5;
+      color: #1e40af;
+      background: #eff6ff;
+      border: 0.5px solid #bfdbfe;
+      border-radius: 6px;
+      padding: 6px 8px;
+      margin-top: 7px;
+    }
+    .imaging-jpg-note strong { font-weight: 600; }
+
     /* Two-line layout for the download bundle meta: filename on top
        (truncates with ellipsis if it can't fit), size/age on a second
        lighter line below. Avoids the bundle metadata wrapping mid-name. */
@@ -1612,8 +1626,14 @@
             <input type="checkbox" id="fetch-imaging-enabled" />
             <span>一併下載影像圖片（X 光 / 電腦斷層）</span>
             <span class="help-icon"
-                  data-tip="不勾選（預設）：只下載檢查的文字報告，不含影像圖片。&#10;勾選：連 X 光、電腦斷層的影像圖片一起下載；第一次大約多花 5-10 分鐘，檔案會明顯變大。">ⓘ</span>
+                  data-tip="不勾選（預設）：只下載檢查的文字報告，不含影像圖片。&#10;勾選：連 X 光、電腦斷層的影像圖片一起下載；第一次大約多花 5-10 分鐘，檔案會明顯變大。&#10;※ 下載的是健康存摺提供的 JPG 圖檔，非原始 DICOM 醫學影像。">ⓘ</span>
           </label>
+        </div>
+        <!-- JPG≠DICOM reminder. Revealed only when the imaging toggle is on
+             (imaging-toggle.ts toggles [hidden]). Sets the expectation that
+             NHI 健康存摺 exposes JPG previews, not diagnostic-grade DICOM. -->
+        <div class="imaging-jpg-note" id="imaging-jpg-note" hidden>
+          影像為健康存摺提供的 <strong>JPG 圖檔</strong>，非原始 DICOM 醫學影像檔。
         </div>
         <div class="hint imaging-toggle-hint">
           預設只下載文字報告；需要影像圖片時再勾選。
