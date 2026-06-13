@@ -94,5 +94,4 @@ bridge 不該臆測 —— 這幾個 loinc.org 對不上,但**正確替代碼取
 - **12160B κ/λ `15189-4`** — 總 light-chain ratio,作為 κ/λ 比值的合理預設;無 NHI 確認 IgG-subclass 特異前不臆測。不動。
 - **12204B 白血球表面標記 `20584-9`** — 已是 panel(CD3/4/8/19/56 子項各自正確對碼,含 CD8 8101-8 修正);20584-9 僅 panel-level 被抑制 fallback,不進 per-analyte 輸出。不動。
 
-**仍待你確認 NHI scope(唯一剩項)**:
-- **12195B Her-2/neu** — 現碼 `18474-7`(IHC 蛋白);bridge 註解寫 ISH(基因擴增)。**18474-7 IHC 是 HER2 首線檢測的合理保守預設**,故先留;若 12195B 實際 billing 是 **ISH**(FISH/CISH 基因 copy),需改基因擴增碼。健保存摺無此 row,請你在 VGH 計費系統對一下項目名稱再定。
+**12195B Her-2/neu — 改為留空(unmapped)**:現碼 `18474-7` 是 HER2 **IHC**(蛋白染色),但 bridge 註解寫 **ISH**(基因擴增)—— 兩者是不同 LOINC,而健保存摺無此 row 可確認 NHI 實際 billing 哪一種。依使用者原則「**不確定正確性寧可不發 LOINC**」(2026-06-14),移除 `18474-7`,落到 NHI-code-only + 原始顯示。待 NHI 項目名稱(ISH vs IHC)確認後再補。

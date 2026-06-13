@@ -1629,8 +1629,12 @@
     "27033C": "5197-9",
     // HBsAg RIA
     // ── Pathology / cytology / IHC ────────────────────
-    "12195B": "18474-7",
-    // Her-2/neu ISH
+    // 12195B Her-2/neu — LEFT UNMAPPED (2026-06-14). Prior 18474-7 is HER2
+    // *IHC* (protein, Immune stain); the catalog comment claimed *ISH* (gene
+    // amplification) — a different LOINC. Cannot confirm which NHI 12195B
+    // bills (no row in the probe patient). Per "uncertain → no LOINC" rule,
+    // falls through to NHI-code-only + raw display rather than risk a
+    // method-wrong code. Re-add once the NHI item name (ISH vs IHC) is known.
     "27061B": "14130-9",
     // 動情激素接受體 (ER)
     "27062B": "10861-3",
@@ -3399,7 +3403,6 @@
     "47286-0": "Differential panel - Bone marrow",
     "25700-6": "Immunofixation for Serum or Plasma",
     // Pathology / IHC
-    "18474-7": "HER2 Ag [Presence] in Tissue by Immune stain",
     "14130-9": "Estrogen receptor [Moles/mass] in Tissue",
     "14196-0": "Reticulocytes [#/volume] in Blood",
     "35672-5": "Bilirubin.direct/Bilirubin.total in Serum or Plasma",
