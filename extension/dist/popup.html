@@ -95,7 +95,8 @@
       font-weight: 500;
       margin-bottom: 4px;
     }
-    .label .required { color: #dc2626; }
+    .label .required,
+    .setting-label .required { color: #dc2626; }
     .hint {
       font-size: 11px;
       color: #9ca3af;
@@ -430,6 +431,7 @@
       font-weight: 500;
     }
     .setting-row > select,
+    .setting-row > input,
     .setting-row > .mode-toggle { flex: 1; }
     .setting-row > .mode-toggle { margin: 0; }
 
@@ -689,7 +691,15 @@
     .patient-card-body {
       padding: 12px 14px;
     }
-    .patient-card-body .field { margin-bottom: 10px; }
+    .patient-card-body .setting-row { margin-bottom: 12px; }
+    /* Action footer — full-bleed divider (mirrors the header divider) so the
+       儲存/清除 buttons read as the card's action zone, not another row of
+       boxes piled under the 去識別化 toggle. */
+    .patient-card-actions {
+      margin: 14px -14px 0;
+      padding: 14px 14px 0;
+      border-top: 1px solid #f3f4f6;
+    }
 
 
     /* Subtle multi-line hint that explains the value-prop of the field
@@ -700,7 +710,6 @@
       color: #6b7280;
       line-height: 1.55;
     }
-    .patient-card-body .field:last-child { margin-bottom: 0; }
     .patient-card-body .help {
       font-size: 11px;
       color: #6b7280;
@@ -1328,19 +1337,6 @@
       font-weight: 600;
     }
 
-    /* White-field variant — segmented toggle that lives inside the step 2
-       patient form. Matches the white bordered inputs (生日/性別/姓名) instead
-       of the grey settings-panel track used in step 3, so it doesn't read as
-       a foreign control dropped into the data form. Selected option is a
-       light-blue chip (ringed so it reads on the white track). */
-    .mode-toggle.mode-toggle-field {
-      background: #fff;
-      border-color: #d1d5db;
-    }
-    .mode-toggle.mode-toggle-field .mode-opt:has(input:checked) {
-      background: #eff6ff;
-      box-shadow: inset 0 0 0 1px #bfdbfe;
-    }
 
     /* ── Meta region (disclaimer + meta, persistent across all steps) ──
        Single low-key callout card. Header row carries "免責聲明" on the
@@ -1541,42 +1537,35 @@
           <span class="pc-status" id="override-summary">未設定</span>
         </div>
         <div class="patient-card-body">
-          <!-- Required fields go FIRST so the user sees the * marks
-               on opening — no scrolling past optional rows. -->
-          <div class="row">
-            <div class="field" style="flex:2">
-              <div class="label">生日 <span class="required">*</span></div>
-              <input type="date" id="ov-birth-date" required />
-            </div>
-            <div class="field" style="flex:1">
-              <div class="label">性別 <span class="required">*</span></div>
-              <select id="ov-gender">
-                <option value="">—</option>
-                <option value="male">男</option>
-                <option value="female">女</option>
-                <option value="other">其他</option>
-              </select>
-            </div>
+          <!-- label-left "setting-row" grammar, same as step 3 (日期範圍 /
+               影像). Each required field on its own row — the * sits in the
+               64px label column so it's visible on open. -->
+          <div class="setting-row">
+            <span class="setting-label">生日 <span class="required">*</span></span>
+            <input type="date" id="ov-birth-date" required />
           </div>
-
-          <div class="field">
-            <div class="label">姓名 <span class="required">*</span></div>
+          <div class="setting-row">
+            <span class="setting-label">性別 <span class="required">*</span></span>
+            <select id="ov-gender">
+              <option value="">—</option>
+              <option value="male">男</option>
+              <option value="female">女</option>
+              <option value="other">其他</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">姓名 <span class="required">*</span></span>
             <input type="text" id="ov-name" placeholder="例：陳志明" required />
           </div>
 
-          <!-- De-identify on export. Segmented toggle (same .mode-toggle as
-               step 3's 影像 / 輸出方式) instead of a bare checkbox, so it shares
-               the app's control grammar. The masking detail + ⚠️ warning reveal
-               only when 開啟 — keeps the card compact. els points maskNameEnabled
-               at the 開啟 radio, so `.checked` and the maskNameEnabled storage
-               key stay unchanged for every reader (sync / background). -->
-          <div class="field">
-            <div class="label" style="display:flex;align-items:center;gap:6px;">
-              去識別化
-              <span class="help-icon"
-                    data-tip="想把健康資料拿去分享、展示或測試前建議開啟。&#10;會遮去姓名／身分證／生日並剝除影像 metadata，但屬有限去識別（檔案仍含醫院名稱與就醫日期）。">ⓘ</span>
-            </div>
-            <div class="mode-toggle mode-toggle-field" id="mask-name-toggle" role="radiogroup"
+          <!-- De-identify on export — same setting-row + segmented toggle as
+               step 3's 影像 row (label · control · ⓘ). The masking detail +
+               ⚠️ warning reveal only when 開啟 — keeps the card compact. els
+               points maskNameEnabled at the 開啟 radio, so `.checked` and the
+               maskNameEnabled storage key are unchanged for every reader. -->
+          <div class="setting-row">
+            <span class="setting-label">去識別化</span>
+            <div class="mode-toggle" id="mask-name-toggle" role="radiogroup"
                  aria-label="輸出時是否去識別化（姓名／身分證／生日）">
               <label class="mode-opt" title="預設：姓名／身分證／生日原樣輸出。">
                 <input type="radio" name="mask-name" id="mask-name-off" value="off" checked />
@@ -1587,13 +1576,15 @@
                 開啟
               </label>
             </div>
-            <div class="deid-detail" id="mask-deid-detail" hidden>
-              開啟後：姓名遮成「陳O明」、身分證「F22345XXXX」、生日只留年份（如 1962-01-01）、影像附件剝除 EXIF／註解 metadata。<br />
-              <span class="deid-warn">⚠️ 檔案仍含醫院名稱與就醫日期；影像畫面內若烙印病人資訊也無法移除 — 屬有限去識別，請勿當完全匿名公開散布。</span>
-            </div>
+            <span class="help-icon"
+                  data-tip="想把健康資料拿去分享、展示或測試前建議開啟。&#10;會遮去姓名／身分證／生日並剝除影像 metadata，但屬有限去識別（檔案仍含醫院名稱與就醫日期）。">ⓘ</span>
+          </div>
+          <div class="deid-detail" id="mask-deid-detail" hidden>
+            開啟後：姓名遮成「陳O明」、身分證「F22345XXXX」、生日只留年份（如 1962-01-01）、影像附件剝除 EXIF／註解 metadata。<br />
+            <span class="deid-warn">⚠️ 檔案仍含醫院名稱與就醫日期；影像畫面內若烙印病人資訊也無法移除 — 屬有限去識別，請勿當完全匿名公開散布。</span>
           </div>
 
-          <div class="row" style="margin-top:10px">
+          <div class="row patient-card-actions">
             <button class="btn-primary" id="ov-save-btn">儲存資料</button>
             <button class="btn-secondary" id="ov-clear-btn">清除</button>
           </div>
