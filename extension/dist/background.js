@@ -2424,10 +2424,18 @@
     // dipstick key above is 尿膽素原). English "Urobilinogen" already routes
     // it; cover the CJK-only 元 form too.
     \u5C3F\u81BD\u7D20\u5143: "5818-0",
-    \u81BD\u7D20\u5143: "5818-0"
-    // 黏液/Mucus intentionally UNMAPPED → falls to Step-C panel default
-    // 24356-8 (no clean generic urine-mucus LOINC on loinc.org; keeping it
-    // unmapped leaves the mis-tag canary visible per rule #8 vs guessing).
+    \u81BD\u7D20\u5143: "5818-0",
+    // 黏液/Mucus → 8247-9 (2026-06-13, SMART app dev report + WebFetch).
+    // CORRECTION: the prior comment claimed "no clean generic urine-mucus
+    // LOINC" and left 黏液 unmapped → it fell to the Step-C panel default
+    // 24356-8, which is the "Urinalysis complete PANEL" code, NOT a mucus
+    // analyte. The app dev correctly flagged that as a panel-on-analyte
+    // mis-tag. loinc.org/8247-9 (rule #5, WebFetch-verified): Component
+    // "Mucus", Property "PrThr", System "Urine sed", Scale "Ord", Method
+    // "Microscopy.light" — a single-observation urine-sediment mucus code
+    // matching the qualitative (Negative/Present) result NHI ships. ✅
+    \u9ECF\u6DB2: "8247-9",
+    mucus: "8247-9"
   };
   var PANEL_LOINC_MAP = {
     // ── Urinalysis: 06012C + 06013C share ONE analyte table ──────
@@ -3141,7 +3149,13 @@
     "5797-6": "Ketones Urine Ql",
     "5794-3": "Hemoglobin Urine Ql",
     "5799-2": "Leukocytes Urine Ql",
-    "24356-8": "Urinalysis Macro Panel",
+    // 24356-8 official Long Common Name is "Urinalysis complete panel -
+    // Urine" (WebFetch loinc.org/24356-8 2026-06-13) — corrected from the
+    // earlier "Urinalysis Macro Panel" (that name belongs to 24357-6, the
+    // dipstick-only panel). 06012C 尿液一般檢查 = dipstick + sediment
+    // microscopy = the COMPLETE panel, so the code 24356-8 is right; only
+    // its display string was wrong.
+    "24356-8": "Urinalysis complete panel - Urine",
     // ── Urine sediment microscopy (06012C, v0.18.2 2026-06-09) ──────
     // Canonical Long Common Names per loinc.org (WebFetch-verified
     // 2026-06-09, rule #5). Component / Property / System / Scale / Method
@@ -3151,6 +3165,8 @@
     "5808-1": "Erythrocytes [#/volume] in Urine sediment by Microscopy high power field",
     "25145-4": "Bacteria [Presence] in Urine sediment by Light microscopy",
     "5783-6": "Unidentified crystals [Presence] in Urine sediment by Light microscopy",
+    // 黏液/Mucus (2026-06-13, WebFetch loinc.org/8247-9, rule #5).
+    "8247-9": "Mucus [Presence] in Urine sediment by Light microscopy",
     // ALL entries below use the LOINC canonical 'Long Common Name'
     // as accepted by the TWNHIFHIR validator. Source: loinc.org for
     // each code, cross-checked against the validator's reported

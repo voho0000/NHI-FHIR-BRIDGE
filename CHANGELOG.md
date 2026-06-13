@@ -5,7 +5,8 @@ Newest first. GitHub Releases page keeps the latest version only; this file is t
 
 ## 0.18.10 重點 — 2026-06-13
 
-- **檢驗報告(panel)標題補上 LOINC 英文名**：像「尿一般檢查」這種 panel,先前報告容器只帶 NHI 中文碼名,英文版 App 找不到英文標題、只好退化顯示第一個項目(例如整份尿檢被標成「PROT」)。現在 panel 報告會多帶一組已驗證的 LOINC 編碼＋英文名(例：`24356-8 Urinalysis Macro Panel`),英文 App 就能正確顯示報告名稱。NHI 中文碼名完整保留;此為既有「每個檢驗項目都掛 LOINC」政策補上漏掉的容器層,不新增健康存摺沒有的數值。
+- **檢驗報告(panel)標題補上 LOINC 英文名**：像「尿一般檢查」這種 panel,先前報告容器只帶 NHI 中文碼名,英文版 App 找不到英文標題、只好退化顯示第一個項目(例如整份尿檢被標成「PROT」)。現在 panel 報告會多帶一組已驗證的 LOINC 編碼＋英文名(例：`24356-8 Urinalysis complete panel`),英文 App 就能正確顯示報告名稱。NHI 中文碼名完整保留;此為既有「每個檢驗項目都掛 LOINC」政策補上漏掉的容器層,不新增健康存摺沒有的數值。
+- **修正：尿黏液 Mucus 的 LOINC 用錯**(對接 App 開發者回報)：先前尿黏液掛到 `24356-8`(那其實是整份尿檢的 **panel 碼**,不是黏液的分析物碼)。已改為正確的 `8247-9`「Mucus [Presence] in Urine sediment by Light microscopy」(經 loinc.org 查證)。順帶修正 `24356-8` 的英文名(「Macro」→ 正式名稱「complete panel」)。
 
 ## 0.18.9 重點 — 2026-06-13
 

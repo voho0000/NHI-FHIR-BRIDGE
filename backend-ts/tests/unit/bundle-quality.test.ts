@@ -1295,6 +1295,10 @@ describe("CI v0.11.4 — display-variant coverage (proactive audit)", () => {
       ["尿白血球酯脢 Leukocyte esterase", "5799-2"],
       ["尿酸鹼值 PH", "5803-2"],
       ["尿顏色 Color", "5778-6"],
+      // 2026-06-13: 尿黏液 now routes to its real LOINC 8247-9 (was the
+      // panel default 24356-8 — SMART app dev caught the panel-on-analyte
+      // mis-tag; loinc.org/8247-9 WebFetch-verified).
+      ["尿黏液 Mucus", "8247-9"],
     ];
 
     test.each(CASES)("06012C %s → %s (cleanMatch)", (display, loinc) => {
@@ -1305,14 +1309,18 @@ describe("CI v0.11.4 — display-variant coverage (proactive audit)", () => {
 
     test("no two routable sub-analytes collapse to the same LOINC", () => {
       const loincs = CASES.map(([d]) => findLoincDetailed("06012C", d).loinc);
-      expect(new Set(loincs).size).toBe(CASES.length); // 17 distinct
+      expect(new Set(loincs).size).toBe(CASES.length); // all distinct
       expect(loincs).not.toContain("24356-8"); // none fell to panel default
     });
 
-    test("黏液/Mucus has no clean LOINC → Step-C panel default, canary visible", () => {
+    test("尿黏液 Mucus → 8247-9 cleanMatch (was the panel-default mis-tag)", () => {
+      // Regression for the SMART-app-dev-reported panel-on-analyte mis-tag:
+      // 黏液 used to fall to the Step-C panel default 24356-8 (a PANEL code).
+      // loinc.org/8247-9 is the real single-analyte urine-mucus code.
       const r = findLoincDetailed("06012C", "尿黏液 Mucus");
-      expect(r.loinc).toBe("24356-8"); // panel default, NOT 5778-6 Color
-      expect(r.cleanMatch).toBe(false); // mis-tag canary stays on
+      expect(r.loinc).toBe("8247-9");
+      expect(r.cleanMatch).toBe(true); // real analyte LOINC now, no canary needed
+      expect(r.loinc).not.toBe("24356-8"); // NOT the panel code
     });
 
     test("06012C is registered as a panel (DISPLAY_FIRST + PANEL_LOINC_MAP)", () => {

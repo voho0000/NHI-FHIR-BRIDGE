@@ -239,7 +239,7 @@ describe("mapObservationsGrouped (panel grouping)", () => {
     expect(codings[0]?.code).toBe("06012C");
     const loinc = codings.find((c: any) => c.system === "http://loinc.org");
     expect(loinc?.code).toBe("24356-8");
-    expect(loinc?.display).toBe("Urinalysis Macro Panel"); // loinc.org LCN, not a bridge guess
+    expect(loinc?.display).toBe("Urinalysis complete panel - Urine"); // loinc.org LCN, not a bridge guess
     // Chinese panel title preserved in text.
     expect(dr?.code?.text).toContain("尿一般檢查");
   });
