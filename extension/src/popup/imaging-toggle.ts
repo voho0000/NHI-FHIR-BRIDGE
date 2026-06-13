@@ -20,14 +20,19 @@ function syncJpgNote(enabled: boolean) {
 export async function loadFetchImagingEnabled() {
   const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
   const enabled = fetchImagingEnabled === true;
+  // Segmented toggle: select the matching radio (the off radio doesn't
+  // auto-check when we only clear the on radio, so set both explicitly).
   if (els.fetchImagingEnabled) {
     els.fetchImagingEnabled.checked = enabled;
+  }
+  if (els.fetchImagingOff) {
+    els.fetchImagingOff.checked = !enabled;
   }
   syncJpgNote(enabled);
 }
 
 export async function onFetchImagingToggle() {
-  const enabled = els.fetchImagingEnabled.checked === true;
+  const enabled = els.fetchImagingEnabled?.checked === true;
   await chrome.storage.local.set({ fetchImagingEnabled: enabled });
   syncJpgNote(enabled);
 }

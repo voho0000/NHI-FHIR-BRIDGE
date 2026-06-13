@@ -250,7 +250,9 @@ els.syncApiKey.addEventListener("change", () => {
   chrome.storage.local.set({ syncApiKey: els.syncApiKey.value.trim() });
 });
 els.maskNameEnabled?.addEventListener("change", onMaskNameToggle);
-els.fetchImagingEnabled?.addEventListener("change", onFetchImagingToggle);
+// Bind on the radiogroup container — change bubbles from whichever radio
+// (不下載 / 一併下載) the user picks.
+els.fetchImagingToggle?.addEventListener("change", onFetchImagingToggle);
 els.smartAppUrl.addEventListener("change", onSmartAppUrlChange);
 
 // Pending-bundle download / clear buttons.

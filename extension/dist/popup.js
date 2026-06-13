@@ -539,8 +539,15 @@
     syncStatusHint: byId("sync-status-hint"),
     maskNameEnabled: byId("mask-name-enabled"),
     backendModeEnabled: byId("backend-mode-enabled"),
-    fetchImagingEnabled: byId("fetch-imaging-enabled"),
-    // JPG≠DICOM reminder — revealed only when imaging download is enabled
+    // Imaging download is a segmented toggle (same .mode-toggle as 輸出方式).
+    // fetchImagingEnabled points at the "一併下載" radio so `.checked` keeps its
+    // "imaging on" meaning everywhere it's read (sync-client, imaging-toggle).
+    // fetchImagingOff is set on load to restore the off state; the container
+    // catches the bubbled change event for either radio.
+    fetchImagingEnabled: byId("fetch-imaging-on"),
+    fetchImagingOff: byId("fetch-imaging-off"),
+    fetchImagingToggle: byId("fetch-imaging-toggle"),
+    // JPG≠DICOM reminder — revealed only when 一併下載 is selected
     // (imaging-toggle.ts toggles [hidden]).
     imagingJpgNote: byId("imaging-jpg-note"),
     openNhiSection: byId("open-nhi-section"),
@@ -3136,10 +3143,13 @@
     if (els.fetchImagingEnabled) {
       els.fetchImagingEnabled.checked = enabled;
     }
+    if (els.fetchImagingOff) {
+      els.fetchImagingOff.checked = !enabled;
+    }
     syncJpgNote(enabled);
   }
   async function onFetchImagingToggle() {
-    const enabled = els.fetchImagingEnabled.checked === true;
+    const enabled = els.fetchImagingEnabled?.checked === true;
     await chrome.storage.local.set({ fetchImagingEnabled: enabled });
     syncJpgNote(enabled);
   }
@@ -3263,7 +3273,7 @@
     chrome.storage.local.set({ syncApiKey: els.syncApiKey.value.trim() });
   });
   els.maskNameEnabled?.addEventListener("change", onMaskNameToggle);
-  els.fetchImagingEnabled?.addEventListener("change", onFetchImagingToggle);
+  els.fetchImagingToggle?.addEventListener("change", onFetchImagingToggle);
   els.smartAppUrl.addEventListener("change", onSmartAppUrlChange);
   els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);
   els.clearBundleBtn.addEventListener("click", clearPendingBundle);

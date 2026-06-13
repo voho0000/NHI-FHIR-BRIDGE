@@ -1621,13 +1621,25 @@
              per first-touch row and each base64 JPG is ~2-3 MB → bundle
              size and sync time both grow significantly. Users who don't
              need imaging skip the cost entirely. -->
+        <!-- Segmented toggle (same .mode-toggle component as 輸出方式) so the
+             row shares the "label : control" grammar of 日期範圍. els points
+             fetchImagingEnabled at the "一併下載" radio → `.checked` keeps its
+             "imaging on" meaning everywhere it's read. -->
         <div class="setting-row imaging-toggle-row">
-          <label class="toggle-row" style="flex:1;margin:0;">
-            <input type="checkbox" id="fetch-imaging-enabled" />
-            <span>一併下載影像圖片（X 光 / 電腦斷層）</span>
-            <span class="help-icon"
-                  data-tip="不勾選（預設）：只下載檢查的文字報告，不含影像圖片。&#10;勾選：連 X 光、電腦斷層的影像圖片一起下載；第一次大約多花 5-10 分鐘，檔案會明顯變大。&#10;※ 下載的是健康存摺提供的 JPG 圖檔，非原始 DICOM 醫學影像。">ⓘ</span>
-          </label>
+          <span class="setting-label">影像圖片</span>
+          <div class="mode-toggle" id="fetch-imaging-toggle" role="radiogroup"
+               aria-label="是否一併下載影像圖片（X 光 / 電腦斷層）">
+            <label class="mode-opt" title="預設：只下載檢查的文字報告，不含影像圖片。">
+              <input type="radio" name="fetch-imaging" id="fetch-imaging-off" value="off" checked />
+              不下載
+            </label>
+            <label class="mode-opt" title="連 X 光、電腦斷層的影像圖片一起下載；第一次大約多花 5-10 分鐘，檔案會明顯變大。">
+              <input type="radio" name="fetch-imaging" id="fetch-imaging-on" value="on" />
+              一併下載
+            </label>
+          </div>
+          <span class="help-icon"
+                data-tip="不下載（預設）：只下載檢查的文字報告，不含影像圖片。&#10;一併下載：連 X 光、電腦斷層的影像圖片一起下載；第一次大約多花 5-10 分鐘，檔案會明顯變大。&#10;※ 下載的是健康存摺提供的 JPG 圖檔，非原始 DICOM 醫學影像。">ⓘ</span>
         </div>
         <!-- JPG≠DICOM reminder. Revealed only when the imaging toggle is on
              (imaging-toggle.ts toggles [hidden]). Sets the expectation that
