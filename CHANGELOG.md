@@ -3,6 +3,11 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.18.12 重點 — 2026-06-14
+
+- **下載影像時提醒「是 JPG 預覽圖、非原始 DICOM」**：勾選「一併下載影像圖片」後，會多出一行說明——健康存摺提供的是 **JPG 圖檔**，不是原始 DICOM 醫學影像檔，避免使用者（尤其臨床端）誤以為拿到診斷級原始影像。提示只在勾選影像下載時才出現(平常完全不佔版面)，同一句說明也加進該選項的 ⓘ 提示供隨時查閱。純介面文案，不影響任何資料。
+- （內部 CI）GitHub Actions 升級到 Node 24 runtime（`actions/checkout` v6、`actions/setup-node` v6、`softprops/action-gh-release` v3），因 GitHub 自 2026-06-16 起強制 Actions 使用 Node 24。測試執行用的 Node 版本不變，與功能無關。
+
 ## 0.18.11 重點 — 2026-06-14
 
 - **LOINC 正確性 audit 收尾**：對全部 ~132 個不重複 LOINC 對應做完整(非抽查)複驗，修正幾個低頻檢驗的對應錯誤(每個替代碼都經 loinc.org 親自查證)。**完全不影響數值／日期／院所／單位，純對應層修正**：
