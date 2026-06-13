@@ -1535,19 +1535,17 @@ describe("adaptCancerScreening (IHKE3404 — audit 2026-06-13)", () => {
     codE_ENAME: "Y",
   };
 
-  test("maps a colorectal screening row → Observation-shaped dict", () => {
+  test("separates label / headline / detail for the dedicated mapper", () => {
     const o = adaptCancerScreening(colorectal, "大腸癌篩檢");
     expect(o).not.toBeNull();
     expect(o.date).toBe("2023-04-20"); // 112 → 2023
-    expect(o.display).toBe("大腸癌篩檢");
-    expect(o.value).toBe("無異常");
+    expect(o.screening_label).toBe("大腸癌篩檢"); // 中文 name (mapper translates)
+    expect(o.result_text).toBe("無異常"); // 中文 headline RAW (mapper looks up)
+    expect(o.detail).toBe(""); // no free-text detail on this row
     expect(o.hospital).toBe("新北市聯醫");
-    expect(o.category).toBe("laboratory");
-    expect(o.source_program).toBe("cancer-screening");
-    expect(o.code).toBe(""); // no NHI 醫令碼 on these rows
   });
 
-  test("folds 乳癌 diagnosis_CODE (BI-RADS-ish, <BR>/● markup) into the value cleanly", () => {
+  test("cleans 乳癌 diagnosis_CODE (<BR>/● markup) into detail, headline kept separate", () => {
     const breast = {
       hosP_ABBR: "明新診所",
       funC_DATE: "112/03/13",
@@ -1555,22 +1553,22 @@ describe("adaptCancerScreening (IHKE3404 — audit 2026-06-13)", () => {
       diagnosis_CODE: "●良性發現<BR>●有發現影像變化，但為良性，建議每年定期檢查即可。",
     };
     const o = adaptCancerScreening(breast, "乳癌篩檢");
-    expect(o.value).toContain("無異常");
-    expect(o.value).toContain("良性發現");
-    expect(o.value).not.toMatch(/<br/i); // HTML stripped
-    expect(o.value).not.toMatch(/[●•]/); // bullets stripped
+    expect(o.result_text).toBe("無異常"); // headline stays clean for vocab lookup
+    expect(o.detail).toContain("良性發現");
+    expect(o.detail).not.toMatch(/<br/i); // HTML stripped
+    expect(o.detail).not.toMatch(/[●•]/); // bullets stripped
   });
 
-  test("子宮頸 cytopathiC_CODE is folded in too", () => {
+  test("子宮頸 cytopathiC_CODE → detail (kept as-is, e.g. already English)", () => {
     const cervical = {
       hosP_ABBR: "三重衛生所",
       funC_DATE: "105/12/16",
       codE_CNAME: "無異常",
-      cytopathiC_CODE: "NILM",
+      cytopathiC_CODE: "Within normal limit",
     };
     const o = adaptCancerScreening(cervical, "子宮頸癌篩檢");
-    expect(o.value).toContain("無異常");
-    expect(o.value).toContain("NILM");
+    expect(o.result_text).toBe("無異常");
+    expect(o.detail).toBe("Within normal limit");
   });
 
   test("drops rows with no date or no result (defensive)", () => {

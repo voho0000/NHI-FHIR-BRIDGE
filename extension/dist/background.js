@@ -498,6 +498,7 @@
     "procedures",
     "immunizations",
     "care_plans",
+    "cancer_screening",
     // 出院病摘 — emitted after the inpatient detail fan-out in the
     // orchestrator. Sits at the end so encounters/observations linking
     // has settled before DocumentReference's context.encounter is
@@ -640,6 +641,8 @@
   var ENCOUNTER_KIND_SYSTEM = "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-kind";
   var ENCOUNTER_CHANNEL_SYSTEM = "https://nhi-fhir-bridge.github.io/CodeSystem/encounter-channel";
   var NHI_CARE_PLAN_PROGRAM = "https://nhi-fhir-bridge.github.io/CodeSystem/nhi-care-plan-program";
+  var CANCER_SCREENING_CODE = "https://nhi-fhir-bridge.github.io/CodeSystem/cancer-screening";
+  var CANCER_SCREENING_RESULT = "https://nhi-fhir-bridge.github.io/CodeSystem/cancer-screening-result";
   var LOINC = "http://loinc.org";
   var SNOMED_CT = "http://snomed.info/sct";
   var ICD_10_CM = "http://hl7.org/fhir/sid/icd-10-cm";
@@ -923,6 +926,91 @@
           title
         };
       });
+    }
+    return resource;
+  }
+
+  // ../packages/mapper/src/cancer-screening.ts
+  var INTERP_SYS = "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation";
+  var OBS_CATEGORY_SYS = "http://terminology.hl7.org/CodeSystem/observation-category";
+  var CANCER_SCREENING_NAMES = {
+    \u5927\u8178\u764C\u7BE9\u6AA2: "Colorectal Cancer Screening (FOBT)",
+    \u53E3\u8154\u764C\u7BE9\u6AA2: "Oral Cancer Screening",
+    \u4E73\u764C\u7BE9\u6AA2: "Breast Cancer Screening (Mammography)",
+    \u5B50\u5BAE\u9838\u764C\u7BE9\u6AA2: "Cervical Cancer Screening (Pap Smear)",
+    \u80BA\u764C\u7BE9\u6AA2: "Lung Cancer Screening (LDCT)",
+    \u5A66\u5973HPV\u6AA2\u6E2C: "Cervical HPV Test",
+    \u80C3\u5E7D\u9580\u687F\u83CC\u7BE9\u6AA2: "H. pylori Stool Antigen Test (HPSA)"
+  };
+  var CANCER_RESULT_VOCAB = {
+    \u7121\u7570\u5E38: { en: "No abnormality detected", interp: "N" },
+    \u6B63\u5E38: { en: "Normal", interp: "N" },
+    \u7570\u5E38: { en: "Abnormal", interp: "A" },
+    \u7591\u4F3C\u7570\u5E38: { en: "Suspected abnormality", interp: "A" },
+    \u967D\u6027: { en: "Positive", interp: "POS" },
+    \u9670\u6027: { en: "Negative", interp: "NEG" },
+    \u826F\u6027\u767C\u73FE: { en: "Benign finding", interp: "N" },
+    \u5EFA\u8B70\u8FFD\u8E64: { en: "Follow-up recommended", interp: null },
+    \u5EFA\u8B70\u8907\u6AA2: { en: "Follow-up recommended", interp: null }
+  };
+  var INTERP_DISPLAY = {
+    N: "Normal",
+    A: "Abnormal",
+    POS: "Positive",
+    NEG: "Negative"
+  };
+  function mapCancerScreening(raw, patientId) {
+    const date = String(raw.date ?? "").trim();
+    const label = String(raw.screening_label ?? "").trim();
+    const resultText = String(raw.result_text ?? "").trim();
+    if (!date || !label || !resultText) return null;
+    const hospital = String(raw.hospital ?? "").trim();
+    const nameEn = CANCER_SCREENING_NAMES[label];
+    const vocab = CANCER_RESULT_VOCAB[resultText];
+    const resource = {
+      resourceType: "Observation",
+      id: stableId(patientId, "cancer-screen", label, date, hospital, resultText),
+      meta: {
+        versionId: "1",
+        source: "nhi-fhir-bridge/scraper",
+        // Programme tag so SMART apps can isolate the 癌症篩檢 section.
+        tag: [{ system: "http://nhi-fhir-bridge/source-program", code: "cancer-screening" }]
+      },
+      status: "final",
+      category: [
+        { coding: [{ system: OBS_CATEGORY_SYS, code: "laboratory", display: "Laboratory" }] }
+      ],
+      code: {
+        // Chinese label as the code; English display from the bilingual
+        // table (falls back to the Chinese label when unmapped). code.text
+        // always carries the Chinese name (patient-facing).
+        coding: [{ system: CANCER_SCREENING_CODE, code: label, display: nameEn || label }],
+        text: label
+      },
+      subject: { reference: `Patient/${patientId}` },
+      effectiveDateTime: `${date}T00:00:00+08:00`
+    };
+    if (vocab) {
+      resource.valueCodeableConcept = {
+        coding: [{ system: CANCER_SCREENING_RESULT, code: resultText, display: vocab.en }],
+        text: resultText
+      };
+      if (vocab.interp) {
+        resource.interpretation = [
+          {
+            coding: [
+              { system: INTERP_SYS, code: vocab.interp, display: INTERP_DISPLAY[vocab.interp] }
+            ]
+          }
+        ];
+      }
+    } else {
+      resource.valueString = resultText;
+    }
+    if (hospital) resource.performer = [{ display: hospital }];
+    const detail = String(raw.detail ?? "").trim();
+    if (detail) {
+      resource.note = [{ text: detail }];
     }
     return resource;
   }
@@ -3916,9 +4004,9 @@
     }
     return codings;
   }
-  var INTERP_SYS = "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation";
+  var INTERP_SYS2 = "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation";
   function interpCoding(code, display) {
-    return { system: INTERP_SYS, code, display };
+    return { system: INTERP_SYS2, code, display };
   }
   var INTERP_TABLE = {
     high: ["H", "High"],
@@ -5108,6 +5196,9 @@
     encounters: [mapEncounter, "encounters"],
     immunizations: [mapImmunization, "immunizations"],
     care_plans: [mapCarePlan, "care_plans"],
+    // 癌症篩檢 (IHKE3404) — dedicated mapper; qualitative bilingual result,
+    // not a lab. One Observation per screening record (no panel grouping).
+    cancer_screening: [mapCancerScreening, "cancer_screening"],
     // 出院病摘 (NHI IHKE3309S02/getxml) — DocumentReference carrying the
     // NHI-rendered HTML verbatim. One row per inpatient stay with
     // has_XML=Y. See document-reference.ts for the faithful-transport
@@ -6273,21 +6364,12 @@
       item.diagnosis_CODE || item.diagnosis_code || item.cytopathiC_CODE || item.cytopathic_code || ""
     );
     const detail = detailRaw.replace(/<br\s*\/?>/gi, "\uFF1B").replace(/[●•·]\s*/g, "").replace(/[；;]\s*[；;]+/g, "\uFF1B").replace(/\s+/g, " ").replace(/^[；;\s]+|[；;\s]+$/g, "").trim();
-    const value = detail ? `${resultText}\uFF08${detail}\uFF09` : resultText;
     return {
       date,
-      // No NHI 醫令碼 on these rows — group/route by the screening label.
-      code: "",
-      order_name: screeningLabel,
-      display: screeningLabel,
-      value,
-      unit: "",
-      reference_range: "",
-      category: "laboratory",
-      hospital: item.hosP_ABBR || item.hosp_abbr || "",
-      // Tagged so SMART apps can isolate the 癌症篩檢 programme (mirrors
-      // adult-preventive's source_program tag).
-      source_program: "cancer-screening"
+      screening_label: screeningLabel,
+      result_text: resultText,
+      detail,
+      hospital: item.hosP_ABBR || item.hosp_abbr || ""
     };
   }
   function adaptAllergy(item) {
@@ -6412,7 +6494,9 @@
   ].map((c) => ({
     name: c.name,
     path: c.path,
-    page_type: "observations",
+    // Dedicated page_type → mapCancerScreening (bilingual qualitative result),
+    // NOT the lab observation pipeline.
+    page_type: "cancer_screening",
     // No date-range param — NHI returns all-time screening history.
     supportsDateRange: false,
     adapt: (item) => adaptCancerScreening(item, c.label)

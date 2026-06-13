@@ -819,21 +819,16 @@ export function adaptCancerScreening(item, screeningLabel) {
     .replace(/\s+/g, " ")
     .replace(/^[；;\s]+|[；;\s]+$/g, "")
     .trim();
-  const value = detail ? `${resultText}（${detail}）` : resultText;
+  // Separated parts for the dedicated mapCancerScreening (page_type
+  // "cancer_screening"): the mapper owns the bilingual name/result tables,
+  // so keep the 中文 RAW here. Headline (result_text) drives the bilingual
+  // result lookup; detail goes verbatim into Observation.note (not translated).
   return {
     date,
-    // No NHI 醫令碼 on these rows — group/route by the screening label.
-    code: "",
-    order_name: screeningLabel,
-    display: screeningLabel,
-    value,
-    unit: "",
-    reference_range: "",
-    category: "laboratory",
+    screening_label: screeningLabel,
+    result_text: resultText,
+    detail,
     hospital: item.hosP_ABBR || item.hosp_abbr || "",
-    // Tagged so SMART apps can isolate the 癌症篩檢 programme (mirrors
-    // adult-preventive's source_program tag).
-    source_program: "cancer-screening",
   };
 }
 

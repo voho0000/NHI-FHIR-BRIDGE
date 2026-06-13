@@ -41,6 +41,7 @@ const KNOWN_PAGE_TYPES = new Set([
   "conditions",
   "immunizations",
   "care_plans",
+  "cancer_screening",
 ]);
 
 // Local-bundle assembler iterates this whitelist. Forgetting to add a

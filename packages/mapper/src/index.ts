@@ -27,6 +27,7 @@ export {
   NHI_CODE_PANEL_NAME,
   DISPLAY_FIRST_CODES,
 } from "./loinc-tables";
+export * from "./cancer-screening";
 export * from "./immunization";
 export * from "./jpeg-deid";
 export * from "./link";

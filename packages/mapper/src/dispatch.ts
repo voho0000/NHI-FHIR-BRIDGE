@@ -6,6 +6,7 @@
  */
 
 import { mapAllergyIntolerance } from "./allergy";
+import { mapCancerScreening } from "./cancer-screening";
 import { mapCarePlan } from "./careplan";
 import { mapCondition } from "./condition";
 import { mapDiagnosticReport } from "./diagnostic-report";
@@ -38,6 +39,9 @@ export const LIST_HANDLERS: Record<string, [PerRowMapper, string]> = {
   encounters: [mapEncounter, "encounters"],
   immunizations: [mapImmunization, "immunizations"],
   care_plans: [mapCarePlan, "care_plans"],
+  // 癌症篩檢 (IHKE3404) — dedicated mapper; qualitative bilingual result,
+  // not a lab. One Observation per screening record (no panel grouping).
+  cancer_screening: [mapCancerScreening, "cancer_screening"],
   // 出院病摘 (NHI IHKE3309S02/getxml) — DocumentReference carrying the
   // NHI-rendered HTML verbatim. One row per inpatient stay with
   // has_XML=Y. See document-reference.ts for the faithful-transport

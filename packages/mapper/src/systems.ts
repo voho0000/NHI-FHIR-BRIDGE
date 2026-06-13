@@ -72,6 +72,17 @@ export const ENCOUNTER_CHANNEL_SYSTEM =
 export const NHI_CARE_PLAN_PROGRAM =
   "https://nhi-fhir-bridge.github.io/CodeSystem/nhi-care-plan-program";
 
+// 癌症篩檢 (IHKE3404) — bridge-local code systems. NHI ships Chinese-only
+// screening names + qualitative results with no terminology code, so the
+// bridge assigns its own codes (Chinese label as code) and carries the
+// English display from a bilingual lookup. NOT LOINC — cancer-screening
+// LOINCs (FOBT 2335-8, Pap 47527-7, …) are a future enhancement pending
+// per-code WebFetch verification.
+export const CANCER_SCREENING_CODE =
+  "https://nhi-fhir-bridge.github.io/CodeSystem/cancer-screening";
+export const CANCER_SCREENING_RESULT =
+  "https://nhi-fhir-bridge.github.io/CodeSystem/cancer-screening-result";
+
 // ── International code systems ───────────────────────────────────────
 
 export const LOINC = "http://loinc.org";

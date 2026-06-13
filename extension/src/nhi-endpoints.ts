@@ -54,7 +54,9 @@ const CANCER_SCREENING_ENDPOINTS = [
 ].map((c) => ({
   name: c.name,
   path: c.path,
-  page_type: "observations",
+  // Dedicated page_type → mapCancerScreening (bilingual qualitative result),
+  // NOT the lab observation pipeline.
+  page_type: "cancer_screening",
   // No date-range param — NHI returns all-time screening history.
   supportsDateRange: false,
   adapt: (item: any) => adaptCancerScreening(item, c.label),

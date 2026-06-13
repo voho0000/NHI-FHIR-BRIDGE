@@ -3,6 +3,10 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.18.9 重點 — 2026-06-13
+
+- **癌症篩檢中英雙語化**：篩檢名稱(7 種)現在帶英文 `display`、中文留 `text`；常見結果(無異常／異常／陽性／陰性…)做成雙語 `valueCodeableConcept` 並附 FHIR interpretation 旗標(N/A/POS/NEG),讓英文版 App 能全英文呈現「Colorectal Cancer Screening — Normal」並標紅綠。表內查無的結果一律維持中文原樣(不亂翻)；乳攝 BI-RADS 等自由文字敘述放進 `note`、原樣保留(NHI 只有中文、不做機器翻譯以免 PHI 外流)。癌篩改用獨立 mapper(不再走檢驗管線)。
+
 ## 0.18.8 重點 — 2026-06-13
 
 - **修正：癌症篩檢／成人健檢的「來源計畫」標籤先前在實際檔案中沒出現**。這些 Observation 本身有正確匯入，但用來讓 SMART App 分類（`source-program` 標籤）的標記只在單筆路徑產生、實際健康紀錄檔走的是分組路徑而漏掉了。現在兩條路徑都會帶上標籤（`cancer-screening` / `adult-preventive`），且與既有的就醫日期等標籤並存不衝突。
