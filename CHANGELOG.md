@@ -3,6 +3,10 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.18.8 重點 — 2026-06-13
+
+- **修正：癌症篩檢／成人健檢的「來源計畫」標籤先前在實際檔案中沒出現**。這些 Observation 本身有正確匯入，但用來讓 SMART App 分類（`source-program` 標籤）的標記只在單筆路徑產生、實際健康紀錄檔走的是分組路徑而漏掉了。現在兩條路徑都會帶上標籤（`cancer-screening` / `adult-preventive`），且與既有的就醫日期等標籤並存不衝突。
+
 ## 0.18.7 重點 — 2026-06-13
 
 - **新增「癌症篩檢」擷取（先前完全沒抓到）**：大腸癌／口腔癌／乳癌／子宮頸癌／肺癌／婦女 HPV／胃幽門桿菌 7 種篩檢結果現在會正確匯入（每筆轉成一個 FHIR Observation）。先前因為抓錯端點（只抓到分類選單頁），這些資料一筆都沒進健康紀錄檔。
