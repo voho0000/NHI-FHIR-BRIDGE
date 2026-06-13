@@ -1551,6 +1551,30 @@ function appendNhiVisitDateTag(resource: Record<string, any>, raw: Record<string
   });
 }
 
+// Source-programme tag — set when the adapter pulled this observation out
+// of a specific NHI screening programme (adaptAdultPreventive →
+// "adult-preventive", adaptCancerScreening → "cancer-screening"). Surfaced
+// via Observation.meta.tag so SMART apps can filter by _tag without knowing
+// our internal field names. APPEND-safe (mirrors the other tag helpers) so
+// it composes with source-channel / visit-date tags.
+//
+// 2026-06-13 fix: this is now applied in BOTH the standalone mapObservation
+// path AND the grouped buildObservation path. Previously only the
+// standalone path emitted it, so real bundles (which route page_type
+// "observations" through mapObservationsGrouped → buildObservation) never
+// carried the tag — adult-preventive AND cancer-screening observations
+// shipped untagged, defeating downstream programme filtering.
+function appendSourceProgramTag(resource: Record<string, any>, raw: Record<string, any>): void {
+  const program = String(raw.source_program ?? "").trim();
+  if (!program) return;
+  if (!resource.meta) resource.meta = { versionId: "1", source: "nhi-fhir-bridge/scraper" };
+  if (!Array.isArray(resource.meta.tag)) resource.meta.tag = [];
+  resource.meta.tag.push({
+    system: "http://nhi-fhir-bridge/source-program",
+    code: program,
+  });
+}
+
 /**
  * v0.13 — Resolve obs.code.text using clean-match guard.
  *
@@ -1787,19 +1811,9 @@ export function mapObservation(
     subject: { reference: `Patient/${patientId}` },
   };
 
-  // Source-programme tag — set when the adapter pulled this observation
-  // out of a specific NHI screening programme (e.g. adaptAdultPreventive
-  // sets source_program="adult-preventive"). Surfaced via Observation.
-  // meta.tag so downstream SMART apps can filter by _tag without needing
-  // to know about our internal field names.
-  if (raw.source_program) {
-    resource.meta.tag = [
-      {
-        system: "http://nhi-fhir-bridge/source-program",
-        code: String(raw.source_program),
-      },
-    ];
-  }
+  // Source-programme tag (adult-preventive / cancer-screening). Shared
+  // append-safe helper — same emission in the grouped buildObservation path.
+  appendSourceProgramTag(resource, raw);
   // v0.12.3: NHI source channel (A=不定期 / B=定期).
   appendNhiSourceChannelTag(resource, raw);
   // v0.13: NHI 就醫日期 (funC_DATE) carried separately from
@@ -2072,6 +2086,10 @@ function buildObservation(
   // v0.13: surface NHI 就醫日期 (funC_DATE) for visit-vs-inspect-gap
   // detection. See appendNhiVisitDateTag() docstring.
   appendNhiVisitDateTag(resource, raw);
+  // 2026-06-13: source-programme tag (adult-preventive / cancer-screening)
+  // — was missing from this grouped path, so real bundles shipped these
+  // observations untagged. See appendSourceProgramTag() docstring.
+  appendSourceProgramTag(resource, raw);
 
   const hasValue = isMeaningfulValue(value);
   if (hasValue) {

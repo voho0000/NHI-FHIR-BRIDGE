@@ -4604,6 +4604,16 @@
       code: visitDate
     });
   }
+  function appendSourceProgramTag(resource, raw) {
+    const program = String(raw.source_program ?? "").trim();
+    if (!program) return;
+    if (!resource.meta) resource.meta = { versionId: "1", source: "nhi-fhir-bridge/scraper" };
+    if (!Array.isArray(resource.meta.tag)) resource.meta.tag = [];
+    resource.meta.tag.push({
+      system: "http://nhi-fhir-bridge/source-program",
+      code: program
+    });
+  }
   function resolveHumanLabel(opts) {
     const { loincShortText, code, itemName, orderName, display, fallback, preferItemName } = opts;
     const item = (itemName ?? "").trim();
@@ -4699,14 +4709,7 @@
       },
       subject: { reference: `Patient/${patientId}` }
     };
-    if (raw.source_program) {
-      resource.meta.tag = [
-        {
-          system: "http://nhi-fhir-bridge/source-program",
-          code: String(raw.source_program)
-        }
-      ];
-    }
+    appendSourceProgramTag(resource, raw);
     appendNhiSourceChannelTag(resource, raw);
     appendNhiVisitDateTag(resource, raw);
     if (raw.date) {
@@ -4885,6 +4888,7 @@
     if (specimen) resource.specimen = { display: specimen };
     appendNhiSourceChannelTag(resource, raw);
     appendNhiVisitDateTag(resource, raw);
+    appendSourceProgramTag(resource, raw);
     const hasValue = isMeaningfulValue(value);
     if (hasValue) {
       const unit = _canonicalizeUnit(display, code, raw.unit ?? "");

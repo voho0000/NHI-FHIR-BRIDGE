@@ -886,6 +886,58 @@ describe("mapObservation — source_program → meta.tag", () => {
     );
     expect(obs?.meta.tag).toBeUndefined();
   });
+
+  // 2026-06-13 regression: the REAL pipeline routes page_type "observations"
+  // through mapObservationsGrouped → buildObservation, which previously did
+  // NOT emit the source-program tag (only the standalone mapObservation
+  // did). So adult-preventive + cancer-screening observations shipped
+  // untagged in every real bundle. Pin the tag on the grouped path.
+  test("grouped path emits source-program tag (was dropped — real-bundle path)", () => {
+    const out = mapObservationsGrouped(
+      [
+        {
+          date: "2023-04-20",
+          code: "",
+          order_name: "大腸癌篩檢",
+          display: "大腸癌篩檢",
+          value: "無異常",
+          category: "laboratory",
+          hospital: "新北市聯醫",
+          source_program: "cancer-screening",
+        },
+      ],
+      "patient-123",
+    );
+    const obs = out.find((o) => o.resourceType === "Observation");
+    expect(obs).toBeDefined();
+    expect(obs?.meta?.tag).toContainEqual({
+      system: "http://nhi-fhir-bridge/source-program",
+      code: "cancer-screening",
+    });
+  });
+
+  test("grouped path: source-program tag composes with visit-date tag (append-safe)", () => {
+    const out = mapObservationsGrouped(
+      [
+        {
+          date: "2025-12-09",
+          code: "09006C",
+          display: "HbA1c",
+          value: "6.5",
+          unit: "%",
+          category: "laboratory",
+          hospital: "長庚嘉義",
+          source_program: "adult-preventive",
+          nhi_visit_date: "2025-09-16",
+        },
+      ],
+      "patient-123",
+    );
+    const obs = out.find((o) => o.resourceType === "Observation");
+    const tagCodes = (obs?.meta?.tag ?? []).map((t: any) => t.code);
+    expect(tagCodes).toContain("adult-preventive"); // source-program
+    expect(tagCodes).toContain("2025-09-16"); // visit-date — not clobbered
+  });
 });
 
 describe("mapObservation — NHI Chinese interpretation (成人預防保健, audit 2026-06-13)", () => {
