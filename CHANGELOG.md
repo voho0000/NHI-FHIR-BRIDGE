@@ -3,6 +3,10 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.18.15 重點 — 2026-06-15
+
+- **下載後新增「妥善保管」提醒**：取得健康紀錄檔後，檔名下方會出現一則柔和提醒 —— 這份檔案含你完整的就醫資料，請妥善保管；要給第三方使用前，建議開啟去識別化，並約定使用期限與日後可要求刪除的權利。比照健康存摺本身下載時的聲明，只在產生檔案後才出現（本機下載／本機伺服器皆會顯示）。原本的「資料只在你電腦上處理、不傳雲端」安全說明維持不變。
+
 ## 0.18.14 重點 — 2026-06-14
 
 - **修正：手術／處置的「手術醫令」現在是結構化資料（先前對接 App 顯示「0 項」）**。NHI 處置紀錄裡實際施作的健保醫令（如 `86412B 微創玻璃體黃斑部手術`）先前被埋在 `Procedure.note` 自由文字，App 抓不到、顯示「0 項」，標題還用的是 ICD-10-PCS 分類名。現在**每個手術醫令各自成為一個 `Procedure`**：`code.coding[0]` 是 NHI 醫令碼、`coding[1]` 是 ICD-10-PCS 分類碼、標題（`code.text`）改成真正的手術名；一個處置含多台刀就會產生多個 Procedure。
