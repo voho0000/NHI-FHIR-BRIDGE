@@ -35,7 +35,6 @@ import { _refreshLocalBundleState, pushLocalBundleToBackend } from "./popup/data
 import { els } from "./popup/els.js";
 import { initImagingPrepBanner } from "./popup/imaging-prep-banner.js";
 import { loadFetchImagingEnabled, onFetchImagingToggle } from "./popup/imaging-toggle.js";
-import { loadSyncRange, onSyncRangeChange } from "./popup/sync-range.js";
 import {
   clearPatientOverride,
   loadMaskNameEnabled,
@@ -52,6 +51,7 @@ import {
   stopSync,
 } from "./popup/status.js";
 import { apiSyncNhi, launch, onSmartAppUrlChange } from "./popup/sync-client.js";
+import { loadSyncRange, onSyncRangeChange } from "./popup/sync-range.js";
 import { _hideHelpTooltip, _showHelpTooltip } from "./popup/tooltip.js";
 import { getActiveTab, isNhiTab } from "./popup/utils.js";
 import {

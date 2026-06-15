@@ -131,7 +131,12 @@ describe("mapMedicationsDedup", () => {
     // split a genuine 中英 language-variant pair that shares quantity AND
     // indication — that is exactly the duplicate the dedup exists to remove.
     const items = [
-      { drug_name: "TAKEPRON OD 30MG TABLETS", date: "2025-05-18", quantity: "10", indication_code: "R042" },
+      {
+        drug_name: "TAKEPRON OD 30MG TABLETS",
+        date: "2025-05-18",
+        quantity: "10",
+        indication_code: "R042",
+      },
       {
         drug_name: "泰克胃通 口溶錠30毫克 (TAKEPRON OD 30MG TABLETS)",
         date: "2025-05-18",

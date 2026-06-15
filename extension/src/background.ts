@@ -206,7 +206,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           ...status,
           running: false,
           phase: "error",
-          progress: "上次取得中斷了（可能因瀏覽器背景休眠或分頁關閉）。請重新「取得健保存摺資料」。",
+          progress:
+            "上次取得中斷了（可能因瀏覽器背景休眠或分頁關閉）。請重新「取得健保存摺資料」。",
         };
         await chrome.storage.local.set({ [STORAGE_KEY]: dead }).catch(() => {});
         sendResponse(dead);

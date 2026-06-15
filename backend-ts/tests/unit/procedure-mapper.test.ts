@@ -112,9 +112,15 @@ describe("mapProcedure", () => {
       PID,
     );
     expect(r!.code.coding).toHaveLength(2);
-    expect(r!.code.coding[0]).toMatchObject({ code: "86412B", display: "Microincision vitreomacular surgery" });
+    expect(r!.code.coding[0]).toMatchObject({
+      code: "86412B",
+      display: "Microincision vitreomacular surgery",
+    });
     expect(r!.code.coding[0].system).toContain("nhi-medical-order");
-    expect(r!.code.coding[1]).toMatchObject({ code: "08B53ZZ", display: "Excision of Left Vitreous, Percutaneous Approach" });
+    expect(r!.code.coding[1]).toMatchObject({
+      code: "08B53ZZ",
+      display: "Excision of Left Vitreous, Percutaneous Approach",
+    });
     expect(r!.code.coding[1].system).toContain("icd-10");
     expect(r!.code.text).toBe("微創玻璃體黃斑部手術");
   });

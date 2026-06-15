@@ -205,7 +205,11 @@ describe("linkEncountersInResources — admission-day gateway disambiguation (v0
   test("two same-day gateways → ambiguous lab stays unlinked", () => {
     const lab = obs("o4", "VGH", "2025-05-18");
     linkEncountersInResources(
-      [enc("a", "AMB", "VGH", "2025-05-18", null), enc("b", "AMB", "VGH", "2025-05-18", null), IMP()],
+      [
+        enc("a", "AMB", "VGH", "2025-05-18", null),
+        enc("b", "AMB", "VGH", "2025-05-18", null),
+        IMP(),
+      ],
       [lab],
     );
     expect(lab.encounter).toBeUndefined();
