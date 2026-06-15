@@ -3,6 +3,10 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.1 重點 — 2026-06-16（凝血 PT 的 A/B 去重修正）
+
+- **PT 不再因異體字漏去重而出現兩筆**：長庚嘉義 B(定期上傳)管道把凝血酶原時間的 analyte 名稱寫成「凝血**脢**原時間」(脢 U+8122,是 酶 U+9176 的異體字),A 管道寫「P.T」。別名表只有「凝血**酶**原時間」→ B 那筆路由不到 LOINC 5902-2、落到 panel 預設被剝成無 LOINC,與 A 的去重鍵(含 LOINC)不同 → A+B 沒被併,病人會看到兩筆 PT 11.9 sec(一筆參考範圍[無]、一筆[8–12])。加上「凝血脢原時間」別名 → 兩管道都到 5902-2 → 正常併成一筆(留 A,保留數值參考範圍)。同醫令的 INR、QC 對照值本就正確,只有 PT 中文異體字漏掉。
+
 ## 0.20.0 重點 — 2026-06-15（就醫關聯重構：救回源頭門診/急診 + 精準掛載）
 
 源自長庚嘉義 5/18 案例稽核：入院當天的急診就醫(K92.0 吐血)整個從 bundle 消失,連帶用藥/檢驗被錯掛。詳見 `docs/DESIGN_v0.20.0_encounter_linking.md`。

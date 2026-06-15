@@ -264,6 +264,45 @@ describe("mapObservationsGrouped (panel grouping)", () => {
   });
 });
 
+describe("CI v0.20.1 — 08026C PT A+B cross-channel collapse (脢/酶 glyph variant)", () => {
+  test("B-channel 凝血脢原時間 + A-channel P.T (same value) collapse to ONE PT obs", () => {
+    // Real 長庚嘉義 5/18 急診: the B (定期上傳) channel ships the PT analyte as
+    // "凝血脢原時間" (脢 variant) and the A channel as "P.T". Before the 脢 alias
+    // they routed to different LOINCs → different cross-channel dedup keys →
+    // both survived → user saw "兩筆 PT 11.9 sec" (one [無], one [8–12]).
+    const items = [
+      {
+        code: "08026C",
+        order_name: "凝血酶原時間 (一段式)",
+        display: "P.T",
+        value: "11.9",
+        unit: "sec",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+        nhi_source_channel: "A",
+        reference_range: "[8][12]",
+      },
+      {
+        code: "08026C",
+        order_name: "凝血酶原時間 (一段式)",
+        display: "凝血脢原時間",
+        value: "11.9",
+        unit: "sec",
+        date: "2025-05-18",
+        hospital: "長庚嘉義",
+        nhi_source_channel: "B",
+        reference_range: "[無][無]",
+      },
+    ];
+    const pt = mapObservationsGrouped(items, PATIENT_ID).filter(
+      (r) =>
+        r.resourceType === "Observation" &&
+        (r.code?.coding ?? []).some((c: any) => c.code === "5902-2"),
+    );
+    expect(pt).toHaveLength(1);
+  });
+});
+
 describe("canonicalLabKey", () => {
   test("HbA1c synonyms collapse to HBA1C", () => {
     expect(canonicalLabKey("醣化血紅素")).toBe("HBA1C");
@@ -735,6 +774,15 @@ describe("findLoinc", () => {
     expect(findLoinc("08026C", "PT")).toBe("5902-2");
     expect(findLoinc("08026C", "Prothrombin Time")).toBe("5902-2");
     expect(findLoinc("08026C", "凝血酶原時間")).toBe("5902-2");
+  });
+
+  test("v0.20.1 — 凝血脢原時間 glyph variant (脢≠酶) also → 5902-2", () => {
+    // 長庚嘉義 B-channel ships assaY_ITEM_NAME="凝血脢原時間" (脢 U+8122, a
+    // variant of 酶 U+9176) while A ships "P.T" → 5902-2. The variant must
+    // route to the SAME LOINC or the A+B cross-channel dedup key diverges
+    // and two PT rows survive (user report 2026-06-16).
+    expect(findLoinc("08026C", "凝血脢原時間")).toBe("5902-2");
+    expect(findLoinc("08026C", "P.T")).toBe("5902-2");
   });
 
   test("v0.11.9 — PT Control under 08026C must NOT map to 5894-1 (audit fix)", () => {

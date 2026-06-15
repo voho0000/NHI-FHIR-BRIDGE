@@ -2798,6 +2798,13 @@
       "pt sec": "5902-2",
       "pt-sec": "5902-2",
       \u51DD\u8840\u9176\u539F\u6642\u9593: "5902-2",
+      // 脢 (U+8122) is a glyph variant of 酶 (U+9176) that 長庚嘉義 LIS ships
+      // on the B (定期上傳) channel: assaY_ITEM_NAME="凝血脢原時間" while the A
+      // channel ships "P.T". Without this alias the B row missed 5902-2, fell
+      // to the panel default (stripped → no LOINC), and so carried a DIFFERENT
+      // cross-channel dedup key than the A row → the A+B PT pair never collapsed
+      // and TWO PT (11.9 sec) survived (user report 2026-06-16, 5/18 急診).
+      \u51DD\u8840\u8122\u539F\u6642\u9593: "5902-2",
       \u51DD\u8840\u6642\u9593: "5902-2",
       // Bug report 2026-05-27 v0.11.1: 長庚嘉義 LIS prints "P.T" (dot-
       // separated initials). `_keywordMatches` uses \b...\b regex on
