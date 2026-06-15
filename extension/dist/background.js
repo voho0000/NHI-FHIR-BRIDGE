@@ -5602,31 +5602,24 @@
     if (req && typeof req === "object" && req.display) return req.display;
     return "";
   }
-  function dedupAdmissionDayAmb(resources) {
-    const impStarts = /* @__PURE__ */ new Set();
-    for (const r of resources) {
-      if (r.resourceType !== "Encounter") continue;
-      if ((r.class ?? {}).code !== "IMP") continue;
-      const hosp = (r.serviceProvider ?? {}).display ?? "";
-      const start = String((r.period ?? {}).start ?? "").slice(0, 10);
-      if (hosp && start) impStarts.add(`${hosp} ${start}`);
-    }
-    if (impStarts.size === 0) return resources;
-    return resources.filter((r) => {
-      if (r.resourceType === "Encounter" && (r.class ?? {}).code === "AMB") {
-        const hosp = (r.serviceProvider ?? {}).display ?? "";
-        const start = String((r.period ?? {}).start ?? "").slice(0, 10);
-        if (impStarts.has(`${hosp} ${start}`)) return false;
+  function reasonCodeSet(r) {
+    const out = /* @__PURE__ */ new Set();
+    for (const rc of r.reasonCode ?? []) {
+      for (const c of rc?.coding ?? []) {
+        const code = c?.code ? String(c.code).replace(/[^A-Za-z0-9]/g, "").toUpperCase() : "";
+        if (code) out.add(code);
       }
-      return true;
-    });
+    }
+    return out;
   }
   function linkEncountersInResources(candidates, resources) {
     if (candidates.length === 0) return;
     const exactIndex = /* @__PURE__ */ new Map();
     const impByHosp = /* @__PURE__ */ new Map();
+    const byId = /* @__PURE__ */ new Map();
     for (const e of candidates) {
       if (e.resourceType !== "Encounter") continue;
+      byId.set(e.id, e);
       const hosp = (e.serviceProvider ?? {}).display ?? "";
       const start = String((e.period ?? {}).start ?? "").slice(0, 10);
       if (!hosp || !start) continue;
@@ -5657,8 +5650,26 @@
           if (start <= date && date <= end) matches.push(eid);
         }
       }
-      if (matches.length !== 1) continue;
-      r.encounter = { reference: `Encounter/${matches[0]}` };
+      if (matches.length === 0) continue;
+      if (matches.length === 1) {
+        r.encounter = { reference: `Encounter/${matches[0]}` };
+        continue;
+      }
+      const cands = matches.map((id) => byId.get(id)).filter(Boolean);
+      const rcodes = reasonCodeSet(r);
+      if (rcodes.size > 0) {
+        const dxHits = cands.filter((e) => {
+          const ec = reasonCodeSet(e);
+          for (const x of rcodes) if (ec.has(x)) return true;
+          return false;
+        });
+        if (dxHits.length === 1) r.encounter = { reference: `Encounter/${dxHits[0].id}` };
+        continue;
+      }
+      const gateways = cands.filter(
+        (e) => (e.class ?? {}).code !== "IMP" && String((e.period ?? {}).start ?? "").slice(0, 10) === date
+      );
+      if (gateways.length === 1) r.encounter = { reference: `Encounter/${gateways[0].id}` };
     }
   }
   function repairDocumentReferenceEncounters(candidates, resources) {
@@ -6916,7 +6927,6 @@
       } else {
         continue;
       }
-      if (pt === "encounters") mapped = dedupAdmissionDayAmb(mapped);
       all.push(...mapped);
     }
     const seen = /* @__PURE__ */ new Set();
@@ -8433,7 +8443,16 @@
     const tn = String(main.hosp_DATA_TYPE_NAME || "");
     if (tn.includes("\u6025")) return "EMER";
     if (tn.includes("\u4F4F\u9662")) return "IMP";
+    if (hasEmergencyProcedure(main)) return "EMER";
     return "AMB";
+  }
+  function hasEmergencyProcedure(main) {
+    const list = Array.isArray(main.sp_IHKE3302S05) ? main.sp_IHKE3302S05 : [];
+    for (const item of list) {
+      const name = String(item?.cure_CNAME || item?.cure_cname || "");
+      if (name.includes("\u6025\u8A3A")) return true;
+    }
+    return false;
   }
   function primaryIcdFromS02Detail(body) {
     const main = pickS02MainRow(body);

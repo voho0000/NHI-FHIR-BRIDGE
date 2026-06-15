@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  dedupAdmissionDayAmb,
   linkEncountersInResources,
   repairDocumentReferenceEncounters,
   resolveSexStratifiedRanges,
@@ -51,46 +50,10 @@ function obs(id: string, hospital: string, date: string): Record<string, any> {
   };
 }
 
-describe("dedupAdmissionDayAmb", () => {
-  test("removes AMB when same (hospital, start_date) IMP exists", () => {
-    const out = dedupAdmissionDayAmb([
-      amb("amb-1", "VGH", "2024-05-01"),
-      imp("imp-1", "VGH", "2024-05-01", "2024-05-05"),
-    ]);
-    expect(out.map((r) => r.id)).toEqual(["imp-1"]);
-  });
-
-  test("keeps AMB when no overlapping IMP", () => {
-    const out = dedupAdmissionDayAmb([amb("amb-1", "VGH", "2024-05-01")]);
-    expect(out.map((r) => r.id)).toEqual(["amb-1"]);
-  });
-
-  test("keeps AMB at different hospital than IMP same day", () => {
-    const out = dedupAdmissionDayAmb([
-      amb("amb-1", "NTUH", "2024-05-01"),
-      imp("imp-1", "VGH", "2024-05-01", "2024-05-05"),
-    ]);
-    expect(out).toHaveLength(2);
-  });
-
-  test("keeps AMB at same hospital on a different day", () => {
-    const out = dedupAdmissionDayAmb([
-      amb("amb-1", "VGH", "2024-05-03"),
-      imp("imp-1", "VGH", "2024-05-01", "2024-05-05"),
-    ]);
-    expect(out).toHaveLength(2);
-  });
-
-  test("does not touch non-Encounter resources", () => {
-    const o = obs("obs-1", "VGH", "2024-05-01");
-    const out = dedupAdmissionDayAmb([
-      o,
-      amb("amb-1", "VGH", "2024-05-01"),
-      imp("imp-1", "VGH", "2024-05-01", "2024-05-05"),
-    ]);
-    expect(out.find((r) => r.id === "obs-1")).toBe(o);
-  });
-});
+// NOTE: dedupAdmissionDayAmb removed v0.20.0 — see link.ts comment. A 門診/急診
+// on an admission day is the REAL gateway visit (患者就醫 → 被收住院), not an
+// IMP billing duplicate, so it is no longer deleted. Same-day 門診/急診 + 住院
+// now coexist; precise resource→encounter attribution moves to Stage B linking.
 
 describe("linkEncountersInResources", () => {
   test("exact (hospital, date) match links observation to encounter", () => {
@@ -163,6 +126,89 @@ describe("linkEncountersInResources", () => {
     };
     linkEncountersInResources([enc], [proc]);
     expect(proc.encounter).toEqual({ reference: "Encounter/enc-1" });
+  });
+});
+
+describe("linkEncountersInResources — admission-day gateway disambiguation (v0.20.0)", () => {
+  // After dedupAdmissionDayAmb removal, an admission day has BOTH the gateway
+  // 門診/急診 and the 住院 it led to. These guard the disambiguation.
+  function enc(
+    id: string,
+    cls: string,
+    hosp: string,
+    start: string,
+    end: string | null,
+    dx?: string[],
+  ): Record<string, any> {
+    const e: Record<string, any> = {
+      resourceType: "Encounter",
+      id,
+      class: { code: cls },
+      serviceProvider: { display: hosp },
+      period: { start: `${start}T00:00:00+08:00` },
+    };
+    if (end) e.period.end = `${end}T00:00:00+08:00`;
+    if (dx) e.reasonCode = dx.map((c) => ({ coding: [{ code: c }] }));
+    return e;
+  }
+  function med(id: string, hosp: string, date: string, dx?: string): Record<string, any> {
+    const m: Record<string, any> = {
+      resourceType: "MedicationRequest",
+      id,
+      requester: { display: hosp },
+      authoredOn: `${date}T00:00:00+08:00`,
+    };
+    if (dx) m.reasonCode = [{ coding: [{ code: dx }] }];
+    return m;
+  }
+
+  const ER = () => enc("er", "EMER", "VGH", "2025-05-18", null, ["K92.0"]);
+  const IMP = () => enc("imp", "IMP", "VGH", "2025-05-18", "2025-05-22", ["R04.2"]);
+
+  test("admission-day ER med (dx K92.0) links to the ER, not the IMP", () => {
+    const m = med("m1", "VGH", "2025-05-18", "K92.0");
+    linkEncountersInResources([ER(), IMP()], [m]);
+    expect(m.encounter).toEqual({ reference: "Encounter/er" });
+  });
+
+  test("admission-day inpatient med (dx R04.2) links to the IMP", () => {
+    const m = med("m2", "VGH", "2025-05-18", "R04.2");
+    linkEncountersInResources([ER(), IMP()], [m]);
+    expect(m.encounter).toEqual({ reference: "Encounter/imp" });
+  });
+
+  test("dotted vs undotted ICD still matches (med K92.0 ↔ encounter K920)", () => {
+    const erUndotted = enc("er", "EMER", "VGH", "2025-05-18", null, ["K920"]);
+    const m = med("m1", "VGH", "2025-05-18", "K92.0");
+    linkEncountersInResources([erUndotted, IMP()], [m]);
+    expect(m.encounter).toEqual({ reference: "Encounter/er" });
+  });
+
+  test("admission-day lab (no dx) prefers the single-day gateway over the IMP", () => {
+    const lab = obs("o1", "VGH", "2025-05-18");
+    linkEncountersInResources([enc("er", "EMER", "VGH", "2025-05-18", null), IMP()], [lab]);
+    expect(lab.encounter).toEqual({ reference: "Encounter/er" });
+  });
+
+  test("lab on a later admission day links to the IMP via span", () => {
+    const lab = obs("o2", "VGH", "2025-05-20");
+    linkEncountersInResources([enc("er", "EMER", "VGH", "2025-05-18", null), IMP()], [lab]);
+    expect(lab.encounter).toEqual({ reference: "Encounter/imp" });
+  });
+
+  test("med whose diagnosis matches neither candidate stays unlinked", () => {
+    const m = med("m3", "VGH", "2025-05-18", "Z99.9");
+    linkEncountersInResources([ER(), IMP()], [m]);
+    expect(m.encounter).toBeUndefined();
+  });
+
+  test("two same-day gateways → ambiguous lab stays unlinked", () => {
+    const lab = obs("o4", "VGH", "2025-05-18");
+    linkEncountersInResources(
+      [enc("a", "AMB", "VGH", "2025-05-18", null), enc("b", "AMB", "VGH", "2025-05-18", null), IMP()],
+      [lab],
+    );
+    expect(lab.encounter).toBeUndefined();
   });
 });
 

@@ -58,36 +58,45 @@ function resourceHospital(r: Record<string, any>): string {
   return "";
 }
 
-/**
- * Drop AMB Encounters whose (hospital, start_date) is already covered
- * by an IMP Encounter's admission day. NHI emits the same inpatient
- * stay twice (IHKE3303 AMB billing entry + IHKE3309 IMP detail); the
- * IMP one is canonical, the AMB is a billing artefact.
- */
-export function dedupAdmissionDayAmb(resources: Record<string, any>[]): Record<string, any>[] {
-  const impStarts = new Set<string>();
-  for (const r of resources) {
-    if (r.resourceType !== "Encounter") continue;
-    if ((r.class ?? {}).code !== "IMP") continue;
-    const hosp = (r.serviceProvider ?? {}).display ?? "";
-    const start = String((r.period ?? {}).start ?? "").slice(0, 10);
-    if (hosp && start) impStarts.add(`${hosp} ${start}`);
-  }
-  if (impStarts.size === 0) return resources;
-  return resources.filter((r) => {
-    if (r.resourceType === "Encounter" && (r.class ?? {}).code === "AMB") {
-      const hosp = (r.serviceProvider ?? {}).display ?? "";
-      const start = String((r.period ?? {}).start ?? "").slice(0, 10);
-      if (impStarts.has(`${hosp} ${start}`)) return false;
+// `dedupAdmissionDayAmb` removed v0.20.0. It dropped any 門診/急診(AMB) whose
+// (hospital, start_date) matched an 住院(IMP) admission day, on the theory that
+// 就醫(IHKE3303) re-lists the inpatient stay as a billing-artefact AMB that
+// duplicates the IMP from IHKE3309. That premise is FALSE: IHKE3303 carries
+// only 門診/急診/藥局 (never 住院 — verified live 2026-06-15), so the two
+// endpoints don't overlap and there was no duplicate to drop. The function
+// only ever deleted the REAL gateway visit — the 門診/急診 where the patient
+// was seen and then admitted (e.g. 長庚嘉義 5/18 急診 K92.0 吐血 → admitted
+// for R04.2 咳血). True IMP duplicates (if IHKE3303 ever shipped a 住院 row
+// classified IMP) collapse by Encounter id anyway, since the id includes class
+// (stableId(patient, date, class, hospital)). See docs/DESIGN_v0.20.0_*.
+
+// Normalised ICD code set from any resource's reasonCode[].coding[].code
+// (dots/punctuation stripped so med "K92.0" matches encounter "K920").
+function reasonCodeSet(r: Record<string, any>): Set<string> {
+  const out = new Set<string>();
+  for (const rc of r.reasonCode ?? []) {
+    for (const c of rc?.coding ?? []) {
+      const code = c?.code ? String(c.code).replace(/[^A-Za-z0-9]/g, "").toUpperCase() : "";
+      if (code) out.add(code);
     }
-    return true;
-  });
+  }
+  return out;
 }
 
 /**
- * Add `encounter` reference to each linkable resource when its
- * (hospital, date) matches exactly ONE Encounter in `candidates`.
- * Conservative — leaves ambiguous (0 or >1 match) cases unlinked.
+ * Add `encounter` reference to each linkable resource by (hospital, date).
+ *
+ * One candidate → link it. Several candidates sharing the (hospital, date)
+ * — the normal shape since v0.20.0 when an admission-day 門診/急診 gateway
+ * visit coexists with the 住院 it led to — are disambiguated:
+ *   - resources carrying a diagnosis (MedicationRequest / Procedure
+ *     reasonCode) attach to the Encounter whose reasonCode shares that ICD
+ *     (ER med dx K92.0 → ER, admission med dx R04.2 → 住院);
+ *   - diagnosis-less resources (lab Observation / DiagnosticReport) prefer
+ *     the single-day gateway visit, since the admission-day workup is the
+ *     ER/門診 draw — later admission days have no same-date gateway and link
+ *     to the IMP via its span.
+ * Still conservative: links only on a UNIQUE surviving candidate.
  */
 export function linkEncountersInResources(
   candidates: Record<string, any>[],
@@ -96,9 +105,11 @@ export function linkEncountersInResources(
   if (candidates.length === 0) return;
   const exactIndex = new Map<string, string[]>();
   const impByHosp = new Map<string, Array<[string, string, string]>>();
+  const byId = new Map<string, Record<string, any>>();
 
   for (const e of candidates) {
     if (e.resourceType !== "Encounter") continue;
+    byId.set(e.id, e);
     const hosp = (e.serviceProvider ?? {}).display ?? "";
     const start = String((e.period ?? {}).start ?? "").slice(0, 10);
     if (!hosp || !start) continue;
@@ -131,8 +142,34 @@ export function linkEncountersInResources(
         if (start <= date && date <= end) matches.push(eid);
       }
     }
-    if (matches.length !== 1) continue;
-    r.encounter = { reference: `Encounter/${matches[0]}` };
+    if (matches.length === 0) continue;
+    if (matches.length === 1) {
+      r.encounter = { reference: `Encounter/${matches[0]}` };
+      continue;
+    }
+    // >1 candidate at this (hospital, date): admission-day gateway 門診/急診
+    // + the 住院 it led to (or same-day multi-visit). Disambiguate.
+    const cands = matches.map((id) => byId.get(id)).filter(Boolean) as Record<string, any>[];
+    const rcodes = reasonCodeSet(r);
+    if (rcodes.size > 0) {
+      // Diagnosis-bearing resource (med / procedure): attach to the encounter
+      // whose reasonCode shares the ICD. Link only on a unique diagnosis hit.
+      const dxHits = cands.filter((e) => {
+        const ec = reasonCodeSet(e);
+        for (const x of rcodes) if (ec.has(x)) return true;
+        return false;
+      });
+      if (dxHits.length === 1) r.encounter = { reference: `Encounter/${dxHits[0]!.id}` };
+      continue;
+    }
+    // Diagnosis-less resource (lab / report): prefer the single-day gateway
+    // visit over the 住院 whose span merely starts that day.
+    const gateways = cands.filter(
+      (e) =>
+        (e.class ?? {}).code !== "IMP" &&
+        String((e.period ?? {}).start ?? "").slice(0, 10) === date,
+    );
+    if (gateways.length === 1) r.encounter = { reference: `Encounter/${gateways[0]!.id}` };
   }
 }
 

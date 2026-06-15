@@ -6,7 +6,6 @@
 import {
   GROUP_HANDLERS,
   LIST_HANDLERS,
-  dedupAdmissionDayAmb,
   linkEncountersInResources,
   maskId,
   repairDocumentReferenceEncounters,
@@ -35,7 +34,6 @@ export function assembleLocalBundle(byType, patientOverride, maskEnabled) {
     } else {
       continue;
     }
-    if (pt === "encounters") mapped = dedupAdmissionDayAmb(mapped);
     all.push(...mapped);
   }
 

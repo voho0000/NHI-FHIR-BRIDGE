@@ -21,10 +21,29 @@ export function classFromS02Detail(body) {
   const main = pickS02MainRow(body);
   if (!main) return null;
   const tn = String(main.hosp_DATA_TYPE_NAME || "");
-  if (tn.includes("急")) return "EMER"; // 急診
+  if (tn.includes("急")) return "EMER"; // 急診 declared in the type name
   if (tn.includes("住院")) return "IMP";
+  // hosp_DATA_TYPE_NAME frequently says just "西醫" even for an ER visit
+  // (verified live 2026-06-15: 長庚嘉義 5/18 K92.0 吐血 had
+  // hosp_DATA_TYPE_NAME="西醫" yet its 處置 list carried 00203B / 00250B
+  // 「急診(按檢傷分類)…診察費 / 護理費」). The 急診 診察費 line is the
+  // visit-level fee, so its presence unambiguously marks the visit as ER —
+  // fall back to it before defaulting to 門診(AMB).
+  if (hasEmergencyProcedure(main)) return "EMER";
   // 西醫 / 中醫 / 牙醫 / 藥局 all default to AMB
   return "AMB";
+}
+
+// True when the visit's 處置/診察費 list (sp_IHKE3302S05) carries an 急診
+// (e.g. 急診檢傷分類) line. cure_CNAME holds the 醫令 name; "急診" in a
+// 診察費/護理費 line is an ER marker the (often "西醫"-labelled) type name misses.
+function hasEmergencyProcedure(main) {
+  const list = Array.isArray(main.sp_IHKE3302S05) ? main.sp_IHKE3302S05 : [];
+  for (const item of list) {
+    const name = String(item?.cure_CNAME || item?.cure_cname || "");
+    if (name.includes("急診")) return true;
+  }
+  return false;
 }
 
 // Pull the primary ICD's bilingual name from IHKE3303S02 detail. The list
