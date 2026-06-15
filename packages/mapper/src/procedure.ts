@@ -123,5 +123,44 @@ export function mapProcedure(
     resource.performer = [{ actor: { display: hospital } }];
   }
 
+  // Transient encounter-class hint (IMP for inpatient surgeries) — the linker
+  // reads it to attach the procedure to the 住院 Encounter even on an admission
+  // day that also has a gateway 門診/急診, then strips it. Mirrors the med path.
+  const encounterClass = ((raw.encounter_class ?? "") as string).trim();
+  if (encounterClass) resource.__nhiVisitClass = encounterClass;
+
   return resource;
+}
+
+/**
+ * Drop an inpatient-detail Procedure (a single ICD-10-PCS coding, sourced from
+ * IHKE3309S02 `op_CODE`) when a richer Procedure already covers the same
+ * (PCS code, hospital, date) — i.e. the surgery ALSO appeared in the 手術 list
+ * (IHKE3308) where it carries BOTH an NHI 醫令碼 and the PCS classification. The
+ * 住院 detail is the fallback source for surgeries the 手術 list omits; when a
+ * surgery is in both, keep the richer 手術-list row.
+ */
+export function dedupProcedures(resources: Record<string, any>[]): Record<string, any>[] {
+  const pcsCodes = (p: Record<string, any>): string[] =>
+    ((p.code?.coding ?? []) as Record<string, any>[])
+      .filter((c) => String(c?.system ?? "").includes("icd-10-pcs"))
+      .map((c) => String(c.code));
+  const isPcsOnly = (p: Record<string, any>): boolean => {
+    const c = (p.code?.coding ?? []) as Record<string, any>[];
+    return c.length === 1 && String(c[0]?.system ?? "").includes("icd-10-pcs");
+  };
+  const hosp = (p: Record<string, any>): string => p.performer?.[0]?.actor?.display ?? "";
+  const day = (p: Record<string, any>): string =>
+    String(p.performedDateTime ?? p.performedPeriod?.start ?? "").slice(0, 10);
+
+  const claimed = new Set<string>();
+  for (const p of resources) {
+    if (p.resourceType !== "Procedure" || isPcsOnly(p)) continue;
+    for (const code of pcsCodes(p)) claimed.add(`${hosp(p)}|${day(p)}|${code}`);
+  }
+  if (claimed.size === 0) return resources;
+  return resources.filter((p) => {
+    if (p.resourceType !== "Procedure" || !isPcsOnly(p)) return true;
+    return !pcsCodes(p).some((code) => claimed.has(`${hosp(p)}|${day(p)}|${code}`));
+  });
 }

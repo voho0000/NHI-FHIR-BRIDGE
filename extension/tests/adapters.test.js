@@ -30,6 +30,7 @@ import {
   adaptImagingReportFromDetail,
   adaptImmunization,
   adaptInpatientEncounter,
+  adaptInpatientProcedures,
   adaptLabItem,
   adaptMedication,
   adaptMedicationFromDetail,
@@ -1653,5 +1654,47 @@ describe("adaptCancerScreening (IHKE3404 — audit 2026-06-13)", () => {
     expect(adaptCancerScreening({ codE_CNAME: "無異常" }, "大腸癌篩檢")).toBeNull();
     expect(adaptCancerScreening({ funC_DATE: "112/04/20" }, "大腸癌篩檢")).toBeNull();
     expect(adaptCancerScreening(null, "大腸癌篩檢")).toBeNull();
+  });
+});
+
+describe("adaptInpatientProcedures (住院 detail op_CODE → Procedure)", () => {
+  test("extracts primary op_CODE + each opcode_data secondary (real 2/11 colon resection)", () => {
+    const visit = {
+      in_DATE: "114/02/11",
+      hosp_ABBR: "長庚嘉義",
+      icd9cm_CODE: "J189",
+      icd9cm_CODE_CNAME: "J189/肺炎，未明示病原體||J189/Pneumonia, unspecified organism",
+      op_CODE: "0DBK8ZZ",
+      op_CODE_CNAME:
+        "0DBK8ZZ/經自然開口或人工造口內視鏡升結腸部分切除術||0DBK8ZZ/Excision of Ascending Colon, Via Natural or Artificial Opening Endoscopic",
+      opcode_data: [
+        {
+          op_tit: "次處置1||Secondary Treatment 1",
+          op_code_name:
+            "0DBL8ZZ/經自然開口或人工造口內視鏡橫結腸部分切除術||0DBL8ZZ/Excision of Transverse Colon, Via Natural or Artificial Opening Endoscopic",
+        },
+      ],
+    };
+    const procs = adaptInpatientProcedures(visit);
+    expect(procs).toHaveLength(2);
+    expect(procs[0]).toMatchObject({
+      date: "2025-02-11",
+      code: "0DBK8ZZ",
+      system: "icd-10-pcs",
+      encounter_class: "IMP",
+      hospital: "長庚嘉義",
+      reason_code: "J189",
+    });
+    expect(procs[0].display).toContain("Excision of Ascending Colon");
+    expect(procs[0].display_zh).toContain("升結腸部分切除");
+    expect(procs[0].reason).toContain("Pneumonia");
+    expect(procs[1].code).toBe("0DBL8ZZ");
+    expect(procs[1].display).toContain("Excision of Transverse Colon");
+  });
+
+  test("returns [] when no op_CODE / no start date", () => {
+    expect(adaptInpatientProcedures({ in_DATE: "114/02/11", hosp_ABBR: "X" })).toEqual([]);
+    expect(adaptInpatientProcedures({ op_CODE: "0DBK8ZZ", op_CODE_CNAME: "x||x" })).toEqual([]); // no date
+    expect(adaptInpatientProcedures(null)).toEqual([]);
   });
 });

@@ -1015,6 +1015,60 @@ export function adaptProcedureFromDetail(item) {
   return rows;
 }
 
+// Inpatient surgeries from the 住院 detail (IHKE3309S02 main row). NHI records
+// a stay's surgery as `op_CODE` (primary, ICD-10-PCS) + `op_CODE_CNAME`
+// (bilingual "<code>/<中文>||<code>/<English>") plus `opcode_data[]` (次處置,
+// each `op_code_name` same bilingual shape). The 手術 list (IHKE3301S05) is
+// INCOMPLETE — it misses most inpatient surgeries (verified live: a colon
+// resection + iliac angioplasty were absent), so the only faithful source for
+// them is the admission detail. Emits one procedure item per surgery (primary
+// + each secondary), all ICD-10-PCS, dated to the admission day (the detail
+// carries no per-surgery execution date), tagged encounter_class=IMP so the
+// linker attaches them to the 住院 Encounter. Returns an ARRAY (possibly empty).
+export function adaptInpatientProcedures(visit) {
+  if (!visit || typeof visit !== "object") return [];
+  const date = rocToISO(visit.in_DATE || visit.in_date || visit.func_DATE || "");
+  if (!date) return [];
+  const hospital = visit.hosp_ABBR || visit.hosp_abbr || "";
+  const reasonCode = visit.icd9cm_CODE || visit.icd9cm_code || "";
+  const rawReason = visit.icd9cm_CODE_CNAME || visit.icd9cm_code_cname || "";
+  const stripCode = (s) =>
+    String(s || "")
+      .replace(/^[A-Z0-9.]+\//, "")
+      .trim();
+  const reasonEn = stripCode(pickEnglish(rawReason));
+  const reasonZh = stripCode(pickChinese(rawReason));
+  const out = [];
+  const push = (code, rawName) => {
+    if (!code) return;
+    const en = stripCode(pickEnglish(rawName)) || stripCode(pickChinese(rawName));
+    const zh = stripCode(pickChinese(rawName)) || en;
+    out.push({
+      date,
+      code, // ICD-10-PCS op_CODE (primary — no NHI 醫令碼 on the 住院 detail)
+      system: "icd-10-pcs",
+      display: en || code,
+      display_zh: zh || code,
+      reason: reasonEn,
+      reason_zh: reasonZh,
+      reason_code: reasonCode,
+      body_site: "",
+      hospital,
+      encounter_class: "IMP",
+    });
+  };
+  // Primary surgery.
+  push(visit.op_CODE || visit.op_code || "", visit.op_CODE_CNAME || visit.op_code_cname || "");
+  // Secondary 次處置 — op_code_name carries its own "<code>/" prefix.
+  const sec = Array.isArray(visit.opcode_data) ? visit.opcode_data : [];
+  for (const s of sec) {
+    const name = s?.op_code_name || s?.op_CODE_NAME || "";
+    const m = String(name).match(/^([A-Z0-9.]+)\//);
+    push(m ? m[1] : "", name);
+  }
+  return out;
+}
+
 // IHKE3408S01 (影像檢查 list) shape:
 //   {hosp_ID, hosp_ABBR, hosp_url, real_INSPECT_DATE, order_CODE,
 //    order_CODE_2Word, order_NAME, ori_TYPE, row_ID, jpG_STATUS, ...}

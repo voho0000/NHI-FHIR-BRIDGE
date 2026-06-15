@@ -27,6 +27,7 @@ import {
   adaptEncounterFromMedExpense,
   adaptImageOnlyReportFromMeta,
   adaptInpatientEncounter,
+  adaptInpatientProcedures,
 } from "../nhi-adapters.js";
 import { ENDPOINT_LABEL_ZH, NHI_API_ENDPOINTS } from "../nhi-endpoints.js";
 import { maybeFetchPatientIdFromNhi } from "./auth.js";
@@ -323,6 +324,10 @@ export async function runNhiApiSync({
   // Sub-metrics surfaced under the 住院 breakdown line so users see
   // why some inpatient rows didn't produce DocumentReferences.
   let dischargeCandidates = 0;
+  // Surgeries extracted from 住院 details (IHKE3309S02 op_CODE / opcode_data) —
+  // collected during the inpatient walk, merged into the `procedures` bucket
+  // after that endpoint is built (it runs later and would otherwise overwrite).
+  const inpatientProcedureItems: any[] = [];
   let dischargeFetched = 0;
   let dischargeFetchFailed = 0;
   const inpIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "inpatient");
@@ -362,6 +367,10 @@ export async function runNhiApiSync({
           // available for this row via /getxml. `has_PDF` is a parallel
           // signal for PDF rendering — v0.16 intentionally HTML-only.
           const mainRow = pickS02MainRow(detail);
+          // Surgeries done during this stay (op_CODE / opcode_data) → Procedures.
+          // The 手術 list (IHKE3301S05) misses most of these; the 住院 detail is
+          // their only faithful source. Merged into the procedures bucket below.
+          if (mainRow) inpatientProcedureItems.push(...adaptInpatientProcedures(mainRow));
           const hasXml = String(mainRow?.has_XML || mainRow?.has_xml || "").toUpperCase() === "Y";
           if (!hasXml) continue;
           const v = visits[i];
@@ -641,6 +650,20 @@ export async function runNhiApiSync({
         errors.push(`procedures detail: ${e.message}`);
       }
     }
+  }
+  // Merge 住院-detail surgeries into the procedures bucket. Appended HERE (not in
+  // the inpatient block) because the IHKE3301S05 fan-out above overwrites
+  // `.items`; appending after keeps both. Same page_type → they map + dedup
+  // (dedupProcedures) together at bundle assembly. Works even when the 手術 list
+  // had zero rows (the common case for inpatient surgeries).
+  if (
+    inpatientProcedureItems.length > 0 &&
+    procIdx >= 0 &&
+    settled[procIdx]?.status === "fulfilled"
+  ) {
+    const existing = settled[procIdx].value.items || [];
+    settled[procIdx].value.items = [...existing, ...inpatientProcedureItems];
+    settled[procIdx].value.raw_count = settled[procIdx].value.items.length;
   }
   _markPhase("procedures-detail");
 

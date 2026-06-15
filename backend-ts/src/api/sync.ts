@@ -23,6 +23,7 @@ import { type SyncLog, auditLog, fhirResources, patientSyncState, syncLogs } fro
 import {
   GROUP_HANDLERS,
   LIST_HANDLERS,
+  dedupProcedures,
   derivePatientId,
   linkEncountersInResources,
   mapPatient,
@@ -336,6 +337,11 @@ syncApi.post("/upload-structured", requireSyncApiKey, async (c) => {
     return c.json({ detail: `Unsupported page_type: ${payload.page_type}` }, 400);
   }
 
+  // 住院-detail surgeries arrive in the same `procedures` batch as the 手術-list
+  // rows — drop the PCS-only inpatient duplicate when the richer row covers it.
+  if (payload.page_type === "procedures") {
+    resources = dedupProcedures(resources);
+  }
   const dbEncounters = fhirServer.search("Encounter", { patient: effectivePid });
   linkEncountersInResources(dbEncounters, resources);
   // Candidates from both the stored Encounters and this batch — the discharge

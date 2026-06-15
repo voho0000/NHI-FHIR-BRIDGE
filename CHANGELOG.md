@@ -3,6 +3,12 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.5 重點 — 2026-06-16（住院手術不再漏抓 → 補成 Procedure）
+
+- **住院期間做的手術現在會擷取成 Procedure**：先前 Procedure 只來自「手術清單(IHKE3301S05)」,但那清單**不完整** —— 住院期間做的手術記在**住院明細(IHKE3309S02)的 `op_CODE`(主, ICD-10-PCS)+ `opcode_data`(次處置)**,而 bridge 完全沒讀。實測這位病人 11 次住院有 5 次有手術,其中 **4 台刀(大腸切除、髂靜脈擴張×2、上消化道內視鏡)整個沒進 bundle**。現在從住院明細抽出 `op_CODE` + 次處置,發成 ICD-10-PCS Procedure,掛回該次住院 Encounter(用申報型別 IMP 精準掛載),診斷帶 `reasonCode`。
+- **去重**:同一台刀若同時出現在手術清單(帶 NHI 醫令碼+PCS)與住院明細(只有 PCS),保留資訊較完整的手術清單版本(`dedupProcedures`,比對 PCS 碼+院所+日期)。
+- 對接 App 影響:住院手術史現在看得到了(先前會整個消失);手術日期錨定在入院日(住院明細未提供逐台手術的執行日)。
+
 ## 0.20.4 重點 — 2026-06-16（急診看診開的藥也掛得上 —— 用藥沒有「急診」型別）
 
 - **門診型別的藥可掛到同日急診(EMER)就醫**:NHI **用藥端的申報型別只有 門診/住院/藥局,沒有「急診」**(線上實證)。所以急診看診當下開的藥(例如 1/28 的 Molnupiravir COVID 五天療程)在用藥端一律標「門診」,但就醫端(IHKE3303)依檢傷處置碼把同一次就醫正確判為「急診(EMER)」—— 兩邊型別對不上,v0.20.3 時那幾筆藥就掛不上。修正:用藥的「門診(AMB)」型別改為可比對同日的 **門診(AMB) 或 急診(EMER)** 任一 gateway;只有「住院(IMP)」維持精確比對。1/28 那 7 筆原本留空的急診用藥現在正確掛回該次急診就醫。

@@ -6,6 +6,7 @@
 import {
   GROUP_HANDLERS,
   LIST_HANDLERS,
+  dedupProcedures,
   linkEncountersInResources,
   maskId,
   repairDocumentReferenceEncounters,
@@ -55,12 +56,17 @@ export function assembleLocalBundle(byType, patientOverride, maskEnabled) {
     unique.push(r);
   }
 
+  // Drop an inpatient-detail surgery (PCS-only Procedure) when the richer 手術-
+  // list row already covers the same (PCS, hospital, date). Runs before linking
+  // so the dropped resource isn't linked.
+  const resources = dedupProcedures(unique);
+
   // Linker + sex-stratified resolver run once over the full assembled
   // list (same pipeline backend's /sync/upload-structured runs, just
   // against an in-memory candidate array instead of a SQLite query).
-  linkEncountersInResources(unique, unique);
-  repairDocumentReferenceEncounters(unique, unique);
-  resolveSexStratifiedRanges(patient, unique);
+  linkEncountersInResources(resources, resources);
+  repairDocumentReferenceEncounters(resources, resources);
+  resolveSexStratifiedRanges(patient, resources);
 
   // Bundle.meta.tag carries bridge version + source identifier so SMART
   // app devs / IRB reviewers can identify the producing bridge even
@@ -83,7 +89,7 @@ export function assembleLocalBundle(byType, patientOverride, maskEnabled) {
         },
       ],
     },
-    entry: unique.map((r) => ({
+    entry: resources.map((r) => ({
       fullUrl: `${r.resourceType}/${r.id}`,
       resource: r,
     })),

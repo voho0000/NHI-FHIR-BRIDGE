@@ -5320,7 +5320,28 @@
     if (hospital) {
       resource.performer = [{ actor: { display: hospital } }];
     }
+    const encounterClass = (raw.encounter_class ?? "").trim();
+    if (encounterClass) resource.__nhiVisitClass = encounterClass;
     return resource;
+  }
+  function dedupProcedures(resources) {
+    const pcsCodes = (p) => (p.code?.coding ?? []).filter((c) => String(c?.system ?? "").includes("icd-10-pcs")).map((c) => String(c.code));
+    const isPcsOnly = (p) => {
+      const c = p.code?.coding ?? [];
+      return c.length === 1 && String(c[0]?.system ?? "").includes("icd-10-pcs");
+    };
+    const hosp = (p) => p.performer?.[0]?.actor?.display ?? "";
+    const day = (p) => String(p.performedDateTime ?? p.performedPeriod?.start ?? "").slice(0, 10);
+    const claimed = /* @__PURE__ */ new Set();
+    for (const p of resources) {
+      if (p.resourceType !== "Procedure" || isPcsOnly(p)) continue;
+      for (const code of pcsCodes(p)) claimed.add(`${hosp(p)}|${day(p)}|${code}`);
+    }
+    if (claimed.size === 0) return resources;
+    return resources.filter((p) => {
+      if (p.resourceType !== "Procedure" || !isPcsOnly(p)) return true;
+      return !pcsCodes(p).some((code) => claimed.has(`${hosp(p)}|${day(p)}|${code}`));
+    });
   }
 
   // ../packages/mapper/src/dispatch.ts
@@ -6690,6 +6711,45 @@
     }
     return rows;
   }
+  function adaptInpatientProcedures(visit) {
+    if (!visit || typeof visit !== "object") return [];
+    const date = rocToISO(visit.in_DATE || visit.in_date || visit.func_DATE || "");
+    if (!date) return [];
+    const hospital = visit.hosp_ABBR || visit.hosp_abbr || "";
+    const reasonCode = visit.icd9cm_CODE || visit.icd9cm_code || "";
+    const rawReason = visit.icd9cm_CODE_CNAME || visit.icd9cm_code_cname || "";
+    const stripCode = (s) => String(s || "").replace(/^[A-Z0-9.]+\//, "").trim();
+    const reasonEn = stripCode(pickEnglish(rawReason));
+    const reasonZh = stripCode(pickChinese(rawReason));
+    const out = [];
+    const push = (code, rawName) => {
+      if (!code) return;
+      const en = stripCode(pickEnglish(rawName)) || stripCode(pickChinese(rawName));
+      const zh = stripCode(pickChinese(rawName)) || en;
+      out.push({
+        date,
+        code,
+        // ICD-10-PCS op_CODE (primary — no NHI 醫令碼 on the 住院 detail)
+        system: "icd-10-pcs",
+        display: en || code,
+        display_zh: zh || code,
+        reason: reasonEn,
+        reason_zh: reasonZh,
+        reason_code: reasonCode,
+        body_site: "",
+        hospital,
+        encounter_class: "IMP"
+      });
+    };
+    push(visit.op_CODE || visit.op_code || "", visit.op_CODE_CNAME || visit.op_code_cname || "");
+    const sec = Array.isArray(visit.opcode_data) ? visit.opcode_data : [];
+    for (const s of sec) {
+      const name = s?.op_code_name || s?.op_CODE_NAME || "";
+      const m = String(name).match(/^([A-Z0-9.]+)\//);
+      push(m ? m[1] : "", name);
+    }
+    return out;
+  }
   function adaptImagingReportFromDetail(item, ctx) {
     if (!item || typeof item !== "object") return null;
     const date = rocToISO(
@@ -6981,9 +7041,10 @@
       seen.add(key);
       unique.push(r);
     }
-    linkEncountersInResources(unique, unique);
-    repairDocumentReferenceEncounters(unique, unique);
-    resolveSexStratifiedRanges(patient, unique);
+    const resources = dedupProcedures(unique);
+    linkEncountersInResources(resources, resources);
+    repairDocumentReferenceEncounters(resources, resources);
+    resolveSexStratifiedRanges(patient, resources);
     const bridgeVersion = chrome.runtime.getManifest()?.version || "unknown";
     return {
       resourceType: "Bundle",
@@ -6998,7 +7059,7 @@
           }
         ]
       },
-      entry: unique.map((r) => ({
+      entry: resources.map((r) => ({
         fullUrl: `${r.resourceType}/${r.id}`,
         resource: r
       }))
@@ -8662,6 +8723,7 @@
     _markPhase("encounter-detail");
     const dischargeSummaryItems = [];
     let dischargeCandidates = 0;
+    const inpatientProcedureItems = [];
     let dischargeFetched = 0;
     let dischargeFetchFailed = 0;
     const inpIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "inpatient");
@@ -8685,6 +8747,7 @@
             });
             if (it) reAdapted.push(it);
             const mainRow = pickS02MainRow(detail);
+            if (mainRow) inpatientProcedureItems.push(...adaptInpatientProcedures(mainRow));
             const hasXml = String(mainRow?.has_XML || mainRow?.has_xml || "").toUpperCase() === "Y";
             if (!hasXml) continue;
             const v = visits[i];
@@ -8859,6 +8922,11 @@
           errors.push(`procedures detail: ${e.message}`);
         }
       }
+    }
+    if (inpatientProcedureItems.length > 0 && procIdx >= 0 && settled[procIdx]?.status === "fulfilled") {
+      const existing = settled[procIdx].value.items || [];
+      settled[procIdx].value.items = [...existing, ...inpatientProcedureItems];
+      settled[procIdx].value.raw_count = settled[procIdx].value.items.length;
     }
     _markPhase("procedures-detail");
     const chronicRowIds = /* @__PURE__ */ new Set();

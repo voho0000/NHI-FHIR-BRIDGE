@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { mapProcedure } from "@nhi-fhir-bridge/mapper";
+import { dedupProcedures, mapProcedure } from "@nhi-fhir-bridge/mapper";
 
 const PID = "P001";
 
@@ -223,5 +223,55 @@ describe("mapProcedure", () => {
     expect(a!.performer).toBeUndefined();
     expect(b!.performer).toBeUndefined();
     expect(c!.performer).toBeUndefined();
+  });
+});
+
+describe("dedupProcedures", () => {
+  const PCS = "http://hl7.org/fhir/sid/icd-10-pcs";
+  const NHI = "https://twcore.mohw.gov.tw/CodeSystem/nhi-medical-order-code";
+  const proc = (id: string, codings: any[], hosp: string, date: string) => ({
+    resourceType: "Procedure",
+    id,
+    performedDateTime: `${date}T00:00:00+08:00`,
+    performer: [{ actor: { display: hosp } }],
+    code: { coding: codings },
+  });
+
+  test("drops the PCS-only 住院 surgery when a richer 手術-list row covers it", () => {
+    const rich = proc(
+      "rich",
+      [
+        { system: NHI, code: "86412B" },
+        { system: PCS, code: "08B53ZZ" },
+      ],
+      "臺北榮總",
+      "2016-09-23",
+    );
+    const inpatient = proc("inp", [{ system: PCS, code: "08B53ZZ" }], "臺北榮總", "2016-09-23");
+    expect(dedupProcedures([rich, inpatient]).map((p) => p.id)).toEqual(["rich"]);
+  });
+
+  test("keeps a 住院 surgery the 手術 list never had (the common case)", () => {
+    const inpatient = proc("inp", [{ system: PCS, code: "0DBK8ZZ" }], "長庚嘉義", "2025-02-11");
+    expect(dedupProcedures([inpatient]).map((p) => p.id)).toEqual(["inp"]);
+  });
+
+  test("does NOT dedup across a different hospital or date", () => {
+    const rich = proc(
+      "rich",
+      [
+        { system: NHI, code: "86412B" },
+        { system: PCS, code: "08B53ZZ" },
+      ],
+      "臺北榮總",
+      "2016-09-23",
+    );
+    const elsewhere = proc("inp", [{ system: PCS, code: "08B53ZZ" }], "長庚嘉義", "2025-02-11");
+    expect(dedupProcedures([rich, elsewhere])).toHaveLength(2);
+  });
+
+  test("non-Procedure resources pass through untouched", () => {
+    const obs = { resourceType: "Observation", id: "o1" };
+    expect(dedupProcedures([obs]).map((r) => r.id)).toEqual(["o1"]);
   });
 });
