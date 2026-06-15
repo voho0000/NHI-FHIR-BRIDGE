@@ -181,6 +181,12 @@ export function adaptLabItem(item) {
     // FHIR "physiologically relevant time"; visit date rides in meta.tag.
     // Faithful-transport: bridge does NOT pick which is "correct".
     nhi_visit_date: rocToISO(item.funC_DATE || item.func_DATE) || null,
+    // NHI's OWN abnormal flag: assaY_MARK = "1" (異常) / "0" (正常) / "" (none).
+    // Authoritative for the abnormal/normal binary — the mapper uses it to
+    // correct cases where a non-numeric reference range (e.g. an eGFR CKD-stage
+    // text "[N:≧60,s3:30~59,…]") makes the value-vs-range derivation mislabel an
+    // abnormal result as Normal.
+    abnormal_flag: String(item.assaY_MARK ?? "").trim(),
   };
 }
 

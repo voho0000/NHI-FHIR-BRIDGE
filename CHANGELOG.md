@@ -3,6 +3,11 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.6 重點 — 2026-06-16（用 NHI 異常旗標修正檢驗判讀,eGFR 不再被誤標正常）
+
+- **檢驗判讀改用 NHI 自帶的異常旗標(`assaY_MARK`)校正**:bridge 原本只從參考範圍自己算 H/L/正常。但有些檢驗的參考範圍是**文字描述**(例如 eGFR 的 CKD 分期「`[N:≧60,s3:30~59,s4:15~29,s5 15]`」),bridge 硬解析會**算錯** —— 實測這位病人 **eGFR 32、33(第 3 期慢性腎病,明顯異常)被標成「正常(N)」**,而 NHI 自己的旗標正確標異常。現在讀 `assaY_MARK`(1 異常/0 正常)當權威:bridge 算出的 **H/L/A 等具方向性的判讀保留**(較細),只有 bridge 算成「正常」或算不出時才由 NHI 旗標決定(1→異常 A、0→正常 N),**絕不把 bridge 已判的異常降級**。536 筆 NHI 標異常中,有 162 筆是 bridge 算不乾淨的(質性/文字範圍),這些現在會正確帶上異常標示。
+- 對接 App 影響:`Observation.interpretation` 更可靠,腎功能等「範圍非數值」的檢驗不再出現「明明異常卻顯示正常」。
+
 ## 0.20.5 重點 — 2026-06-16（住院手術不再漏抓 → 補成 Procedure）
 
 - **住院期間做的手術現在會擷取成 Procedure**：先前 Procedure 只來自「手術清單(IHKE3301S05)」,但那清單**不完整** —— 住院期間做的手術記在**住院明細(IHKE3309S02)的 `op_CODE`(主, ICD-10-PCS)+ `opcode_data`(次處置)**,而 bridge 完全沒讀。實測這位病人 11 次住院有 5 次有手術,其中 **4 台刀(大腸切除、髂靜脈擴張×2、上消化道內視鏡)整個沒進 bundle**。現在從住院明細抽出 `op_CODE` + 次處置,發成 ICD-10-PCS Procedure,掛回該次住院 Encounter(用申報型別 IMP 精準掛載),診斷帶 `reasonCode`。

@@ -4123,6 +4123,18 @@
     if (!entry) return null;
     return interpCoding(entry[0], entry[1]);
   }
+  var PRESERVE_INTERP = /* @__PURE__ */ new Set(["H", "L", "A", "AA", "POS"]);
+  function applyNhiAbnormalFlag(resource, raw) {
+    const flag = String(raw.abnormal_flag ?? "").trim();
+    if (flag !== "0" && flag !== "1") return;
+    const current = resource.interpretation?.[0]?.coding?.[0]?.code;
+    if (current && PRESERVE_INTERP.has(current)) return;
+    if (flag === "1") {
+      resource.interpretation = [{ coding: [interpCoding("A", "Abnormal")] }];
+    } else if (!current) {
+      resource.interpretation = [{ coding: [interpCoding("N", "Normal")] }];
+    }
+  }
   var POS_MARKERS = /^\s*(?:positive|pos|reactive|detected|abnormal|present|trace|[1-4]?\s*\+(?:\s*[\+\-])*)\s*(?:\(.*\))?\s*$/i;
   var NEG_MARKERS = /^\s*(?:negative|neg|nonreactive|non[-\s]?reactive|not[-\s]?detected|nd|absent|none|normal|0|[-—–]+)\s*(?:\(.*\))?\s*$/i;
   function classifyQualitative(text) {
@@ -4928,6 +4940,7 @@
       const coded = mapInterpretation(_interpFromRange.toLowerCase());
       resource.interpretation = coded ? [{ coding: [coded], text: _interpFromRange }] : [{ text: _interpFromRange }];
     }
+    applyNhiAbnormalFlag(resource, raw);
     return resource;
   }
   function buildObservation(raw, patientId, panelCode) {
@@ -5101,6 +5114,7 @@
       const coded = mapInterpretation(_interpFromRange.toLowerCase());
       resource.interpretation = coded ? [{ coding: [coded], text: _interpFromRange }] : [{ text: _interpFromRange }];
     }
+    applyNhiAbnormalFlag(resource, raw);
     return resource;
   }
   function groupByOrderCode(cleaned, patientId) {
@@ -6339,7 +6353,13 @@
       // or roving outpatient order. effectiveDateTime stays 12/9 per
       // FHIR "physiologically relevant time"; visit date rides in meta.tag.
       // Faithful-transport: bridge does NOT pick which is "correct".
-      nhi_visit_date: rocToISO(item.funC_DATE || item.func_DATE) || null
+      nhi_visit_date: rocToISO(item.funC_DATE || item.func_DATE) || null,
+      // NHI's OWN abnormal flag: assaY_MARK = "1" (異常) / "0" (正常) / "" (none).
+      // Authoritative for the abnormal/normal binary — the mapper uses it to
+      // correct cases where a non-numeric reference range (e.g. an eGFR CKD-stage
+      // text "[N:≧60,s3:30~59,…]") makes the value-vs-range derivation mislabel an
+      // abnormal result as Normal.
+      abnormal_flag: String(item.assaY_MARK ?? "").trim()
     };
   }
   function adaptMedicationFromDetail(drug, visit, options) {

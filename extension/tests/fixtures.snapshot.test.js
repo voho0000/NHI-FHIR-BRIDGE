@@ -37,6 +37,7 @@ describe("adapter fixture snapshots", () => {
   test("IHKE3409 lab (inpatient — real_INSPECT_DATE wins, ordeR_CODE → code)", () => {
     expect(adaptLabItem(load("ihke3409-lab-inpatient.json"))).toMatchInlineSnapshot(`
       {
+        "abnormal_flag": "1",
         "code": "09140C",
         "date": "2022-05-22",
         "display": "FINGER SUGAR",

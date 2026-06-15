@@ -290,6 +290,10 @@ describe("adaptLabItem", () => {
       // this fixture (5/18 visit, 5/22 inspect) — a normal inpatient
       // admission window pattern.
       nhi_visit_date: "2022-05-18",
+      // v0.20.6: NHI's own abnormal flag (assaY_MARK). Glucose 191 > [70][140]
+      // → NHI marks abnormal; the mapper uses it to correct value-vs-range
+      // mislabels (e.g. eGFR CKD-stage text ranges).
+      abnormal_flag: "1",
     });
   });
 

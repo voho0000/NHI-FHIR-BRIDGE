@@ -125,6 +125,51 @@ describe("mapObservation (single row)", () => {
   });
 });
 
+describe("NHI abnormal flag (assaY_MARK → abnormal_flag) — v0.20.6", () => {
+  const egfr = (extra: Record<string, any>) =>
+    mapObservation(
+      { code: "09015C", display: "Estimated GFR", date: "2024-01-15", ...extra },
+      PATIENT_ID,
+    );
+
+  test("corrects a value-vs-range false-Normal to Abnormal (eGFR 32, CKD-stage text range)", () => {
+    // The textual range "[N:≧60,s3:30~59,…]" makes the derivation mislabel Normal;
+    // NHI's assaY_MARK=1 corrects it to Abnormal.
+    const r = egfr({
+      value: 32,
+      unit: "mL/min/1.73m2",
+      reference_range: "[N:≧60,s3:30~59,s4:15~29,s5 15][]",
+      abnormal_flag: "1",
+    });
+    expect(r!.interpretation[0].coding[0].code).toBe("A");
+  });
+
+  test("fills Abnormal when the bridge computed no interpretation (no range)", () => {
+    const r = egfr({ value: "5.5", abnormal_flag: "1" });
+    expect(r!.interpretation[0].coding[0].code).toBe("A");
+  });
+
+  test("flag=0 with no computed interpretation → Normal", () => {
+    const r = egfr({ value: "5.5", abnormal_flag: "0" });
+    expect(r!.interpretation[0].coding[0].code).toBe("N");
+  });
+
+  test("does NOT flatten a bridge-computed High to A when flag=1 (keeps granular)", () => {
+    const r = egfr({ value: 200, unit: "x", reference_range: "[10][100]", abnormal_flag: "1" });
+    expect(r!.interpretation[0].coding[0].code).toBe("H");
+  });
+
+  test("does NOT downgrade a bridge-computed High when flag=0", () => {
+    const r = egfr({ value: 200, unit: "x", reference_range: "[10][100]", abnormal_flag: "0" });
+    expect(r!.interpretation[0].coding[0].code).toBe("H");
+  });
+
+  test("no flag → unchanged (in-range value stays Normal)", () => {
+    const r = egfr({ value: 50, unit: "x", reference_range: "[10][100]" });
+    expect(r!.interpretation[0].coding[0].code).toBe("N");
+  });
+});
+
 describe("mapObservationsGrouped (panel grouping)", () => {
   test("CBC panel collapses to one DiagnosticReport", () => {
     const items = [
