@@ -269,6 +269,24 @@ describe("linkEncountersInResources — admission-day gateway disambiguation (v0
     linkEncountersInResources([amb, impStay], [m]);
     expect(m.encounter).toEqual({ reference: "Encounter/amb" });
   });
+
+  test("門診-labelled ER drug links to the 急診(EMER) gateway (用藥 has no 急診 type)", () => {
+    // 長庚嘉義 1/28 U07.1 repro: 用藥 labels the ER prescription 門診 (AMB) while
+    // 就醫 classified the same-day gateway 急診 (EMER). The AMB-class med must
+    // still attach to the EMER gateway — e.g. the Molnupiravir 5-day course.
+    const emer = enc("emer", "EMER", "VGH", "2025-01-28", null, ["U07.1"]);
+    const impStay = enc("imp", "IMP", "VGH", "2025-01-28", "2025-01-30", ["U07.1"]);
+    const m: Record<string, any> = {
+      resourceType: "MedicationRequest",
+      id: "m-molnu",
+      requester: { display: "VGH" },
+      authoredOn: "2025-01-28T00:00:00+08:00",
+      reasonCode: [{ coding: [{ code: "U07.1" }] }],
+      __nhiVisitClass: "AMB",
+    };
+    linkEncountersInResources([emer, impStay], [m]);
+    expect(m.encounter).toEqual({ reference: "Encounter/emer" });
+  });
 });
 
 describe("resolveSexStratifiedRanges", () => {

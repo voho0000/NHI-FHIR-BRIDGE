@@ -3,6 +3,10 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.4 重點 — 2026-06-16（急診看診開的藥也掛得上 —— 用藥沒有「急診」型別）
+
+- **門診型別的藥可掛到同日急診(EMER)就醫**:NHI **用藥端的申報型別只有 門診/住院/藥局,沒有「急診」**(線上實證)。所以急診看診當下開的藥(例如 1/28 的 Molnupiravir COVID 五天療程)在用藥端一律標「門診」,但就醫端(IHKE3303)依檢傷處置碼把同一次就醫正確判為「急診(EMER)」—— 兩邊型別對不上,v0.20.3 時那幾筆藥就掛不上。修正:用藥的「門診(AMB)」型別改為可比對同日的 **門診(AMB) 或 急診(EMER)** 任一 gateway;只有「住院(IMP)」維持精確比對。1/28 那 7 筆原本留空的急診用藥現在正確掛回該次急診就醫。
+
 ## 0.20.3 重點 — 2026-06-16（用藥改用 NHI 申報「住院/門診/急診」型別精準掛就醫）
 
 - **用藥掛就醫改用確定性訊號,不再靠診斷猜**:v0.20.0~0.20.2 用診斷(再退而求其次用 validityPeriod)來決定一筆藥屬於入院當天的「門診/急診」還是「住院」。但**門診與住院本來就可以是同一個診斷碼**(因肺炎就醫 → 因肺炎收住院),診斷根本分不開;validityPeriod 也只在多日療程才有(單日住院藥就漏)。現在直接讀 NHI 用藥資料自帶的**申報型別 `ori_TYPE_NAME`(住院/門診/急診)**,住院藥就掛住院 Encounter、門診藥掛門診 —— 這是 NHI 已經標好的事實,不是推測。

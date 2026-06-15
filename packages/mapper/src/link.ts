@@ -169,7 +169,17 @@ export function linkEncountersInResources(
     // why the diagnosis tie-break alone left 長庚嘉義 2/11 (J18.9) + 1/28 (U07.1)
     // inpatient drugs unlinked. Link on a unique class match; else fall through.
     if (visitClass) {
-      const classHits = cands.filter((e) => (e.class ?? {}).code === visitClass);
+      // NHI 用藥 has NO 急診 type — an ER visit's prescriptions are labelled
+      // 門診 (verified live: 用藥 ori_TYPE_NAME ∈ {門診, 住院, 藥局}). 就醫
+      // (IHKE3303), by contrast, classifies that same visit 急診(EMER) from its
+      // 檢傷 處置 codes. So an AMB-class med must accept EITHER a 門診(AMB) or a
+      // 急診(EMER) same-day gateway; only 住院(IMP) is matched exactly. Without
+      // this, ER-prescribed drugs (e.g. 1/28 Molnupiravir) where the gateway is
+      // EMER had no AMB to match and stayed unlinked.
+      const classHits = cands.filter((e) => {
+        const c = (e.class ?? {}).code;
+        return visitClass === "IMP" ? c === "IMP" : c === "AMB" || c === "EMER";
+      });
       if (classHits.length === 1) {
         r.encounter = { reference: `Encounter/${classHits[0]!.id}` };
         continue;

@@ -5674,7 +5674,10 @@
       }
       const cands = matches.map((id) => byId.get(id)).filter(Boolean);
       if (visitClass) {
-        const classHits = cands.filter((e) => (e.class ?? {}).code === visitClass);
+        const classHits = cands.filter((e) => {
+          const c = (e.class ?? {}).code;
+          return visitClass === "IMP" ? c === "IMP" : c === "AMB" || c === "EMER";
+        });
         if (classHits.length === 1) {
           r.encounter = { reference: `Encounter/${classHits[0].id}` };
           continue;
