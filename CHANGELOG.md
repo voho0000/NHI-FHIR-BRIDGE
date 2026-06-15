@@ -3,6 +3,11 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.18.14 重點 — 2026-06-14
+
+- **修正：手術／處置的「手術醫令」現在是結構化資料（先前對接 App 顯示「0 項」）**。NHI 處置紀錄裡實際施作的健保醫令（如 `86412B 微創玻璃體黃斑部手術`）先前被埋在 `Procedure.note` 自由文字，App 抓不到、顯示「0 項」，標題還用的是 ICD-10-PCS 分類名。現在**每個手術醫令各自成為一個 `Procedure`**：`code.coding[0]` 是 NHI 醫令碼、`coding[1]` 是 ICD-10-PCS 分類碼、標題（`code.text`）改成真正的手術名；一個處置含多台刀就會產生多個 Procedure。
+- **對接 App 注意**：這是 `Procedure` 的破壞性變更 —— `Procedure.id` 會改變（改由醫令碼派生）、`code.text` 由分類名變手術名、資源數量可能變多。詳見 `docs/SMART_APP_CHANGES_v0.18.14.md`（含真實前後 FHIR 範例與遷移建議）。其它資源型別不受影響。
+
 ## 0.18.13 重點 — 2026-06-14
 
 **一輪介面一致化／和諧化（純 UI，不影響任何資料、對應或流程）。**
