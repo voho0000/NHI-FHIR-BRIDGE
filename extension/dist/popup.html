@@ -132,6 +132,21 @@
     }
     .deid-detail .deid-warn { color: #92400e; }
 
+    /* Post-download "handle with care" reminder — shown only once a bundle
+       exists (lives inside #bundle-meta-block, which toggles with the file),
+       mirroring 健康存摺's own download-time 聲明. The user is responsible for
+       the downloaded file once it leaves the bridge. */
+    .bundle-care-note {
+      margin-top: 8px;
+      background: #fffbeb;
+      border: 0.5px solid #fde68a;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 11px;
+      color: #92400e;
+      line-height: 1.55;
+    }
+
     /* Two-line layout for the download bundle meta: filename on top
        (truncates with ellipsis if it can't fit), size/age on a second
        lighter line below. Avoids the bundle metadata wrapping mid-name. */
@@ -1789,6 +1804,9 @@
             <div class="bundle-sizeage" id="bundle-sizeage"></div>
             <div class="bundle-sync-hint backend-only" id="sync-status-hint" hidden>
               ✓ 這次資料已傳到本機伺服器
+            </div>
+            <div class="bundle-care-note">
+              📄 這份檔案含你完整的就醫資料，請妥善保管。要給第三方使用前，建議開啟去識別化，並約定使用期限與日後可要求刪除的權利。
             </div>
           </div>
         </div>
