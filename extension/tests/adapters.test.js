@@ -71,6 +71,13 @@ describe("rocToISO", () => {
     expect(rocToISO("not a date")).toBe("");
     expect(rocToISO("2025-05-22")).toBe(""); // already ISO — not our format
   });
+  // hardening: impossible month/day must not flow into FHIR as a broken date
+  test("rejects impossible month/day", () => {
+    expect(rocToISO("115/13/45")).toBe("");
+    expect(rocToISO("115/02/30")).toBe(""); // Feb 30 doesn't exist
+    expect(rocToISO("115/00/10")).toBe("");
+    expect(rocToISO("115/05/05")).toBe("2026-05-05"); // valid still works
+  });
 });
 
 describe("rocChineseToISO", () => {

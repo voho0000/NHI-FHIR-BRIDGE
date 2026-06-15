@@ -19,7 +19,18 @@ export function rocToISO(rocDate) {
   const m = String(rocDate).match(/^(\d{2,3})[/.-](\d{1,2})[/.-](\d{1,2})/);
   if (!m) return "";
   const y = Number.parseInt(m[1], 10) + 1911;
-  return `${y}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  const mo = Number.parseInt(m[2], 10);
+  const d = Number.parseInt(m[3], 10);
+  // Reject impossible dates (e.g. "115/13/45", "115/02/30") so malformed NHI
+  // values don't flow into FHIR as syntactically-broken `date`s a validator
+  // would reject. Range check + a UTC round-trip catches month/day overflow.
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+  const iso = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const dt = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(dt.getTime()) || dt.getUTCMonth() + 1 !== mo || dt.getUTCDate() !== d) {
+    return "";
+  }
+  return iso;
 }
 
 // Inverse: ISO "2023-05-05" → ROC "112/05/05". Used to build NHI date-range
@@ -353,12 +364,19 @@ export function adaptImagingListStub() {
 //     severity code mapping (SNOMED 24484000 etc.) needs more thought.
 export function adaptCatastrophicIllness(item) {
   if (!item || typeof item !== "object") return null;
-  const display = pickEnglish(item.icD10CM_CNAME || item.icd10cm_cname || "");
+  const rawCname = item.icD10CM_CNAME || item.icd10cm_cname || "";
+  // icD10CM_CNAME is "<ICD>/<中文>||<ICD>/<English>". Extract the ICD-10-CM
+  // code from the prefix (was being dropped → catastrophic-illness Conditions
+  // had no usable diagnosis code) and strip it from the display.
+  const codeRe = /^([A-Z]\d[A-Z0-9.]*)\//;
+  const icdCode = (String(rawCname).match(codeRe) || [])[1] || "";
+  const stripIcd = (s) => (s || "").replace(codeRe, "").trim();
+  const display = stripIcd(pickEnglish(rawCname)) || stripIcd(pickChinese(rawCname));
   if (!display) return null;
   return {
     display,
-    code: "",
-    system: "",
+    code: icdCode,
+    system: icdCode ? "icd-10" : "",
     onset_date: rocToISO(item.valiD_S_DATE || item.valid_s_date || ""),
     recorded_date: rocToISO(item.valiD_S_DATE || item.valid_s_date || ""),
     category: "problem-list-item",
@@ -1026,7 +1044,8 @@ export function adaptImagingReportFromDetail(item, ctx?: { rid?: string; ctype?:
   return {
     date,
     code: item.order_CODE || item.order_code || "",
-    system: "",
+    // imaging order_CODE is a real NHI 醫令碼 → route to NHI_MEDICAL_ORDER_CODE
+    system: item.order_CODE || item.order_code ? "nhi" : "",
     display,
     category: "RAD",
     conclusion,
@@ -1073,7 +1092,7 @@ export function adaptImageOnlyReportFromMeta(
   return {
     date,
     code: meta.orderCode || "",
-    system: "",
+    system: meta.orderCode ? "nhi" : "",
     display,
     category: "RAD",
     conclusion: "",

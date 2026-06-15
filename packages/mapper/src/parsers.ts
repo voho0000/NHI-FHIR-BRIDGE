@@ -153,6 +153,12 @@ export function toUcum(unit: string | null | undefined): string | null {
   if (Object.prototype.hasOwnProperty.call(UCUM_OVERRIDES, unit)) {
     return UCUM_OVERRIDES[unit] ?? null;
   }
+  // Pass through only plausibly-UCUM ASCII strings ("mg/dL", "mmol/L",
+  // "10*3/uL" are valid UCUM verbatim). A unit with CJK or other non-printable-
+  // ASCII characters cannot be valid UCUM — return null so the Quantity builder
+  // doesn't mislabel it under the UCUM system (a UCUM-aware validator would
+  // reject it). The raw label still rides on Quantity.unit.
+  if (/[^\x20-\x7E]/.test(unit)) return null;
   return unit;
 }
 
@@ -523,17 +529,18 @@ export function tryParseQuantity(
   if (v === null) return null;
 
   const ucumCode = toUcum(unit);
-  const qty: Quantity = {
-    value: v,
-    system: UCUM_SYSTEM,
-  };
+  const qty: Quantity = { value: v };
   // Quantity.unit (human-readable) keeps the original NHI label so users
-  // still see '％' or 'mEq/L' raw. Quantity.code is strict UCUM machine
-  // code. Drop unit display when empty so we don't emit "unit": "".
+  // still see '％' or 'mEq/L' raw. Drop unit display when empty so we don't
+  // emit "unit": "".
   if (unit) {
     qty.unit = unit;
   }
+  // Only assert the UCUM system when we actually have a UCUM machine code —
+  // otherwise a non-UCUM unit (e.g. a CJK label) would be falsely declared
+  // UCUM with no code, which a terminology-aware consumer would flag.
   if (ucumCode !== null) {
+    qty.system = UCUM_SYSTEM;
     qty.code = ucumCode;
   }
   if (comparator) {

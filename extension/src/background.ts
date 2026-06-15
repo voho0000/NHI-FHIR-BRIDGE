@@ -189,7 +189,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg?.type === "getSyncStatus") {
-    chrome.storage.local.get(STORAGE_KEY).then((data) => sendResponse(data[STORAGE_KEY] || null));
+    chrome.storage.local.get(STORAGE_KEY).then(async (data) => {
+      const status = data[STORAGE_KEY] || null;
+      // Watchdog: an MV3 service worker can be killed mid-sync (Chrome's hard
+      // ~5-min event-handler lifetime cap, or memory reclaim). If that happens
+      // the persisted status is frozen at running:true forever and the popup
+      // shows "取得中…" indefinitely with no recovery. Detect a stale heartbeat
+      // (no setStatus write for > STALE_MS) and reset the stuck flag so the UI
+      // recovers. STALE_MS is comfortably above the SW lifetime cap so a slow-
+      // but-alive sync (which writes progress every few seconds) is never
+      // falsely killed.
+      const STALE_MS = 6 * 60 * 1000;
+      const lastBeat = status?.ts || status?.started || 0;
+      if (status?.running && lastBeat && Date.now() - lastBeat > STALE_MS) {
+        const dead = {
+          ...status,
+          running: false,
+          phase: "error",
+          progress: "上次取得中斷了（可能因瀏覽器背景休眠或分頁關閉）。請重新「取得健保存摺資料」。",
+        };
+        await chrome.storage.local.set({ [STORAGE_KEY]: dead }).catch(() => {});
+        sendResponse(dead);
+        return;
+      }
+      sendResponse(status);
+    });
     return true; // async response
   }
   if (msg?.type === "clearSyncStatus") {

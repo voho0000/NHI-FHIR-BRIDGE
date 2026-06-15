@@ -108,11 +108,16 @@ export function mapDiagnosticReport(
 
   const display = raw.display ?? "Unknown Report";
   const code = raw.code;
-  const systemHint = raw.system ?? "";
+  const systemHint = typeof raw.system === "string" ? raw.system.toUpperCase() : "";
+  // Imaging reports carry a real NHI 醫令碼 → NHI_MEDICAL_ORDER_CODE (was being
+  // mis-filed under the local placeholder). LOINC stays LOINC; everything else
+  // (no code system known) keeps the local report system.
   const system =
-    typeof systemHint === "string" && systemHint.toUpperCase() === "LOINC"
+    systemHint === "LOINC"
       ? systems.LOINC
-      : systems.HIS_LOCAL_REPORT_CODE;
+      : systemHint === "NHI" && code
+        ? systems.NHI_MEDICAL_ORDER_CODE
+        : systems.HIS_LOCAL_REPORT_CODE;
 
   // stableId hash includes a discriminator beyond (code, date):
   //

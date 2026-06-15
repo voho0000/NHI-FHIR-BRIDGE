@@ -73,6 +73,17 @@ describe("mapDiagnosticReport", () => {
     expect(r!.code.coding[0].system).toContain("his-local-report");
   });
 
+  // imaging reports carry a real NHI 醫令碼 → route to NHI_MEDICAL_ORDER_CODE
+  // (was mis-filed under the local placeholder).
+  test("nhi system hint + code → NHI medical order code", () => {
+    const r = mapDiagnosticReport(
+      { display: "Chest CT", code: "33070B", system: "nhi", category: "RAD", conclusion: "x" },
+      PID,
+    );
+    expect(r!.code.coding[0].system).toContain("nhi-medical-order-code");
+    expect(r!.code.coding[0].code).toBe("33070B");
+  });
+
   test("subject reference uses patient id", () => {
     const r = mapDiagnosticReport({ display: "?", category: "RAD", conclusion: "x" }, PID);
     expect(r!.subject.reference).toBe(`Patient/${PID}`);

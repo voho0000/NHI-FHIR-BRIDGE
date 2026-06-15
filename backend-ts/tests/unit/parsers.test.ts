@@ -15,6 +15,15 @@ describe("toUcum", () => {
     expect(toUcum("mg/dL")).toBe("mg/dL");
     expect(toUcum("%")).toBe("%");
     expect(toUcum("U/L")).toBe("U/L");
+    expect(toUcum("10*3/uL")).toBe("10*3/uL");
+  });
+
+  // hardening: a non-override CJK unit can't be valid UCUM → null, and the
+  // Quantity builder then declares NO UCUM system on it (was mislabeling).
+  test("non-ASCII / CJK unit → null + no false UCUM on Quantity", () => {
+    expect(toUcum("個")).toBeNull();
+    expect(toUcum("陰性")).toBeNull();
+    expect(tryParseQuantity("5", "個")).toEqual({ value: 5, unit: "個" });
   });
 
   test("fullwidth ％ → %", () => {

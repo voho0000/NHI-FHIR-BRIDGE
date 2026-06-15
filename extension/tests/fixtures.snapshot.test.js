@@ -74,7 +74,7 @@ describe("adapter fixture snapshots", () => {
         "hospital": "長庚嘉義",
         "issued": "2024-02-24",
         "rid": "",
-        "system": "",
+        "system": "nhi",
       }
     `);
   });

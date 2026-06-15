@@ -889,8 +889,8 @@
     }
     const display = raw.display ?? "Unknown Report";
     const code = raw.code;
-    const systemHint = raw.system ?? "";
-    const system = typeof systemHint === "string" && systemHint.toUpperCase() === "LOINC" ? LOINC : HIS_LOCAL_REPORT_CODE;
+    const systemHint = typeof raw.system === "string" ? raw.system.toUpperCase() : "";
+    const system = systemHint === "LOINC" ? LOINC : systemHint === "NHI" && code ? NHI_MEDICAL_ORDER_CODE : HIS_LOCAL_REPORT_CODE;
     let idDiscriminator;
     if (raw.iplCaseSeqNo) {
       idDiscriminator = `${code || display}|${raw.iplCaseSeqNo}`;
@@ -3660,6 +3660,7 @@
     if (Object.prototype.hasOwnProperty.call(UCUM_OVERRIDES, unit)) {
       return UCUM_OVERRIDES[unit] ?? null;
     }
+    if (/[^\x20-\x7E]/.test(unit)) return null;
     return unit;
   }
   function makeQuantity(value, unit) {
@@ -3895,14 +3896,12 @@
     }
     if (v === null) return null;
     const ucumCode = toUcum(unit);
-    const qty = {
-      value: v,
-      system: UCUM_SYSTEM
-    };
+    const qty = { value: v };
     if (unit) {
       qty.unit = unit;
     }
     if (ucumCode !== null) {
+      qty.system = UCUM_SYSTEM;
       qty.code = ucumCode;
     }
     if (comparator) {
@@ -6119,7 +6118,15 @@
     const m = String(rocDate).match(/^(\d{2,3})[/.-](\d{1,2})[/.-](\d{1,2})/);
     if (!m) return "";
     const y = Number.parseInt(m[1], 10) + 1911;
-    return `${y}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+    const mo = Number.parseInt(m[2], 10);
+    const d = Number.parseInt(m[3], 10);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+    const iso = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const dt = /* @__PURE__ */ new Date(`${iso}T00:00:00Z`);
+    if (Number.isNaN(dt.getTime()) || dt.getUTCMonth() + 1 !== mo || dt.getUTCDate() !== d) {
+      return "";
+    }
+    return iso;
   }
   function rocChineseToISO(rocDate) {
     if (!rocDate) return "";
@@ -6264,12 +6271,16 @@
   }
   function adaptCatastrophicIllness(item) {
     if (!item || typeof item !== "object") return null;
-    const display = pickEnglish(item.icD10CM_CNAME || item.icd10cm_cname || "");
+    const rawCname = item.icD10CM_CNAME || item.icd10cm_cname || "";
+    const codeRe = /^([A-Z]\d[A-Z0-9.]*)\//;
+    const icdCode = (String(rawCname).match(codeRe) || [])[1] || "";
+    const stripIcd = (s) => (s || "").replace(codeRe, "").trim();
+    const display = stripIcd(pickEnglish(rawCname)) || stripIcd(pickChinese(rawCname));
     if (!display) return null;
     return {
       display,
-      code: "",
-      system: "",
+      code: icdCode,
+      system: icdCode ? "icd-10" : "",
       onset_date: rocToISO(item.valiD_S_DATE || item.valid_s_date || ""),
       recorded_date: rocToISO(item.valiD_S_DATE || item.valid_s_date || ""),
       category: "problem-list-item",
@@ -6578,7 +6589,8 @@
     return {
       date,
       code: item.order_CODE || item.order_code || "",
-      system: "",
+      // imaging order_CODE is a real NHI 醫令碼 → route to NHI_MEDICAL_ORDER_CODE
+      system: item.order_CODE || item.order_code ? "nhi" : "",
       display,
       category: "RAD",
       conclusion,
@@ -6603,7 +6615,7 @@
     return {
       date,
       code: meta.orderCode || "",
-      system: "",
+      system: meta.orderCode ? "nhi" : "",
       display,
       category: "RAD",
       conclusion: "",
@@ -9312,7 +9324,24 @@
       return true;
     }
     if (msg?.type === "getSyncStatus") {
-      chrome.storage.local.get(STORAGE_KEY).then((data) => sendResponse(data[STORAGE_KEY] || null));
+      chrome.storage.local.get(STORAGE_KEY).then(async (data) => {
+        const status = data[STORAGE_KEY] || null;
+        const STALE_MS = 6 * 60 * 1e3;
+        const lastBeat = status?.ts || status?.started || 0;
+        if (status?.running && lastBeat && Date.now() - lastBeat > STALE_MS) {
+          const dead = {
+            ...status,
+            running: false,
+            phase: "error",
+            progress: "\u4E0A\u6B21\u53D6\u5F97\u4E2D\u65B7\u4E86\uFF08\u53EF\u80FD\u56E0\u700F\u89BD\u5668\u80CC\u666F\u4F11\u7720\u6216\u5206\u9801\u95DC\u9589\uFF09\u3002\u8ACB\u91CD\u65B0\u300C\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u300D\u3002"
+          };
+          await chrome.storage.local.set({ [STORAGE_KEY]: dead }).catch(() => {
+          });
+          sendResponse(dead);
+          return;
+        }
+        sendResponse(status);
+      });
       return true;
     }
     if (msg?.type === "clearSyncStatus") {
