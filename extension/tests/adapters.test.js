@@ -784,6 +784,21 @@ describe("adaptMedicationFromDetail", () => {
     expect(r.course_of_therapy).toBe("");
   });
 
+  test("encounter_class derived from visit.ori_TYPE_NAME (住院→IMP / 門診→AMB / 急診→EMER / 藥局→'')", () => {
+    const drug = { drug_name: "X", order_drug_day: 1 };
+    const mk = (type) =>
+      adaptMedicationFromDetail(drug, {
+        func_DATE: "114/02/11",
+        hosp_ABBR: "長庚嘉義",
+        ori_TYPE_NAME: type,
+      }).encounter_class;
+    expect(mk("住院")).toBe("IMP");
+    expect(mk("門診")).toBe("AMB");
+    expect(mk("急診")).toBe("EMER");
+    expect(mk("藥局")).toBe("");
+    expect(mk("")).toBe("");
+  });
+
   test("is_chronic=false explicitly leaves course_of_therapy empty", () => {
     const drug = { drug_name: "X", order_drug_day: 30 };
     const visit = { func_DATE: "115/02/13", hosp_ABBR: "X" };

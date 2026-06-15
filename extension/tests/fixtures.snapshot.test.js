@@ -166,6 +166,7 @@ describe("adapter fixture snapshots", () => {
         "drug_name": "ASPIRIN 100MG",
         "drug_name_zh": "阿斯匹靈100毫克",
         "duration_days": 30,
+        "encounter_class": "",
         "end_date": "",
         "frequency": "",
         "hospital": "長庚嘉義",

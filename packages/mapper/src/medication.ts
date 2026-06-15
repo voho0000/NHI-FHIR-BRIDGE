@@ -318,6 +318,14 @@ export function mapMedicationRequest(
     resource.reasonCode = [rc];
   }
 
+  // Transient encounter-class hint (住院→IMP / 急診→EMER / 門診→AMB) from NHI's
+  // 申報 visit type. `linkEncountersInResources` reads it to pick the right
+  // Encounter when an admission day carries both the 住院 and its gateway
+  // 門診/急診, then DELETES it — it never reaches the FHIR output. The `__`
+  // prefix marks it non-standard/transient.
+  const encounterClass = ((raw.encounter_class ?? "") as string).trim();
+  if (encounterClass) resource.__nhiVisitClass = encounterClass;
+
   return resource;
 }
 

@@ -234,6 +234,41 @@ describe("linkEncountersInResources — admission-day gateway disambiguation (v0
     linkEncountersInResources([amb, impStay], [m]);
     expect(m.encounter).toEqual({ reference: "Encounter/imp" });
   });
+
+  test("inpatient drug links to 住院 by NHI 申報 visit class even when the gateway shares the dx", () => {
+    // The deterministic signal: NHI's 申報 type (住院). Both encounters carry
+    // J18.9 — only the visit class separates them. No validityPeriod needed,
+    // so this also covers single-day inpatient meds the course-window can't.
+    const amb = enc("amb", "AMB", "VGH", "2025-02-11", null, ["J18.9"]);
+    const impStay = enc("imp", "IMP", "VGH", "2025-02-11", "2025-02-25", ["J18.9"]);
+    const m: Record<string, any> = {
+      resourceType: "MedicationRequest",
+      id: "m-imp",
+      requester: { display: "VGH" },
+      authoredOn: "2025-02-11T00:00:00+08:00",
+      reasonCode: [{ coding: [{ code: "J18.9" }] }],
+      __nhiVisitClass: "IMP",
+    };
+    linkEncountersInResources([amb, impStay], [m]);
+    expect(m.encounter).toEqual({ reference: "Encounter/imp" });
+    // transient hint must be stripped — never reaches the bundle
+    expect(m.__nhiVisitClass).toBeUndefined();
+  });
+
+  test("門診 drug on an admission day links to the gateway, not the 住院", () => {
+    const amb = enc("amb", "AMB", "VGH", "2025-02-11", null, ["J18.9"]);
+    const impStay = enc("imp", "IMP", "VGH", "2025-02-11", "2025-02-25", ["J18.9"]);
+    const m: Record<string, any> = {
+      resourceType: "MedicationRequest",
+      id: "m-amb",
+      requester: { display: "VGH" },
+      authoredOn: "2025-02-11T00:00:00+08:00",
+      reasonCode: [{ coding: [{ code: "J18.9" }] }],
+      __nhiVisitClass: "AMB",
+    };
+    linkEncountersInResources([amb, impStay], [m]);
+    expect(m.encounter).toEqual({ reference: "Encounter/amb" });
+  });
 });
 
 describe("resolveSexStratifiedRanges", () => {

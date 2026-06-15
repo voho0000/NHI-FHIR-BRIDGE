@@ -226,6 +226,21 @@ export function adaptMedicationFromDetail(drug, visit, options) {
   // attaches courseOfTherapyType=continuous. Defaults false so OPD /
   // inpatient / 藥局 acute prescriptions stay unchanged.
   const is_chronic = !!options?.is_chronic;
+  // Visit class straight from NHI's own 申報 type (visit.ori_TYPE_NAME =
+  // 住院 / 門診 / 急診 / 藥局). This is the DETERMINISTIC encounter signal the
+  // mapper threads to the linker so an inpatient drug links to the 住院
+  // Encounter — NOT a heuristic. It is the only thing that separates a 住院
+  // drug from a same-day 門診/急診 drug when both share the admission's dx
+  // (患者因肺炎就醫 → 因肺炎收住院): diagnosis can't tell them apart, the 申報
+  // type can. 藥局 (pharmacy dispensing) → no encounter hint (left blank).
+  const visitType = String(visit?.ori_TYPE_NAME || visit?.orI_TYPE_NAME || "");
+  const encounter_class = visitType.includes("住院")
+    ? "IMP"
+    : visitType.includes("急")
+      ? "EMER"
+      : visitType.includes("門診")
+        ? "AMB"
+        : "";
   // NHI 藥品基本資料庫 ships bilingual `中文||English` on three fields
   // we surface — drug_name, act (藥理分類), icd9cm_CODE_CNAME. v0.8.0
   // keeps both halves so the mapper can put 繁中 into CodeableConcept
@@ -313,6 +328,9 @@ export function adaptMedicationFromDetail(drug, visit, options) {
     hospital: visit?.hosp_ABBR || visit?.hosp_abbr || "",
     // Mapper reads this to set MedicationRequest.courseOfTherapyType.
     course_of_therapy: is_chronic ? "continuous" : "",
+    // NHI 申報 visit type → encounter class for deterministic linking
+    // (住院→IMP / 急診→EMER / 門診→AMB; 藥局→"" no hint).
+    encounter_class,
   };
 }
 

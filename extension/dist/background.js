@@ -1512,6 +1512,8 @@
       }
       resource.reasonCode = [rc];
     }
+    const encounterClass = (raw.encounter_class ?? "").trim();
+    if (encounterClass) resource.__nhiVisitClass = encounterClass;
     return resource;
   }
   function mapMedicationsDedup(rawItems, patientId) {
@@ -5620,6 +5622,13 @@
     return out;
   }
   function linkEncountersInResources(candidates, resources) {
+    const visitClassByRes = /* @__PURE__ */ new Map();
+    for (const r of resources) {
+      if (r && r.__nhiVisitClass !== void 0) {
+        visitClassByRes.set(r, String(r.__nhiVisitClass));
+        delete r.__nhiVisitClass;
+      }
+    }
     if (candidates.length === 0) return;
     const exactIndex = /* @__PURE__ */ new Map();
     const impByHosp = /* @__PURE__ */ new Map();
@@ -5648,6 +5657,7 @@
     for (const r of resources) {
       if (!ENCOUNTER_LINKABLE.has(r.resourceType)) continue;
       if (r.encounter || r.context) continue;
+      const visitClass = visitClassByRes.get(r);
       const hosp = resourceHospital(r);
       const date = resourceDate(r);
       if (!hosp || !date) continue;
@@ -5663,6 +5673,13 @@
         continue;
       }
       const cands = matches.map((id) => byId.get(id)).filter(Boolean);
+      if (visitClass) {
+        const classHits = cands.filter((e) => (e.class ?? {}).code === visitClass);
+        if (classHits.length === 1) {
+          r.encounter = { reference: `Encounter/${classHits[0].id}` };
+          continue;
+        }
+      }
       const vp = (r.dispenseRequest ?? {}).validityPeriod;
       if (vp && vp.start && vp.end) {
         const vs = String(vp.start).slice(0, 10);
@@ -6310,6 +6327,8 @@
     const end_date = rocToISO(visit?.cure_E_DATE || visit?.cure_e_date || "");
     const days = Number(drug.order_drug_day || drug.order_DRUG_DAY || 0);
     const is_chronic = !!options?.is_chronic;
+    const visitType = String(visit?.ori_TYPE_NAME || visit?.orI_TYPE_NAME || "");
+    const encounter_class = visitType.includes("\u4F4F\u9662") ? "IMP" : visitType.includes("\u6025") ? "EMER" : visitType.includes("\u9580\u8A3A") ? "AMB" : "";
     const drug_name_zh = drug.drug_name2 || drug.druG_NAME2 || pickChinese(rawDrugName);
     const rawIndication = visit?.icd9cm_CODE_CNAME || visit?.icd9cm_name || "";
     const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
@@ -6343,7 +6362,10 @@
       drug_class_zh: pickChinese(drug.act || ""),
       hospital: visit?.hosp_ABBR || visit?.hosp_abbr || "",
       // Mapper reads this to set MedicationRequest.courseOfTherapyType.
-      course_of_therapy: is_chronic ? "continuous" : ""
+      course_of_therapy: is_chronic ? "continuous" : "",
+      // NHI 申報 visit type → encounter class for deterministic linking
+      // (住院→IMP / 急診→EMER / 門診→AMB; 藥局→"" no hint).
+      encounter_class
     };
   }
   function adaptMedication() {

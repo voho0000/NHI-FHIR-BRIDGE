@@ -102,6 +102,17 @@ export function linkEncountersInResources(
   candidates: Record<string, any>[],
   resources: Record<string, any>[],
 ): void {
+  // Capture + strip the transient visit-class hint (__nhiVisitClass, set by the
+  // med mapper from NHI's 申報 type) BEFORE any early return — it is not valid
+  // FHIR and must never reach the bundle, even when there are no candidate
+  // Encounters to link against.
+  const visitClassByRes = new Map<Record<string, any>, string>();
+  for (const r of resources) {
+    if (r && r.__nhiVisitClass !== undefined) {
+      visitClassByRes.set(r, String(r.__nhiVisitClass));
+      delete r.__nhiVisitClass;
+    }
+  }
   if (candidates.length === 0) return;
   const exactIndex = new Map<string, string[]>();
   const impByHosp = new Map<string, Array<[string, string, string]>>();
@@ -133,6 +144,7 @@ export function linkEncountersInResources(
   for (const r of resources) {
     if (!ENCOUNTER_LINKABLE.has(r.resourceType)) continue;
     if (r.encounter || r.context) continue;
+    const visitClass = visitClassByRes.get(r);
     const hosp = resourceHospital(r);
     const date = resourceDate(r);
     if (!hosp || !date) continue;
@@ -150,7 +162,20 @@ export function linkEncountersInResources(
     // >1 candidate at this (hospital, date): admission-day gateway 門診/急診
     // + the 住院 it led to (or same-day multi-visit). Disambiguate.
     const cands = matches.map((id) => byId.get(id)).filter(Boolean) as Record<string, any>[];
-    // Strongest signal first — an inpatient-course med's
+    // Deterministic first — NHI's own 申報 visit type (住院→IMP / 急診→EMER /
+    // 門診→AMB), carried on the med as a transient class hint. An inpatient drug
+    // attaches to the 住院 even when the same-day gateway shares the admission's
+    // diagnosis: the 申報 type distinguishes them, the diagnosis cannot. This is
+    // why the diagnosis tie-break alone left 長庚嘉義 2/11 (J18.9) + 1/28 (U07.1)
+    // inpatient drugs unlinked. Link on a unique class match; else fall through.
+    if (visitClass) {
+      const classHits = cands.filter((e) => (e.class ?? {}).code === visitClass);
+      if (classHits.length === 1) {
+        r.encounter = { reference: `Encounter/${classHits[0]!.id}` };
+        continue;
+      }
+    }
+    // Next — an inpatient-course med's
     // dispenseRequest.validityPeriod is [admit, discharge], i.e. exactly the
     // 住院 Encounter's period. This resolves the COMMON case the diagnosis
     // tie-break below cannot: the gateway visit usually carries the same
