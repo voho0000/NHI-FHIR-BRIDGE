@@ -8,7 +8,7 @@
  */
 
 import { normalizeIcd10Cm } from "./condition";
-import { stableId } from "./helpers";
+import { bilingualCoding, stableId } from "./helpers";
 import * as systems from "./systems";
 
 function mapSystem(systemHint: unknown): string {
@@ -41,17 +41,31 @@ export function mapProcedure(
   const displayZh = ((raw.display_zh ?? "") as string).trim() || display;
   const system = mapSystem(raw.system ?? "");
 
-  const coding: Record<string, any>[] = [{ system, code: code || display, display }];
-  // Optional secondary coding — e.g. the ICD-10-PCS op_CODE classification
-  // riding alongside the primary NHI 醫令 order code (same procedure, two
-  // code systems). Emitted by adaptProcedureFromDetail's per-order-item rows.
+  // ICD-10-PCS codings get an ADDITIVE zh-TW translation on their English
+  // display (FHIR `_display` translation extension) — purely non-breaking:
+  // `display` stays English, the 中文 rides in the extension, so third-party
+  // apps that read `coding.display` are unaffected. NO display language is
+  // flipped. The NHI 醫令 coding keeps its English display unchanged (its 中文
+  // is already in `code.text`); only PCS (whose 中文 is otherwise nowhere in
+  // the resource) gets the extension.
+  const primary =
+    system === systems.ICD_10_PCS
+      ? bilingualCoding(system, code || display, display, {
+          lang: "zh-TW",
+          content: (raw.display_zh as string) ?? "",
+        })
+      : { system, code: code || display, display };
+  const coding: Record<string, any>[] = [primary];
+  // Secondary coding: the ICD-10-PCS op_CODE classification riding alongside
+  // the primary NHI 醫令 order code (same procedure, two code systems).
   const code2 = raw.code2;
   if (code2) {
-    coding.push({
-      system: mapSystem(raw.system2 ?? ""),
-      code: code2,
-      display: raw.display2 ?? code2,
-    });
+    coding.push(
+      bilingualCoding(mapSystem(raw.system2 ?? ""), code2, (raw.display2 as string) ?? code2, {
+        lang: "zh-TW",
+        content: (raw.display2_zh as string) ?? "",
+      }),
+    );
   }
 
   const resource: Record<string, any> = {

@@ -606,6 +606,27 @@
   function normalizeNarrativeForDedup(s) {
     return (s ?? "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
   }
+  var TRANSLATION_EXT = "http://hl7.org/fhir/StructureDefinition/translation";
+  function bilingualCoding(system, code, nativeDisplay, other) {
+    const coding = { system, code };
+    const nd = (nativeDisplay ?? "").trim();
+    if (nd) coding.display = nd;
+    const oc = (other?.content ?? "").trim();
+    if (oc && oc !== nd) {
+      coding._display = {
+        extension: [
+          {
+            url: TRANSLATION_EXT,
+            extension: [
+              { url: "lang", valueCode: other.lang },
+              { url: "content", valueString: oc }
+            ]
+          }
+        ]
+      };
+    }
+    return coding;
+  }
   function maskName(name) {
     const trimmed = (name ?? "").trim();
     if (!trimmed || trimmed === "Unknown") return trimmed;
@@ -5225,14 +5246,19 @@
     const display = raw.display ?? "Unknown Procedure";
     const displayZh = (raw.display_zh ?? "").trim() || display;
     const system = mapSystem3(raw.system ?? "");
-    const coding = [{ system, code: code || display, display }];
+    const primary = system === ICD_10_PCS ? bilingualCoding(system, code || display, display, {
+      lang: "zh-TW",
+      content: raw.display_zh ?? ""
+    }) : { system, code: code || display, display };
+    const coding = [primary];
     const code2 = raw.code2;
     if (code2) {
-      coding.push({
-        system: mapSystem3(raw.system2 ?? ""),
-        code: code2,
-        display: raw.display2 ?? code2
-      });
+      coding.push(
+        bilingualCoding(mapSystem3(raw.system2 ?? ""), code2, raw.display2 ?? code2, {
+          lang: "zh-TW",
+          content: raw.display2_zh ?? ""
+        })
+      );
     }
     const resource = {
       resourceType: "Procedure",
@@ -6512,6 +6538,9 @@
         // ICD-10-PCS op_CODE (secondary classification)
         system2: opCode ? "icd-10-pcs" : "",
         display2: opDisplay,
+        // en (PCS native)
+        display2_zh: opDisplayZh,
+        // zh translation for the PCS coding
         reason: reasonEn,
         reason_zh: reasonZh,
         reason_code: reasonCode,

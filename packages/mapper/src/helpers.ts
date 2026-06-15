@@ -174,6 +174,54 @@ export function normalizeNarrativeForDedup(s: string | null | undefined): string
   return (s ?? "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 }
 
+/** FHIR R4 core "translation" extension — carries an alternate-language
+ *  rendering of a primitive string element (here a `Coding.display`) on its
+ *  `_display` sibling. The standards-based way to ship a bilingual display
+ *  INLINE in a self-contained bundle (no terminology server / CodeSystem
+ *  designations needed). https://hl7.org/fhir/R4/extension-translation.html */
+export const TRANSLATION_EXT = "http://hl7.org/fhir/StructureDefinition/translation";
+
+/**
+ * Build a `Coding` whose `display` is the code system's NATIVE-language name,
+ * plus an optional `_display.translation` extension carrying the same concept
+ * in another language.
+ *
+ * Convention (CLAUDE.md rule #1 "display follows the system" + i18n):
+ *   - en-native systems (LOINC / ICD-10-CM / ICD-10-PCS / SNOMED) → display
+ *     English, translation 中文 (lang "zh-TW").
+ *   - zh-native systems (NHI 醫令碼 / 藥品碼, NHI catalog 中文) → display 中文,
+ *     translation English (lang "en").
+ *
+ * `nativeDisplay` is the display in the system's own language; `other` is the
+ * alternate {lang, content}. The translation is omitted when its content is
+ * empty or identical to the native display (no new information).
+ */
+export function bilingualCoding(
+  system: string,
+  code: string,
+  nativeDisplay: string | null | undefined,
+  other?: { lang: string; content: string | null | undefined } | null,
+): Record<string, any> {
+  const coding: Record<string, any> = { system, code };
+  const nd = (nativeDisplay ?? "").trim();
+  if (nd) coding.display = nd;
+  const oc = (other?.content ?? "").trim();
+  if (oc && oc !== nd) {
+    coding._display = {
+      extension: [
+        {
+          url: TRANSLATION_EXT,
+          extension: [
+            { url: "lang", valueCode: other!.lang },
+            { url: "content", valueString: oc },
+          ],
+        },
+      ],
+    };
+  }
+  return coding;
+}
+
 export function maskName(name: string | null | undefined): string {
   const trimmed = (name ?? "").trim();
   if (!trimmed || trimmed === "Unknown") return trimmed;

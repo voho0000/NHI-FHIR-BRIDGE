@@ -3,6 +3,10 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.18.17 重點 — 2026-06-15
+
+- **手術 ICD-10-PCS 分類碼補上中文（純加法、非破壞性）**：PCS 分類碼（`Procedure.code.coding[1]`）的中文先前無處可放（`display` 是英文、`code.text` 是手術名）。現在用 FHIR 標準的 `_display` translation extension 帶上中文（`zh-TW`），**`coding.display` 仍維持英文不變**。不讀 extension 的 App 完全不受影響；要中文的 App 讀 `coding[1]._display` 的 translation extension。只加在 PCS 這個 coding，NHI 醫令碼 / `code.text` / LOINC / 其它碼皆不動。詳見 `docs/SMART_APP_CHANGES_v0.18.14.md`。
+
 ## 0.18.16 重點 — 2026-06-15
 
 - **手術的診斷理由（ICD）改為結構化雙語**：手術紀錄的 icd9cm 診斷（如「左側眼黃斑部皺褶 / Puckering of macula, left eye」）先前只放英文在 `Procedure.note` 自由文字，對接 App 無法做中英切換。現在改為結構化的 **`Procedure.reasonCode`**（與就醫診斷 `Encounter.reasonCode` 同一套）：ICD-10-CM 碼（正規化成有點形式，如 `H35.372`）＋英文 `display`、中文放 `text`。NHI 只給碼、未給病名時則只帶碼。

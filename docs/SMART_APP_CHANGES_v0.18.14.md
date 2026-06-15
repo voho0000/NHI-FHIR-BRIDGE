@@ -11,6 +11,14 @@
 > ### 🔄 v0.18.16 更新：診斷理由改為結構化雙語 `reasonCode`
 > 手術的 icd9cm 診斷理由先前放在 `Procedure.note` 的英文自由文字（`Reason: …`）。**0.18.16 起改為結構化的 `Procedure.reasonCode[]`**（與 `Encounter.reasonCode` 同一套雙語慣例）：`coding` 掛 ICD-10-CM（有點碼）＋英文 `display`、中文放 `text` —— 讓 App 能對診斷做中英切換。**`Procedure.note` 不再帶診斷理由**（請改讀 `reasonCode`）。本文件下方範例與欄位表已更新為 0.18.16 形狀。
 
+> ### ➕ v0.18.17 更新：ICD-10-PCS coding 補上中文（純加法，非破壞性）
+> PCS 分類碼（`code.coding[1]`）的中文先前無處可放（`display` 是英文、`code.text` 是手術名）。**0.18.17 起在 PCS coding 上加 FHIR 標準的 `_display` translation extension** 帶中文：
+> ```json
+> "_display": { "extension": [{ "url": "http://hl7.org/fhir/StructureDefinition/translation",
+>   "extension": [{"url":"lang","valueCode":"zh-TW"},{"url":"content","valueString":"經皮左側玻璃體部分切除術"}]}]}
+> ```
+> **`coding.display` 仍是英文、不變** —— 純加法,不讀 extension 的 App 完全不受影響;要中文的 App 讀 `coding[1]._display.extension[translation].content`。只有 PCS 這一個 coding 加;NHI 醫令 coding / `code.text` / LOINC / 其它碼皆不動（它們的中文已在 `code.text` 或別的 coding）。
+
 ---
 
 ## 1. 問題（v0.18.14 之前）

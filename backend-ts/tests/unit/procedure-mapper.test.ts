@@ -119,6 +119,38 @@ describe("mapProcedure", () => {
     expect(r!.code.text).toBe("微創玻璃體黃斑部手術");
   });
 
+  // PCS coding carries an ADDITIVE zh-TW translation extension (display stays
+  // English → third-party-safe); the NHI coding + code.text are untouched.
+  test("ICD-10-PCS coding gets an additive _display zh-TW translation; NHI coding unchanged", () => {
+    const r = mapProcedure(
+      {
+        display: "Microincision vitreomacular surgery",
+        display_zh: "微創玻璃體黃斑部手術",
+        code: "86412B",
+        system: "nhi",
+        code2: "08B53ZZ",
+        system2: "icd-10-pcs",
+        display2: "Excision of Left Vitreous, Percutaneous Approach",
+        display2_zh: "經皮左側玻璃體部分切除術",
+      },
+      PID,
+    );
+    // NHI coding[0]: English display, NO translation extension (中文 is in code.text)
+    expect(r!.code.coding[0].display).toBe("Microincision vitreomacular surgery");
+    expect(r!.code.coding[0]._display).toBeUndefined();
+    expect(r!.code.text).toBe("微創玻璃體黃斑部手術");
+    // PCS coding[1]: English display unchanged + zh-TW translation extension
+    const pcs = r!.code.coding[1];
+    expect(pcs.display).toBe("Excision of Left Vitreous, Percutaneous Approach");
+    expect(pcs._display.extension[0].url).toBe(
+      "http://hl7.org/fhir/StructureDefinition/translation",
+    );
+    expect(pcs._display.extension[0].extension).toEqual([
+      { url: "lang", valueCode: "zh-TW" },
+      { url: "content", valueString: "經皮左側玻璃體部分切除術" },
+    ]);
+  });
+
   // Diagnosis reason → structured + bilingual reasonCode (same convention as
   // Encounter.reasonCode), replacing the old English-only "Reason: …" note.
   test("reason fields → bilingual reasonCode (ICD-10-CM dotted, en display, 繁中 text)", () => {

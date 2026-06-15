@@ -938,7 +938,8 @@ export function adaptProcedureFromDetail(item) {
       display_zh: subZh || subEn || subCode,
       code2: opCode, // ICD-10-PCS op_CODE (secondary classification)
       system2: opCode ? "icd-10-pcs" : "",
-      display2: opDisplay,
+      display2: opDisplay, // en (PCS native)
+      display2_zh: opDisplayZh, // zh translation for the PCS coding
       reason: reasonEn,
       reason_zh: reasonZh,
       reason_code: reasonCode,
