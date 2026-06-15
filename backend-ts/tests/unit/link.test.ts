@@ -214,6 +214,26 @@ describe("linkEncountersInResources — admission-day gateway disambiguation (v0
     );
     expect(lab.encounter).toBeUndefined();
   });
+
+  test("inpatient-course med links to the IMP by validityPeriod even when the gateway shares the dx", () => {
+    // 長庚嘉義 2/11 J18.9 repro: BOTH the gateway 門診 and the 住院 carry J18.9,
+    // so the diagnosis tie-break is ambiguous (dxHits=2). The med's course
+    // window (validityPeriod = the whole stay) pins it to the IMP.
+    const amb = enc("amb", "AMB", "VGH", "2025-02-11", null, ["J18.9"]);
+    const impStay = enc("imp", "IMP", "VGH", "2025-02-11", "2025-02-25", ["J18.9", "K57.10"]);
+    const m: Record<string, any> = {
+      resourceType: "MedicationRequest",
+      id: "m-course",
+      requester: { display: "VGH" },
+      authoredOn: "2025-02-11T00:00:00+08:00",
+      reasonCode: [{ coding: [{ code: "J18.9" }] }],
+      dispenseRequest: {
+        validityPeriod: { start: "2025-02-11T00:00:00+08:00", end: "2025-02-25T23:59:59+08:00" },
+      },
+    };
+    linkEncountersInResources([amb, impStay], [m]);
+    expect(m.encounter).toEqual({ reference: "Encounter/imp" });
+  });
 });
 
 describe("resolveSexStratifiedRanges", () => {

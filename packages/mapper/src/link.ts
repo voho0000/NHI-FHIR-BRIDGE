@@ -150,6 +150,28 @@ export function linkEncountersInResources(
     // >1 candidate at this (hospital, date): admission-day gateway 門診/急診
     // + the 住院 it led to (or same-day multi-visit). Disambiguate.
     const cands = matches.map((id) => byId.get(id)).filter(Boolean) as Record<string, any>[];
+    // Strongest signal first — an inpatient-course med's
+    // dispenseRequest.validityPeriod is [admit, discharge], i.e. exactly the
+    // 住院 Encounter's period. This resolves the COMMON case the diagnosis
+    // tie-break below cannot: the gateway visit usually carries the same
+    // primary dx as the admission (患者因肺炎就醫 → 因肺炎收住院), so the med's
+    // dx matches BOTH and dxHits>1 → it stayed unlinked. The course-window
+    // match pins it to the 住院 unambiguously. (Real: 長庚嘉義 2/11 J18.9 +
+    // 1/28 U07.1 admissions — every inpatient drug carries the admission span.)
+    const vp = (r.dispenseRequest ?? {}).validityPeriod;
+    if (vp && vp.start && vp.end) {
+      const vs = String(vp.start).slice(0, 10);
+      const ve = String(vp.end).slice(0, 10);
+      const periodHits = cands.filter(
+        (e) =>
+          String((e.period ?? {}).start ?? "").slice(0, 10) === vs &&
+          String((e.period ?? {}).end ?? "").slice(0, 10) === ve,
+      );
+      if (periodHits.length === 1) {
+        r.encounter = { reference: `Encounter/${periodHits[0]!.id}` };
+        continue;
+      }
+    }
     const rcodes = reasonCodeSet(r);
     if (rcodes.size > 0) {
       // Diagnosis-bearing resource (med / procedure): attach to the encounter

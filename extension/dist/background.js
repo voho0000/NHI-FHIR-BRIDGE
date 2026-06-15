@@ -5663,6 +5663,18 @@
         continue;
       }
       const cands = matches.map((id) => byId.get(id)).filter(Boolean);
+      const vp = (r.dispenseRequest ?? {}).validityPeriod;
+      if (vp && vp.start && vp.end) {
+        const vs = String(vp.start).slice(0, 10);
+        const ve = String(vp.end).slice(0, 10);
+        const periodHits = cands.filter(
+          (e) => String((e.period ?? {}).start ?? "").slice(0, 10) === vs && String((e.period ?? {}).end ?? "").slice(0, 10) === ve
+        );
+        if (periodHits.length === 1) {
+          r.encounter = { reference: `Encounter/${periodHits[0].id}` };
+          continue;
+        }
+      }
       const rcodes = reasonCodeSet(r);
       if (rcodes.size > 0) {
         const dxHits = cands.filter((e) => {
