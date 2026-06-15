@@ -816,6 +816,7 @@ describe("adaptCatastrophicIllness", () => {
       }),
     ).toEqual({
       display: "攝護腺惡性腫瘤",
+      display_zh: "攝護腺惡性腫瘤",
       code: "",
       system: "",
       onset_date: "2020-11-16",
@@ -1360,7 +1361,7 @@ describe("adaptCarePlan", () => {
 // ── adaptAllergy ────────────────────────────────────────────────────────
 
 describe("adaptAllergy", () => {
-  test("maps allergen_name and reaction", () => {
+  test("maps allergen_name and reaction; generic field → no hard-coded category", () => {
     const r = adaptAllergy({
       allergen_name: "Aspirin",
       reactioN: "rash",
@@ -1370,8 +1371,15 @@ describe("adaptAllergy", () => {
       display: "Aspirin",
       reaction: "rash",
       recorded_date: "2025-05-18",
-      category: "medication",
     });
+    // a generic allergen field can't tell drug from food/environmental →
+    // category omitted (was hard-coded "medication", which mislabels non-drugs)
+    expect(r.category).toBe("");
+  });
+
+  test("drug-specific source field → category medication", () => {
+    expect(adaptAllergy({ druG_NAME: "Penicillin" }).category).toBe("medication");
+    expect(adaptAllergy({ medname: "Sulfa" }).category).toBe("medication");
   });
 
   test("returns null when no allergen identifiable", () => {

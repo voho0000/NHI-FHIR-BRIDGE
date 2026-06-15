@@ -137,6 +137,71 @@ export function linkEncountersInResources(
 }
 
 /**
+ * Validate (and repair) DocumentReference → Encounter references.
+ *
+ * The DocumentReference mapper pre-sets `context.encounter` by RECOMPUTING the
+ * inpatient Encounter's stableId from (admission_date, hospital). But those
+ * strings come from a different NHI endpoint than the Encounter itself, so a
+ * slight mismatch (date format, hospital short-name) yields a reference to an
+ * Encounter id that isn't in the bundle — a dangling reference (a `collection`
+ * Bundle enforces no referential integrity, so nothing else catches it).
+ *
+ * With the full resource list in hand we: keep valid refs untouched; re-link a
+ * dangler by tolerant (hospital, admission-date) match against the actual
+ * Encounters (exact day, or within an IMP stay's period); and drop any that
+ * still can't be resolved unambiguously — so the bundle never ships a reference
+ * to a non-existent resource.
+ */
+export function repairDocumentReferenceEncounters(
+  candidates: Record<string, any>[],
+  resources: Record<string, any>[],
+): void {
+  const encounterIds = new Set<string>();
+  const exactIndex = new Map<string, string[]>();
+  const impByHosp = new Map<string, Array<[string, string, string]>>();
+  for (const e of candidates) {
+    if (e.resourceType !== "Encounter" || !e.id) continue;
+    encounterIds.add(e.id);
+    const hosp = (e.serviceProvider ?? {}).display ?? "";
+    const start = String((e.period ?? {}).start ?? "").slice(0, 10);
+    if (!hosp || !start) continue;
+    const arr = exactIndex.get(`${hosp} ${start}`) ?? [];
+    arr.push(e.id);
+    exactIndex.set(`${hosp} ${start}`, arr);
+    if ((e.class ?? {}).code === "IMP") {
+      const end = String((e.period ?? {}).end ?? "").slice(0, 10);
+      if (end) {
+        const list = impByHosp.get(hosp) ?? [];
+        list.push([start, end, e.id]);
+        impByHosp.set(hosp, list);
+      }
+    }
+  }
+
+  for (const r of resources) {
+    if (r.resourceType !== "DocumentReference") continue;
+    const ctx = r.context;
+    const ref: string | undefined = ctx?.encounter?.[0]?.reference;
+    if (!ref) continue;
+    if (encounterIds.has(String(ref).replace(/^Encounter\//, ""))) continue; // valid
+
+    const hosp = (r.custodian ?? {}).display ?? "";
+    const date = String(ctx?.period?.start ?? "").slice(0, 10);
+    const matches: string[] = hosp && date ? [...(exactIndex.get(`${hosp} ${date}`) ?? [])] : [];
+    if (matches.length === 0 && hosp && date) {
+      for (const [start, end, eid] of impByHosp.get(hosp) ?? []) {
+        if (start <= date && date <= end) matches.push(eid);
+      }
+    }
+    if (matches.length === 1) {
+      ctx.encounter = [{ reference: `Encounter/${matches[0]}` }];
+    } else {
+      ctx.encounter = undefined; // drop the dangling ref; keep context.period
+    }
+  }
+}
+
+/**
  * When an Observation carries multiple referenceRange entries tagged
  * with `appliesTo[*].coding.code` in {male, female}, pick the one that
  * matches the patient's gender and re-derive interpretation against it.

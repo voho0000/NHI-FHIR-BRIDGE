@@ -9,6 +9,7 @@ import {
   dedupAdmissionDayAmb,
   linkEncountersInResources,
   maskId,
+  repairDocumentReferenceEncounters,
   resolveSexStratifiedRanges,
 } from "@nhi-fhir-bridge/mapper";
 import { LOCAL_PAGE_TYPE_ORDER, PENDING_BUNDLE_JSON_KEY, PENDING_BUNDLE_KEY } from "./constants.js";
@@ -60,6 +61,7 @@ export function assembleLocalBundle(byType, patientOverride, maskEnabled) {
   // list (same pipeline backend's /sync/upload-structured runs, just
   // against an in-memory candidate array instead of a SQLite query).
   linkEncountersInResources(unique, unique);
+  repairDocumentReferenceEncounters(unique, unique);
   resolveSexStratifiedRanges(patient, unique);
 
   // Bundle.meta.tag carries bridge version + source identifier so SMART

@@ -155,8 +155,10 @@ export function mapDiagnosticReport(
     status: raw.status ?? "final",
     subject: { reference: `Patient/${patientId}` },
     code: {
+      // coding[0].display = English-preferred; code.text = 中文 when available
+      // so the report label is consistently Chinese (was language-unpredictable).
       coding: [{ system, code: code || display, display }],
-      text: display,
+      text: ((raw.display_zh as string) ?? "").trim() || display,
     },
   };
   if (conclusion) resource.conclusion = conclusion;

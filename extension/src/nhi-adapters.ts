@@ -365,18 +365,13 @@ export function adaptImagingListStub() {
 export function adaptCatastrophicIllness(item) {
   if (!item || typeof item !== "object") return null;
   const rawCname = item.icD10CM_CNAME || item.icd10cm_cname || "";
-  // icD10CM_CNAME is "<ICD>/<中文>||<ICD>/<English>". Extract the ICD-10-CM
-  // code from the prefix (was being dropped → catastrophic-illness Conditions
-  // had no usable diagnosis code) and strip it from the display.
-  const codeRe = /^([A-Z]\d[A-Z0-9.]*)\//;
-  const icdCode = (String(rawCname).match(codeRe) || [])[1] || "";
-  const stripIcd = (s) => (s || "").replace(codeRe, "").trim();
-  const display = stripIcd(pickEnglish(rawCname)) || stripIcd(pickChinese(rawCname));
+  const display = pickEnglish(rawCname);
   if (!display) return null;
   return {
-    display,
-    code: icdCode,
-    system: icdCode ? "icd-10" : "",
+    display, // English-preferred (code.coding[0].display)
+    display_zh: pickChinese(rawCname), // 中文 → code.text (consistent zh, not language-mixed)
+    code: "",
+    system: "",
     onset_date: rocToISO(item.valiD_S_DATE || item.valid_s_date || ""),
     recorded_date: rocToISO(item.valiD_S_DATE || item.valid_s_date || ""),
     category: "problem-list-item",
@@ -855,10 +850,16 @@ export function adaptAllergy(item) {
   const allergen =
     item.allergen_name || item.alleR_NAME || item.medname || item.druG_NAME || item.allergen || "";
   if (!allergen) return null;
+  // Derive category from the data instead of hard-coding "medication": only a
+  // drug-specific source field justifies "medication". Otherwise leave it empty
+  // → the mapper omits category rather than mislabel a possible food/
+  // environmental allergy as a drug allergy. (No "no known allergy" rows are
+  // ever fabricated — absent NHI data ≠ a clinician-confirmed no-allergy.)
+  const isDrug = !!(item.medname || item.druG_NAME);
   return {
     recorded_date: rocToISO(item.funC_DATE || item.recorD_DATE || ""),
     display: allergen,
-    category: "medication",
+    category: isDrug ? "medication" : "",
     criticality: "unable-to-assess",
     reaction: item.reactioN || item.symptom || "",
   };
@@ -1046,7 +1047,8 @@ export function adaptImagingReportFromDetail(item, ctx?: { rid?: string; ctype?:
     code: item.order_CODE || item.order_code || "",
     // imaging order_CODE is a real NHI 醫令碼 → route to NHI_MEDICAL_ORDER_CODE
     system: item.order_CODE || item.order_code ? "nhi" : "",
-    display,
+    display, // English-preferred
+    display_zh: pickChinese(item.order_NAME || item.order_name || ""), // → code.text
     category: "RAD",
     conclusion,
     hospital: item.hosp_ABBR || item.hosp_abbr || "",
@@ -1093,7 +1095,8 @@ export function adaptImageOnlyReportFromMeta(
     date,
     code: meta.orderCode || "",
     system: meta.orderCode ? "nhi" : "",
-    display,
+    display, // English-preferred
+    display_zh: pickChinese(meta.orderName || ""), // → code.text
     category: "RAD",
     conclusion: "",
     hospital: meta.hospital || "",

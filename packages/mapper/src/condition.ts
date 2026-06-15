@@ -103,8 +103,11 @@ export function mapCondition(raw: Record<string, any>, patientId: string): Recor
   }
 
   resource.code = {
+    // coding[0].display = English-preferred (technical); code.text = 中文 when
+    // available so the patient-facing label is consistently Chinese instead of
+    // whatever language NHI happened to ship (was display-language-unpredictable).
     coding: [{ system, code: code || display, display }],
-    text: display,
+    text: ((raw.display_zh as string) ?? "").trim() || display,
   };
 
   const severity = raw.severity ?? "";

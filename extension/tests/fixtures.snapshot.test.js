@@ -71,6 +71,7 @@ describe("adapter fixture snapshots", () => {
         "ctype": "",
         "date": "2024-01-14",
         "display": "電腦斷層造影  －  無造影劑",
+        "display_zh": "電腦斷層造影  －  無造影劑",
         "hospital": "長庚嘉義",
         "issued": "2024-02-24",
         "rid": "",
@@ -180,7 +181,7 @@ describe("adapter fixture snapshots", () => {
   test("IHKE3202 allergy (single allergen + reaction)", () => {
     expect(adaptAllergy(load("ihke3202-allergy.json"))).toMatchInlineSnapshot(`
       {
-        "category": "medication",
+        "category": "",
         "criticality": "unable-to-assess",
         "display": "Penicillin",
         "reaction": "rash, dyspnea",
@@ -196,6 +197,7 @@ describe("adapter fixture snapshots", () => {
         "clinical_status": "active",
         "code": "",
         "display": "攝護腺惡性腫瘤",
+        "display_zh": "攝護腺惡性腫瘤",
         "hospital": "臺北榮總",
         "onset_date": "2020-11-16",
         "recorded_date": "2020-11-16",

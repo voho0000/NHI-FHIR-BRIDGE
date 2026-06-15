@@ -27,6 +27,7 @@ import {
   derivePatientId,
   linkEncountersInResources,
   mapPatient,
+  repairDocumentReferenceEncounters,
   resolveSexStratifiedRanges,
 } from "@nhi-fhir-bridge/mapper";
 
@@ -341,6 +342,9 @@ syncApi.post("/upload-structured", requireSyncApiKey, async (c) => {
   }
   const dbEncounters = fhirServer.search("Encounter", { patient: effectivePid });
   linkEncountersInResources(dbEncounters, resources);
+  // Candidates from both the stored Encounters and this batch — the discharge
+  // summary's IMP Encounter may live in either.
+  repairDocumentReferenceEncounters([...dbEncounters, ...resources], resources);
   resolveSexStratifiedRanges(fhirServer.read("Patient", effectivePid), resources);
 
   // Stamp each resource with the current run + page_type so we can

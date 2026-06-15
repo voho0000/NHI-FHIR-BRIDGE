@@ -3,8 +3,21 @@ import { describe, expect, test } from "vitest";
 import {
   dedupAdmissionDayAmb,
   linkEncountersInResources,
+  repairDocumentReferenceEncounters,
   resolveSexStratifiedRanges,
 } from "@nhi-fhir-bridge/mapper";
+
+function docRef(id: string, hospital: string, admit: string, encId: string): Record<string, any> {
+  return {
+    resourceType: "DocumentReference",
+    id,
+    custodian: { display: hospital },
+    context: {
+      encounter: [{ reference: `Encounter/${encId}` }],
+      period: { start: `${admit}T00:00:00+08:00` },
+    },
+  };
+}
 
 function amb(id: string, hospital: string, start: string): Record<string, any> {
   return {
@@ -213,5 +226,27 @@ describe("resolveSexStratifiedRanges", () => {
     o.valueQuantity.value = 18.0;
     resolveSexStratifiedRanges({ gender: "male" }, [o]);
     expect(o.interpretation?.[0]?.coding?.[0]?.code).toBe("H");
+  });
+});
+
+describe("repairDocumentReferenceEncounters", () => {
+  test("keeps a valid encounter reference untouched", () => {
+    const d = docRef("doc-1", "VGH", "2024-05-01", "enc-1");
+    repairDocumentReferenceEncounters([imp("enc-1", "VGH", "2024-05-01", "2024-05-05")], [d]);
+    expect(d.context.encounter[0].reference).toBe("Encounter/enc-1");
+  });
+
+  test("re-links a dangling reference by (hospital, admission date)", () => {
+    // the recomputed id (enc-stale) isn't in the bundle, but a real Encounter
+    // at the same hospital + admission day is → repoint to it
+    const d = docRef("doc-1", "VGH", "2024-05-01", "enc-stale");
+    repairDocumentReferenceEncounters([imp("enc-real", "VGH", "2024-05-01", "2024-05-05")], [d]);
+    expect(d.context.encounter[0].reference).toBe("Encounter/enc-real");
+  });
+
+  test("drops a dangling reference when no Encounter matches", () => {
+    const d = docRef("doc-1", "VGH", "2024-05-01", "enc-missing");
+    repairDocumentReferenceEncounters([imp("enc-1", "OtherHosp", "2024-05-01", "2024-05-05")], [d]);
+    expect(d.context.encounter).toBeUndefined();
   });
 });

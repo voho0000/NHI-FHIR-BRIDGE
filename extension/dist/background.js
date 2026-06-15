@@ -838,8 +838,11 @@
       ];
     }
     resource.code = {
+      // coding[0].display = English-preferred (technical); code.text = 中文 when
+      // available so the patient-facing label is consistently Chinese instead of
+      // whatever language NHI happened to ship (was display-language-unpredictable).
       coding: [{ system, code: code || display, display }],
-      text: display
+      text: (raw.display_zh ?? "").trim() || display
     };
     const severity = raw.severity ?? "";
     if (severity) {
@@ -906,8 +909,10 @@
       status: raw.status ?? "final",
       subject: { reference: `Patient/${patientId}` },
       code: {
+        // coding[0].display = English-preferred; code.text = 中文 when available
+        // so the report label is consistently Chinese (was language-unpredictable).
         coding: [{ system, code: code || display, display }],
-        text: display
+        text: (raw.display_zh ?? "").trim() || display
       }
     };
     if (conclusion) resource.conclusion = conclusion;
@@ -5649,6 +5654,49 @@
       r.encounter = { reference: `Encounter/${matches[0]}` };
     }
   }
+  function repairDocumentReferenceEncounters(candidates, resources) {
+    const encounterIds = /* @__PURE__ */ new Set();
+    const exactIndex = /* @__PURE__ */ new Map();
+    const impByHosp = /* @__PURE__ */ new Map();
+    for (const e of candidates) {
+      if (e.resourceType !== "Encounter" || !e.id) continue;
+      encounterIds.add(e.id);
+      const hosp = (e.serviceProvider ?? {}).display ?? "";
+      const start = String((e.period ?? {}).start ?? "").slice(0, 10);
+      if (!hosp || !start) continue;
+      const arr = exactIndex.get(`${hosp} ${start}`) ?? [];
+      arr.push(e.id);
+      exactIndex.set(`${hosp} ${start}`, arr);
+      if ((e.class ?? {}).code === "IMP") {
+        const end = String((e.period ?? {}).end ?? "").slice(0, 10);
+        if (end) {
+          const list = impByHosp.get(hosp) ?? [];
+          list.push([start, end, e.id]);
+          impByHosp.set(hosp, list);
+        }
+      }
+    }
+    for (const r of resources) {
+      if (r.resourceType !== "DocumentReference") continue;
+      const ctx = r.context;
+      const ref = ctx?.encounter?.[0]?.reference;
+      if (!ref) continue;
+      if (encounterIds.has(String(ref).replace(/^Encounter\//, ""))) continue;
+      const hosp = (r.custodian ?? {}).display ?? "";
+      const date = String(ctx?.period?.start ?? "").slice(0, 10);
+      const matches = hosp && date ? [...exactIndex.get(`${hosp} ${date}`) ?? []] : [];
+      if (matches.length === 0 && hosp && date) {
+        for (const [start, end, eid] of impByHosp.get(hosp) ?? []) {
+          if (start <= date && date <= end) matches.push(eid);
+        }
+      }
+      if (matches.length === 1) {
+        ctx.encounter = [{ reference: `Encounter/${matches[0]}` }];
+      } else {
+        ctx.encounter = void 0;
+      }
+    }
+  }
   function resolveSexStratifiedRanges(patient, resources) {
     if (!patient) return;
     const gender = String(patient.gender ?? "").toLowerCase();
@@ -6272,15 +6320,15 @@
   function adaptCatastrophicIllness(item) {
     if (!item || typeof item !== "object") return null;
     const rawCname = item.icD10CM_CNAME || item.icd10cm_cname || "";
-    const codeRe = /^([A-Z]\d[A-Z0-9.]*)\//;
-    const icdCode = (String(rawCname).match(codeRe) || [])[1] || "";
-    const stripIcd = (s) => (s || "").replace(codeRe, "").trim();
-    const display = stripIcd(pickEnglish(rawCname)) || stripIcd(pickChinese(rawCname));
+    const display = pickEnglish(rawCname);
     if (!display) return null;
     return {
       display,
-      code: icdCode,
-      system: icdCode ? "icd-10" : "",
+      // English-preferred (code.coding[0].display)
+      display_zh: pickChinese(rawCname),
+      // 中文 → code.text (consistent zh, not language-mixed)
+      code: "",
+      system: "",
       onset_date: rocToISO(item.valiD_S_DATE || item.valid_s_date || ""),
       recorded_date: rocToISO(item.valiD_S_DATE || item.valid_s_date || ""),
       category: "problem-list-item",
@@ -6505,10 +6553,11 @@
     if (!item || typeof item !== "object") return null;
     const allergen = item.allergen_name || item.alleR_NAME || item.medname || item.druG_NAME || item.allergen || "";
     if (!allergen) return null;
+    const isDrug = !!(item.medname || item.druG_NAME);
     return {
       recorded_date: rocToISO(item.funC_DATE || item.recorD_DATE || ""),
       display: allergen,
-      category: "medication",
+      category: isDrug ? "medication" : "",
       criticality: "unable-to-assess",
       reaction: item.reactioN || item.symptom || ""
     };
@@ -6592,6 +6641,9 @@
       // imaging order_CODE is a real NHI 醫令碼 → route to NHI_MEDICAL_ORDER_CODE
       system: item.order_CODE || item.order_code ? "nhi" : "",
       display,
+      // English-preferred
+      display_zh: pickChinese(item.order_NAME || item.order_name || ""),
+      // → code.text
       category: "RAD",
       conclusion,
       hospital: item.hosp_ABBR || item.hosp_abbr || "",
@@ -6617,6 +6669,9 @@
       code: meta.orderCode || "",
       system: meta.orderCode ? "nhi" : "",
       display,
+      // English-preferred
+      display_zh: pickChinese(meta.orderName || ""),
+      // → code.text
       category: "RAD",
       conclusion: "",
       hospital: meta.hospital || "",
@@ -6865,6 +6920,7 @@
       unique.push(r);
     }
     linkEncountersInResources(unique, unique);
+    repairDocumentReferenceEncounters(unique, unique);
     resolveSexStratifiedRanges(patient, unique);
     const bridgeVersion = chrome.runtime.getManifest()?.version || "unknown";
     return {
