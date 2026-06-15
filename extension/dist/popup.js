@@ -3168,6 +3168,20 @@
     syncJpgNote(enabled);
   }
 
+  // src/popup/sync-range.ts
+  async function loadSyncRange() {
+    const { syncRange } = await chrome.storage.local.get("syncRange");
+    const sel = els.apiSyncRange;
+    if (!sel || typeof syncRange !== "string" || !syncRange) return;
+    if ([...sel.options].some((o) => o.value === syncRange)) {
+      sel.value = syncRange;
+    }
+  }
+  async function onSyncRangeChange() {
+    const v = els.apiSyncRange?.value;
+    if (v) await chrome.storage.local.set({ syncRange: v });
+  }
+
   // src/popup/tooltip.ts
   var _helpTip = document.createElement("div");
   _helpTip.className = "help-tooltip";
@@ -3205,6 +3219,7 @@
     document.getElementById("login-ok-next")?.addEventListener("click", () => _setActiveStep(2));
     await loadMaskNameEnabled();
     await loadFetchImagingEnabled();
+    await loadSyncRange();
     initImagingPrepBanner();
     await _refreshLocalBundleState();
     await loadBackendModeEnabled();
@@ -3288,6 +3303,7 @@
   });
   els.maskNameToggle?.addEventListener("change", onMaskNameToggle);
   els.fetchImagingToggle?.addEventListener("change", onFetchImagingToggle);
+  els.apiSyncRange?.addEventListener("change", onSyncRangeChange);
   els.smartAppUrl.addEventListener("change", onSmartAppUrlChange);
   els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);
   els.clearBundleBtn.addEventListener("click", clearPendingBundle);

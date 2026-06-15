@@ -3,6 +3,18 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.19.1 重點 — 2026-06-15（住院用藥正確性 + 日期範圍記憶）
+
+住院用藥資料正確性修正,源自實際 bundle 稽核(長庚嘉義 5/18 住院 Takepron / 氯化鈉)。
+
+**資料正確性（對接 App 看得到）**
+- **同次住院、同藥但不同診斷/數量不再被誤併**：去重鍵先前只看 (藥品, 日期),把同一天同一支藥的兩筆不同醫令(例:泰克胃通靜脈注射劑 qty=2／診斷 R042 咳血 與 qty=1／診斷 K92.0 吐血)併成一筆,**較大數量那筆被靜默丟掉**。現在去重鍵 + `stableId` 一併納入**數量 + 診斷碼**,兩筆各自保留(獨立 id);純語言差異的中英重複(數量、診斷相同)仍正常合併。
+- **用藥 `reasonCode.text` 文字清理**：NHI 的 `icd9cm_CODE_CNAME2` 偶爾不是純中文,而是與 `CNAME` 相同的「碼/中文‖碼/英文」雙語字串,先前被原樣帶入,產生像 `R042 R042/咳血||R042/Hemoptysis` 的壞文字。現在一律走與 fallback 相同的取中文 + 去碼前綴正規化,輸出乾淨的 `R042 咳血`。
+- **註**：住院藥的「給藥日數」一律忠實搬運 NHI 的 `order_drug_day`;`"－"`(住院常見)→ 省略天數,bridge **不會**自行補成 1 天。
+
+**UX**
+- **「日期範圍」選擇會記住**：先前切換後關閉 popup 再開,會跳回預設「最近 3 年」。現在選擇會存進 `chrome.storage.local`、開啟時還原(比照影像下載開關)。
+
 ## 0.19.0 重點 — 2026-06-15（Chrome 商店上架前加固）
 
 上架前的審核加固批次。**資料正確性 + 健壯性**為主,含少數消費端看得到的資料模型修正。

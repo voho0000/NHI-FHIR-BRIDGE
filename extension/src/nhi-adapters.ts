@@ -240,10 +240,17 @@ export function adaptMedicationFromDetail(drug, visit, options) {
   // it composes "<code> <text>" itself.
   const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
   const indication = stripIcdPrefix(pickEnglish(rawIndication));
-  const indication_zh =
-    visit?.icd9cm_CODE_CNAME2 ||
-    visit?.icd9cm_code_cname2 ||
-    stripIcdPrefix(pickChinese(rawIndication));
+  // icd9cm_CODE_CNAME2 is NHI's "Chinese-only convenience" field IN THEORY,
+  // but live raw audit (2026-06-15, 長庚嘉義 R042 咳血 inpatient claim) shows
+  // it is NOT reliably clean: that row shipped CNAME2 = "R042/咳血||R042/
+  // Hemoptysis" — the SAME bilingual+code string as CNAME, not a bare "咳血".
+  // Trusting it verbatim produced reasonCode.text "R042 R042/咳血||R042/
+  // Hemoptysis" (duplicate code + un-split ||). So normalise CNAME2 through
+  // the SAME pickChinese + stripIcdPrefix pipeline as the fallback rather
+  // than assuming it is pre-cleaned. pickChinese on a no-`||` string ("吐血")
+  // returns it unchanged, so genuinely-clean rows are unaffected.
+  const rawIndicationZh = visit?.icd9cm_CODE_CNAME2 || visit?.icd9cm_code_cname2 || rawIndication;
+  const indication_zh = stripIcdPrefix(pickChinese(rawIndicationZh));
   // Bug report 2026-05-27 Part 3 C6: 758/758 MedicationRequests had no
   // dosageInstruction. Author comment previously noted "List endpoint
   // doesn't expose dose/frequency/route" but SMART app dev reported NHI

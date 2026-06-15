@@ -88,6 +88,60 @@ describe("mapMedicationsDedup", () => {
     expect(mapMedicationsDedup(items, PATIENT_ID)).toHaveLength(2);
   });
 
+  test("same drug+date kept separate when quantity OR diagnosis differs (cross-claim, 2026-06-15 repro)", () => {
+    // Real 長庚嘉義 5/18 admission: 泰克胃通靜脈注射劑 appeared in TWO claim
+    // rows — qty=2 under dx R042 (咳血) AND qty=1 under dx K92.0 (吐血). The
+    // old (drug,date)-only key collapsed them and the qty=2 order silently
+    // vanished. They are distinct orders (different quantity AND indication)
+    // so both must survive with distinct, collision-free ids.
+    const items = [
+      {
+        drug_name: "Takepron Intravenous 30mg",
+        code: "BC25246243",
+        date: "2025-05-18",
+        quantity: "2",
+        indication: "Hemoptysis",
+        indication_zh: "咳血",
+        indication_code: "R042",
+        hospital: "長庚嘉義",
+      },
+      {
+        drug_name: "Takepron Intravenous 30mg",
+        code: "BC25246243",
+        date: "2025-05-18",
+        quantity: "1",
+        indication: "Hematemesis",
+        indication_zh: "吐血",
+        indication_code: "K920",
+        hospital: "長庚嘉義",
+      },
+    ];
+    const resources = mapMedicationsDedup(items, PATIENT_ID);
+    expect(resources).toHaveLength(2);
+    expect(resources[0]!.id).not.toBe(resources[1]!.id);
+    const qtys = resources.map((r) => r.dispenseRequest.quantity.value).sort();
+    expect(qtys).toEqual([1, 2]);
+    // reasonCode text stays clean ("<code> <繁中>") for both indications.
+    const texts = resources.map((r) => r.reasonCode[0].text).sort();
+    expect(texts).toEqual(["K920 吐血", "R042 咳血"]);
+  });
+
+  test("language variants with identical qty + dx still collapse (no over-split)", () => {
+    // Guard the OTHER direction: adding qty + dx to the dedup key must NOT
+    // split a genuine 中英 language-variant pair that shares quantity AND
+    // indication — that is exactly the duplicate the dedup exists to remove.
+    const items = [
+      { drug_name: "TAKEPRON OD 30MG TABLETS", date: "2025-05-18", quantity: "10", indication_code: "R042" },
+      {
+        drug_name: "泰克胃通 口溶錠30毫克 (TAKEPRON OD 30MG TABLETS)",
+        date: "2025-05-18",
+        quantity: "10",
+        indication_code: "R042",
+      },
+    ];
+    expect(mapMedicationsDedup(items, PATIENT_ID)).toHaveLength(1);
+  });
+
   test("inpatient end_date emits dispenseRequest.validityPeriod covering the stay", () => {
     // Adapter emits end_date for inpatient summary rows (cure_E_DATE
     // differs from func_DATE). Mapper should attach a validityPeriod

@@ -101,7 +101,23 @@ export function mapMedicationRequest(
 
   // Canonical key (not raw drug_name) for stable id so the three NHI
   // 中英 variants of the same drug collapse to one FHIR resource.
-  const medId = stableId(patientId, canonicalDrugKey(drugName), raw.date ?? "");
+  //
+  // quantity + indication_code are ALSO part of the fingerprint (added
+  // 2026-06-15). Without them, two genuinely-distinct orders for the same
+  // drug on the same day collapsed to one id and the bundle dropped one.
+  // Real case: a 長庚嘉義 5/18 admission shipped 泰克胃通靜脈注射劑 twice —
+  // qty=2 under dx R042 (咳血) AND qty=1 under dx K92.0 (吐血) — two separate
+  // claim rows that the old (drug,date)-only id silently merged into the
+  // qty=1 row. The 中英 language variants of ONE order share the same qty +
+  // dx, so they still collapse; only orders that differ in quantity OR
+  // indication stay distinct. Empty fields are omitted so meds without a
+  // qty / diagnosis keep a clean fingerprint.
+  const idParts = [canonicalDrugKey(drugName), String(raw.date ?? "")];
+  const qtyKey = String(raw.quantity ?? "").trim();
+  const dxKey = String(raw.indication_code ?? "").trim();
+  if (qtyKey) idParts.push(`q:${qtyKey}`);
+  if (dxKey) idParts.push(`d:${dxKey}`);
+  const medId = stableId(patientId, ...idParts);
 
   const drugCode = ((raw.code ?? "") as string).trim();
   const coding: Record<string, string> = {
@@ -325,7 +341,15 @@ export function mapMedicationsDedup(rawItems: any[], patientId: string): Record<
     const drugName = ((item.drug_name ?? "") as string).trim();
     if (!drugName) continue;
     const datePart = ((item.date ?? "") as string).slice(0, 10);
-    const key = `${datePart}|${canonicalDrugKey(drugName)}`;
+    // Group key mirrors the stableId fingerprint (drug + date + qty + dx):
+    // language-only 中英 variants of ONE order share quantity + indication
+    // and still collapse, but two distinct orders of the same drug on the
+    // same day (different qty or different diagnosis) stay separate instead
+    // of one silently overwriting the other. See mapMedicationRequest for
+    // the 5/18 泰克胃通 qty=2/dx-R042 vs qty=1/dx-K92.0 post-mortem.
+    const qtyKey = String(item.quantity ?? "").trim();
+    const dxKey = String(item.indication_code ?? "").trim();
+    const key = `${datePart}|${canonicalDrugKey(drugName)}|${qtyKey}|${dxKey}`;
     const existing = byKey.get(key);
     if (existing === undefined) {
       byKey.set(key, item);

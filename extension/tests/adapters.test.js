@@ -746,6 +746,25 @@ describe("adaptMedicationFromDetail", () => {
     expect(adapted[0].drug_name_zh).toContain("泰克胃通");
   });
 
+  test("normalizes a bilingual+code icd9cm_CODE_CNAME2 (real 2026-06-15 repro)", () => {
+    // Live raw audit: NHI's "Chinese-only convenience" CNAME2 is NOT always
+    // clean — the 長庚嘉義 R042 咳血 claim shipped CNAME2 = the SAME bilingual+
+    // code string as CNAME. Taking it verbatim produced reasonCode.text
+    // "R042 R042/咳血||R042/Hemoptysis". indication_zh must be plain "咳血".
+    const drug = { drug_name: "X", order_qty: "2", order_drug_day: "－" };
+    const visit = {
+      func_DATE: "114/05/18||2025/05/18",
+      icd9cm_CODE: "R042",
+      icd9cm_CODE_CNAME: "R042/咳血||R042/Hemoptysis",
+      icd9cm_CODE_CNAME2: "R042/咳血||R042/Hemoptysis",
+      hosp_ABBR: "長庚嘉義",
+    };
+    const r = adaptMedicationFromDetail(drug, visit);
+    expect(r.indication_zh).toBe("咳血");
+    expect(r.indication).toBe("Hemoptysis");
+    expect(r.indication_code).toBe("R042");
+  });
+
   test("plain stub adaptMedication always returns null (list lacks drug data)", () => {
     expect(adaptMedication()).toBeNull();
     expect(adaptMedication({ anything: "ignored" })).toBeNull();

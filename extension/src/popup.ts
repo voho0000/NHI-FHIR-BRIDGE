@@ -35,6 +35,7 @@ import { _refreshLocalBundleState, pushLocalBundleToBackend } from "./popup/data
 import { els } from "./popup/els.js";
 import { initImagingPrepBanner } from "./popup/imaging-prep-banner.js";
 import { loadFetchImagingEnabled, onFetchImagingToggle } from "./popup/imaging-toggle.js";
+import { loadSyncRange, onSyncRangeChange } from "./popup/sync-range.js";
 import {
   clearPatientOverride,
   loadMaskNameEnabled,
@@ -81,6 +82,7 @@ async function init() {
 
   await loadMaskNameEnabled();
   await loadFetchImagingEnabled();
+  await loadSyncRange();
   // v0.16.0: imaging prep banner reads chrome.storage and self-renders.
   // Safe to init early — element is hidden by default; only shows when
   // the SW poller has written state.
@@ -254,6 +256,7 @@ els.maskNameToggle?.addEventListener("change", onMaskNameToggle);
 // Bind on the radiogroup container — change bubbles from whichever radio
 // (不下載 / 一併下載) the user picks.
 els.fetchImagingToggle?.addEventListener("change", onFetchImagingToggle);
+els.apiSyncRange?.addEventListener("change", onSyncRangeChange);
 els.smartAppUrl.addEventListener("change", onSmartAppUrlChange);
 
 // Pending-bundle download / clear buttons.

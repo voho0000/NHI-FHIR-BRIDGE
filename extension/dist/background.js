@@ -1381,7 +1381,12 @@
   function mapMedicationRequest(raw, patientId) {
     const drugName = (raw.drug_name ?? "").trim();
     if (!drugName) return null;
-    const medId = stableId(patientId, canonicalDrugKey(drugName), raw.date ?? "");
+    const idParts = [canonicalDrugKey(drugName), String(raw.date ?? "")];
+    const qtyKey = String(raw.quantity ?? "").trim();
+    const dxKey = String(raw.indication_code ?? "").trim();
+    if (qtyKey) idParts.push(`q:${qtyKey}`);
+    if (dxKey) idParts.push(`d:${dxKey}`);
+    const medId = stableId(patientId, ...idParts);
     const drugCode = (raw.code ?? "").trim();
     const coding = {
       system: drugCode ? NHI_DRUG_CODE : HIS_LOCAL_MEDICATION_CODE,
@@ -1516,7 +1521,9 @@
       const drugName = (item.drug_name ?? "").trim();
       if (!drugName) continue;
       const datePart = (item.date ?? "").slice(0, 10);
-      const key = `${datePart}|${canonicalDrugKey(drugName)}`;
+      const qtyKey = String(item.quantity ?? "").trim();
+      const dxKey = String(item.indication_code ?? "").trim();
+      const key = `${datePart}|${canonicalDrugKey(drugName)}|${qtyKey}|${dxKey}`;
       const existing = byKey.get(key);
       if (existing === void 0) {
         byKey.set(key, item);
@@ -6277,7 +6284,8 @@
     const rawIndication = visit?.icd9cm_CODE_CNAME || visit?.icd9cm_name || "";
     const stripIcdPrefix = (s) => s.replace(/^[A-Z0-9.]+\/\s*/, "");
     const indication = stripIcdPrefix(pickEnglish(rawIndication));
-    const indication_zh = visit?.icd9cm_CODE_CNAME2 || visit?.icd9cm_code_cname2 || stripIcdPrefix(pickChinese(rawIndication));
+    const rawIndicationZh = visit?.icd9cm_CODE_CNAME2 || visit?.icd9cm_code_cname2 || rawIndication;
+    const indication_zh = stripIcdPrefix(pickChinese(rawIndicationZh));
     const dosageText = drug.drug_freq || drug.druG_FREQ || drug.drug_FREQ || drug.frequency || drug.FREQUENCY || drug.drug_use || drug.druG_USE || drug.drug_USE || drug.usage || drug.USAGE || drug.sig || drug.SIG || drug.dosage || drug.DOSAGE || "";
     return {
       date,
