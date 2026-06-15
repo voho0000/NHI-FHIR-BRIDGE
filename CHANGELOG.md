@@ -3,6 +3,24 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.19.0 重點 — 2026-06-15（Chrome 商店上架前加固）
+
+上架前的審核加固批次。**資料正確性 + 健壯性**為主,含少數消費端看得到的資料模型修正。
+
+**資料正確性（對接 App 看得到）**
+- **影像 DiagnosticReport 改用 NHI 醫令碼系統**：影像報告帶的是真 NHI 醫令碼,先前被歸到本機 placeholder 系統,現在正確掛 `nhi-medical-order-code`。
+- **過敏 category 不再寫死「藥物」**：只有藥物專屬欄位才標 medication,否則省略 —— 避免把食物/環境過敏誤標成藥物過敏。（沒有過敏紀錄時不會捏造「無已知過敏」。）
+- **Condition / 影像報告的 `code.text` 一律優先中文**：先前語言不固定（看 NHI 給不給雙語）,現在病人端標籤一致中文;`coding.display` 維持英文優先。
+- **檢驗單位**：無法對應 UCUM 的中文單位不再被假冒成 UCUM 機器碼（驗證器會打槍的問題）；單位顯示文字照舊保留。
+- **就醫日期**：不可能的日期（如 2 月 30 日、13 月）不再流入 FHIR 變成壞日期。
+
+**健壯性**
+- **出院病摘 → 就醫的參照修復**：先前可能指向 bundle 裡不存在的 Encounter（懸空參照）;現在會驗證、容錯重連、對不上就移除,不留壞參照。
+- **服務背景被瀏覽器中止時的復原**：MV3 service worker 若在取得途中被系統回收,先前 UI 會永遠卡在「取得中…」;現在偵測到逾時會自動復原並提示重新取得。
+
+**上架**
+- 套件描述調整為「資料不會傳送給開發者；預設只在本機處理」,與進階（本機伺服器）模式一致。
+
 ## 0.18.17 重點 — 2026-06-15
 
 - **手術 ICD-10-PCS 分類碼補上中文（純加法、非破壞性）**：PCS 分類碼（`Procedure.code.coding[1]`）的中文先前無處可放（`display` 是英文、`code.text` 是手術名）。現在用 FHIR 標準的 `_display` translation extension 帶上中文（`zh-TW`），**`coding.display` 仍維持英文不變**。不讀 extension 的 App 完全不受影響；要中文的 App 讀 `coding[1]._display` 的 translation extension。只加在 PCS 這個 coding，NHI 醫令碼 / `code.text` / LOINC / 其它碼皆不動。詳見 `docs/SMART_APP_CHANGES_v0.18.14.md`。
