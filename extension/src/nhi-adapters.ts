@@ -1030,47 +1030,51 @@ export function adaptProcedureFromDetail(item) {
 // them is the admission detail. Emits one procedure item per surgery (primary
 // + each secondary), all ICD-10-PCS, dated to the admission day (the detail
 // carries no per-surgery execution date), tagged encounter_class=IMP so the
-// linker attaches them to the 住院 Encounter. Returns an ARRAY (possibly empty).
+// linker attaches them to the 住院 Encounter. Each 次處置 (secondary) carries
+// `part_of_code` = the primary's op_CODE → the mapper emits Procedure.partOf so
+// SMART apps can group a surgery's sub-procedures under the main one (user
+// request 2026-06-16). NO reasonCode: the 住院 detail only has the ADMISSION
+// diagnosis (icd9cm_CODE = reason for the STAY, e.g. J18.9 肺炎), which is NOT
+// the reason for a given surgery (e.g. a colon resection) — attaching it
+// mislabels the procedure. The admission diagnoses live on the linked 住院
+// Encounter. Returns an ARRAY (possibly empty).
 export function adaptInpatientProcedures(visit) {
   if (!visit || typeof visit !== "object") return [];
   const date = rocToISO(visit.in_DATE || visit.in_date || visit.func_DATE || "");
   if (!date) return [];
   const hospital = visit.hosp_ABBR || visit.hosp_abbr || "";
-  const reasonCode = visit.icd9cm_CODE || visit.icd9cm_code || "";
-  const rawReason = visit.icd9cm_CODE_CNAME || visit.icd9cm_code_cname || "";
   const stripCode = (s) =>
     String(s || "")
       .replace(/^[A-Z0-9.]+\//, "")
       .trim();
-  const reasonEn = stripCode(pickEnglish(rawReason));
-  const reasonZh = stripCode(pickChinese(rawReason));
-  const out = [];
-  const push = (code, rawName) => {
+  const primaryCode = visit.op_CODE || visit.op_code || "";
+  const out: Record<string, any>[] = [];
+  const push = (code, rawName, partOfCode = "") => {
     if (!code) return;
     const en = stripCode(pickEnglish(rawName)) || stripCode(pickChinese(rawName));
     const zh = stripCode(pickChinese(rawName)) || en;
-    out.push({
+    const item: Record<string, any> = {
       date,
-      code, // ICD-10-PCS op_CODE (primary — no NHI 醫令碼 on the 住院 detail)
+      code, // ICD-10-PCS op_CODE (no NHI 醫令碼 on the 住院 detail)
       system: "icd-10-pcs",
       display: en || code,
       display_zh: zh || code,
-      reason: reasonEn,
-      reason_zh: reasonZh,
-      reason_code: reasonCode,
       body_site: "",
       hospital,
       encounter_class: "IMP",
-    });
+    };
+    // Secondary → partOf the primary surgery of the same admission.
+    if (partOfCode && partOfCode !== code) item.part_of_code = partOfCode;
+    out.push(item);
   };
-  // Primary surgery.
-  push(visit.op_CODE || visit.op_code || "", visit.op_CODE_CNAME || visit.op_code_cname || "");
+  // Primary surgery (no part_of_code).
+  push(primaryCode, visit.op_CODE_CNAME || visit.op_code_cname || "");
   // Secondary 次處置 — op_code_name carries its own "<code>/" prefix.
   const sec = Array.isArray(visit.opcode_data) ? visit.opcode_data : [];
   for (const s of sec) {
     const name = s?.op_code_name || s?.op_CODE_NAME || "";
     const m = String(name).match(/^([A-Z0-9.]+)\//);
-    push(m ? m[1] : "", name);
+    push(m ? m[1] : "", name, primaryCode);
   }
   return out;
 }

@@ -1687,13 +1687,18 @@ describe("adaptInpatientProcedures (住院 detail op_CODE → Procedure)", () =>
       system: "icd-10-pcs",
       encounter_class: "IMP",
       hospital: "長庚嘉義",
-      reason_code: "J189",
     });
     expect(procs[0].display).toContain("Excision of Ascending Colon");
     expect(procs[0].display_zh).toContain("升結腸部分切除");
-    expect(procs[0].reason).toContain("Pneumonia");
+    // No reasonCode — the admission diagnosis (J18.9 肺炎) is NOT the reason for
+    // the colon resection, so it must not be attached to the procedure.
+    expect(procs[0].reason_code).toBeUndefined();
+    expect(procs[0].reason).toBeUndefined();
+    // primary has no part_of_code; secondary points at it.
+    expect(procs[0].part_of_code).toBeUndefined();
     expect(procs[1].code).toBe("0DBL8ZZ");
     expect(procs[1].display).toContain("Excision of Transverse Colon");
+    expect(procs[1].part_of_code).toBe("0DBK8ZZ");
   });
 
   test("returns [] when no op_CODE / no start date", () => {

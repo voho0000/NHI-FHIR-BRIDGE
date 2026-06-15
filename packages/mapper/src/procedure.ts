@@ -123,6 +123,18 @@ export function mapProcedure(
     resource.performer = [{ actor: { display: hospital } }];
   }
 
+  // partOf — a 次處置 (secondary surgery) points at the primary surgery of the
+  // same admission so SMART apps group sub-procedures under the main one. The
+  // primary's id is its content hash (same scheme as this resource's id), so we
+  // recompute it from the carried `part_of_code` + date. dedupProcedures
+  // re-points this if the primary was merged into a richer 手術-list row.
+  const partOfCode = ((raw.part_of_code ?? "") as string).trim();
+  if (partOfCode) {
+    resource.partOf = [
+      { reference: `Procedure/${stableId(patientId, partOfCode, raw.date ?? "")}` },
+    ];
+  }
+
   // Transient encounter-class hint (IMP for inpatient surgeries) — the linker
   // reads it to attach the procedure to the 住院 Encounter even on an admission
   // day that also has a gateway 門診/急診, then strips it. Mirrors the med path.
@@ -153,14 +165,38 @@ export function dedupProcedures(resources: Record<string, any>[]): Record<string
   const day = (p: Record<string, any>): string =>
     String(p.performedDateTime ?? p.performedPeriod?.start ?? "").slice(0, 10);
 
-  const claimed = new Set<string>();
+  // (hospital|date|PCS) → id of the richer procedure that covers it.
+  const claimant = new Map<string, string>();
   for (const p of resources) {
     if (p.resourceType !== "Procedure" || isPcsOnly(p)) continue;
-    for (const code of pcsCodes(p)) claimed.add(`${hosp(p)}|${day(p)}|${code}`);
+    for (const code of pcsCodes(p)) claimant.set(`${hosp(p)}|${day(p)}|${code}`, p.id);
   }
-  if (claimed.size === 0) return resources;
-  return resources.filter((p) => {
+  if (claimant.size === 0) return resources;
+
+  // Drop the PCS-only inpatient duplicate; remember dropped-id → survivor-id so
+  // a 次處置's partOf (which targeted the dropped primary) can be re-pointed.
+  const remap = new Map<string, string>();
+  const kept = resources.filter((p) => {
     if (p.resourceType !== "Procedure" || !isPcsOnly(p)) return true;
-    return !pcsCodes(p).some((code) => claimed.has(`${hosp(p)}|${day(p)}|${code}`));
+    for (const code of pcsCodes(p)) {
+      const survivor = claimant.get(`${hosp(p)}|${day(p)}|${code}`);
+      if (survivor && survivor !== p.id) {
+        remap.set(p.id, survivor);
+        return false;
+      }
+    }
+    return true;
   });
+
+  if (remap.size > 0) {
+    for (const p of kept) {
+      if (p.resourceType !== "Procedure" || !Array.isArray(p.partOf)) continue;
+      for (const ref of p.partOf) {
+        const id = String(ref?.reference ?? "").replace("Procedure/", "");
+        const survivor = remap.get(id);
+        if (survivor) ref.reference = `Procedure/${survivor}`;
+      }
+    }
+  }
+  return kept;
 }

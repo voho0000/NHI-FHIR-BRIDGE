@@ -5334,6 +5334,12 @@
     if (hospital) {
       resource.performer = [{ actor: { display: hospital } }];
     }
+    const partOfCode = (raw.part_of_code ?? "").trim();
+    if (partOfCode) {
+      resource.partOf = [
+        { reference: `Procedure/${stableId(patientId, partOfCode, raw.date ?? "")}` }
+      ];
+    }
     const encounterClass = (raw.encounter_class ?? "").trim();
     if (encounterClass) resource.__nhiVisitClass = encounterClass;
     return resource;
@@ -5346,16 +5352,35 @@
     };
     const hosp = (p) => p.performer?.[0]?.actor?.display ?? "";
     const day = (p) => String(p.performedDateTime ?? p.performedPeriod?.start ?? "").slice(0, 10);
-    const claimed = /* @__PURE__ */ new Set();
+    const claimant = /* @__PURE__ */ new Map();
     for (const p of resources) {
       if (p.resourceType !== "Procedure" || isPcsOnly(p)) continue;
-      for (const code of pcsCodes(p)) claimed.add(`${hosp(p)}|${day(p)}|${code}`);
+      for (const code of pcsCodes(p)) claimant.set(`${hosp(p)}|${day(p)}|${code}`, p.id);
     }
-    if (claimed.size === 0) return resources;
-    return resources.filter((p) => {
+    if (claimant.size === 0) return resources;
+    const remap = /* @__PURE__ */ new Map();
+    const kept = resources.filter((p) => {
       if (p.resourceType !== "Procedure" || !isPcsOnly(p)) return true;
-      return !pcsCodes(p).some((code) => claimed.has(`${hosp(p)}|${day(p)}|${code}`));
+      for (const code of pcsCodes(p)) {
+        const survivor = claimant.get(`${hosp(p)}|${day(p)}|${code}`);
+        if (survivor && survivor !== p.id) {
+          remap.set(p.id, survivor);
+          return false;
+        }
+      }
+      return true;
     });
+    if (remap.size > 0) {
+      for (const p of kept) {
+        if (p.resourceType !== "Procedure" || !Array.isArray(p.partOf)) continue;
+        for (const ref of p.partOf) {
+          const id = String(ref?.reference ?? "").replace("Procedure/", "");
+          const survivor = remap.get(id);
+          if (survivor) ref.reference = `Procedure/${survivor}`;
+        }
+      }
+    }
+    return kept;
   }
 
   // ../packages/mapper/src/dispatch.ts
@@ -6736,37 +6761,33 @@
     const date = rocToISO(visit.in_DATE || visit.in_date || visit.func_DATE || "");
     if (!date) return [];
     const hospital = visit.hosp_ABBR || visit.hosp_abbr || "";
-    const reasonCode = visit.icd9cm_CODE || visit.icd9cm_code || "";
-    const rawReason = visit.icd9cm_CODE_CNAME || visit.icd9cm_code_cname || "";
     const stripCode = (s) => String(s || "").replace(/^[A-Z0-9.]+\//, "").trim();
-    const reasonEn = stripCode(pickEnglish(rawReason));
-    const reasonZh = stripCode(pickChinese(rawReason));
+    const primaryCode = visit.op_CODE || visit.op_code || "";
     const out = [];
-    const push = (code, rawName) => {
+    const push = (code, rawName, partOfCode = "") => {
       if (!code) return;
       const en = stripCode(pickEnglish(rawName)) || stripCode(pickChinese(rawName));
       const zh = stripCode(pickChinese(rawName)) || en;
-      out.push({
+      const item = {
         date,
         code,
-        // ICD-10-PCS op_CODE (primary — no NHI 醫令碼 on the 住院 detail)
+        // ICD-10-PCS op_CODE (no NHI 醫令碼 on the 住院 detail)
         system: "icd-10-pcs",
         display: en || code,
         display_zh: zh || code,
-        reason: reasonEn,
-        reason_zh: reasonZh,
-        reason_code: reasonCode,
         body_site: "",
         hospital,
         encounter_class: "IMP"
-      });
+      };
+      if (partOfCode && partOfCode !== code) item.part_of_code = partOfCode;
+      out.push(item);
     };
-    push(visit.op_CODE || visit.op_code || "", visit.op_CODE_CNAME || visit.op_code_cname || "");
+    push(primaryCode, visit.op_CODE_CNAME || visit.op_code_cname || "");
     const sec = Array.isArray(visit.opcode_data) ? visit.opcode_data : [];
     for (const s of sec) {
       const name = s?.op_code_name || s?.op_CODE_NAME || "";
       const m = String(name).match(/^([A-Z0-9.]+)\//);
-      push(m ? m[1] : "", name);
+      push(m ? m[1] : "", name, primaryCode);
     }
     return out;
   }

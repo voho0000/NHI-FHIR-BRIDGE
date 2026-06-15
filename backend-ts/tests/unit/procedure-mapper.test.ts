@@ -275,3 +275,62 @@ describe("dedupProcedures", () => {
     expect(dedupProcedures([obs]).map((r) => r.id)).toEqual(["o1"]);
   });
 });
+
+describe("Procedure partOf (主/次處置 grouping)", () => {
+  const PCS = "http://hl7.org/fhir/sid/icd-10-pcs";
+  const NHI = "https://twcore.mohw.gov.tw/CodeSystem/nhi-medical-order-code";
+  const proc = (id: string, codings: any[], hosp: string, date: string, extra: any = {}) => ({
+    resourceType: "Procedure",
+    id,
+    performedDateTime: `${date}T00:00:00+08:00`,
+    performer: [{ actor: { display: hosp } }],
+    code: { coding: codings },
+    ...extra,
+  });
+
+  test("part_of_code → partOf referencing the primary's content-derived id", () => {
+    const secondary = mapProcedure(
+      {
+        display: "Transverse colectomy",
+        code: "0DBL8ZZ",
+        system: "icd-10-pcs",
+        date: "2025-02-11",
+        part_of_code: "0DBK8ZZ",
+      },
+      PID,
+    );
+    const primary = mapProcedure(
+      { display: "Ascending colectomy", code: "0DBK8ZZ", system: "icd-10-pcs", date: "2025-02-11" },
+      PID,
+    );
+    expect(secondary!.partOf).toEqual([{ reference: `Procedure/${primary!.id}` }]);
+  });
+
+  test("dedupProcedures re-points a 次處置 partOf when its primary merges into the richer row", () => {
+    // Vitrectomy (08B53ZZ) is in BOTH the 手術 list (rich) and 住院 detail
+    // (PCS-only). Its 次處置 (08QF3ZZ retinal repair) partOf'd the inpatient
+    // primary — after dedup drops it, partOf must re-point to the surviving row.
+    const rich = proc(
+      "rich",
+      [
+        { system: NHI, code: "86412B" },
+        { system: PCS, code: "08B53ZZ" },
+      ],
+      "臺北榮總",
+      "2016-09-23",
+    );
+    const inpPrimary = proc("inpP", [{ system: PCS, code: "08B53ZZ" }], "臺北榮總", "2016-09-23");
+    const inpSecondary = proc(
+      "inpS",
+      [{ system: PCS, code: "08QF3ZZ" }],
+      "臺北榮總",
+      "2016-09-23",
+      {
+        partOf: [{ reference: "Procedure/inpP" }],
+      },
+    );
+    const out = dedupProcedures([rich, inpPrimary, inpSecondary]);
+    expect(out.map((p) => p.id).sort()).toEqual(["inpS", "rich"]); // inpP dropped
+    expect(out.find((p) => p.id === "inpS")!.partOf).toEqual([{ reference: "Procedure/rich" }]);
+  });
+});

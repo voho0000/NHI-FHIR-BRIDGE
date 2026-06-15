@@ -3,6 +3,12 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.7 重點 — 2026-06-16（住院手術:移除誤導的原因 + 主/次處置用 partOf 串接）
+
+源自 App 端回饋(v0.20.5 住院手術上線後):
+- **移除住院手術的錯誤 reasonCode**:住院明細只有**住院主診斷**(`icd9cm_CODE`,例如 J18.9 肺炎),那是「為何住院」不是「為何做這台手術」。先前把它掛成手術的 `reasonCode`,會讓「大腸切除」看起來像是為了肺炎而做 —— 誤導。現在住院手術**不帶 reasonCode**(住院的完整診斷清單仍在所連的住院 Encounter 上)。門診/手術清單(IHKE3308)來源的手術有自己的處置原因,維持不變。
+- **主/次處置以 `Procedure.partOf` 串接**:同一場手術的次處置(`opcode_data`)現在 `partOf` 指向主處置(`op_CODE`),App 即可把次處置收摺在主處置底下、可展開。先前是一堆扁平的 Procedure,App 只能用「同天+同就醫」猜(不可靠 —— 同日可能有兩件不相關的處置)。bridge 知道主/次,是正確的 source of truth。去重時若主處置被併入較完整的手術清單列,次處置的 partOf 會自動改指到保留的那筆(不留懸空參照)。
+
 ## 0.20.6 重點 — 2026-06-16（用 NHI 異常旗標修正檢驗判讀,eGFR 不再被誤標正常）
 
 - **檢驗判讀改用 NHI 自帶的異常旗標(`assaY_MARK`)校正**:bridge 原本只從參考範圍自己算 H/L/正常。但有些檢驗的參考範圍是**文字描述**(例如 eGFR 的 CKD 分期「`[N:≧60,s3:30~59,s4:15~29,s5 15]`」),bridge 硬解析會**算錯** —— 實測這位病人 **eGFR 32、33(第 3 期慢性腎病,明顯異常)被標成「正常(N)」**,而 NHI 自己的旗標正確標異常。現在讀 `assaY_MARK`(1 異常/0 正常)當權威:bridge 算出的 **H/L/A 等具方向性的判讀保留**(較細),只有 bridge 算成「正常」或算不出時才由 NHI 旗標決定(1→異常 A、0→正常 N),**絕不把 bridge 已判的異常降級**。536 筆 NHI 標異常中,有 162 筆是 bridge 算不乾淨的(質性/文字範圍),這些現在會正確帶上異常標示。
