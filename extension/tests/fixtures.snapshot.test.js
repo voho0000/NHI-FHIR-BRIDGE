@@ -86,31 +86,41 @@ describe("adapter fixture snapshots", () => {
 
   test("IHKE3308S02 procedure detail (inpatient — exe_S_DATE > func_DATE; op_CODE → code)", () => {
     expect(adaptProcedureFromDetail(load("ihke3308-procedure-inpatient.json"))).toMatchInlineSnapshot(`
-      {
-        "body_site": "",
-        "code": "08B53ZZ",
-        "date": "2014-09-23",
-        "display": "Excision of Left Vitreous, Percutaneous Approach",
-        "display_zh": "經皮左側玻璃體部分切除術",
-        "hospital": "臺北榮總",
-        "note": "Reason: H35372 Puckering of macula, left eye / 施作: Microincision vitreomacular surgery (NHI 86412B)",
-        "system": "icd-10-pcs",
-      }
+      [
+        {
+          "body_site": "",
+          "code": "86412B",
+          "code2": "08B53ZZ",
+          "date": "2014-09-23",
+          "display": "Microincision vitreomacular surgery",
+          "display2": "Excision of Left Vitreous, Percutaneous Approach",
+          "display_zh": "微創玻璃體黃斑部手術",
+          "hospital": "臺北榮總",
+          "note": "Reason: H35372 Puckering of macula, left eye",
+          "system": "nhi",
+          "system2": "icd-10-pcs",
+        },
+      ]
     `);
   });
 
   test("IHKE3308S02 procedure detail (outpatient — null icd9cm_CODE_CNAME tolerated)", () => {
     expect(adaptProcedureFromDetail(load("ihke3308-procedure-outpatient.json"))).toMatchInlineSnapshot(`
-      {
-        "body_site": "",
-        "code": "3E0C3GC",
-        "date": "2014-01-14",
-        "display": "Introduction of Other Therapeutic Substance into Eye, Percutaneous Approach",
-        "display_zh": "經皮眼睛其他治療物質輸入",
-        "hospital": "嘉基醫院",
-        "note": "施作: Intravitreous injection (NHI 86201C)",
-        "system": "icd-10-pcs",
-      }
+      [
+        {
+          "body_site": "",
+          "code": "86201C",
+          "code2": "3E0C3GC",
+          "date": "2014-01-14",
+          "display": "Intravitreous injection",
+          "display2": "Introduction of Other Therapeutic Substance into Eye, Percutaneous Approach",
+          "display_zh": "玻璃體內注射",
+          "hospital": "嘉基醫院",
+          "note": "",
+          "system": "nhi",
+          "system2": "icd-10-pcs",
+        },
+      ]
     `);
   });
 

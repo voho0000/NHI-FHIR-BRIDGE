@@ -503,12 +503,8 @@ describe("adaptProcedureListStub", () => {
 
 // ── adaptProcedureFromDetail — IHKE3308S02 ───────────────────────────
 
-describe("adaptProcedureFromDetail", () => {
+describe("adaptProcedureFromDetail (Option B — one Procedure per NHI 醫令 order item)", () => {
   test("date prefers sub-list exe_S_DATE over func_DATE (inpatient mid-stay procedure case)", () => {
-    // Simulated inpatient case where the procedure was performed
-    // mid-stay (admit 9/23, surgery 9/25). Anchoring on func_DATE
-    // would land the procedure on the admission day; exe_S_DATE
-    // gives the truth.
     const item = {
       func_DATE: "115/09/23",
       op_CODE: "08B53ZZ",
@@ -517,45 +513,69 @@ describe("adaptProcedureFromDetail", () => {
         { exe_S_DATE: "115/09/25||2026/09/25", order_CODE: "86412B", order_CODE_NAME: "Y||Y" },
       ],
     };
-    expect(adaptProcedureFromDetail(item).date).toBe("2026-09-25");
+    const rows = adaptProcedureFromDetail(item);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].date).toBe("2026-09-25");
   });
 
-  test("date falls back to func_DATE when sub-list is empty", () => {
+  test("fallback: emits one op_CODE Procedure when sub-list is empty", () => {
     const item = {
       func_DATE: "103/09/23",
       op_CODE: "08B53ZZ",
       op_CODE_CNAME: "08B53ZZ/X||08B53ZZ/X",
       sp_IHKE3308S04_data_list: [],
     };
-    expect(adaptProcedureFromDetail(item).date).toBe("2014-09-23");
+    const rows = adaptProcedureFromDetail(item);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].date).toBe("2014-09-23");
+    expect(rows[0].code).toBe("08B53ZZ");
+    expect(rows[0].system).toBe("icd-10-pcs");
   });
 
-  test("display strips leading <CODE>/ prefix from English op_CODE_CNAME", () => {
+  test("primary code/title = NHI 醫令 order item; op_CODE PCS rides as secondary", () => {
     const item = {
       func_DATE: "103/09/23",
       op_CODE: "08B53ZZ",
       op_CODE_CNAME:
         "08B53ZZ/經皮左側玻璃體部分切除術||08B53ZZ/Excision of Left Vitreous, Percutaneous Approach",
-      sp_IHKE3308S04_data_list: [{ exe_S_DATE: "103/09/23", order_CODE_NAME: "Y||Y" }],
+      sp_IHKE3308S04_data_list: [
+        {
+          exe_S_DATE: "103/09/23",
+          order_CODE: "86412B",
+          order_CODE_NAME: "微創玻璃體黃斑部手術||Microincision vitreomacular surgery",
+        },
+      ],
     };
-    expect(adaptProcedureFromDetail(item).display).toBe(
-      "Excision of Left Vitreous, Percutaneous Approach",
-    );
+    const rows = adaptProcedureFromDetail(item);
+    expect(rows).toHaveLength(1);
+    const r = rows[0];
+    expect(r.code).toBe("86412B");
+    expect(r.system).toBe("nhi");
+    expect(r.display).toBe("Microincision vitreomacular surgery");
+    expect(r.display_zh).toBe("微創玻璃體黃斑部手術");
+    expect(r.code2).toBe("08B53ZZ");
+    expect(r.system2).toBe("icd-10-pcs");
+    expect(r.display2).toBe("Excision of Left Vitreous, Percutaneous Approach");
   });
 
-  test("emits op_CODE as code + icd-10-pcs system hint", () => {
+  test("one 處置 with multiple order items → multiple Procedures (項=N)", () => {
     const item = {
       func_DATE: "103/09/23",
       op_CODE: "08B53ZZ",
       op_CODE_CNAME: "08B53ZZ/X||08B53ZZ/X",
-      sp_IHKE3308S04_data_list: [{ exe_S_DATE: "103/09/23", order_CODE_NAME: "Y||Y" }],
+      sp_IHKE3308S04_data_list: [
+        { exe_S_DATE: "103/09/23", order_CODE: "86412B", order_CODE_NAME: "甲||Alpha" },
+        { exe_S_DATE: "103/09/23", order_CODE: "86201C", order_CODE_NAME: "乙||Beta" },
+      ],
     };
-    const r = adaptProcedureFromDetail(item);
-    expect(r.code).toBe("08B53ZZ");
-    expect(r.system).toBe("icd-10-pcs");
+    const rows = adaptProcedureFromDetail(item);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.code)).toEqual(["86412B", "86201C"]);
+    expect(rows.map((r) => r.display)).toEqual(["Alpha", "Beta"]);
+    expect(rows.every((r) => r.code2 === "08B53ZZ")).toBe(true);
   });
 
-  test("note carries reason + each sub-list NHI 醫令碼 (so mapper's note-or-body_site filter keeps it)", () => {
+  test("note carries the icd9cm reason only — the order item is now structured, not in the note", () => {
     const item = {
       func_DATE: "103/09/23",
       op_CODE: "08B53ZZ",
@@ -570,52 +590,55 @@ describe("adaptProcedureFromDetail", () => {
         },
       ],
     };
-    const r = adaptProcedureFromDetail(item);
-    expect(r.note).toContain("Reason: H35372 Puckering of macula, left eye");
-    expect(r.note).toContain("施作: Microincision vitreomacular surgery (NHI 86412B)");
+    const r = adaptProcedureFromDetail(item)[0];
+    expect(r.note).toBe("Reason: H35372 Puckering of macula, left eye");
+    expect(r.note).not.toContain("施作");
   });
 
-  test("returns null when display can't be derived", () => {
+  test("returns empty array when neither an order item nor op_CODE yields a procedure", () => {
     expect(
       adaptProcedureFromDetail({
         func_DATE: "103/09/23",
         sp_IHKE3308S04_data_list: [{ exe_S_DATE: "103/09/23" }],
       }),
-    ).toBeNull();
+    ).toEqual([]);
   });
 
-  test("returns null when no date can be derived", () => {
+  test("returns empty array when no date can be derived", () => {
     expect(
       adaptProcedureFromDetail({
         op_CODE: "X",
         op_CODE_CNAME: "X/Y||X/Y",
       }),
-    ).toBeNull();
+    ).toEqual([]);
   });
 
   test("end-to-end fixture: inpatient IHKE3308S02 row", () => {
-    const r = adaptProcedureFromDetail(readFixture("ihke3308-procedure-inpatient.json"));
+    const r = adaptProcedureFromDetail(readFixture("ihke3308-procedure-inpatient.json"))[0];
     expect(r.date).toBe("2014-09-23");
-    expect(r.code).toBe("08B53ZZ");
-    expect(r.display).toBe("Excision of Left Vitreous, Percutaneous Approach");
-    expect(r.system).toBe("icd-10-pcs");
+    expect(r.code).toBe("86412B");
+    expect(r.system).toBe("nhi");
+    expect(r.display).toBe("Microincision vitreomacular surgery");
+    expect(r.display_zh).toBe("微創玻璃體黃斑部手術");
+    expect(r.code2).toBe("08B53ZZ");
+    expect(r.display2).toBe("Excision of Left Vitreous, Percutaneous Approach");
     expect(r.hospital).toBe("臺北榮總");
-    expect(r.note).toContain("Reason: H35372 Puckering of macula, left eye");
-    expect(r.note).toContain("施作: Microincision vitreomacular surgery (NHI 86412B)");
+    expect(r.note).toBe("Reason: H35372 Puckering of macula, left eye");
   });
 
   test("end-to-end fixture: outpatient IHKE3308S02 row (null icd9cm_CODE_CNAME tolerated)", () => {
-    const r = adaptProcedureFromDetail(readFixture("ihke3308-procedure-outpatient.json"));
+    const r = adaptProcedureFromDetail(readFixture("ihke3308-procedure-outpatient.json"))[0];
     expect(r.date).toBe("2014-01-14");
-    expect(r.code).toBe("3E0C3GC");
-    expect(r.display).toBe(
+    expect(r.code).toBe("86201C");
+    expect(r.system).toBe("nhi");
+    expect(r.display).toBe("Intravitreous injection");
+    expect(r.code2).toBe("3E0C3GC");
+    expect(r.display2).toBe(
       "Introduction of Other Therapeutic Substance into Eye, Percutaneous Approach",
     );
     expect(r.hospital).toBe("嘉基醫院");
-    // icd9cm_CODE_CNAME is null in this fixture — note should still have
-    // the sub-list item but no Reason: line.
-    expect(r.note).not.toContain("Reason:");
-    expect(r.note).toContain("施作: Intravitreous injection (NHI 86201C)");
+    // icd9cm_CODE_CNAME is null in this fixture → no Reason: line.
+    expect(r.note).toBe("");
   });
 });
 

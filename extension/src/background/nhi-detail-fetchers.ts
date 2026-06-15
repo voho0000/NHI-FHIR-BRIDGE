@@ -477,8 +477,9 @@ export async function fetchProcedureDetails({ tabId, baseUrl, visits }) {
       ? r.body[PROCEDURE_SPEC.mainDataKey]
       : [];
     for (const row of main) {
-      const adapted = adaptProcedureFromDetail(row);
-      if (adapted) procedures.push(adapted);
+      // adaptProcedureFromDetail now returns an array (one Procedure per NHI
+      // 醫令 order item under the 處置 row).
+      for (const adapted of adaptProcedureFromDetail(row)) procedures.push(adapted);
     }
   }
   return procedures;

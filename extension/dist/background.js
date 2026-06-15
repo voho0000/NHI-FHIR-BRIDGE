@@ -5213,27 +5213,34 @@
   function mapSystem3(systemHint) {
     const s = typeof systemHint === "string" ? systemHint.toLowerCase() : "";
     if (s.includes("snomed")) return SNOMED_CT;
+    if (s.includes("nhi")) return NHI_MEDICAL_ORDER_CODE;
     if (s.includes("icd")) return ICD_10_PCS;
     return HIS_LOCAL_PROCEDURE_CODE;
   }
   function mapProcedure(raw, patientId) {
     const note = (raw.note ?? "").trim();
     const bodySite = (raw.body_site ?? "").trim();
-    if (!note && !bodySite) return null;
+    const code = raw.code;
+    if (!note && !bodySite && !code) return null;
     const display = raw.display ?? "Unknown Procedure";
     const displayZh = (raw.display_zh ?? "").trim() || display;
-    const code = raw.code;
     const system = mapSystem3(raw.system ?? "");
+    const coding = [{ system, code: code || display, display }];
+    const code2 = raw.code2;
+    if (code2) {
+      coding.push({
+        system: mapSystem3(raw.system2 ?? ""),
+        code: code2,
+        display: raw.display2 ?? code2
+      });
+    }
     const resource = {
       resourceType: "Procedure",
       id: stableId(patientId, code || display, raw.date ?? ""),
       meta: { versionId: "1", source: "nhi-fhir-bridge/scraper" },
       status: raw.status ?? "completed",
       subject: { reference: `Patient/${patientId}` },
-      code: {
-        coding: [{ system, code: code || display, display }],
-        text: displayZh
-      }
+      code: { coding, text: displayZh }
     };
     if (raw.date) {
       resource.performedDateTime = `${raw.date}T00:00:00+08:00`;
@@ -6454,43 +6461,58 @@
     return null;
   }
   function adaptProcedureFromDetail(item) {
-    if (!item || typeof item !== "object") return null;
+    if (!item || typeof item !== "object") return [];
     const subList = Array.isArray(item.sp_IHKE3308S04_data_list) ? item.sp_IHKE3308S04_data_list : [];
-    const exeDate = subList.length > 0 ? subList[0].exe_S_DATE || subList[0].exe_s_date || "" : "";
-    const date = rocToISO(exeDate || item.func_DATE || item.func_date || "");
+    const stripCode = (s) => (s || "").replace(/^[A-Z0-9]+\//, "").trim();
     const opCode = item.op_CODE || item.op_code || "";
     const rawOpName = item.op_CODE_CNAME || item.op_code_cname || "";
-    const opName = pickEnglish(rawOpName);
-    const opName_zh = pickChinese(rawOpName);
-    const stripCode = (s) => (s || "").replace(/^[A-Z0-9]+\//, "").trim();
-    const display = stripCode(opName) || opName.trim();
-    const display_zh = stripCode(opName_zh);
-    if (!date || !display) return null;
+    const opDisplay = stripCode(pickEnglish(rawOpName)) || stripCode(pickChinese(rawOpName));
+    const opDisplayZh = stripCode(pickChinese(rawOpName));
     const reasonCode = item.icd9cm_CODE || item.icd9cm_code || "";
-    const reasonName = (pickEnglish(item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || "") || "").replace(/^[A-Z0-9]+\//, "").trim();
-    const noteParts = [];
-    if (reasonName) {
-      noteParts.push(reasonCode ? `Reason: ${reasonCode} ${reasonName}` : `Reason: ${reasonName}`);
-    }
+    const reasonName = stripCode(pickEnglish(item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || ""));
+    const note = reasonName ? reasonCode ? `Reason: ${reasonCode} ${reasonName}` : `Reason: ${reasonName}` : "";
+    const funcDate = item.func_DATE || item.func_date || "";
+    const hospital = item.hosp_ABBR || item.hosp_abbr || "";
+    const rows = [];
     for (const sub of subList) {
-      const subName = pickEnglish(sub.order_CODE_NAME || sub.order_code_name || "").trim();
       const subCode = sub.order_CODE || sub.order_code || "";
-      if (subName) {
-        noteParts.push(subCode ? `\u65BD\u4F5C: ${subName} (NHI ${subCode})` : `\u65BD\u4F5C: ${subName}`);
+      const rawSubName = sub.order_CODE_NAME || sub.order_code_name || "";
+      const subEn = pickEnglish(rawSubName).trim();
+      const subZh = pickChinese(rawSubName).trim();
+      const date = rocToISO(sub.exe_S_DATE || sub.exe_s_date || funcDate);
+      if (!date || !subCode && !subEn && !subZh) continue;
+      rows.push({
+        date,
+        code: subCode,
+        // NHI 醫令碼 (primary) — the actual billed surgery
+        system: subCode ? "nhi" : "",
+        display: subEn || subZh || subCode,
+        display_zh: subZh || subEn || subCode,
+        code2: opCode,
+        // ICD-10-PCS op_CODE (secondary classification)
+        system2: opCode ? "icd-10-pcs" : "",
+        display2: opDisplay,
+        note,
+        body_site: "",
+        hospital
+      });
+    }
+    if (rows.length === 0) {
+      const date = rocToISO(funcDate);
+      if (date && opDisplay) {
+        rows.push({
+          date,
+          code: opCode,
+          system: opCode ? "icd-10-pcs" : "",
+          display: opDisplay,
+          display_zh: opDisplayZh,
+          note,
+          body_site: "",
+          hospital
+        });
       }
     }
-    return {
-      date,
-      code: opCode,
-      // Hint for mapProcedure.mapSystem — "icd-10-pcs" string contains
-      // "icd", so the mapper assigns systems.ICD_10_PCS.
-      system: opCode ? "icd-10-pcs" : "",
-      display,
-      display_zh,
-      note: noteParts.join(" / "),
-      body_site: "",
-      hospital: item.hosp_ABBR || item.hosp_abbr || ""
-    };
+    return rows;
   }
   function adaptImagingReportFromDetail(item, ctx) {
     if (!item || typeof item !== "object") return null;
@@ -7097,8 +7119,7 @@
       if (!r || r.error || !r.body) continue;
       const main = Array.isArray(r.body[PROCEDURE_SPEC.mainDataKey]) ? r.body[PROCEDURE_SPEC.mainDataKey] : [];
       for (const row of main) {
-        const adapted = adaptProcedureFromDetail(row);
-        if (adapted) procedures.push(adapted);
+        for (const adapted of adaptProcedureFromDetail(row)) procedures.push(adapted);
       }
     }
     return procedures;

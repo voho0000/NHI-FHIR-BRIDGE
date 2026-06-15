@@ -75,6 +75,50 @@ describe("mapProcedure", () => {
     expect(r!.code.coding[0].system).toContain("icd-10");
   });
 
+  test("system hint maps to NHI 醫令碼", () => {
+    const r = mapProcedure(
+      { display: "Microincision vitreomacular surgery", code: "86412B", system: "nhi", note: "x" },
+      PID,
+    );
+    expect(r!.code.coding[0].system).toContain("nhi-medical-order");
+  });
+
+  // Relaxed guard (v0.18.14): a row with a real billed code is a genuine
+  // procedure even with no reason note / body site — only no-code stubs drop.
+  test("kept when a real code is present even without note or body_site", () => {
+    const r = mapProcedure(
+      { display: "Intravitreous injection", code: "86201C", system: "nhi", date: "2014-01-14" },
+      PID,
+    );
+    expect(r).not.toBeNull();
+    expect(r!.code.coding[0].code).toBe("86201C");
+    // the "Vaginal ultrasound" stub (no code) still drops
+    expect(mapProcedure({ display: "Vaginal ultrasound" }, PID)).toBeNull();
+  });
+
+  // Option B: NHI 醫令 order code primary + ICD-10-PCS op_CODE secondary.
+  test("secondary coding (code2) appends a second code.coding entry", () => {
+    const r = mapProcedure(
+      {
+        display: "Microincision vitreomacular surgery",
+        display_zh: "微創玻璃體黃斑部手術",
+        code: "86412B",
+        system: "nhi",
+        code2: "08B53ZZ",
+        system2: "icd-10-pcs",
+        display2: "Excision of Left Vitreous, Percutaneous Approach",
+        note: "x",
+      },
+      PID,
+    );
+    expect(r!.code.coding).toHaveLength(2);
+    expect(r!.code.coding[0]).toMatchObject({ code: "86412B", display: "Microincision vitreomacular surgery" });
+    expect(r!.code.coding[0].system).toContain("nhi-medical-order");
+    expect(r!.code.coding[1]).toMatchObject({ code: "08B53ZZ", display: "Excision of Left Vitreous, Percutaneous Approach" });
+    expect(r!.code.coding[1].system).toContain("icd-10");
+    expect(r!.code.text).toBe("微創玻璃體黃斑部手術");
+  });
+
   test("status defaults to 'completed'", () => {
     const r = mapProcedure({ display: "?", note: "x" }, PID);
     expect(r!.status).toBe("completed");

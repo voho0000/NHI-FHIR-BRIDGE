@@ -891,54 +891,80 @@ export function adaptProcedureListStub() {
 //     pass.
 //   - Sub-list entries' order_CODE_NAME + order_CODE go into the note
 //     as 施作: lines so SMART apps can show the NHI billing breakdown.
+// Option B (v0.18.14): emit ONE Procedure per NHI 醫令 order item in
+// sp_IHKE3308S04_data_list — the order code is the actual billed surgery
+// (primary coding + 繁中 title), and the row's op_CODE (ICD-10-PCS
+// classification) rides as a secondary coding on each. A 處置 with 2-3
+// distinct surgeries therefore becomes 2-3 Procedures (so a SMART app counts
+// "N 項" correctly) instead of one Procedure with the surgeries buried in a
+// note. Returns an ARRAY (possibly empty); the caller spreads it.
 export function adaptProcedureFromDetail(item) {
-  if (!item || typeof item !== "object") return null;
+  if (!item || typeof item !== "object") return [];
   const subList = Array.isArray(item.sp_IHKE3308S04_data_list) ? item.sp_IHKE3308S04_data_list : [];
-  // exe_S_DATE format is "115/09/23||2026/09/23"; rocToISO already
-  // matches the first ROC segment, so feeding the whole string works.
-  const exeDate = subList.length > 0 ? subList[0].exe_S_DATE || subList[0].exe_s_date || "" : "";
-  const date = rocToISO(exeDate || item.func_DATE || item.func_date || "");
-  // op_CODE_CNAME is "<CODE>/<中文>||<CODE>/<English>". Take the
-  // English half, strip the leading "<CODE>/" so the display reads
-  // like "Excision of Left Vitreous, Percutaneous Approach" rather
-  // than "08B53ZZ/Excision of Left Vitreous…".
+  const stripCode = (s) => (s || "").replace(/^[A-Z0-9]+\//, "").trim();
+
+  // op_CODE_CNAME is "<CODE>/<中文>||<CODE>/<English>" → strip the "<CODE>/".
   const opCode = item.op_CODE || item.op_code || "";
   const rawOpName = item.op_CODE_CNAME || item.op_code_cname || "";
-  const opName = pickEnglish(rawOpName);
-  const opName_zh = pickChinese(rawOpName);
-  const stripCode = (s) => (s || "").replace(/^[A-Z0-9]+\//, "").trim();
-  const display = stripCode(opName) || opName.trim();
-  const display_zh = stripCode(opName_zh);
-  if (!date || !display) return null;
+  const opDisplay = stripCode(pickEnglish(rawOpName)) || stripCode(pickChinese(rawOpName));
+  const opDisplayZh = stripCode(pickChinese(rawOpName));
 
+  // Reason (icd9cm diagnosis) → note, shared across the row's procedures.
   const reasonCode = item.icd9cm_CODE || item.icd9cm_code || "";
-  const reasonName = (pickEnglish(item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || "") || "")
-    .replace(/^[A-Z0-9]+\//, "")
-    .trim();
-  const noteParts = [];
-  if (reasonName) {
-    noteParts.push(reasonCode ? `Reason: ${reasonCode} ${reasonName}` : `Reason: ${reasonName}`);
-  }
+  const reasonName = stripCode(pickEnglish(item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || ""));
+  const note = reasonName
+    ? reasonCode
+      ? `Reason: ${reasonCode} ${reasonName}`
+      : `Reason: ${reasonName}`
+    : "";
+
+  const funcDate = item.func_DATE || item.func_date || "";
+  const hospital = item.hosp_ABBR || item.hosp_abbr || "";
+
+  const rows = [];
   for (const sub of subList) {
-    const subName = pickEnglish(sub.order_CODE_NAME || sub.order_code_name || "").trim();
+    // order_CODE_NAME is "<中文>||<English>" (no "<CODE>/" prefix).
     const subCode = sub.order_CODE || sub.order_code || "";
-    if (subName) {
-      noteParts.push(subCode ? `施作: ${subName} (NHI ${subCode})` : `施作: ${subName}`);
+    const rawSubName = sub.order_CODE_NAME || sub.order_code_name || "";
+    const subEn = pickEnglish(rawSubName).trim();
+    const subZh = pickChinese(rawSubName).trim();
+    // exe_S_DATE "115/09/23||2026/09/23" — rocToISO matches the ROC segment.
+    const date = rocToISO(sub.exe_S_DATE || sub.exe_s_date || funcDate);
+    if (!date || (!subCode && !subEn && !subZh)) continue;
+    rows.push({
+      date,
+      code: subCode, // NHI 醫令碼 (primary) — the actual billed surgery
+      system: subCode ? "nhi" : "",
+      display: subEn || subZh || subCode,
+      display_zh: subZh || subEn || subCode,
+      code2: opCode, // ICD-10-PCS op_CODE (secondary classification)
+      system2: opCode ? "icd-10-pcs" : "",
+      display2: opDisplay,
+      note,
+      body_site: "",
+      hospital,
+    });
+  }
+
+  // Fallback — detail row with no order items: emit one Procedure from the
+  // op_CODE classification so a genuine procedure isn't dropped entirely.
+  if (rows.length === 0) {
+    const date = rocToISO(funcDate);
+    if (date && opDisplay) {
+      rows.push({
+        date,
+        code: opCode,
+        system: opCode ? "icd-10-pcs" : "",
+        display: opDisplay,
+        display_zh: opDisplayZh,
+        note,
+        body_site: "",
+        hospital,
+      });
     }
   }
 
-  return {
-    date,
-    code: opCode,
-    // Hint for mapProcedure.mapSystem — "icd-10-pcs" string contains
-    // "icd", so the mapper assigns systems.ICD_10_PCS.
-    system: opCode ? "icd-10-pcs" : "",
-    display,
-    display_zh,
-    note: noteParts.join(" / "),
-    body_site: "",
-    hospital: item.hosp_ABBR || item.hosp_abbr || "",
-  };
+  return rows;
 }
 
 // IHKE3408S01 (影像檢查 list) shape:
