@@ -909,14 +909,13 @@ export function adaptProcedureFromDetail(item) {
   const opDisplay = stripCode(pickEnglish(rawOpName)) || stripCode(pickChinese(rawOpName));
   const opDisplayZh = stripCode(pickChinese(rawOpName));
 
-  // Reason (icd9cm diagnosis) → note, shared across the row's procedures.
+  // Reason (icd9cm diagnosis) — bilingual; the mapper surfaces it as a
+  // structured Procedure.reasonCode (was an English-only "Reason: …" note).
+  // icd9cm_CODE_CNAME is "<code>/<中文>||<code>/<English>".
   const reasonCode = item.icd9cm_CODE || item.icd9cm_code || "";
-  const reasonName = stripCode(pickEnglish(item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || ""));
-  const note = reasonName
-    ? reasonCode
-      ? `Reason: ${reasonCode} ${reasonName}`
-      : `Reason: ${reasonName}`
-    : "";
+  const rawReason = item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || "";
+  const reasonEn = stripCode(pickEnglish(rawReason));
+  const reasonZh = stripCode(pickChinese(rawReason));
 
   const funcDate = item.func_DATE || item.func_date || "";
   const hospital = item.hosp_ABBR || item.hosp_abbr || "";
@@ -940,7 +939,9 @@ export function adaptProcedureFromDetail(item) {
       code2: opCode, // ICD-10-PCS op_CODE (secondary classification)
       system2: opCode ? "icd-10-pcs" : "",
       display2: opDisplay,
-      note,
+      reason: reasonEn,
+      reason_zh: reasonZh,
+      reason_code: reasonCode,
       body_site: "",
       hospital,
     });
@@ -957,7 +958,9 @@ export function adaptProcedureFromDetail(item) {
         system: opCode ? "icd-10-pcs" : "",
         display: opDisplay,
         display_zh: opDisplayZh,
-        note,
+        reason: reasonEn,
+        reason_zh: reasonZh,
+        reason_code: reasonCode,
         body_site: "",
         hospital,
       });

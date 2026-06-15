@@ -7,6 +7,7 @@
  * / etc. which are clinically wrong.
  */
 
+import { normalizeIcd10Cm } from "./condition";
 import { stableId } from "./helpers";
 import * as systems from "./systems";
 
@@ -70,6 +71,29 @@ export function mapProcedure(
   }
   if (note) {
     resource.note = [{ text: note }];
+  }
+
+  // Reason (diagnosis) — structured + bilingual, mirroring Encounter.reasonCode
+  // exactly: coding ICD-10-CM (dotted form) + English display, 繁中 in .text.
+  // Replaces the older English-only "Reason: …" note so apps can switch zh/en.
+  const reasonEn = ((raw.reason ?? "") as string).trim();
+  const reasonZh = ((raw.reason_zh ?? "") as string).trim();
+  const reasonCodeRaw = ((raw.reason_code ?? "") as string).trim();
+  if (reasonEn || reasonZh || reasonCodeRaw) {
+    const rc: Record<string, any> = {};
+    if (reasonCodeRaw) {
+      const displayPlain = reasonEn.replace(new RegExp(`^${reasonCodeRaw}\\s+`), "").trim();
+      const cd: Record<string, any> = {
+        system: "http://hl7.org/fhir/sid/icd-10-cm",
+        code: normalizeIcd10Cm(reasonCodeRaw),
+      };
+      const disp = displayPlain || reasonEn || reasonZh;
+      if (disp) cd.display = disp;
+      rc.coding = [cd];
+    }
+    const txt = reasonZh || reasonEn;
+    if (txt) rc.text = txt;
+    if (rc.coding || rc.text) resource.reasonCode = [rc];
   }
 
   // performer.actor — display-only Reference (no Practitioner / Organization

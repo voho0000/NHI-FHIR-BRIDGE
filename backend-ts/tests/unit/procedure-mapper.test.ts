@@ -119,6 +119,41 @@ describe("mapProcedure", () => {
     expect(r!.code.text).toBe("微創玻璃體黃斑部手術");
   });
 
+  // Diagnosis reason → structured + bilingual reasonCode (same convention as
+  // Encounter.reasonCode), replacing the old English-only "Reason: …" note.
+  test("reason fields → bilingual reasonCode (ICD-10-CM dotted, en display, 繁中 text)", () => {
+    const r = mapProcedure(
+      {
+        display: "Microincision vitreomacular surgery",
+        code: "86412B",
+        system: "nhi",
+        reason: "Puckering of macula, left eye",
+        reason_zh: "左側眼黃斑部皺褶",
+        reason_code: "H35372",
+      },
+      PID,
+    );
+    expect(r!.reasonCode).toHaveLength(1);
+    expect(r!.reasonCode[0].coding[0]).toMatchObject({
+      system: "http://hl7.org/fhir/sid/icd-10-cm",
+      code: "H35.372",
+      display: "Puckering of macula, left eye",
+    });
+    expect(r!.reasonCode[0].text).toBe("左側眼黃斑部皺褶");
+  });
+
+  test("reason code but no name → reasonCode coding only (no empty display / text)", () => {
+    const r = mapProcedure(
+      { display: "Intravitreous injection", code: "86201C", system: "nhi", reason_code: "H4011X0" },
+      PID,
+    );
+    expect(r!.reasonCode[0].coding[0]).toEqual({
+      system: "http://hl7.org/fhir/sid/icd-10-cm",
+      code: "H40.11X0",
+    });
+    expect(r!.reasonCode[0].text).toBeUndefined();
+  });
+
   test("status defaults to 'completed'", () => {
     const r = mapProcedure({ display: "?", note: "x" }, PID);
     expect(r!.status).toBe("completed");

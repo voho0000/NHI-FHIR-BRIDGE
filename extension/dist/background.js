@@ -5251,6 +5251,25 @@
     if (note) {
       resource.note = [{ text: note }];
     }
+    const reasonEn = (raw.reason ?? "").trim();
+    const reasonZh = (raw.reason_zh ?? "").trim();
+    const reasonCodeRaw = (raw.reason_code ?? "").trim();
+    if (reasonEn || reasonZh || reasonCodeRaw) {
+      const rc = {};
+      if (reasonCodeRaw) {
+        const displayPlain = reasonEn.replace(new RegExp(`^${reasonCodeRaw}\\s+`), "").trim();
+        const cd = {
+          system: "http://hl7.org/fhir/sid/icd-10-cm",
+          code: normalizeIcd10Cm(reasonCodeRaw)
+        };
+        const disp = displayPlain || reasonEn || reasonZh;
+        if (disp) cd.display = disp;
+        rc.coding = [cd];
+      }
+      const txt = reasonZh || reasonEn;
+      if (txt) rc.text = txt;
+      if (rc.coding || rc.text) resource.reasonCode = [rc];
+    }
     const hospital = (raw.hospital ?? "").trim();
     if (hospital) {
       resource.performer = [{ actor: { display: hospital } }];
@@ -6469,8 +6488,9 @@
     const opDisplay = stripCode(pickEnglish(rawOpName)) || stripCode(pickChinese(rawOpName));
     const opDisplayZh = stripCode(pickChinese(rawOpName));
     const reasonCode = item.icd9cm_CODE || item.icd9cm_code || "";
-    const reasonName = stripCode(pickEnglish(item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || ""));
-    const note = reasonName ? reasonCode ? `Reason: ${reasonCode} ${reasonName}` : `Reason: ${reasonName}` : "";
+    const rawReason = item.icd9cm_CODE_CNAME || item.icd9cm_code_cname || "";
+    const reasonEn = stripCode(pickEnglish(rawReason));
+    const reasonZh = stripCode(pickChinese(rawReason));
     const funcDate = item.func_DATE || item.func_date || "";
     const hospital = item.hosp_ABBR || item.hosp_abbr || "";
     const rows = [];
@@ -6492,7 +6512,9 @@
         // ICD-10-PCS op_CODE (secondary classification)
         system2: opCode ? "icd-10-pcs" : "",
         display2: opDisplay,
-        note,
+        reason: reasonEn,
+        reason_zh: reasonZh,
+        reason_code: reasonCode,
         body_site: "",
         hospital
       });
@@ -6506,7 +6528,9 @@
           system: opCode ? "icd-10-pcs" : "",
           display: opDisplay,
           display_zh: opDisplayZh,
-          note,
+          reason: reasonEn,
+          reason_zh: reasonZh,
+          reason_code: reasonCode,
           body_site: "",
           hospital
         });

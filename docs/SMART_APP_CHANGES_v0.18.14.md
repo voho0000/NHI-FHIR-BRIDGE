@@ -8,6 +8,9 @@
 > 受影響的只有 **`Procedure`** 資源。其餘資源（Observation／DiagnosticReport／Immunization／Condition…）不受影響。
 > 最低 bundle 版本 **0.18.14**；版本可從 `Bundle.meta.tag` 讀取：`{system:".../bridge-version", code:"0.18.14"}`。
 
+> ### 🔄 v0.18.16 更新：診斷理由改為結構化雙語 `reasonCode`
+> 手術的 icd9cm 診斷理由先前放在 `Procedure.note` 的英文自由文字（`Reason: …`）。**0.18.16 起改為結構化的 `Procedure.reasonCode[]`**（與 `Encounter.reasonCode` 同一套雙語慣例）：`coding` 掛 ICD-10-CM（有點碼）＋英文 `display`、中文放 `text` —— 讓 App 能對診斷做中英切換。**`Procedure.note` 不再帶診斷理由**（請改讀 `reasonCode`）。本文件下方範例與欄位表已更新為 0.18.16 形狀。
+
 ---
 
 ## 1. 問題（v0.18.14 之前）
@@ -33,7 +36,7 @@ bridge 其實有抓到這些醫令，但：
 - `code.coding[0]` = **NHI 醫令碼**（主碼，實際施作的手術）
 - `code.coding[1]` = **ICD-10-PCS `op_CODE`**（次要分類碼，同一列的處置分類，多筆醫令共用）
 - `code.text` = **手術名（繁中）**
-- `note` = icd9cm 診斷理由（若 NHI 有提供）
+- `reasonCode[]` = icd9cm 診斷理由（雙語；v0.18.16 起，原為 `note`）
 - 一處置含 2-3 筆醫令 → **2-3 個 `Procedure`**（App 的「N 項」即為 Procedure 個數）
 
 ### 實際範例（你提供的真實兩筆）
@@ -61,12 +64,19 @@ bridge 其實有抓到這些醫令，但：
     "text": "微創玻璃體黃斑部手術"
   },
   "performedDateTime": "2016-09-23T00:00:00+08:00",
-  "note": [{ "text": "Reason: H35372 Puckering of macula, left eye" }],
+  "reasonCode": [{
+    "coding": [{
+      "system": "http://hl7.org/fhir/sid/icd-10-cm",
+      "code": "H35.372",
+      "display": "Puckering of macula, left eye"
+    }],
+    "text": "左側眼黃斑部皺褶"
+  }],
   "performer": [{ "actor": { "display": "臺北榮總" } }]
 }
 ```
 
-**案例二（門診・嘉基醫院・2016-01-14；NHI 未提供診斷理由 → 無 note）**
+**案例二（門診・嘉基醫院・2016-01-14；NHI 只給診斷碼、無病名 → `reasonCode` 只有 `coding.code`）**
 
 ```json
 {
@@ -88,6 +98,9 @@ bridge 其實有抓到這些醫令，但：
     ],
     "text": "玻璃體內注射"
   },
+  "reasonCode": [{
+    "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "H40.11X0" }]
+  }],
   "performedDateTime": "2016-01-14T00:00:00+08:00",
   "performer": [{ "actor": { "display": "嘉基醫院" } }]
 }
@@ -107,7 +120,8 @@ bridge 其實有抓到這些醫令，但：
 | `code.coding[1].display` | `op_CODE_CNAME`（英文半，去 `<碼>/` 前綴） | 分類英文名 |
 | `code.text` | `order_CODE_NAME`（中文半） | **手術繁中名（建議拿來當標題）** |
 | `performedDateTime` | `sp_…[].exe_S_DATE`（無則 `func_DATE`） | 執行日（含時區 `+08:00`） |
-| `note[].text` | `icd9cm_CODE` + `icd9cm_CODE_CNAME` | `Reason: <碼> <英文病名>`；NHI 未給診斷則**無 note** |
+| `reasonCode[].coding[0]` | `icd9cm_CODE` + `icd9cm_CODE_CNAME` | 診斷理由(v0.18.16 起)。system `http://hl7.org/fhir/sid/icd-10-cm`、`code` 為有點碼(H35372→H35.372)、`display` 英文病名 |
+| `reasonCode[].text` | `icd9cm_CODE_CNAME`(中文半) | 診斷中文病名(供中英切換)。NHI 只給碼無病名時 → 無 `text`、只有 `coding.code` |
 | `performer[].actor.display` | `hosp_ABBR` | 院所（display-only，未鑄 Organization 資源） |
 
 > **`code.coding` 的順序語意**：`[0]` 一律是 NHI 醫令碼（最具體的手術碼），`[1]` 是 PCS 分類碼。建議顯示時優先用 `[0]` 或 `code.text`。
@@ -133,7 +147,7 @@ bridge 其實有抓到這些醫令，但：
 - **單台手術**（你目前所有 case）→ 1 個 Procedure，含 NHI + PCS 兩個 coding。✓
 - **一處置多台手術** → N 個 Procedure（`order_CODE` 各異），共用同一個 `op_CODE` 次要 coding。✓
 - **detail 無醫令子項**（罕見）→ fallback 為 1 個 Procedure，主碼用 `op_CODE`（ICD-10-PCS）。✓
-- **NHI 未提供診斷理由**（`icd9cm_CODE_CNAME: null`，如案例二）→ 正常產出、無 `note`。✓
+- **NHI 只給診斷碼、無病名**（`icd9cm_CODE_CNAME: null`，如案例二）→ `reasonCode` 只帶 `coding.code`（無 `display` / `text`），App 可自行用 ICD-10-CM 解析病名。✓
 - bridge 仍會擋掉「只有 display、無任何醫令碼」的 NHI 清單 stub（如歷史上的偽 procedure「Vaginal ultrasound」），避免污染。
 
 ---

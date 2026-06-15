@@ -575,7 +575,7 @@ describe("adaptProcedureFromDetail (Option B — one Procedure per NHI 醫令 or
     expect(rows.every((r) => r.code2 === "08B53ZZ")).toBe(true);
   });
 
-  test("note carries the icd9cm reason only — the order item is now structured, not in the note", () => {
+  test("icd9cm reason surfaced as bilingual reason fields (→ structured Procedure.reasonCode)", () => {
     const item = {
       func_DATE: "103/09/23",
       op_CODE: "08B53ZZ",
@@ -591,8 +591,10 @@ describe("adaptProcedureFromDetail (Option B — one Procedure per NHI 醫令 or
       ],
     };
     const r = adaptProcedureFromDetail(item)[0];
-    expect(r.note).toBe("Reason: H35372 Puckering of macula, left eye");
-    expect(r.note).not.toContain("施作");
+    expect(r.reason).toBe("Puckering of macula, left eye");
+    expect(r.reason_zh).toBe("左側眼黃斑部皺褶");
+    expect(r.reason_code).toBe("H35372");
+    expect(r.note).toBeUndefined();
   });
 
   test("returns empty array when neither an order item nor op_CODE yields a procedure", () => {
@@ -623,7 +625,9 @@ describe("adaptProcedureFromDetail (Option B — one Procedure per NHI 醫令 or
     expect(r.code2).toBe("08B53ZZ");
     expect(r.display2).toBe("Excision of Left Vitreous, Percutaneous Approach");
     expect(r.hospital).toBe("臺北榮總");
-    expect(r.note).toBe("Reason: H35372 Puckering of macula, left eye");
+    expect(r.reason).toBe("Puckering of macula, left eye");
+    expect(r.reason_zh).toBe("左側眼黃斑部皺褶");
+    expect(r.reason_code).toBe("H35372");
   });
 
   test("end-to-end fixture: outpatient IHKE3308S02 row (null icd9cm_CODE_CNAME tolerated)", () => {
@@ -637,8 +641,10 @@ describe("adaptProcedureFromDetail (Option B — one Procedure per NHI 醫令 or
       "Introduction of Other Therapeutic Substance into Eye, Percutaneous Approach",
     );
     expect(r.hospital).toBe("嘉基醫院");
-    // icd9cm_CODE_CNAME is null in this fixture → no Reason: line.
-    expect(r.note).toBe("");
+    // icd9cm_CODE_CNAME is null in this fixture → code only, no names.
+    expect(r.reason).toBe("");
+    expect(r.reason_zh).toBe("");
+    expect(r.reason_code).toBe("H4011X0");
   });
 });
 
