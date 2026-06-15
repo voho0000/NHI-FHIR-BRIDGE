@@ -3,6 +3,11 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.18.16 重點 — 2026-06-15
+
+- **手術的診斷理由（ICD）改為結構化雙語**：手術紀錄的 icd9cm 診斷（如「左側眼黃斑部皺褶 / Puckering of macula, left eye」）先前只放英文在 `Procedure.note` 自由文字，對接 App 無法做中英切換。現在改為結構化的 **`Procedure.reasonCode`**（與就醫診斷 `Encounter.reasonCode` 同一套）：ICD-10-CM 碼（正規化成有點形式，如 `H35.372`）＋英文 `display`、中文放 `text`。NHI 只給碼、未給病名時則只帶碼。
+- **對接 App 注意**：`Procedure.note` 不再帶診斷理由，請改讀 `reasonCode`。詳見 `docs/SMART_APP_CHANGES_v0.18.14.md`（已補 v0.18.16 更新說明）。
+
 ## 0.18.15 重點 — 2026-06-15
 
 - **下載後新增「妥善保管」提醒**：取得健康紀錄檔後，檔名下方會出現一則柔和提醒 —— 這份檔案含你完整的就醫資料，請妥善保管；要給第三方使用前，建議開啟去識別化，並約定使用期限與日後可要求刪除的權利。比照健康存摺本身下載時的聲明，只在產生檔案後才出現（本機下載／本機伺服器皆會顯示）。原本的「資料只在你電腦上處理、不傳雲端」安全說明維持不變。
