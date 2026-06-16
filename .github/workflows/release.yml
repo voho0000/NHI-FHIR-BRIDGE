@@ -69,11 +69,23 @@ jobs:
           fi
           echo "tag v$TAG_VER == manifest $MANIFEST_VER ✓"
 
-      - name: Zip extension/dist
+      - name: Zip extension/dist (manifest.json MUST be at archive root)
         run: |
-          cd extension
-          zip -r ../nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip dist
-          cd ..
+          ZIP="nhi-fhir-bridge-extension-${{ steps.ver.outputs.tag }}.zip"
+          # Chrome Web Store requires manifest.json at the archive ROOT.
+          # Zipping `dist` from extension/ would nest everything under dist/
+          # (dist/manifest.json) → store rejects "Manifest missing or
+          # unreadable". Zip the CONTENTS of dist instead.
+          cd extension/dist
+          zip -r "../../$ZIP" .
+          cd ../..
+          echo "=== archive root listing ==="
+          unzip -l "$ZIP"
+          if ! unzip -l "$ZIP" | grep -qE ' manifest\.json$'; then
+            echo "::error::manifest.json is not at the archive root — Chrome Web Store will reject this zip."
+            exit 1
+          fi
+          echo "manifest.json at archive root ✓"
           ls -la *.zip
 
       - name: Extract CHANGELOG entry for this version

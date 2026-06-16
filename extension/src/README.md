@@ -1,6 +1,15 @@
 # NHI-FHIR Bridge — Chrome Extension
 
-A Manifest V3 Chrome Extension that captures pages from 健保署健康存摺 (`myhealthbank.nhi.gov.tw`) and sends them to the NHI-FHIR-Bridge backend for FHIR R4 conversion.
+A Manifest V3 Chrome extension that reads your records from 健保署健康存摺
+(`myhealthbank.nhi.gov.tw`) and converts them to **HL7 FHIR R4 locally, inside
+the extension**. By default the result is **downloaded to your own machine** as
+a JSON file — nothing is sent to any server. An optional advanced mode can
+upload to a self-hosted local backend (see below).
+
+> Data flow: NHI portal → (in-browser conversion) → **Save-as download on your
+> machine**. No developer server, no AI/LLM, no telemetry. See
+> [docs/PRIVACY.md](../../docs/PRIVACY.md) and
+> [docs/SECURITY_FOR_USERS.md](../../docs/SECURITY_FOR_USERS.md).
 
 ---
 
@@ -8,67 +17,49 @@ A Manifest V3 Chrome Extension that captures pages from 健保署健康存摺 (`
 
 1. Open Chrome → `chrome://extensions`
 2. Enable **Developer mode** (top-right toggle)
-3. Click **Load unpacked** → select this `extension/` folder
-4. The NHI-FHIR Bridge icon appears in the toolbar
+3. Run `npm run build:extension` (repo root) to produce `extension/dist/`
+4. Click **Load unpacked** → select the `extension/dist/` folder
+5. The NHI-FHIR Bridge icon appears in the toolbar
+
+(End users install the packaged build from the Chrome Web Store instead.)
 
 ---
 
-## Usage
+## Usage (default: download to disk)
 
-### Prerequisites
+1. Log in to `myhealthbank.nhi.gov.tw` with your IC card or health card
+2. Navigate to any 健康存摺 page
+3. Click the NHI-FHIR Bridge icon
+4. (Optional) Fill in **Patient Override** — 身分證字號 / name / birth date — if
+   the portal renders identity as an image that can't be read
+5. Pick a date range and click **同步本人資料 / Sync This Patient** — the
+   extension calls NHI's underlying JSON endpoints in-page (reusing your
+   first-party session), walks every section, and converts to FHIR locally
+6. When the **📥 下載健康紀錄檔** button appears, click it → a **Save As**
+   dialog lets you choose where the FHIR bundle JSON lands
 
-- Start the backend: `docker compose up --build` (or `cd backend && uvicorn app.main:app --reload`)
-- Log in to `myhealthbank.nhi.gov.tw` with your IC card or health card
-
-### Sync Modes
-
-| Mode | When to use | How it works |
-|------|-------------|--------------|
-| **Capture & Sync** (single page) | Any NHI page | Grabs current page HTML → POST to backend |
-| **Sync This Patient** | Any NHI page | Auto-navigates through all 健康存摺 pages in sequence |
-| **API-Direct Sync** | When id_no is set in popup | Calls NHI's underlying JSON endpoints directly |
-
-### Step-by-step: Sync This Patient
-
-1. Log in to `myhealthbank.nhi.gov.tw` (IC card or health card required)
-2. Navigate to any 健康存摺 page (e.g., 藥品醫囑)
-3. Click the NHI-FHIR Bridge extension icon
-4. (Optional) Fill in **Patient Override** — 身分證字號 / name / birth date — if the NHI portal hides patient identity
-5. Click **Sync This Patient** — the extension drives your tab through each section automatically
-6. Progress is shown in the popup; you can close it mid-sync — the background service worker continues
-
-### Step-by-step: Manual Capture
-
-Useful for individual pages or when automatic navigation fails.
-
-1. Navigate to the target NHI page
-2. Click the extension icon
-3. Confirm the detected page type
-4. Click **Capture & Sync**
+You can close the popup mid-sync; the background service worker continues.
 
 ---
 
-## Recognized NHI Pages
+## Output
 
-| IHKE Code | Page Type | Content |
-|-----------|-----------|---------|
-| IHKE3101S01 | `patient_info` | 個人基本資料 |
-| IHKE3306S01 / S02 | `medications` | 藥品醫囑 |
-| IHKE3303S02 | `encounters` | 就醫紀錄 |
-| IHKE3401S01 / IHKE3407S01 | `observations` | 檢驗檢查 |
-| IHKE3202S01 | `allergies` | 藥物過敏 |
-| IHKE3301S05 | `procedures` | 手術醫療程序 |
+One FHIR R4 `Bundle` (JSON), file-named
+`nhi-<masked-id>-<from>-<to>-v<bridge-version>.json`. Resource types emitted:
+`Patient`, `Encounter`, `MedicationRequest`, `Observation`,
+`DiagnosticReport`, `Procedure`, `AllergyIntolerance`, `Immunization`,
+`Condition`, and more — see the page table in the
+[root README](../../README.md).
 
 ---
 
 ## Patient Override
 
-NHI 健康存摺 sometimes renders patient identity in images rather than text, making it unscrapeable. The **Patient Override** section in the popup lets you manually supply:
-
-- **身分證字號** (id_no) — used as the FHIR Patient ID
-- Name, birth date, gender (optional)
-
-These values are saved in `chrome.storage.local` and sent with every upload from that tab session.
+NHI 健康存摺 sometimes renders patient identity as an image rather than text.
+The **Patient Override** section lets you supply 身分證字號 (used to derive the
+FHIR Patient id), name, birth date, and gender. These are stored in
+`chrome.storage.local` (browser-local only — never synced to your Google
+account) and used for that tab session.
 
 ---
 
@@ -76,18 +67,37 @@ These values are saved in `chrome.storage.local` and sent with every upload from
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| Backend URL | `http://localhost:8010` | NHI-FHIR-Bridge backend |
-| Sync API Key | *(empty)* | Optional `X-Sync-API-Key` header for backend auth |
-| SMART App URL | demo app | URL launched via SMART on FHIR |
+| 抓影像 (fetch imaging) | off | Also trigger + retrieve NHI imaging JPEGs (slower) |
+| 去識別化 (de-identify) | off | Derive `Patient.id` from the half-masked ID |
+| Backend URL | *(empty)* | **Advanced**: self-hosted local FHIR backend to upload to |
+| Sync API Key | *(empty)* | **Advanced**: `X-Sync-API-Key` header for backend auth |
+| SMART App URL | demo app | URL launched via SMART on FHIR (advanced) |
 
-Settings persist in `chrome.storage.sync` across Chrome profiles.
+All settings persist in `chrome.storage.local` (browser-local; not
+`chrome.storage.sync` — preferences stay on this machine).
+
+---
+
+## Advanced: local backend mode
+
+Toggling **進階設定 → 啟用本機伺服器模式** switches the output from
+download-to-disk to uploading the FHIR resources to a self-hosted backend
+(default `http://localhost`, gated behind `optional_host_permissions` requested
+at the moment you enable it). This is for users who self-host the Docker
+backend + Dashboard; the default flow needs no backend. See
+[backend-ts/README.md](../../backend-ts/README.md) and
+[docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md).
 
 ---
 
 ## Architecture
 
 ```
-popup.js        — UI logic, page detection, button handlers
-background.js   — Service worker: runNhiSync() tab-navigation, runNhiApiSync()
-manifest.json   — MV3 config, host_permissions for myhealthbank.nhi.gov.tw
+src/popup/          — popup UI (wizard, date range, settings)
+src/background/      — MV3 service worker: NHI API sync, imaging fetch, bundle build
+src/manifest.json   — MV3 config; host_permissions: myhealthbank.nhi.gov.tw only
+packages/mapper/    — shared NHI → FHIR R4 mapping logic (also used by backend-ts)
 ```
+
+The build (`npm run build:extension`) bundles TypeScript `src/` into
+`extension/dist/` (the only folder loaded by Chrome / shipped to the store).
