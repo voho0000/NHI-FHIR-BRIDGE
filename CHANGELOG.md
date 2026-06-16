@@ -3,6 +3,15 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.8 重點 — 2026-06-16（上架前整備:名稱統一、AI/雲端文案釐清、release zip 修正）
+
+純整備版,無 FHIR 資料模型或關聯邏輯變更(對接 SMART app 合約不變)。源自上架前第三方稽核:
+
+- **擴充功能名稱統一為 `NHI-FHIR Bridge`**:manifest `name` 原為「NHI-FHIR Bridge **Capture**」(早期「只擷取頁面送後端」架構的殘留字),與 README / 文件 / 商店草稿用的「NHI-FHIR Bridge」不一致。現已統一 —— 它早已不只是 capture,而是在本機做完整 FHIR 轉換。
+- **popup「AI 問答」文案釐清為外部雲端選用功能**:商店描述強調 Bridge「不接 AI、不上雲」(對 Bridge 本身為真),但 popup 列出的「AI 問答」是**外部工具「醫析 MediPrisma」**的功能、使用時會把資料送到雲端 LLM(OpenAI / Gemini)。文案改為明確標示「選用、外部雲端,Bridge 本身不接 AI、不上雲」,避免審查者或使用者混淆。
+- **release zip 形狀修正(CI)**:打包指令原本 `zip -r dist`,會把 `manifest.json` 包進 `dist/` 子目錄(`dist/manifest.json`),Chrome Web Store 會以「Manifest missing or unreadable」退件。改為從 `extension/dist` 內部打包,讓 `manifest.json` 落在 archive root;並加 `unzip -l` guard,root 沒有 manifest 直接 fail CI。
+- **次要**:popup 管理介面連結補上 `rel="noopener"`;`extension/src/README.md` 重寫對齊現況(本機轉換/下載、`storage.local`、backend 為進階選用),原本描述舊的「送 Python backend、抓 HTML、`storage.sync`」架構;README/商店「200+ NHI-to-LOINC」用詞修正為「200+ 條檢驗項目對 LOINC 對照規則」(`NHI_TO_LOINC` 實為 103 條,200+ 是多張路由表合計)。
+
 ## 0.20.7 重點 — 2026-06-16（住院手術:移除誤導的原因 + 主/次處置用 partOf 串接）
 
 源自 App 端回饋(v0.20.5 住院手術上線後):
