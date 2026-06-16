@@ -99,7 +99,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             syncStatus: {
               running: false,
               progress:
-                "🔒 健保存摺登入逾時 — 請回到健保存摺分頁重新登入，然後再按「取得健保存摺資料」",
+                "🔒 健康存摺登入逾時 — 請回到健康存摺分頁重新登入，然後再按「取得健康存摺資料」",
               phase: "session_expired",
               ts: Date.now(),
               completed: Date.now(),
@@ -207,7 +207,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           running: false,
           phase: "error",
           progress:
-            "上次取得中斷了（可能因瀏覽器背景休眠或分頁關閉）。請重新「取得健保存摺資料」。",
+            "上次取得中斷了（可能因瀏覽器背景休眠或分頁關閉）。請重新「取得健康存摺資料」。",
         };
         await chrome.storage.local.set({ [STORAGE_KEY]: dead }).catch(() => {});
         sendResponse(dead);

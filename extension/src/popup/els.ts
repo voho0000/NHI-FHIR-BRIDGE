@@ -27,6 +27,7 @@ export const els = {
   // v0.16.0: imaging prep banner — appears post-sync when NHI is still
   // preparing N images. Lives in imaging-prep-banner.ts.
   prepBanner: byId("imaging-prep-banner"),
+  prepIcon: byId("prep-icon"),
   prepTitle: byId("prep-title"),
   prepProgress: byId("prep-progress"),
   prepCloseBtn: byId("prep-close-btn"),

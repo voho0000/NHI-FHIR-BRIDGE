@@ -59,16 +59,16 @@ export async function apiSyncNhi() {
   try {
     url = new URL(tab.url);
   } catch {
-    setStatus("使用中的分頁沒有網址 — 請切換到健保存摺網頁再試", "error");
+    setStatus("使用中的分頁沒有網址 — 請切換到健康存摺網頁再試", "error");
     return;
   }
   const onLogin = await isOnNhiLoginPage(tab.id, url);
   if (onLogin) {
     // Login guidance, not a crash — render as the gentle "info" status
     // (blue left-bar) with the same wording as the disabled-CTA strip
-    // (.cta-reason "健保存摺分頁尚未登入"). 🔒 is reserved for the safety
+    // (.cta-reason "健康存摺分頁尚未登入"). 🔒 is reserved for the safety
     // reassurance card; a login precondition shouldn't borrow it.
-    setStatus("健保存摺分頁尚未登入 — 回 ① 登入", "info");
+    setStatus("健康存摺分頁尚未登入 — 回 ① 登入", "info");
     return;
   }
 
@@ -90,13 +90,13 @@ export async function apiSyncNhi() {
   await chrome.storage.local.set({
     syncStatus: {
       running: true,
-      progress: "開始取得健保存摺資料…",
+      progress: "開始取得健康存摺資料…",
       phase: "starting",
       started: Date.now(),
       ts: Date.now(),
     },
   });
-  setStatus("開始取得健保存摺資料…", "info");
+  setStatus("開始取得健康存摺資料…", "info");
 
   // Compute date range from the dropdown. "1" = NHI's default window;
   // anything else is "today back N years". Helper inside background.js
@@ -151,7 +151,7 @@ export async function launch() {
     return;
   }
   if (!rawId) {
-    setStatus("還沒有身分資料 — 請先按「取得健保存摺資料」一次", "error");
+    setStatus("還沒有身分資料 — 請先按「取得健康存摺資料」一次", "error");
     return;
   }
   // Backend tracks Patient under its hashed FHIR id, not the raw national

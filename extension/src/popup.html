@@ -25,7 +25,13 @@
       --notice-error-border: #fecaca;
       --notice-error-fg: #b91c1c;
       --notice-success: #10b981;
+      --notice-success-bg: #f0fdf4;
+      --notice-success-border: #86efac;
+      --notice-success-fg: #166534;
       --notice-neutral-fg: #9ca3af;
+      --notice-neutral-fg-strong: #475569;
+      --notice-neutral-bg: #f8fafc;
+      --notice-neutral-border: #e2e8f0;
     }
     /* [hidden] must win over display rules below. Without this, the
        `button { display: inline-flex }` reset would defeat hidden=true
@@ -845,26 +851,26 @@
       position: relative;
       padding: 10px 30px 10px 12px;
       border-radius: 8px;
-      background: #f0f9ff;
-      border: 1px solid #bae6fd;
+      background: var(--notice-info-bg);
+      border: 1px solid var(--notice-info-border);
       margin-top: 10px;
       font-size: 12px;
       line-height: 1.5;
     }
     .prep-banner[data-state="ready"] {
-      background: #f0fdf4;
-      border-color: #86efac;
+      background: var(--notice-success-bg);
+      border-color: var(--notice-success-border);
     }
     .prep-banner[data-state="timeout"],
     .prep-banner[data-state="session-expired"] {
-      background: #fff7ed;
-      border-color: #fed7aa;
+      background: var(--notice-caution-bg);
+      border-color: var(--notice-caution-border);
     }
     /* "unavailable" = NHI can't prepare the image (phantom). Muted/neutral
        so it reads as a settled informational note, not an active prep. */
     .prep-banner[data-state="unavailable"] {
-      background: #f8fafc;
-      border-color: #e2e8f0;
+      background: var(--notice-neutral-bg);
+      border-color: var(--notice-neutral-border);
     }
     .prep-close {
       position: absolute;
@@ -888,14 +894,29 @@
       flex-direction: column;
       gap: 6px;
     }
+    .prep-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .prep-icon {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      color: var(--notice-info-fg);
+    }
     .prep-title {
       font-weight: 600;
-      color: #075985;
+      color: var(--notice-info-fg);
     }
-    .prep-banner[data-state="ready"] .prep-title { color: #166534; }
-    .prep-banner[data-state="unavailable"] .prep-title { color: #475569; }
+    .prep-banner[data-state="ready"] .prep-title,
+    .prep-banner[data-state="ready"] .prep-icon { color: var(--notice-success-fg); }
+    .prep-banner[data-state="unavailable"] .prep-title,
+    .prep-banner[data-state="unavailable"] .prep-icon { color: var(--notice-neutral-fg-strong); }
     .prep-banner[data-state="timeout"] .prep-title,
-    .prep-banner[data-state="session-expired"] .prep-title { color: #9a3412; }
+    .prep-banner[data-state="timeout"] .prep-icon,
+    .prep-banner[data-state="session-expired"] .prep-title,
+    .prep-banner[data-state="session-expired"] .prep-icon { color: var(--notice-caution-fg); }
     .prep-progress {
       color: #334155;
     }
@@ -911,24 +932,24 @@
       font-weight: 600;
       margin-top: 4px;
       background: white;
-      color: #166534;
-      border: 1px solid #86efac;
+      color: var(--notice-success-fg);
+      border: 1px solid var(--notice-success-border);
     }
     .prep-cta:hover:not(:disabled) {
-      background: #dcfce7;
-      border-color: #4ade80;
+      background: var(--notice-success-bg);
+      border-color: var(--notice-success);
     }
     /* In the amber warning banners (timeout / session-expired) the same CTA
        retints to match its container instead of staying success-green. */
     .prep-banner[data-state="timeout"] .prep-cta,
     .prep-banner[data-state="session-expired"] .prep-cta {
-      color: #9a3412;
-      border-color: #fed7aa;
+      color: var(--notice-caution-fg);
+      border-color: var(--notice-caution-border);
     }
     .prep-banner[data-state="timeout"] .prep-cta:hover:not(:disabled),
     .prep-banner[data-state="session-expired"] .prep-cta:hover:not(:disabled) {
-      background: #fff7ed;
-      border-color: #fdba74;
+      background: var(--notice-caution-bg);
+      border-color: var(--notice-caution-border);
     }
 
     /* ── Status banner ─────────────────────────────────────────────── */
@@ -1470,7 +1491,7 @@
              alt="" class="header-icon" />
         NHI-FHIR Bridge
       </h1>
-      <div class="subtitle">健保存摺 → FHIR 轉換</div>
+      <div class="subtitle">健康存摺 → FHIR 轉換</div>
     </div>
     <!-- Compact connection indicator (backend mode + state=ok). For other
          states the full banner below the mode toggle takes over. -->
@@ -1515,23 +1536,23 @@
       </li>
     </ol>
 
-    <!-- ── STEP 1: 登入健保存摺 ─────────────────────────────────── -->
+    <!-- ── STEP 1: 登入健康存摺 ─────────────────────────────────── -->
     <div class="wizard-step" data-step="1">
 
       <!-- 1a. User isn't on the NHI tab — shortcut to open it. -->
       <section class="section" id="open-nhi-section" hidden>
         <button class="btn-primary" id="open-nhi-btn">
-          開啟健保存摺登入頁
+          開啟健康存摺登入頁
         </button>
         <div class="hint">
-          需要先登入健保存摺才能取得資料。已經登入過了？把那個分頁切回前景就會自動偵測。
+          需要先登入健康存摺才能取得資料。已經登入過了？把那個分頁切回前景就會自動偵測。
         </div>
       </section>
 
       <!-- 1b. On NHI tab but no active session. -->
       <section class="section" id="nhi-needs-login-section" hidden>
         <div class="nhi-needs-login">
-          <b>偵測到健保存摺分頁，但目前未登入。</b>
+          <b>偵測到健康存摺分頁，但目前未登入。</b>
           <ul class="nhi-needs-login-cases">
             <li><b>尚未登入</b> — 請完成登入</li>
             <li><b>登入已逾時</b> — 健保系統會在閒置一段時間後自動登出，請重新登入</li>
@@ -1543,7 +1564,7 @@
       <!-- 1c. Login confirmed — quick "done" card with hand-off to step 2. -->
       <section class="section" id="login-ok-section" hidden>
         <div class="login-ok">
-          <b>健保存摺已登入</b>
+          <b>健康存摺已登入</b>
           可以開始取得資料了。
           <span class="next-hint" id="login-ok-next"
                 style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">
@@ -1735,7 +1756,7 @@
              then action. -->
         <button type="button" id="sync-blocked-reason" class="cta-reason" hidden></button>
         <button class="btn-cta" id="sync-api-btn" disabled>
-          取得健保存摺資料
+          取得健康存摺資料
         </button>
         <button class="btn-danger" id="stop-btn" hidden>
           取消
@@ -1759,7 +1780,10 @@
           <div id="imaging-prep-banner" class="prep-banner" hidden>
             <button class="prep-close" id="prep-close-btn" aria-label="關閉">✕</button>
             <div class="prep-body">
-              <div class="prep-title" id="prep-title">🖼️ 健保署準備中</div>
+              <div class="prep-head">
+                <span class="prep-icon" id="prep-icon"></span>
+                <div class="prep-title" id="prep-title">健保署準備中</div>
+              </div>
               <div class="prep-progress" id="prep-progress"></div>
               <button class="prep-cta" id="prep-cta-btn" hidden>
                 立即取得健康存摺資料

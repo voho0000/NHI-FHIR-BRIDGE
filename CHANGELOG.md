@@ -3,6 +3,14 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.12 重點 — 2026-06-16（提醒元件統一 Phase 2:影像 prep banner 對齊 notice token；用詞統一「健康存摺」）
+
+純 UI / 文案,無 FHIR 資料模型或邏輯變更:
+
+- **影像 prep banner 對齊 notice 配色 ＋ 換 SVG 圖示**:先前 banner 自己一套 sky-blue / green / orange 色盤＋emoji(🖼️ ✅ ⏱ ℹ️ 🔒)。現在四個狀態對應到共用 token(準備中=info、已備齊=success、逾時=caution、無法提供=neutral),emoji 全換成乾淨 inline SVG(clock / check / alert / info / lock);其中登入逾時的 🔒 改用與登入 chip **同一顆鎖頭 SVG**。圖示抽到共用 `popup/icons.ts`(chip 與 banner 單一來源)。
+- **用詞統一為「健康存摺」**:popup 與 SW 狀態訊息先前混用「健保署」「健保存摺」「健康存摺」(官方正式名為「健康存摺」)。本次把所有**使用者可見**文字統一成「健康存摺」(popup 全部 ＋ 影像 banner ＋ SW 進度/逾時訊息)。`nhi-adapters.ts` 內部開發註解與 docs/README 不在本次範圍。
+- 設計取捨:連線狀態 banner(`.conn-banner`,即時狀態指示器,含重試/說明)與常駐免責聲明卡(刻意低調的米色)維持原樣,屬刻意的例外。
+
 ## 0.20.11 重點 — 2026-06-16（提醒元件統一 Phase 1:擋住按鈕的原因改 info chip、登入提醒不再紅框）
 
 純 UI,無 FHIR 資料模型或邏輯變更。提醒/通知家族一致性整備第 1 階段:

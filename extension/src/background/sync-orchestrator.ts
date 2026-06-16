@@ -117,7 +117,7 @@ import {
 } from "./sync-state.js";
 
 const SESSION_EXPIRED_HINT =
-  "健保存摺登入逾時（電腦休眠或閒置太久），請回健保存摺分頁重新登入，再按一次「取得健康存摺資料」即可補齊。";
+  "健康存摺登入逾時（電腦休眠或閒置太久），請回健康存摺分頁重新登入，再按一次「取得健康存摺資料」即可補齊。";
 
 // Final pass over the breakdown's failure list: swap the internal
 // SESSION_EXPIRED_ERROR sentinel ("__SESSION_EXPIRED__") for plain wording.
@@ -202,7 +202,7 @@ export async function runNhiApiSync({
   };
   await setStatus({
     running: true,
-    progress: "🚀 開始取得健保存摺資料…",
+    progress: "🚀 開始取得健康存摺資料…",
     phase: "init",
     started: _t0,
     totalResources: 0,
@@ -1416,7 +1416,7 @@ export async function runNhiApiSync({
   if (errors.length) {
     _summaryLine = `⚠️ 取得完成 · ${_successVerb} ${total} 筆健康紀錄，${errors.length} 項失敗（${_elapsedStr}）${_localTail}${_waitingTail}`;
   } else if (total === 0) {
-    _summaryLine = `⚠️ 取得完成但沒抓到任何資料（${_elapsedStr}）— 健保存摺 session 可能過期，請回該分頁重新登入；或拉長「日期範圍」再試。`;
+    _summaryLine = `⚠️ 取得完成但沒抓到任何資料（${_elapsedStr}）— 健康存摺 session 可能過期，請回該分頁重新登入；或拉長「日期範圍」再試。`;
   } else {
     _summaryLine = `✅ 取得完成 · ${_successVerb} ${total} 筆健康紀錄（${_elapsedStr}）${_localTail}${_waitingTail}`;
   }

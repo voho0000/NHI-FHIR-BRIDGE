@@ -502,6 +502,7 @@
     // v0.16.0: imaging prep banner — appears post-sync when NHI is still
     // preparing N images. Lives in imaging-prep-banner.ts.
     prepBanner: byId("imaging-prep-banner"),
+    prepIcon: byId("prep-icon"),
     prepTitle: byId("prep-title"),
     prepProgress: byId("prep-progress"),
     prepCloseBtn: byId("prep-close-btn"),
@@ -1875,11 +1876,16 @@
     }
   }
 
-  // src/popup/wizard.ts
-  var _SVG_OPEN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
-  var ICON_LOCK = `${_SVG_OPEN}<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
-  var ICON_INFO = `${_SVG_OPEN}<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+  // src/popup/icons.ts
+  var SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+  var ICON_LOCK = `${SVG}<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
+  var ICON_INFO = `${SVG}<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+  var ICON_CLOCK = `${SVG}<circle cx="12" cy="12" r="9"/><polyline points="12 7.5 12 12 15 13.5"/></svg>`;
+  var ICON_CHECK = `${SVG}<circle cx="12" cy="12" r="9"/><polyline points="8.5 12.5 11 15 16 9"/></svg>`;
+  var ICON_ALERT = `${SVG}<path d="M12 3.5 21 19H3z"/><line x1="12" y1="10" x2="12" y2="14"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
   var ICON_CHEVRON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
+
+  // src/popup/wizard.ts
   function _markStep2Confirmed(yes) {
     state.step2Confirmed = !!yes;
   }
@@ -1962,7 +1968,7 @@
       const shouldDemote = hasResultArtifact && !els.syncApiBtn.disabled;
       els.syncApiBtn.classList.toggle("is-secondary", shouldDemote);
       if (!state.latestStatus?.running) {
-        els.syncApiBtn.textContent = shouldDemote ? "\u91CD\u65B0\u53D6\u5F97" : "\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599";
+        els.syncApiBtn.textContent = shouldDemote ? "\u91CD\u65B0\u53D6\u5F97" : "\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599";
       }
     }
   }
@@ -2000,10 +2006,10 @@
     let jumpTo = null;
     let tooltipReason = "";
     if (!onNhi) {
-      inlineMsg = "\u8ACB\u5207\u5230\u5065\u4FDD\u5B58\u647A\u5206\u9801";
+      inlineMsg = "\u8ACB\u5207\u5230\u5065\u5EB7\u5B58\u647A\u5206\u9801";
       jumpTo = { step: 1, label: "\u767B\u5165" };
     } else if (!loggedIn) {
-      inlineMsg = "\u5065\u4FDD\u5B58\u647A\u5206\u9801\u5C1A\u672A\u767B\u5165";
+      inlineMsg = "\u5065\u5EB7\u5B58\u647A\u5206\u9801\u5C1A\u672A\u767B\u5165";
       inlineIcon = "lock";
       jumpTo = { step: 1, label: "\u767B\u5165" };
     } else if (!step2BasicOk) {
@@ -2053,7 +2059,7 @@
     const ov = getPatientOverride();
     const haveBackendPatient = state.backendPatient.state === "present";
     els.launchBtn.disabled = !(currentMode() === "backend" && state.connState === "ok" && !!ov?.id_no && haveBackendPatient);
-    els.launchBtn.title = currentMode() !== "backend" ? "\u8ACB\u5207\u5230\u300C\u{1F3E5} \u672C\u6A5F\u4F3A\u670D\u5668 (\u9032\u968E)\u300D\u6A21\u5F0F" : state.connState !== "ok" ? "\u5F8C\u7AEF\u5C1A\u672A\u9023\u7DDA" : !ov?.id_no ? "\u8ACB\u56DE\u5230\u300C\u2461 \u60A8\u7684\u8CC7\u6599\u300D\u586B\u5BEB\u8CC7\u6599" : !haveBackendPatient ? "\u672C\u6A5F\u4F3A\u670D\u5668\u9084\u6C92\u6709\u9019\u4F4D\u7684\u8CC7\u6599 \u2014 \u5148\u6309\u300C\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u300D\u6216\u4E0B\u65B9\u300C\u628A\u9019\u6B21\u8CC7\u6599\u50B3\u5230\u672C\u6A5F\u4F3A\u670D\u5668\u300D" : "";
+    els.launchBtn.title = currentMode() !== "backend" ? "\u8ACB\u5207\u5230\u300C\u{1F3E5} \u672C\u6A5F\u4F3A\u670D\u5668 (\u9032\u968E)\u300D\u6A21\u5F0F" : state.connState !== "ok" ? "\u5F8C\u7AEF\u5C1A\u672A\u9023\u7DDA" : !ov?.id_no ? "\u8ACB\u56DE\u5230\u300C\u2461 \u60A8\u7684\u8CC7\u6599\u300D\u586B\u5BEB\u8CC7\u6599" : !haveBackendPatient ? "\u672C\u6A5F\u4F3A\u670D\u5668\u9084\u6C92\u6709\u9019\u4F4D\u7684\u8CC7\u6599 \u2014 \u5148\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u6216\u4E0B\u65B9\u300C\u628A\u9019\u6B21\u8CC7\u6599\u50B3\u5230\u672C\u6A5F\u4F3A\u670D\u5668\u300D" : "";
     if (state.wizardInitialized) _refreshWizardUi();
   }
 
@@ -2979,12 +2985,12 @@
     try {
       url = new URL(tab.url);
     } catch {
-      setStatus("\u4F7F\u7528\u4E2D\u7684\u5206\u9801\u6C92\u6709\u7DB2\u5740 \u2014 \u8ACB\u5207\u63DB\u5230\u5065\u4FDD\u5B58\u647A\u7DB2\u9801\u518D\u8A66", "error");
+      setStatus("\u4F7F\u7528\u4E2D\u7684\u5206\u9801\u6C92\u6709\u7DB2\u5740 \u2014 \u8ACB\u5207\u63DB\u5230\u5065\u5EB7\u5B58\u647A\u7DB2\u9801\u518D\u8A66", "error");
       return;
     }
     const onLogin = await isOnNhiLoginPage(tab.id, url);
     if (onLogin) {
-      setStatus("\u5065\u4FDD\u5B58\u647A\u5206\u9801\u5C1A\u672A\u767B\u5165 \u2014 \u56DE \u2460 \u767B\u5165", "info");
+      setStatus("\u5065\u5EB7\u5B58\u647A\u5206\u9801\u5C1A\u672A\u767B\u5165 \u2014 \u56DE \u2460 \u767B\u5165", "info");
       return;
     }
     if (currentMode() === "backend") {
@@ -2998,13 +3004,13 @@
     await chrome.storage.local.set({
       syncStatus: {
         running: true,
-        progress: "\u958B\u59CB\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u2026",
+        progress: "\u958B\u59CB\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u2026",
         phase: "starting",
         started: Date.now(),
         ts: Date.now()
       }
     });
-    setStatus("\u958B\u59CB\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u2026", "info");
+    setStatus("\u958B\u59CB\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u2026", "info");
     const rangeSel = els.apiSyncRange?.value || "3";
     let dateRange = null;
     const dateRangeLabel = RANGE_LABELS[rangeSel] || `\u6700\u8FD1 ${rangeSel} \u5E74`;
@@ -3048,7 +3054,7 @@
       return;
     }
     if (!rawId) {
-      setStatus("\u9084\u6C92\u6709\u8EAB\u5206\u8CC7\u6599 \u2014 \u8ACB\u5148\u6309\u300C\u53D6\u5F97\u5065\u4FDD\u5B58\u647A\u8CC7\u6599\u300D\u4E00\u6B21", "error");
+      setStatus("\u9084\u6C92\u6709\u8EAB\u5206\u8CC7\u6599 \u2014 \u8ACB\u5148\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u4E00\u6B21", "error");
       return;
     }
     const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
@@ -3112,6 +3118,7 @@
       return;
     }
     banner.hidden = false;
+    const icon = els.prepIcon;
     const title = els.prepTitle;
     const progress = els.prepProgress;
     const cta = els.prepCtaBtn;
@@ -3120,23 +3127,28 @@
     const status = state2.status === "polling" && overdue ? "timeout" : state2.status;
     banner.dataset.state = status;
     if (status === "ready") {
-      title.textContent = "\u2705 \u5F71\u50CF\u5DF2\u5099\u9F4A";
-      progress.textContent = `\u5065\u4FDD\u7F72\u5DF2\u6E96\u5099\u597D ${state2.initialCount} \u5F35\u5F71\u50CF\uFF0C\u6309\u4E0B\u65B9\u6309\u9215\u53D6\u5F97\u6700\u65B0\u8CC7\u6599\u3002`;
+      icon.innerHTML = ICON_CHECK;
+      title.textContent = "\u5F71\u50CF\u5DF2\u5099\u9F4A";
+      progress.textContent = `\u5065\u5EB7\u5B58\u647A\u5DF2\u6E96\u5099\u597D ${state2.initialCount} \u5F35\u5F71\u50CF\uFF0C\u6309\u4E0B\u65B9\u6309\u9215\u53D6\u5F97\u6700\u65B0\u8CC7\u6599\u3002`;
       cta.hidden = false;
     } else if (status === "unavailable") {
-      title.textContent = "\u2139\uFE0F \u90E8\u5206\u5F71\u50CF\u5065\u4FDD\u7F72\u7121\u6CD5\u63D0\u4F9B";
-      progress.textContent = `\u6709 ${state2.initialCount} \u5F35\u5F71\u50CF\u5065\u4FDD\u7F72\u76EE\u524D\u7121\u6CD5\u5099\u9F4A\uFF08\u5E38\u898B\u65BC\u8F03\u820A\u7684\u6AA2\u67E5\uFF09\uFF0C\u9019\u4E9B\u9805\u76EE\u53EA\u6703\u6709\u6587\u5B57\u5831\u544A\uFF0C\u5176\u9918\u8CC7\u6599\u5DF2\u53EF\u4E0B\u8F09\u3002`;
+      icon.innerHTML = ICON_INFO;
+      title.textContent = "\u90E8\u5206\u5F71\u50CF\u5065\u5EB7\u5B58\u647A\u7121\u6CD5\u63D0\u4F9B";
+      progress.textContent = `\u6709 ${state2.initialCount} \u5F35\u5F71\u50CF\u5065\u5EB7\u5B58\u647A\u76EE\u524D\u7121\u6CD5\u5099\u9F4A\uFF08\u5E38\u898B\u65BC\u8F03\u820A\u7684\u6AA2\u67E5\uFF09\uFF0C\u9019\u4E9B\u9805\u76EE\u53EA\u6703\u6709\u6587\u5B57\u5831\u544A\uFF0C\u5176\u9918\u8CC7\u6599\u5DF2\u53EF\u4E0B\u8F09\u3002`;
       cta.hidden = true;
     } else if (status === "timeout") {
-      title.textContent = "\u23F1 \u7B49\u5019\u903E\u6642\uFF08\u5DF2\u8D85\u904E 30 \u5206\u9418\uFF09";
-      progress.textContent = `\u4ECD\u6709 ${state2.count || state2.initialCount} \u5F35\u5F71\u50CF\u5C1A\u672A\u5099\u9F4A\uFF0C\u5065\u4FDD\u7F72\u53EF\u80FD\u7121\u6CD5\u63D0\u4F9B\u3002\u53EF\u6309\u4E0B\u65B9\u6309\u9215\u518D\u8A66\u4E00\u6B21\uFF0C\u6216\u95DC\u9589\u6B64\u63D0\u793A\uFF08\u6587\u5B57\u5831\u544A\u5DF2\u53EF\u4E0B\u8F09\uFF09\u3002`;
+      icon.innerHTML = ICON_ALERT;
+      title.textContent = "\u7B49\u5019\u903E\u6642\uFF08\u5DF2\u8D85\u904E 30 \u5206\u9418\uFF09";
+      progress.textContent = `\u4ECD\u6709 ${state2.count || state2.initialCount} \u5F35\u5F71\u50CF\u5C1A\u672A\u5099\u9F4A\uFF0C\u5065\u5EB7\u5B58\u647A\u53EF\u80FD\u7121\u6CD5\u63D0\u4F9B\u3002\u53EF\u6309\u4E0B\u65B9\u6309\u9215\u518D\u8A66\u4E00\u6B21\uFF0C\u6216\u95DC\u9589\u6B64\u63D0\u793A\uFF08\u6587\u5B57\u5831\u544A\u5DF2\u53EF\u4E0B\u8F09\uFF09\u3002`;
       cta.hidden = false;
     } else if (status === "session-expired") {
-      title.textContent = "\u{1F512} \u5065\u4FDD\u5B58\u647A\u767B\u5165\u903E\u6642";
-      progress.textContent = "\u8ACB\u5148\u56DE\u5230\u5065\u4FDD\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\uFF0C\u518D\u6309\u4E0B\u65B9\u6309\u9215\u5373\u53EF\u7E7C\u7E8C\u53D6\u5F97\u3002";
+      icon.innerHTML = ICON_LOCK;
+      title.textContent = "\u5065\u5EB7\u5B58\u647A\u767B\u5165\u903E\u6642";
+      progress.textContent = "\u8ACB\u5148\u56DE\u5230\u5065\u5EB7\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\uFF0C\u518D\u6309\u4E0B\u65B9\u6309\u9215\u5373\u53EF\u7E7C\u7E8C\u53D6\u5F97\u3002";
       cta.hidden = false;
     } else {
-      title.textContent = "\u{1F5BC}\uFE0F \u5065\u4FDD\u7F72\u6E96\u5099\u4E2D";
+      icon.innerHTML = ICON_CLOCK;
+      title.textContent = "\u5065\u5EB7\u5B58\u647A\u6E96\u5099\u4E2D";
       progress.textContent = `\u5269 ${state2.count} / ${state2.initialCount} \u5F35 \xB7 ${_elapsedText(state2)}`;
       cta.hidden = true;
     }
@@ -3253,7 +3265,7 @@
     await refreshPendingBundle();
     const tab = await getActiveTab();
     if (!tab?.url) {
-      setStatus("\u627E\u4E0D\u5230\u4F7F\u7528\u4E2D\u7684\u5206\u9801 \u2014 \u8ACB\u5148\u958B\u555F\u5065\u4FDD\u5B58\u647A\u7DB2\u9801", "error");
+      setStatus("\u627E\u4E0D\u5230\u4F7F\u7528\u4E2D\u7684\u5206\u9801 \u2014 \u8ACB\u5148\u958B\u555F\u5065\u5EB7\u5B58\u647A\u7DB2\u9801", "error");
       els.syncApiBtn.dataset.offNhi = "1";
       _refreshButtonStates();
       return;

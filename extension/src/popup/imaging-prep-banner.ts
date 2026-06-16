@@ -14,6 +14,7 @@
 //     orchestrator clears prep state at sync start → banner hides.
 
 import { els } from "./els.js";
+import { ICON_ALERT, ICON_CHECK, ICON_CLOCK, ICON_INFO, ICON_LOCK } from "./icons.js";
 import { apiSyncNhi } from "./sync-client.js";
 
 const IMAGING_PREP_STATE_KEY = "imagingPrepState";
@@ -47,6 +48,7 @@ function _render(state: ImagingPrepState | null): void {
     return;
   }
   banner.hidden = false;
+  const icon = els.prepIcon as HTMLElement;
   const title = els.prepTitle as HTMLElement;
   const progress = els.prepProgress as HTMLElement;
   const cta = els.prepCtaBtn as HTMLButtonElement;
@@ -62,8 +64,9 @@ function _render(state: ImagingPrepState | null): void {
     state.status === "polling" && overdue ? "timeout" : state.status;
   banner.dataset.state = status;
   if (status === "ready") {
-    title.textContent = "✅ 影像已備齊";
-    progress.textContent = `健保署已準備好 ${state.initialCount} 張影像，按下方按鈕取得最新資料。`;
+    icon.innerHTML = ICON_CHECK;
+    title.textContent = "影像已備齊";
+    progress.textContent = `健康存摺已準備好 ${state.initialCount} 張影像，按下方按鈕取得最新資料。`;
     cta.hidden = false;
   } else if (status === "unavailable") {
     // Reached only when NONE of the triggered images became fetchable
@@ -71,27 +74,31 @@ function _render(state: ImagingPrepState | null): void {
     // (no image). Show initialCount (how many we waited on), NOT state.count
     // (= preparing+stuck), which is 0 in the "2" case → the nonsensical
     // "有 0 張無法備齊". Re-syncing won't help, so no CTA.
-    title.textContent = "ℹ️ 部分影像健保署無法提供";
-    progress.textContent = `有 ${state.initialCount} 張影像健保署目前無法備齊（常見於較舊的檢查），這些項目只會有文字報告，其餘資料已可下載。`;
+    icon.innerHTML = ICON_INFO;
+    title.textContent = "部分影像健康存摺無法提供";
+    progress.textContent = `有 ${state.initialCount} 張影像健康存摺目前無法備齊（常見於較舊的檢查），這些項目只會有文字報告，其餘資料已可下載。`;
     cta.hidden = true;
   } else if (status === "timeout") {
     // Past the 30-min cap (alarm-fired OR client-side override above). The
     // count can be stale/0 when the override fires, so fall back to
     // initialCount. CTA lets the user retry once in case NHI caught up.
-    title.textContent = "⏱ 等候逾時（已超過 30 分鐘）";
-    progress.textContent = `仍有 ${state.count || state.initialCount} 張影像尚未備齊，健保署可能無法提供。可按下方按鈕再試一次，或關閉此提示（文字報告已可下載）。`;
+    icon.innerHTML = ICON_ALERT;
+    title.textContent = "等候逾時（已超過 30 分鐘）";
+    progress.textContent = `仍有 ${state.count || state.initialCount} 張影像尚未備齊，健康存摺可能無法提供。可按下方按鈕再試一次，或關閉此提示（文字報告已可下載）。`;
     cta.hidden = false;
   } else if (status === "session-expired") {
-    // The poll's stashed token expired — re-logging into 健保存摺 refreshes the
+    // The poll's stashed token expired — re-logging into 健康存摺 refreshes the
     // NHI tab but NOT this stashed token, so the banner can't clear itself.
     // A fresh sync re-stashes a token and clears this state. Surface the CTA
     // so the user has a one-click recovery right here (after re-login).
-    title.textContent = "🔒 健保存摺登入逾時";
-    progress.textContent = "請先回到健保存摺分頁重新登入，再按下方按鈕即可繼續取得。";
+    icon.innerHTML = ICON_LOCK;
+    title.textContent = "健康存摺登入逾時";
+    progress.textContent = "請先回到健康存摺分頁重新登入，再按下方按鈕即可繼續取得。";
     cta.hidden = false;
   } else {
     // polling
-    title.textContent = "🖼️ 健保署準備中";
+    icon.innerHTML = ICON_CLOCK;
+    title.textContent = "健康存摺準備中";
     progress.textContent = `剩 ${state.count} / ${state.initialCount} 張 · ${_elapsedText(state)}`;
     cta.hidden = true;
   }

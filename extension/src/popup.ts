@@ -3,7 +3,7 @@
 // Flow:
 //   1. On open, check the active tab is an NHI 健康存摺 page.
 //   2. User confirms patient identity (身分證字號) in the patient-override card.
-//   3. Clicks "📥 同步健保存摺資料" → background runs runNhiApiSync().
+//   3. Clicks "📥 同步健康存摺資料" → background runs runNhiApiSync().
 //   4. Progress streamed back via chrome.storage.local.syncStatus.
 //   5. After sync completes, "🚀 開啟 SMART App" launches with that patient.
 //
@@ -106,7 +106,7 @@ async function init() {
 
   const tab = await getActiveTab();
   if (!tab?.url) {
-    setStatus("找不到使用中的分頁 — 請先開啟健保存摺網頁", "error");
+    setStatus("找不到使用中的分頁 — 請先開啟健康存摺網頁", "error");
     els.syncApiBtn.dataset.offNhi = "1";
     _refreshButtonStates();
     return;
@@ -115,7 +115,7 @@ async function init() {
   // Sync requires being on an NHI tab so cookies/session are usable from
   // the SW. Flag via dataset so _refreshButtonStates can combine this
   // with the mode + conn state. When off-NHI, also surface the
-  // "🔗 開啟健保存摺登入" banner so users don't wonder where to go.
+  // "🔗 開啟健康存摺登入" banner so users don't wonder where to go.
   const onNhi = isNhiTab(tab.url);
   if (onNhi) delete els.syncApiBtn.dataset.offNhi;
   else els.syncApiBtn.dataset.offNhi = "1";
@@ -210,7 +210,7 @@ els.syncBlockedReason?.addEventListener("click", () => {
   if (target >= 1 && target <= 3) _setActiveStep(target);
 });
 
-// "🔗 開啟健保存摺登入" — opens the NHI landing page so the user
+// "🔗 開啟健康存摺登入" — opens the NHI landing page so the user
 // doesn't have to remember / google the URL. Closes the popup so they
 // don't have to dismiss it manually after the new tab opens.
 els.openNhiBtn?.addEventListener("click", async () => {
