@@ -2395,7 +2395,9 @@
       els.ovBirthDate.value = patientOverride.birth_date || "";
       els.ovGender.value = patientOverride.gender || "";
     }
-    _markStep2Confirmed(!!(patientOverride?.gender && patientOverride?.birth_date));
+    _markStep2Confirmed(
+      !!(patientOverride?.name && patientOverride?.gender && patientOverride?.birth_date)
+    );
     refreshOverrideSummary();
   }
   function getPatientOverride() {

@@ -3,6 +3,18 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.10 重點 — 2026-06-16（上架前 UI 信任感整備:popup Step 4 改「選用」、安全文案收斂、dashboard polish）
+
+純 UI / 文案,無 FHIR 資料模型或邏輯變更(對接合約不變)。源自第三方視覺/UX 稽核:
+
+- **popup Step 4「查看」標為「選用」**:它其實是開外部工具「醫析 MediPrisma」(含雲端 AI 選用功能),不是核心下載流程的一部分。加上「選用」badge ＋「這步非必要」開頭,並把先前過長的 AI 說明縮成一行(雲端註記改淺灰),避免在 360px 變成一大段灰字、也避免「外部 AI」看起來像核心流程。
+- **底部安全文案與 Step 4 的 AI 說明對齊**:原本「不會傳送到任何雲端伺服器」與同頁介紹的外部 AI 並列容易讀成矛盾。改為「Bridge 取得與轉換你的健康資料時只在你電腦上處理、不上傳雲端;若你另外開啟外部查看工具或其 AI 功能,則依該工具的說明」—— 明確區分 Bridge 本體(不上雲)與外部工具/AI。
+- **Step 2 完成判定納入姓名**:姓名已是必填(saveOverride 會擋空姓名),但「返回使用者」的完成判定只看性別+生日,舊資料無姓名者會被誤判已完成。修正後與實際必填一致。
+- **dashboard:產品名統一為「NHI-FHIR Bridge」**(原為 `NHI-FHIR-Bridge`,與 popup/商店對齊);手機版「選擇 JSON 檔案」按鈕改 full-width 不再斷行。
+- **小 polish**:popup header / 設定標題 letter-spacing 歸 0(繁中);卡片圓角統一 8px。
+
+> 設計取捨:dashboard 是進階自架(需 Docker)模式才會開,受眾為工程取向使用者,故 Developer Tools 露出與 offline banner 的 `docker compose up -d` 指引維持不變(對該受眾是正確指引);全面 emoji→icon 遷移列為日後 polish,不在本次。
+
 ## 0.20.9 重點 — 2026-06-16（backend 模式:影像上傳分批,避開 32 MB body 上限）
 
 只影響**進階自架 backend 模式**,預設「下載到磁碟」流程與 FHIR 輸出皆不變(SMART app 對接合約不變):

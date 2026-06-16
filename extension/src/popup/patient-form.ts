@@ -39,10 +39,15 @@ export async function loadPatientOverride() {
     els.ovBirthDate.value = patientOverride.birth_date || "";
     els.ovGender.value = patientOverride.gender || "";
   }
-  // A stored override with both required fields counts as "step 2
-  // already confirmed" — returning user shouldn't be forced to click
-  // ✓ 確定 again to advance the wizard.
-  _markStep2Confirmed(!!(patientOverride?.gender && patientOverride?.birth_date));
+  // A stored override with all required fields (name + gender + birth_date)
+  // counts as "step 2 already confirmed" — returning user shouldn't be
+  // forced to click ✓ 確定 again to advance the wizard. Name is now a
+  // required field (saveOverride rejects an empty name); legacy overrides
+  // saved before that rule lack a name, so they correctly stay unconfirmed
+  // until the user fills it in — matching what the form actually enforces.
+  _markStep2Confirmed(
+    !!(patientOverride?.name && patientOverride?.gender && patientOverride?.birth_date),
+  );
   // Patient panel is now always-expanded (step 2 owns its own page);
   // the previous collapse-when-confirmed behaviour was a leftover from
   // the single-scroll layout.

@@ -39,7 +39,7 @@
       font-weight: 600;
       margin: 0;
       color: #1e3a8a;
-      letter-spacing: -0.01em;
+      letter-spacing: 0;
       display: flex;
       align-items: center;
       gap: 6px;
@@ -384,7 +384,7 @@
     .panel {
       background: #ffffff;
       border: 1px solid #e5e7eb;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 14px;
       display: flex;
       flex-direction: column;
@@ -680,7 +680,7 @@
        data-state — header status text alone conveys completion. */
     .patient-card {
       border: 1px solid #e5e7eb;
-      border-radius: 10px;
+      border-radius: 8px;
       background: white;
       overflow: hidden;
     }
@@ -812,7 +812,7 @@
       font-size: 12px;
       font-weight: 500;
       color: #6b7280;
-      letter-spacing: 0.02em;
+      letter-spacing: 0;
     }
     .settings-view-card {
       background: white;
@@ -1823,23 +1823,27 @@
 
          Copy is written for laypeople — concrete benefits (看自己吃過
          哪些藥、檢驗值變化) rather than jargon (visualization, FHIR,
-         SMART App). AI features deliberately not mentioned here:
-         MediPrisma's AI uses server-side proxies (OpenAI/Gemini),
-         which conflicts with this extension's "no AI, no cloud"
-         privacy stance. -->
+         SMART App). This step is badged 選用 (optional) — MediPrisma is
+         an EXTERNAL tool, not part of Bridge's core download flow. Its
+         AI Q&A uses server-side proxies (OpenAI/Gemini), so the AI line
+         is flagged "送到外部雲端 AI"; the footer safety line clarifies
+         that Bridge's own fetch+convert stays local. -->
     <div class="wizard-step" data-step="4">
       <section class="section">
-        <div style="font-weight:600;margin-bottom:8px;">瀏覽你的健康資料</div>
+        <div style="font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+          瀏覽你的健康資料
+          <span style="font-size:11px;font-weight:600;color:#2563eb;background:#eff6ff;border:1px solid #dbeafe;border-radius:6px;padding:1px 7px;">選用</span>
+        </div>
         <div class="hint" style="margin-bottom:10px;">
-          健保存摺資料散在各頁面難瀏覽？「<b>醫析 MediPrisma</b>」把你的
-          就醫、用藥、檢驗紀錄整理成：
+          這步<b>非必要</b> —— 下載完成後，可用外部工具「<b>醫析 MediPrisma</b>」把
+          就醫、用藥、檢驗紀錄整理成圖表瀏覽：
         </div>
         <ul class="hint" style="margin:0 0 12px 0;padding-left:18px;line-height:1.7;">
           <li>📈 <b>檢驗趨勢</b> — 膽固醇 / 血糖 / 肝指數變化一目了然</li>
           <li>💊 <b>用藥時間軸</b> — 自己吃過哪些藥、多久</li>
           <li>🏥 <b>就醫紀錄</b> — 哪天去了哪家醫院、看了哪科</li>
           <li>🌐 <b>中英對照</b> — 不熟的英文藥名病名都有中文</li>
-          <li>🤖 <b>AI 問答（選用，外部雲端）</b> — 看不懂的數值或藥物可問 AI；此項由外部工具「醫析 MediPrisma」連雲端 AI（OpenAI / Gemini），<b>Bridge 本身不接 AI、不上雲</b></li>
+          <li>🤖 <b>AI 問答</b> — 看不懂的數值可問 AI<span style="color:#9ca3af;">（此功能會把資料送到外部雲端 AI）</span></li>
         </ul>
         <div class="hint" style="margin-bottom:12px;">
           <b>使用方法</b>：點下方按鈕 → 新分頁會打開「醫析 MediPrisma」<b>空白頁面</b>
@@ -1933,7 +1937,7 @@
       </div>
     </div>
     <div class="popup-meta-safety">
-      🔒 你的健康資料只在你電腦上處理，不會傳送到任何雲端伺服器。
+      🔒 Bridge 取得與轉換你的健康資料時只在你電腦上處理、不上傳雲端；若你另外開啟外部查看工具或其 AI 功能，則依該工具的說明。
       <a href="https://voho0000.github.io/NHI-FHIR-BRIDGE/SECURITY_FOR_USERS.html"
          target="_blank" rel="noopener">安全說明 ↗</a>
     </div>
