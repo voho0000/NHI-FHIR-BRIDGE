@@ -433,25 +433,27 @@ export async function runNhiApiSync({
   // List endpoint only has order metadata; ctype param mirrors the
   // visit's ori_TYPE (A / E / …).
   const imgIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "imaging");
-  let imagingJpegCandidates = [];
-  if (imgIdx >= 0 && settled[imgIdx].status === "fulfilled") {
+  // Outer-scoped so runImaging() populates them and the end-of-sync await +
+  // breakdown read them — regardless of WHEN the imaging chain runs.
+  let imagingJpegCandidates: any[] = [];
+  let polledCandidates: any[] = [];
+  let pendingImagingRows: Array<{ rid: string; ctype: string; triggeredAt: number }> = [];
+  let imagingPromise: Promise<any[]> | null = null;
+  let imagingSweepPromise: Promise<any[]> | null = null;
+
+  // The whole imaging chain — confirm list → detail → pending-stash → kick off
+  // the trigger+fetch promise (+ sweep) — wrapped so it can run EITHER before
+  // the procedures/chronic/meds fan-outs (normal: imaging trigger overlaps
+  // them) OR AFTER them (when the list is still 資料確認中 — see _imagingDeferred).
+  const runImaging = async () => {
+    if (!(imgIdx >= 0 && settled[imgIdx].status === "fulfilled")) return;
     let visits = settled[imgIdx].value.rawList || [];
-    // First-entry "資料確認中 / 資料準備中" resolve. On the FIRST access
-    // to a never-synced patient's imaging list, NHI lazily confirms it
-    // server-side and the bulk fetch above can capture a transient,
-    // INCOMPLETE snapshot — its SPA labels these "資料確認中" or "資料準備
-    // 中". Observed shapes differ: a brand-new patient returns rows with
-    // jpG_STATUS "-"; another returned a single "資料準備中" row (no "-")
-    // and the real image candidate only appeared as a SECOND row after a
-    // refresh. We therefore do NOT key off any specific transient code
-    // (v0.17.5 only watched "-" and missed the "資料準備中" shape). Rule:
-    // if NO row exposes a usable image yet (jpG_STATUS "A" needs-trigger
-    // or "1" bytes-ready), treat the list as still-preparing and refetch
-    // (cache-busted, polls until an A/1 appears or the attempt budget is
-    // spent → genuinely no image). Only when the user opted into image
-    // download — narrative DR emission is unaffected by jpG_STATUS, so an
-    // opted-out sync gets identical reports either way. Non-fatal — any
-    // failure falls back to the original snapshot.
+    // 資料確認中 / 資料準備中 resolve: if NO row exposes a usable image yet
+    // ("A" needs-trigger / "1" ready), the list is still being confirmed
+    // server-side — refetch (cache-busted) until an A/1 appears or the budget
+    // is spent. Code-agnostic (don't enumerate transient codes — see
+    // imaging-list-status.ts). Narrative DR emission is unaffected by status,
+    // so an opted-out sync gets identical reports either way.
     if (fetchImagingEnabled && visits.length > 0 && imagingListNeedsResolve(visits)) {
       try {
         const imgEp = NHI_API_ENDPOINTS[imgIdx];
@@ -464,19 +466,15 @@ export async function runNhiApiSync({
               ? "🔄 健康存摺正在確認影像清單，請稍候…"
               : `🔄 健康存摺正在確認影像清單，請稍候…（已 ${sec} 秒）`,
           () =>
+            // 10×3s ≈ 30s, early-exits on the first usable row. When the list
+            // is still confirming this whole chain is DEFERRED past the other
+            // detail fan-outs (see _imagingDeferred), so NHI gets that ~1 min
+            // to settle the list in the background — by the time we run here it
+            // usually early-exits. Still-unsettled lists are handled by the
+            // user re-syncing (count-less reminder tail).
             refetchImagingListUntilResolved({
               tabId,
               url: imagingUrl,
-              // 10×3s ≈ 30s. Catches a fast-confirming list in one sync; the
-              // loop early-exits the instant ANY row exposes a usable image,
-              // so the 30s only fully elapses for a genuinely still-confirming
-              // list. We deliberately DON'T block longer (v0.20.14: was briefly
-              // 60s): a large-history patient's list can take minutes to settle
-              // server-side, which 30s OR 60s both miss — and the live prep
-              // poller that used to re-check across syncs was removed, so those
-              // are handled by the user re-syncing (the count-less "部分影像仍
-              // 在備製中，過幾分鐘再取得" tail tells them to). 30s keeps the
-              // confirm wait from holding up the rest of the sync.
               maxAttempts: 10,
               intervalMs: 3000,
             }),
@@ -489,11 +487,9 @@ export async function runNhiApiSync({
         errors.push(`imaging list confirm: ${e?.message || e}`);
       }
     }
-    // How many rows are STILL "資料確認中" ("-") after the in-sync confirm
-    // wait. These have real images coming, but NHI hasn't settled them into
-    // "A"/"1"/"2" yet — so they produce no candidate this sync. Captured to
-    // (a) message honestly (vs "無影像檔") and (b) drive the cross-sync
-    // prep-poll re-check so the user is prompted to re-sync once they settle.
+    // Rows still "資料確認中" ("-") after the wait — real images coming, NHI
+    // just hasn't settled them. Drives the honest 查看明細 split (資料確認中
+    // vs 無影像檔) + the count-less re-sync tail.
     settled[imgIdx].value.jpegConfirmingCount = fetchImagingEnabled
       ? countImagingConfirming(visits)
       : 0;
@@ -510,124 +506,90 @@ export async function runNhiApiSync({
         settled[imgIdx].value.raw_count = detail.reports.length;
         settled[imgIdx].value.visitCount = visits.length;
         imagingJpegCandidates = detail.jpegCandidates || [];
-      } catch (e) {
+      } catch (e: any) {
         errors.push(`imaging detail: ${e.message}`);
       }
     }
-  }
-  _markPhase("imaging-detail");
+    _markPhase("imaging-detail");
 
-  // Step 1c′: imaging JPEG trigger phase — sequential, visible Vue-
-  // click flow. Runs HERE (before procedures/chronic/meds detail) so:
-  //   • the user sees trigger progress within seconds instead of a
-  //     minute (faster dev iteration when validating the trigger path)
-  //   • the 1-3 min NHI lazy-prep window we wait for in the next
-  //     phase overlaps with the other detail fan-outs — pure win
-  //
-  // Pending stash (v0.15+): rows that triggered successfully last sync
-  // but didn't get base64 in time are persisted to chrome.storage. On
-  // this sync's start, we:
-  //   • Suppress needsTrigger for pending rows so they don't burn the
-  //     dev cap — NHI has the trigger queued already, we just need
-  //     to wait for prep to finish.
-  //   • Kick off sweepPendingImaging() in parallel with the poll-fetch.
-  //     Sweep re-hits the list endpoint (cache-busted) and fetches
-  //     IHKE3408S03 for any pending row whose seq is now allocated.
-  let imagingSweepPromise: Promise<any[]> | null = null;
-  let pendingImagingRows: Array<{
-    rid: string;
-    ctype: string;
-    triggeredAt: number;
-  }> = [];
-  // polledCandidates = jpegCandidates MINUS rows already in pending.
-  // We pass this slimmer list to triggerImagingRows + pollFetchImagingJpegs
-  // so pending rows don't burn the dev cap (already-triggered prior sync)
-  // AND don't get double-fetched (sweep covers them with its own
-  // cache-busted list refresh and S03 fetch).
-  let polledCandidates = imagingJpegCandidates;
-  if (fetchImagingEnabled && imagingJpegCandidates.length > 0 && patientOverride.id_no) {
-    try {
-      pendingImagingRows = await loadPendingImaging(patientOverride.id_no);
-      if (pendingImagingRows.length > 0) {
-        // Index by (rid|ctype) → triggeredAt for the stuck-retry gate
-        // (a recently-attempted row is left to sweep; an old one is
-        // re-included so the trigger phase tries again — NHI's
-        // server-side prep system occasionally silent-fails the
-        // first attempt and a second click wakes it up).
-        const pendingTriggeredAt = new Map<string, number>(
-          pendingImagingRows.map((p) => [`${p.rid}|${p.ctype}`, p.triggeredAt]),
-        );
-        // v0.15+: 10-minute stuck-retry threshold. Pending entries
-        // older than this go back into the trigger flow; younger
-        // ones are left to sweep.
-        const STUCK_RETRY_MS = 10 * 60 * 1000;
-        const _nowForRetry = Date.now();
-        polledCandidates = imagingJpegCandidates.filter((c: any) => {
-          // Ready rows always included (poll-fetch readyIdx path
-          // grabs bytes via cache-hit; matchedKeys cleanup at sync
-          // end then removes them from the pending stash, regardless
-          // of whether they were there before).
-          if (!c.needsTrigger) return true;
-          const triggeredAt = pendingTriggeredAt.get(`${c.rid}|${c.ctype}`);
-          if (triggeredAt === undefined) return true; // not pending → normal trigger path
-          // Pending. Re-trigger if older than the retry threshold.
-          return _nowForRetry - triggeredAt >= STUCK_RETRY_MS;
-        });
-      }
-    } catch (e: any) {
-      errors.push(`imaging pending load: ${e.message}`);
-    }
-  }
-  // v0.15+ refactor: trigger + poll-fetch run as a SINGLE async promise,
-  // kicked off here and awaited at the very end. This lets the procedures
-  // / chronic / meds detail fan-outs run IN PARALLEL with imaging work
-  // — the trigger phase uses a hidden tab while detail fan-outs use the
-  // visible tab, so there's no tab-level contention.
-  //
-  // Pre-refactor flow (sequential): trigger (~2 min sync block) →
-  //   poll-fetch starts → procedures/chronic/meds (~1 min) →
-  //   await poll-fetch (~remaining of 3 min) ≈ 5 min total.
-  // Post-refactor flow (parallel): kick off (trigger+poll) → procedures
-  //   /chronic/meds (~1 min) → await imaging promise. Total wall time
-  //   ≈ max(trigger + poll, other-detail) ≈ ~2-3 min.
-  let imagingPromise: Promise<any[]> | null = null;
-  const _imagingStartedAt = Date.now();
-  // Bail-out: if the user already pressed stop by this point, don't
-  // even kick off the imaging promise (which would otherwise open
-  // the hidden tab and burn user-visible work despite cancellation).
-  if (isCancelled()) throw new Error(CANCEL_ERROR);
-  if (fetchImagingEnabled && polledCandidates.length > 0) {
-    const _toTrigger = polledCandidates.filter((c: any) => c.needsTrigger).length;
-    // v0.15+ trigger phase = pure SW-direct fetch. Each row:
-    //   GET /S02 page_load → extract rownum from response
-    //   POST /S02/add { ipl_CASE_SEQ_NO: <rownum> }
-    //   GET /S02 page_load → verify jpg_STATUS flipped A → 0
-    // No hidden tab, no Vue click, no DOM operations. ~2s/row.
-    await setStatus({
-      progress: `🖼️ 開始預備影像（背景傳送觸發請求，共 ${_toTrigger} 張，不影響您正在看的分頁）…`,
-      phase: "imaging",
-    });
-    imagingPromise = (async () => {
+    // Pending stash (v0.15+): rows triggered last sync but not yet fetchable.
+    // polledCandidates = candidates MINUS pending (so they don't burn the dev
+    // cap / get double-fetched; sweep covers them with its own list refresh).
+    polledCandidates = imagingJpegCandidates;
+    if (fetchImagingEnabled && imagingJpegCandidates.length > 0 && patientOverride.id_no) {
       try {
-        const triggerOutcomes = await triggerImagingRowsViaSwFetch(
-          BASE,
-          patientOverride.id_no,
-          polledCandidates,
-        );
-        return await pollFetchImagingJpegs(tabId, BASE, polledCandidates, triggerOutcomes);
+        pendingImagingRows = await loadPendingImaging(patientOverride.id_no);
+        if (pendingImagingRows.length > 0) {
+          const pendingTriggeredAt = new Map<string, number>(
+            pendingImagingRows.map((p) => [`${p.rid}|${p.ctype}`, p.triggeredAt]),
+          );
+          // 10-min stuck-retry: old pending entries re-enter the trigger flow
+          // (NHI sometimes silent-fails the first attempt); recent ones are
+          // left to sweep.
+          const STUCK_RETRY_MS = 10 * 60 * 1000;
+          const _nowForRetry = Date.now();
+          polledCandidates = imagingJpegCandidates.filter((c: any) => {
+            if (!c.needsTrigger) return true;
+            const triggeredAt = pendingTriggeredAt.get(`${c.rid}|${c.ctype}`);
+            if (triggeredAt === undefined) return true; // not pending → normal trigger
+            return _nowForRetry - triggeredAt >= STUCK_RETRY_MS;
+          });
+        }
       } catch (e: any) {
-        errors.push(`影像取得：${e?.message ?? e}`);
-        return [] as any[];
+        errors.push(`imaging pending load: ${e.message}`);
       }
-    })();
-  }
-  if (fetchImagingEnabled && pendingImagingRows.length > 0 && patientOverride.id_no) {
-    imagingSweepPromise = sweepPendingImagingWithTimeout(BASE, patientOverride.id_no, 60_000).catch(
-      (e) => {
+    }
+
+    // Trigger + poll-fetch as ONE promise (awaited at sync end). Sweep is a
+    // sibling promise. In the normal (non-deferred) case these overlap the
+    // procedures/chronic/meds fan-outs — pure SW-direct fetch, no hidden tab.
+    if (isCancelled()) throw new Error(CANCEL_ERROR);
+    if (fetchImagingEnabled && polledCandidates.length > 0) {
+      const _toTrigger = polledCandidates.filter((c: any) => c.needsTrigger).length;
+      await setStatus({
+        progress: `🖼️ 開始預備影像（背景傳送觸發請求，共 ${_toTrigger} 張，不影響您正在看的分頁）…`,
+        phase: "imaging",
+      });
+      imagingPromise = (async () => {
+        try {
+          const triggerOutcomes = await triggerImagingRowsViaSwFetch(
+            BASE,
+            patientOverride.id_no,
+            polledCandidates,
+          );
+          return await pollFetchImagingJpegs(tabId, BASE, polledCandidates, triggerOutcomes);
+        } catch (e: any) {
+          errors.push(`影像取得：${e?.message ?? e}`);
+          return [] as any[];
+        }
+      })();
+    }
+    if (fetchImagingEnabled && pendingImagingRows.length > 0 && patientOverride.id_no) {
+      imagingSweepPromise = sweepPendingImagingWithTimeout(
+        BASE,
+        patientOverride.id_no,
+        60_000,
+      ).catch((e) => {
         errors.push(`前次影像補抓：${e?.message ?? e}`);
         return [] as any[];
-      },
-    );
+      });
+    }
+  };
+
+  // Defer the imaging chain past the other detail fan-outs ONLY when the list
+  // is still "資料確認中" (no usable row yet) — the one case where the confirm
+  // wait would block, AND where there's nothing to trigger in parallel anyway.
+  // NHI then settles the list WHILE we fetch procedures/chronic/meds, and the
+  // confirm wait usually early-exits when imaging runs afterwards. A ready list
+  // runs imaging HERE so its trigger+fetch overlaps the other fan-outs (as before).
+  const _imagingDeferred =
+    fetchImagingEnabled &&
+    imgIdx >= 0 &&
+    settled[imgIdx].status === "fulfilled" &&
+    imagingListNeedsResolve(settled[imgIdx].value.rawList || []);
+  if (isCancelled()) throw new Error(CANCEL_ERROR);
+  if (!_imagingDeferred) {
+    await runImaging();
   }
   _markPhase("imaging-kickoff");
   const _imgPending = imagingPromise !== null || imagingSweepPromise !== null;
@@ -747,13 +709,19 @@ export async function runNhiApiSync({
   }
   _markPhase("medication-detail");
 
-  // Step 1f: await the imaging promise (trigger + poll-fetch combined)
-  // kicked off at step 1c″. By the time we get here, procedures /
-  // chronic / meds detail have all resolved sequentially (~1 min);
-  // imaging has been running in parallel on the hidden tab + HTTP
-  // poll. Whatever's left of the trigger-or-poll budget gets waited
-  // here. In the fast path the imaging promise is already resolved
-  // when this await is reached.
+  // Deferred imaging: the list was still "資料確認中" before, so we skipped it
+  // above and fetched procedures/chronic/meds first — giving NHI ~1 min to
+  // settle the list in the background. Run it NOW; the confirm wait usually
+  // early-exits here, so we often fetch the images in this same sync instead
+  // of blocking the other fan-outs for up to 30s upfront.
+  if (_imagingDeferred) {
+    await runImaging();
+  }
+
+  // Step 1f: await the imaging promise (trigger + poll-fetch combined).
+  // For a ready list it was kicked off before the procedures/chronic/meds
+  // fan-outs and ran in parallel; for a deferred (still-confirming) list it
+  // was kicked off just above. Either way, await whatever's left here.
   if (imagingPromise || imagingSweepPromise) {
     try {
       const N = imagingJpegCandidates.length;

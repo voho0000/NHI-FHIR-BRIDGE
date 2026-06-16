@@ -8734,7 +8734,12 @@
     _markPhase("inpatient-detail");
     const imgIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "imaging");
     let imagingJpegCandidates = [];
-    if (imgIdx >= 0 && settled[imgIdx].status === "fulfilled") {
+    let polledCandidates = [];
+    let pendingImagingRows = [];
+    let imagingPromise = null;
+    let imagingSweepPromise = null;
+    const runImaging = async () => {
+      if (!(imgIdx >= 0 && settled[imgIdx].status === "fulfilled")) return;
       let visits = settled[imgIdx].value.rawList || [];
       if (fetchImagingEnabled && visits.length > 0 && imagingListNeedsResolve(visits)) {
         try {
@@ -8742,22 +8747,20 @@
           const imagingUrl = BASE + (imgEp.supportsDateRange ? applyDateRangeToPath(imgEp.path, dateRange) : imgEp.path);
           const resolved = await withProgressTimer(
             (sec) => sec === 0 ? "\u{1F504} \u5065\u5EB7\u5B58\u647A\u6B63\u5728\u78BA\u8A8D\u5F71\u50CF\u6E05\u55AE\uFF0C\u8ACB\u7A0D\u5019\u2026" : `\u{1F504} \u5065\u5EB7\u5B58\u647A\u6B63\u5728\u78BA\u8A8D\u5F71\u50CF\u6E05\u55AE\uFF0C\u8ACB\u7A0D\u5019\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
-            () => refetchImagingListUntilResolved({
-              tabId,
-              url: imagingUrl,
-              // 10×3s ≈ 30s. Catches a fast-confirming list in one sync; the
-              // loop early-exits the instant ANY row exposes a usable image,
-              // so the 30s only fully elapses for a genuinely still-confirming
-              // list. We deliberately DON'T block longer (v0.20.14: was briefly
-              // 60s): a large-history patient's list can take minutes to settle
-              // server-side, which 30s OR 60s both miss — and the live prep
-              // poller that used to re-check across syncs was removed, so those
-              // are handled by the user re-syncing (the count-less "部分影像仍
-              // 在備製中，過幾分鐘再取得" tail tells them to). 30s keeps the
-              // confirm wait from holding up the rest of the sync.
-              maxAttempts: 10,
-              intervalMs: 3e3
-            })
+            () => (
+              // 10×3s ≈ 30s, early-exits on the first usable row. When the list
+              // is still confirming this whole chain is DEFERRED past the other
+              // detail fan-outs (see _imagingDeferred), so NHI gets that ~1 min
+              // to settle the list in the background — by the time we run here it
+              // usually early-exits. Still-unsettled lists are handled by the
+              // user re-syncing (count-less reminder tail).
+              refetchImagingListUntilResolved({
+                tabId,
+                url: imagingUrl,
+                maxAttempts: 10,
+                intervalMs: 3e3
+              })
+            )
           );
           if (resolved?.rows?.length) {
             visits = resolved.rows;
@@ -8782,61 +8785,64 @@
           errors.push(`imaging detail: ${e.message}`);
         }
       }
-    }
-    _markPhase("imaging-detail");
-    let imagingSweepPromise = null;
-    let pendingImagingRows = [];
-    let polledCandidates = imagingJpegCandidates;
-    if (fetchImagingEnabled && imagingJpegCandidates.length > 0 && patientOverride.id_no) {
-      try {
-        pendingImagingRows = await loadPendingImaging(patientOverride.id_no);
-        if (pendingImagingRows.length > 0) {
-          const pendingTriggeredAt = new Map(
-            pendingImagingRows.map((p) => [`${p.rid}|${p.ctype}`, p.triggeredAt])
-          );
-          const STUCK_RETRY_MS = 10 * 60 * 1e3;
-          const _nowForRetry = Date.now();
-          polledCandidates = imagingJpegCandidates.filter((c) => {
-            if (!c.needsTrigger) return true;
-            const triggeredAt = pendingTriggeredAt.get(`${c.rid}|${c.ctype}`);
-            if (triggeredAt === void 0) return true;
-            return _nowForRetry - triggeredAt >= STUCK_RETRY_MS;
-          });
-        }
-      } catch (e) {
-        errors.push(`imaging pending load: ${e.message}`);
-      }
-    }
-    let imagingPromise = null;
-    const _imagingStartedAt = Date.now();
-    if (isCancelled()) throw new Error(CANCEL_ERROR);
-    if (fetchImagingEnabled && polledCandidates.length > 0) {
-      const _toTrigger = polledCandidates.filter((c) => c.needsTrigger).length;
-      await setStatus({
-        progress: `\u{1F5BC}\uFE0F \u958B\u59CB\u9810\u5099\u5F71\u50CF\uFF08\u80CC\u666F\u50B3\u9001\u89F8\u767C\u8ACB\u6C42\uFF0C\u5171 ${_toTrigger} \u5F35\uFF0C\u4E0D\u5F71\u97FF\u60A8\u6B63\u5728\u770B\u7684\u5206\u9801\uFF09\u2026`,
-        phase: "imaging"
-      });
-      imagingPromise = (async () => {
+      _markPhase("imaging-detail");
+      polledCandidates = imagingJpegCandidates;
+      if (fetchImagingEnabled && imagingJpegCandidates.length > 0 && patientOverride.id_no) {
         try {
-          const triggerOutcomes = await triggerImagingRowsViaSwFetch(
-            BASE,
-            patientOverride.id_no,
-            polledCandidates
-          );
-          return await pollFetchImagingJpegs(tabId, BASE, polledCandidates, triggerOutcomes);
+          pendingImagingRows = await loadPendingImaging(patientOverride.id_no);
+          if (pendingImagingRows.length > 0) {
+            const pendingTriggeredAt = new Map(
+              pendingImagingRows.map((p) => [`${p.rid}|${p.ctype}`, p.triggeredAt])
+            );
+            const STUCK_RETRY_MS = 10 * 60 * 1e3;
+            const _nowForRetry = Date.now();
+            polledCandidates = imagingJpegCandidates.filter((c) => {
+              if (!c.needsTrigger) return true;
+              const triggeredAt = pendingTriggeredAt.get(`${c.rid}|${c.ctype}`);
+              if (triggeredAt === void 0) return true;
+              return _nowForRetry - triggeredAt >= STUCK_RETRY_MS;
+            });
+          }
         } catch (e) {
-          errors.push(`\u5F71\u50CF\u53D6\u5F97\uFF1A${e?.message ?? e}`);
-          return [];
+          errors.push(`imaging pending load: ${e.message}`);
         }
-      })();
-    }
-    if (fetchImagingEnabled && pendingImagingRows.length > 0 && patientOverride.id_no) {
-      imagingSweepPromise = sweepPendingImagingWithTimeout(BASE, patientOverride.id_no, 6e4).catch(
-        (e) => {
+      }
+      if (isCancelled()) throw new Error(CANCEL_ERROR);
+      if (fetchImagingEnabled && polledCandidates.length > 0) {
+        const _toTrigger = polledCandidates.filter((c) => c.needsTrigger).length;
+        await setStatus({
+          progress: `\u{1F5BC}\uFE0F \u958B\u59CB\u9810\u5099\u5F71\u50CF\uFF08\u80CC\u666F\u50B3\u9001\u89F8\u767C\u8ACB\u6C42\uFF0C\u5171 ${_toTrigger} \u5F35\uFF0C\u4E0D\u5F71\u97FF\u60A8\u6B63\u5728\u770B\u7684\u5206\u9801\uFF09\u2026`,
+          phase: "imaging"
+        });
+        imagingPromise = (async () => {
+          try {
+            const triggerOutcomes = await triggerImagingRowsViaSwFetch(
+              BASE,
+              patientOverride.id_no,
+              polledCandidates
+            );
+            return await pollFetchImagingJpegs(tabId, BASE, polledCandidates, triggerOutcomes);
+          } catch (e) {
+            errors.push(`\u5F71\u50CF\u53D6\u5F97\uFF1A${e?.message ?? e}`);
+            return [];
+          }
+        })();
+      }
+      if (fetchImagingEnabled && pendingImagingRows.length > 0 && patientOverride.id_no) {
+        imagingSweepPromise = sweepPendingImagingWithTimeout(
+          BASE,
+          patientOverride.id_no,
+          6e4
+        ).catch((e) => {
           errors.push(`\u524D\u6B21\u5F71\u50CF\u88DC\u6293\uFF1A${e?.message ?? e}`);
           return [];
-        }
-      );
+        });
+      }
+    };
+    const _imagingDeferred = fetchImagingEnabled && imgIdx >= 0 && settled[imgIdx].status === "fulfilled" && imagingListNeedsResolve(settled[imgIdx].value.rawList || []);
+    if (isCancelled()) throw new Error(CANCEL_ERROR);
+    if (!_imagingDeferred) {
+      await runImaging();
     }
     _markPhase("imaging-kickoff");
     const _imgPending = imagingPromise !== null || imagingSweepPromise !== null;
@@ -8920,6 +8926,9 @@
       }
     }
     _markPhase("medication-detail");
+    if (_imagingDeferred) {
+      await runImaging();
+    }
     if (imagingPromise || imagingSweepPromise) {
       try {
         const N = imagingJpegCandidates.length;

@@ -3,6 +3,14 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.15 重點 — 2026-06-17（影像清單「資料確認中」時改為後置,不再卡住其他資料的明細）
+
+承 v0.20.14:同步內「確認影像清單」最多等 30s,先前是**循序**卡在手術/慢箋/用藥明細之前。本版做條件式換位:
+
+- **清單仍「資料確認中」(沒有可用列)** → **先跑其他明細(手術/慢箋/用藥),再回頭做影像**。NHI 趁那 ~1 分鐘在背景把清單確認完,等我們回來做影像時往往已經 settle、確認等待直接早退,常常**同一次同步就抓到圖**,而且完全不卡其他資料。
+- **清單已 ready(有可觸發/可下載的列)** → 維持原本流程:影像觸發+抓取跟其他明細**並行**,不變。
+- 實作:把整段影像鏈(確認→明細→pending→觸發+抓取+sweep)包成一個 closure,依「是否還在確認」決定在其他明細**之前或之後**呼叫。觸發/抓取/sweep 那段邏輯**原封不動**,只是換呼叫時機。typecheck + 224 unit tests 全綠。
+
 ## 0.20.14 重點 — 2026-06-17（移除影像「備製中」live banner，改成不卡同步的簡單提醒）
 
 源自使用者回饋:popup 的影像備製 live banner(「1/5 張準備中」「0 張無法備齊」那種)**count 不準又囉嗦**,而且同步內「確認影像清單」一等就 60 秒、把其他資料的明細補強卡住。
