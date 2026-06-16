@@ -156,7 +156,7 @@ docker compose up -d
 - **同步顯示「0 筆」** —— 多半是健康存摺 session 過期(回該分頁重新登入再按一次),或日期範圍裡沒看病(把範圍拉長)。
 - **影像沒抓到** —— NHI 備圖需要時間;若提示「部分影像仍在備製中」,過幾分鐘再同步一次即可補齊。
 - **模式 B 顯示「連不上本機伺服器」** —— 後端沒起(`docker compose up -d`)、Backend URL 設錯、或剛啟動還在 migration(等 30 秒按「重試」)。
-- **能同步別人的健康存摺嗎?** —— 不行,只能登入並同步你自己的帳號。
+- **能同步別人的健康存摺嗎?** —— 擴充功能擷取的是「你目前登入的健康存摺 session 看得到的資料」。健康存摺本身有眷屬功能,經對方同意綁定後,眷屬的資料會出現在你自己的帳號裡,這部分也會一起被擷取。它不會、也無法存取未經對方同意綁定的他人資料。
 - **想清空重來** —— 模式 B:`docker compose down -v && docker compose up -d`;模式 A:popup 下載按鈕旁的 🗑️ 清掉暫存。
 
 更多疑難排解見 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 與 [docs/SECURITY_FOR_USERS.md](docs/SECURITY_FOR_USERS.md)。
