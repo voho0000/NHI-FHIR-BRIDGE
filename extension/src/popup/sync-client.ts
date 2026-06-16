@@ -64,7 +64,11 @@ export async function apiSyncNhi() {
   }
   const onLogin = await isOnNhiLoginPage(tab.id, url);
   if (onLogin) {
-    setStatus("🔒 還沒登入健保存摺 — 請回到「① 登入」", "error");
+    // Login guidance, not a crash — render as the gentle "info" status
+    // (blue left-bar) with the same wording as the disabled-CTA strip
+    // (.cta-reason "健保存摺分頁尚未登入"). 🔒 is reserved for the safety
+    // reassurance card; a login precondition shouldn't borrow it.
+    setStatus("健保存摺分頁尚未登入 — 回 ① 登入", "info");
     return;
   }
 

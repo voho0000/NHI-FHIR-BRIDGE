@@ -3,6 +3,16 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.11 重點 — 2026-06-16（提醒元件統一 Phase 1:擋住按鈕的原因改 info chip、登入提醒不再紅框）
+
+純 UI,無 FHIR 資料模型或邏輯變更。提醒/通知家族一致性整備第 1 階段:
+
+- **「按鈕為何不能按」的原因改成 info chip**:原本是 `→ 健保存摺分頁尚未登入　回 ① 登入 →` 的雙箭頭＋整排藍底線 strip,讀起來像 debug 文字、跟卡片式 UI 不搭。改為柔藍填色的圓角 chip(前置圖示＋原因文字＋右側 chevron,整條可點跳到要修的步驟):登入狀態用**鎖頭**圖示、其他原因(切到分頁/基本資料未完成/生日格式)用 **info** 圖示。圖示為 inline SVG(非 emoji)。
+- **登入提醒不再是紅色警告框**:點同步但未登入時,先前用 `.status.error`(紅框＋🔒)顯示「還沒登入」。同一件事卻有兩種長相(藍色 chip vs 紅框)。改為柔和的 `.status.info`(藍色左條),文案與 chip 對齊成「健保存摺分頁尚未登入 — 回 ① 登入」,**移除 🔒**(🔒 之後只保留給底部安全保證)。
+- **提醒配色收進 `:root` token**:info / caution / error / success / accent 各定一個 hex,info/caution/error 框、status、chip、安全卡全部改吃同一組變數,消除先前 3 種藍、2 種琥珀的漂移(往後不再各自漂移)。
+
+> 這是提醒家族統一的 Phase 1。Phase 2(conn-banner、免責聲明米色、imaging-prep 的 🔒、把多個資訊框併成單一 `.notice` 元件)之後再做。
+
 ## 0.20.10 重點 — 2026-06-16（上架前 UI 信任感整備:popup Step 4 改「選用」、安全文案收斂、dashboard polish）
 
 純 UI / 文案,無 FHIR 資料模型或邏輯變更(對接合約不變)。源自第三方視覺/UX 稽核:

@@ -6,6 +6,27 @@
   <style>
     /* ── Reset & base ──────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; }
+    /* ── Notice / reminder palette (single source of truth) ──────────
+       One hex per semantic so the info/caution/error/success families
+       stay consistent across every reminder, status, and callout.
+       Phase 1 of the notice-unification pass — replaces the 3 drifted
+       blues (#2563eb / #1e40af / #1d4ed8) and 2 ambers with these. */
+    :root {
+      --notice-info-bg: #eff6ff;
+      --notice-info-bg-hover: #dbeafe;
+      --notice-info-border: #bfdbfe;
+      --notice-info-fg: #1e40af;
+      --notice-accent: #2563eb;        /* links / jump / inline guidance */
+      --notice-accent-strong: #1e3a8a; /* hover */
+      --notice-caution-bg: #fffbeb;
+      --notice-caution-border: #fde68a;
+      --notice-caution-fg: #92400e;
+      --notice-error-bg: #fef2f2;
+      --notice-error-border: #fecaca;
+      --notice-error-fg: #b91c1c;
+      --notice-success: #10b981;
+      --notice-neutral-fg: #9ca3af;
+    }
     /* [hidden] must win over display rules below. Without this, the
        `button { display: inline-flex }` reset would defeat hidden=true
        on #stop-btn, leaving the stop button visible after sync. */
@@ -99,7 +120,7 @@
     .setting-label .required { color: #dc2626; }
     .hint {
       font-size: 11px;
-      color: #9ca3af;
+      color: var(--notice-neutral-fg);
       margin-top: 4px;
       line-height: 1.5;
     }
@@ -109,9 +130,9 @@
     .imaging-jpg-note {
       font-size: 11px;
       line-height: 1.5;
-      color: #1e40af;
-      background: #eff6ff;
-      border: 0.5px solid #bfdbfe;
+      color: var(--notice-info-fg);
+      background: var(--notice-info-bg);
+      border: 0.5px solid var(--notice-info-border);
       border-radius: 6px;
       padding: 6px 8px;
       margin-top: 7px;
@@ -122,15 +143,15 @@
        shown only when 去識別化 is 開啟. Warning line in amber. */
     .deid-detail {
       margin-top: 8px;
-      background: #eff6ff;
-      border: 0.5px solid #bfdbfe;
+      background: var(--notice-info-bg);
+      border: 0.5px solid var(--notice-info-border);
       border-radius: 6px;
       padding: 7px 9px;
       font-size: 11px;
-      color: #1e40af;
+      color: var(--notice-info-fg);
       line-height: 1.55;
     }
-    .deid-detail .deid-warn { color: #92400e; }
+    .deid-detail .deid-warn { color: var(--notice-caution-fg); }
 
     /* Post-download "handle with care" reminder — shown only once a bundle
        exists (lives inside #bundle-meta-block, which toggles with the file),
@@ -138,12 +159,12 @@
        the downloaded file once it leaves the bridge. */
     .bundle-care-note {
       margin-top: 8px;
-      background: #fffbeb;
-      border: 0.5px solid #fde68a;
+      background: var(--notice-caution-bg);
+      border: 0.5px solid var(--notice-caution-border);
       border-radius: 6px;
       padding: 8px 10px;
       font-size: 11px;
-      color: #92400e;
+      color: var(--notice-caution-fg);
       line-height: 1.55;
     }
 
@@ -583,59 +604,51 @@
        anywhere on it to jump back to the relevant step. The right-
        hand "→ ① 登入" hint signals where it'll take you. Inherits
        the warning color so it doesn't read as a primary CTA. */
-    /* Inline guidance below the disabled CTA. NOT a warning — it's
-       an explanation of why the button is currently inactive +
-       shortcut to fix it. Subtle blue text link style (no border, no
-       background) — shares one visual language with .status-action
-       (post-download CTA) and the "安全說明 ↗" footer link, so all
-       inline-navigation cues read consistently as "secondary link".
-       Click anywhere on the row navigates to the target step. */
+    /* Inline guidance below the disabled CTA — why the button is
+       inactive + a one-tap shortcut to fix it. Rendered as a soft info
+       chip (filled blue, rounded, leading icon + trailing chevron) so it
+       reads as a designed, actionable element rather than raw underlined
+       links. Click anywhere on the row navigates to the target step. */
     .cta-reason {
-      margin-bottom: 8px;
-      padding: 0;
-      background: transparent;
-      border: none;
-      color: #2563eb;
-      font-size: 12px;
-      line-height: 1.5;
-      font-family: inherit;
-      font-weight: 500;
-      text-align: left;
-      width: 100%;
-      cursor: pointer;
       display: flex;
-      align-items: baseline;
-      gap: 12px;
-      transition: color 0.12s;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      margin-bottom: 8px;
+      padding: 8px 10px;
+      background: var(--notice-info-bg);
+      border: 0.5px solid var(--notice-info-border);
+      border-radius: 8px;
+      color: var(--notice-info-fg);
+      font-size: 12px;
+      line-height: 1.4;
+      font-family: inherit;
+      font-weight: 400;
+      text-align: left;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
     }
     .cta-reason:hover {
-      color: #1e3a8a;
+      background: var(--notice-info-bg-hover);
+      border-color: var(--notice-accent);
     }
     .cta-reason:focus-visible {
-      outline: 2px solid #f59e0b;
+      outline: 2px solid var(--notice-accent);
       outline-offset: 2px;
-      border-radius: 2px;
     }
-    .cta-reason-msg {
-      flex: 1;
-      min-width: 0;
-      word-break: break-word;
-      text-decoration: underline;
-      text-underline-offset: 2px;
-      text-decoration-color: rgba(37, 99, 235, 0.3);
-      transition: text-decoration-color 0.12s;
-    }
+    .cta-reason-icon,
     .cta-reason-jump {
       flex: 0 0 auto;
-      white-space: nowrap;
-      text-decoration: underline;
-      text-underline-offset: 2px;
-      text-decoration-color: rgba(37, 99, 235, 0.3);
-      transition: text-decoration-color 0.12s;
+      display: inline-flex;
+      align-items: center;
     }
-    .cta-reason:hover .cta-reason-msg,
-    .cta-reason:hover .cta-reason-jump {
-      text-decoration-color: currentColor;
+    .cta-reason-icon { opacity: 0.85; }
+    .cta-reason-jump { opacity: 0.5; transition: opacity 0.12s; }
+    .cta-reason:hover .cta-reason-jump { opacity: 0.85; }
+    .cta-reason-msg {
+      flex: 1 1 auto;
+      min-width: 0;
+      word-break: break-word;
     }
 
     .btn-secondary {
@@ -972,7 +985,7 @@
       padding: 0;
       background: transparent;
       border: none;
-      color: #2563eb;
+      color: var(--notice-accent);
       font-size: 12px;
       line-height: 1.5;
       font-family: inherit;
@@ -1002,15 +1015,15 @@
       background: transparent;
       color: #111827;
       border: none;
-      border-left: 3px solid #2563eb;
+      border-left: 3px solid var(--notice-accent);
       padding: 4px 0 4px 10px;
     }
-    .status.success { border-left-color: #10b981; }
+    .status.success { border-left-color: var(--notice-success); }
     .status.error {
       display: block;
-      background: #fef2f2;
-      color: #b91c1c;
-      border: 1px solid #fecaca;
+      background: var(--notice-error-bg);
+      color: var(--notice-error-fg);
+      border: 1px solid var(--notice-error-border);
     }
     /* Phase timings — structured label/value list (same shape as
        .status-breakdown) so the popup feels consistent regardless
@@ -1421,8 +1434,8 @@
        trailing inline link to the full safety doc. */
     .popup-meta-safety {
       padding: 10px 14px;
-      background: #eff6ff;             /* very light blue */
-      color: #1e40af;                  /* dark blue */
+      background: var(--notice-info-bg);   /* very light blue */
+      color: var(--notice-info-fg);        /* dark blue */
       border-top: 1px solid #f3e8c5;   /* match outer border for continuity */
     }
     .popup-meta-safety a {

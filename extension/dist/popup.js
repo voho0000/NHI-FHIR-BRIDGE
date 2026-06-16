@@ -1876,6 +1876,10 @@
   }
 
   // src/popup/wizard.ts
+  var _SVG_OPEN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+  var ICON_LOCK = `${_SVG_OPEN}<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
+  var ICON_INFO = `${_SVG_OPEN}<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+  var ICON_CHEVRON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
   function _markStep2Confirmed(yes) {
     state.step2Confirmed = !!yes;
   }
@@ -1992,6 +1996,7 @@
     const step2BasicOk = !!els.ovGender?.value && !!els.ovName?.value?.trim();
     const dobError = validateBirthDate();
     let inlineMsg = "";
+    let inlineIcon = "info";
     let jumpTo = null;
     let tooltipReason = "";
     if (!onNhi) {
@@ -1999,6 +2004,7 @@
       jumpTo = { step: 1, label: "\u767B\u5165" };
     } else if (!loggedIn) {
       inlineMsg = "\u5065\u4FDD\u5B58\u647A\u5206\u9801\u5C1A\u672A\u767B\u5165";
+      inlineIcon = "lock";
       jumpTo = { step: 1, label: "\u767B\u5165" };
     } else if (!step2BasicOk) {
       inlineMsg = "\u8ACB\u5B8C\u6210\u57FA\u672C\u8CC7\u6599\u4E26\u6309\u78BA\u5B9A";
@@ -2019,18 +2025,27 @@
       els.syncBlockedReason.hidden = !show;
       if (show) {
         els.syncBlockedReason.textContent = "";
+        const iconEl = document.createElement("span");
+        iconEl.className = "cta-reason-icon";
+        iconEl.innerHTML = inlineIcon === "lock" ? ICON_LOCK : ICON_INFO;
+        els.syncBlockedReason.appendChild(iconEl);
         const msgEl = document.createElement("span");
         msgEl.className = "cta-reason-msg";
-        msgEl.textContent = `\u2192 ${inlineMsg}`;
+        msgEl.textContent = inlineMsg;
         els.syncBlockedReason.appendChild(msgEl);
         if (jumpTo) {
           const jumpEl = document.createElement("span");
           jumpEl.className = "cta-reason-jump";
-          jumpEl.textContent = `\u56DE ${_stepNumGlyph(jumpTo.step)} ${jumpTo.label} \u2192`;
+          jumpEl.innerHTML = ICON_CHEVRON;
           els.syncBlockedReason.appendChild(jumpEl);
           els.syncBlockedReason.dataset.targetStep = String(jumpTo.step);
+          els.syncBlockedReason.setAttribute(
+            "aria-label",
+            `${inlineMsg}\uFF0C\u524D\u5F80${_stepNumGlyph(jumpTo.step)} ${jumpTo.label}`
+          );
         } else {
           delete els.syncBlockedReason.dataset.targetStep;
+          els.syncBlockedReason.removeAttribute("aria-label");
         }
       }
     }
@@ -2969,7 +2984,7 @@
     }
     const onLogin = await isOnNhiLoginPage(tab.id, url);
     if (onLogin) {
-      setStatus("\u{1F512} \u9084\u6C92\u767B\u5165\u5065\u4FDD\u5B58\u647A \u2014 \u8ACB\u56DE\u5230\u300C\u2460 \u767B\u5165\u300D", "error");
+      setStatus("\u5065\u4FDD\u5B58\u647A\u5206\u9801\u5C1A\u672A\u767B\u5165 \u2014 \u56DE \u2460 \u767B\u5165", "info");
       return;
     }
     if (currentMode() === "backend") {

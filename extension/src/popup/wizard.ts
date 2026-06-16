@@ -17,6 +17,17 @@ import { getPatientOverride, validateBirthDate } from "./patient-form.js";
 import { state } from "./state.js";
 import { _stepNumGlyph, currentMode } from "./utils.js";
 
+// Inline SVG icons for the blocked-CTA info chip (.cta-reason). Stroke
+// uses currentColor so they inherit the chip's --notice-info-fg. A lock
+// anchors the login states; a neutral info circle covers the rest; the
+// chevron signals "tap to jump to the step that fixes this".
+const _SVG_OPEN =
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+const ICON_LOCK = `${_SVG_OPEN}<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
+const ICON_INFO = `${_SVG_OPEN}<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+const ICON_CHEVRON =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
+
 // Step 2 is "done" only after the user has clicked ✓ 確定 with valid
 // inputs. We track this with a boolean rather than reading live DOM
 // state — otherwise the wizard would auto-advance the moment the
@@ -235,6 +246,7 @@ export function _refreshButtonStates() {
   // tooltip is what the disabled button advertises on hover; jumpTo
   // (when set) makes the strip a clickable shortcut back to that step.
   let inlineMsg = "";
+  let inlineIcon = "info"; // "lock" for login states, "info" otherwise
   let jumpTo = null; // { step: 1|2, label: "登入" | "您的資料" }
   let tooltipReason = "";
   if (!onNhi) {
@@ -242,6 +254,7 @@ export function _refreshButtonStates() {
     jumpTo = { step: 1, label: "登入" };
   } else if (!loggedIn) {
     inlineMsg = "健保存摺分頁尚未登入";
+    inlineIcon = "lock";
     jumpTo = { step: 1, label: "登入" };
   } else if (!step2BasicOk) {
     // Don't enumerate which field is missing — there could be more
@@ -272,25 +285,33 @@ export function _refreshButtonStates() {
     const show = !syncRunning && inlineMsg !== "";
     els.syncBlockedReason.hidden = !show;
     if (show) {
-      // Build the strip's content: "→ {msg}    回 ① 登入 →" so the
-      // user sees both the reason and where the click will take them.
-      // "→" arrow signals "do this next" (information/guidance);
-      // the original ⚠️ was alarm-grade and clashed with the genuine
-      // disclaimer card below. Blue palette in CSS reinforces the
-      // info-not-warning framing.
+      // Info-chip layout: [icon] reason …… [chevron]. The whole chip is
+      // the clickable button (#sync-blocked-reason); popup.ts reads
+      // dataset.targetStep on click to jump to the step that fixes this.
+      // Replaces the old "→ {msg}  回 ① 登入 →" double-arrow underlined
+      // strip — it read like debug text and clashed with the card UI.
       els.syncBlockedReason.textContent = "";
+      const iconEl = document.createElement("span");
+      iconEl.className = "cta-reason-icon";
+      iconEl.innerHTML = inlineIcon === "lock" ? ICON_LOCK : ICON_INFO;
+      els.syncBlockedReason.appendChild(iconEl);
       const msgEl = document.createElement("span");
       msgEl.className = "cta-reason-msg";
-      msgEl.textContent = `→ ${inlineMsg}`;
+      msgEl.textContent = inlineMsg;
       els.syncBlockedReason.appendChild(msgEl);
       if (jumpTo) {
         const jumpEl = document.createElement("span");
         jumpEl.className = "cta-reason-jump";
-        jumpEl.textContent = `回 ${_stepNumGlyph(jumpTo.step)} ${jumpTo.label} →`;
+        jumpEl.innerHTML = ICON_CHEVRON;
         els.syncBlockedReason.appendChild(jumpEl);
         els.syncBlockedReason.dataset.targetStep = String(jumpTo.step);
+        els.syncBlockedReason.setAttribute(
+          "aria-label",
+          `${inlineMsg}，前往${_stepNumGlyph(jumpTo.step)} ${jumpTo.label}`,
+        );
       } else {
         delete els.syncBlockedReason.dataset.targetStep;
+        els.syncBlockedReason.removeAttribute("aria-label");
       }
     }
   }
