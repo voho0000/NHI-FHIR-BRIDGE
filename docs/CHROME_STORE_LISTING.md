@@ -38,7 +38,7 @@ Convert your Taiwan NHI "My Health Bank" records (visits, meds, labs, imaging) i
 NHI-FHIR Bridge 把你在健保署「健康存摺」(myhealthbank.nhi.gov.tw) 上的個人醫療紀錄，一鍵轉換為 HL7 FHIR R4 國際標準格式，方便你做個人健康資料備份、研究分析、或匯入任何能讀 FHIR 的軟體（例如 SMART on FHIR App）。
 
 ▍它能做什麼
-• 擷取以下健保存摺資料並轉為 FHIR：
+• 擷取以下健康存摺資料並轉為 FHIR：
   - 就醫紀錄（門診、急診、住院）→ Encounter
   - 用藥紀錄（含慢性處方箋）→ MedicationRequest
   - 檢驗檢查結果 → DiagnosticReport + Observation（內建 200+ 條檢驗項目對 LOINC 對照規則）

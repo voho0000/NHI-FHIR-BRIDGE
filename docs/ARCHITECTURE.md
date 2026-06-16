@@ -86,7 +86,7 @@ sequenceDiagram
   participant DB as SQLite (FHIR resources)
 
   User->>NHI: 用健保卡登入
-  User->>Ext: 點「🔄 取得健保存摺資料」
+  User->>Ext: 點「🔄 取得健康存摺資料」
   Ext->>NHI: 自動帶入身分證 (IHKE3410)
   par 13+ 個 NHI 端點平行抓
     Ext->>NHI: GET /api/ihke3000/ihke3306s01/search (藥品)

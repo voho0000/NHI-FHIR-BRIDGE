@@ -275,7 +275,7 @@ export function adaptMedicationFromDetail(drug, visit, options) {
   // Bug report 2026-05-27 Part 3 C6: 758/758 MedicationRequests had no
   // dosageInstruction. Author comment previously noted "List endpoint
   // doesn't expose dose/frequency/route" but SMART app dev reported NHI
-  // 健保存摺 does expose 用法. Probe several likely raw NHI field names;
+  // 健康存摺 does expose 用法. Probe several likely raw NHI field names;
   // if any contain a non-empty string we surface it via dosage_text →
   // mapper sets MedicationRequest.dosageInstruction[0].text. Empty →
   // no change (current behaviour preserved for fixtures that genuinely
@@ -287,7 +287,7 @@ export function adaptMedicationFromDetail(drug, visit, options) {
   //   act / code_url / push_ROWID / show_push
   // — none is a 用法/頻次/劑量 (frequency / sig / dosage) field. So this
   // probe never fires at IHKE3306S02 and dosage_text stays "" in practice;
-  // 健保存摺 does NOT expose structured 用法 at this detail endpoint. The
+  // 健康存摺 does NOT expose structured 用法 at this detail endpoint. The
   // probe is kept as harmless forward-compat scaffolding in case a future
   // endpoint ships one of these fields — do NOT claim dosage support on
   // the strength of it.
@@ -738,7 +738,7 @@ export function adaptEncounterFromMedExpense(item, classHint, options) {
 // vaccine name stays clean. Influenza ("流感疫苗") has no batch
 // suffix — lot_number ends up empty, mapper omits the field.
 //
-// status: Immunization records on 健保存摺 are post-administration only
+// status: Immunization records on 健康存摺 are post-administration only
 // (NHI doesn't show planned / not-given vaccines), so the mapper
 // hardcodes Immunization.status = "completed".
 export function adaptImmunization(item) {

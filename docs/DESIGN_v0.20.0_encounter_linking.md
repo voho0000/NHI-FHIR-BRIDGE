@@ -8,7 +8,7 @@
 
 ## 1. 問題
 
-健保存摺真的有一筆「5/18 西醫(實為急診)K92.0 吐血」的就醫,有自己的用藥(Takepron×1/1天、氯化鈉×1)與檢驗(CBC/PT/APTT/BUN/Cr/Na/K…),它正是「病人來看診 → 醫師發現要收住院」的源頭就醫。但目前 bundle:
+健康存摺真的有一筆「5/18 西醫(實為急診)K92.0 吐血」的就醫,有自己的用藥(Takepron×1/1天、氯化鈉×1)與檢驗(CBC/PT/APTT/BUN/Cr/Na/K…),它正是「病人來看診 → 醫師發現要收住院」的源頭就醫。但目前 bundle:
 
 1. **這筆就醫 Encounter 整個不見了** —— 被 `dedupAdmissionDayAmb` 當「住院的帳務分身」刪除。
 2. 它的用藥/檢驗被錯掛到住院 Encounter(link 只靠 (院所, 日期) 猜,分不出來)。
@@ -67,7 +67,7 @@ IHKE3409S01(檢驗值)欄位(live 查證):
 - 刪 `packages/mapper/src/link.ts` 的函式 + export。
 - 移除呼叫點:`extension/src/background/bundle.ts`、`backend-ts/src/api/sync.ts`。
 - 移除 `backend-ts/tests/unit/link.test.ts` 的 `dedupAdmissionDayAmb` describe 區塊。
-- 效果:急診/門診源頭就醫救回,與健保存摺 UI 一致。真住院重複仍由 encounter-id(含 class)自動合併。
+- 效果:急診/門診源頭就醫救回,與健康存摺 UI 一致。真住院重複仍由 encounter-id(含 class)自動合併。
 
 ### 3.2 急診分類修正(EMER)
 - 目前 `s02-detail.ts` 只看 `hosp_DATA_TYPE_NAME`:含「急」→ EMER,否則 AMB。急診常被報成「西醫」→ 誤判 AMB。
@@ -113,7 +113,7 @@ IHKE3409S01(檢驗值)欄位(live 查證):
 ---
 
 ## 5. 風險 / 取捨
-- **Encounter 數會增加**(救回源頭就醫)—— 忠實、與健保存摺 UI 一致。
+- **Encounter 數會增加**(救回源頭就醫)—— 忠實、與健康存摺 UI 一致。
 - **部分入院當天的藥/檢驗會變「不掛 encounter」**(模糊時)—— 資料仍在 bundle(有日期/院所/值),只是不綁特定就醫。優於現在「整個急診就醫被刪、藥被錯掛住院」。
 - 用藥精準匹配若 IHKE3303 與 IHKE3306 的 qty/days 偶有不一致 → 該筆退回容錯掛載(不會錯掛,頂多留空)。
 
