@@ -3,6 +3,18 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.13 重點 — 2026-06-17（影像「資料確認中」不再被當成無影像漏抓）
+
+實測根因(live 打 NHI API 2026-06-17 確認):大量影像史的病人,首次同步時整份影像清單是 `jpG_STATUS = "-"`(資料確認中) —— NHI 還在後端確認清單。先前邏輯只認 `"A"`/`"1"` 為「有圖」,同步內只等 **24 秒**等不到翻轉,就把整批當成「無影像檔」報「沒有可下載的圖片」。但 `"-"` 是**暫態**,過幾分鐘會自己翻成 `"A"`(可觸發,真的有圖)或 `"2"`(真無圖) —— 實測同一位病人那批 `"-"` 稍後全變 `"A"`/`"2"`,且對 `"A"` 列觸發(POST `/add`)能正常備圖。所以那批是**真的漏抓了 X 光／CT 影像**。
+
+修正:
+
+- **新增「資料確認中」判定**(`imagingRowIsConfirming`):狀態非 `{1,A,2,0}` 的暫態(以排除法認定,不寫死 `"-"`)。
+- **同步內等待 24s → ~60s**(仍一偵測到 usable 就早退);剩下交給跨同步。
+- **文案分流**:`"-"` 資料確認中(顯示「N 筆仍在備製中,稍後再同步即可取得圖片」)≠ `"2"` 無影像檔(才說「無影像檔,只取得文字報告」)。不再一律誤報「沒有可下載的圖片」。
+- **跨同步續抓**:同步結束仍有 `"-"` → 啟動既有的「影像備製中」背景輪詢(reuse prep-poll),NHI 把清單確認完(翻成 `A`/`1`)後提示再同步即可補齊。新終止分支僅在「純資料確認中(本次沒觸發任何列)」情境啟用,完全不動已調好的觸發等待 phantom 防呆。
+- CI:`imaging-list-status.test.js` 加 11 個 case(`imagingRowIsConfirming` / `countImagingConfirming` / 與 `imagingListNeedsResolve` 的區別)。
+
 ## 0.20.12 重點 — 2026-06-16（提醒元件統一 Phase 2:影像 prep banner 對齊 notice token；用詞統一「健康存摺」）
 
 純 UI / 文案,無 FHIR 資料模型或邏輯變更:

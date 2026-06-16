@@ -6109,6 +6109,22 @@
     }
   }
 
+  // src/background/imaging-list-status.ts
+  function imagingRowHasUsableImage(row) {
+    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
+    return s === "A" || s === "1";
+  }
+  function imagingRowIsConfirming(row) {
+    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
+    return s !== "" && s !== "1" && s !== "A" && s !== "2" && s !== "0";
+  }
+  function countImagingConfirming(rows) {
+    return rows.reduce((n, r) => n + (imagingRowIsConfirming(r) ? 1 : 0), 0);
+  }
+  function imagingListNeedsResolve(rows) {
+    return !rows.some(imagingRowHasUsableImage);
+  }
+
   // src/background/storage-migration.ts
   async function migrateSyncToLocal() {
     try {
@@ -6167,15 +6183,16 @@
   }
 
   // src/background/imaging-prep-poll.ts
-  async function startPrepPolling(patientId, initialCount, baseUrl, baselineReady = 0) {
-    if (!patientId || initialCount <= 0) return;
+  async function startPrepPolling(patientId, initialCount, baseUrl, baselineReady = 0, confirmingInitial = 0) {
+    if (!patientId || initialCount <= 0 && confirmingInitial <= 0) return;
     const now = Date.now();
     const state = {
       patientId,
       startedAt: now,
       initialCount,
       baselineReady,
-      count: initialCount,
+      confirmingInitial,
+      count: initialCount + confirmingInitial,
       lastPolledAt: 0,
       pollAttempts: 0,
       status: "polling"
@@ -6238,6 +6255,7 @@
     let nextPreparing = 0;
     let nextStuck = 0;
     let nextFetchable = 0;
+    let nextConfirming = 0;
     try {
       const r = await fetch(url, {
         method: "GET",
@@ -6275,6 +6293,8 @@
         } else if (status === "1") {
           const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
           if (seq && seq !== "-") nextFetchable++;
+        } else if (imagingRowIsConfirming(row)) {
+          nextConfirming++;
         }
       }
     } catch (e) {
@@ -6287,10 +6307,11 @@
       return;
     }
     const gotNewBytes = nextFetchable > state.baselineReady;
-    const nextCount = nextPreparing + nextStuck;
+    const nextCount = nextPreparing + nextStuck + nextConfirming;
+    const confirmingSettledUsable = state.confirmingInitial > 0 && state.initialCount === 0 && nextConfirming === 0 && (nextStuck > 0 || nextFetchable > 0);
     let nextStatus;
-    if (nextPreparing > 0) nextStatus = "polling";
-    else if (gotNewBytes) nextStatus = "ready";
+    if (nextPreparing > 0 || nextConfirming > 0) nextStatus = "polling";
+    else if (gotNewBytes || confirmingSettledUsable) nextStatus = "ready";
     else nextStatus = "unavailable";
     await _writeState({
       ...state,
@@ -8368,15 +8389,6 @@
     return map;
   }
 
-  // src/background/imaging-list-status.ts
-  function imagingRowHasUsableImage(row) {
-    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
-    return s === "A" || s === "1";
-  }
-  function imagingListNeedsResolve(rows) {
-    return !rows.some(imagingRowHasUsableImage);
-  }
-
   // src/background/nhi-list-fetch.ts
   async function fetchNhiListsInTab(tabId, fetchSpec) {
     let settledRaw;
@@ -8886,11 +8898,16 @@
             () => refetchImagingListUntilResolved({
               tabId,
               url: imagingUrl,
-              // 8×3s ≈ 24s. A first entry after the ~1wk image cache expires
-              // re-confirms the list slower than a brand-new patient (~10s),
-              // so give it more headroom — only costs latency when image
-              // download is on AND the list is genuinely still preparing.
-              maxAttempts: 8,
+              // 20×3s ≈ 60s. Bumped from 24s (v0.20.13): a patient with a
+              // LARGE imaging history makes NHI's server-side list-confirm
+              // take much longer than 24s, so the old budget expired with
+              // every row still "資料確認中" ("-") → 0 candidates → real
+              // X-ray/CT images silently dropped. The loop early-exits the
+              // instant ANY row exposes a usable image, so this only costs
+              // latency when the list is genuinely still confirming; the
+              // cross-sync prep-poll picks up anything still unresolved at
+              // 60s (NHI can take minutes), so we don't block longer.
+              maxAttempts: 20,
               intervalMs: 3e3
             })
           );
@@ -8902,6 +8919,7 @@
           errors.push(`imaging list confirm: ${e?.message || e}`);
         }
       }
+      settled[imgIdx].value.jpegConfirmingCount = fetchImagingEnabled ? countImagingConfirming(visits) : 0;
       if (visits.length > 0) {
         try {
           const detail = await withProgressTimer(
@@ -9272,7 +9290,16 @@
             "\u3000\u6B64\u6B21\u53EA\u53D6\u5F97\u6587\u5B57\u5831\u544A\uFF0C\u672A\u4E0B\u8F09\u5F71\u50CF\u5716\u7247\u3002\u5982\u9700 X \u5149\uFF0F\u96FB\u8166\u65B7\u5C64\u7B49\u5716\u7247\uFF0C\u8ACB\u52FE\u9078\u300C\u4E00\u4F75\u4E0B\u8F09\u5F71\u50CF\u5716\u7247\u300D\u5F8C\u91CD\u65B0\u53D6\u5F97\u3002"
           );
         } else {
-          breakdown.push(`\u3000\u9019 ${items.length} \u7B46\u5F71\u50CF\u6AA2\u67E5\u6C92\u6709\u53EF\u4E0B\u8F09\u7684\u5716\u7247\uFF0C\u53EA\u53D6\u5F97\u6587\u5B57\u5831\u544A\u3002`);
+          const confirming = s.value.jpegConfirmingCount ?? 0;
+          const noImage = Math.max(0, items.length - confirming);
+          if (confirming > 0) {
+            breakdown.push(
+              `\u3000${confirming} \u7B46\u5F71\u50CF\u4ECD\u5728\u5065\u5EB7\u5B58\u647A\u5099\u88FD\u4E2D\uFF08\u8CC7\u6599\u78BA\u8A8D\u4E2D\uFF09\uFF0C\u7A0D\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u53D6\u5F97\u5716\u7247\u3002`
+            );
+          }
+          if (noImage > 0) {
+            breakdown.push(`\u3000\u9019 ${noImage} \u7B46\u5F71\u50CF\u6AA2\u67E5\u7121\u5F71\u50CF\u6A94\uFF0C\u53EA\u53D6\u5F97\u6587\u5B57\u5831\u544A\u3002`);
+          }
         }
       }
       if (DEBUG_STASH_BODY_SAMPLES && raw_count > 0 && items.length === 0) {
@@ -9412,6 +9439,7 @@
     const _fullBreakdown = [...breakdown, ..._phaseLines];
     const _waitingCount = imgIdx >= 0 && settled[imgIdx].status === "fulfilled" ? settled[imgIdx].value.jpegTriggeredWaitingCount ?? 0 : 0;
     const _fetchFailCount = imgIdx >= 0 && settled[imgIdx].status === "fulfilled" ? settled[imgIdx].value.jpegFetchFailedCount ?? 0 : 0;
+    const _confirmingCount = imgIdx >= 0 && settled[imgIdx].status === "fulfilled" ? settled[imgIdx].value.jpegConfirmingCount ?? 0 : 0;
     let _imagingTail = "";
     if (_waitingCount > 0 && _fetchFailCount > 0) {
       _imagingTail = `\uFF08\u5065\u5EB7\u5B58\u647A\u6B63\u5728\u6E96\u5099 ${_waitingCount} \u5F35\u5F71\u50CF\u3001\u53E6 ${_fetchFailCount} \u5F35\u5F71\u50CF\u56E0\u7DB2\u8DEF\u554F\u984C\u672A\u6293\u5230\uFF0C\u8ACB\u904E 5\u201310 \u5206\u9418\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\uFF09`;
@@ -9419,6 +9447,9 @@
       _imagingTail = `\uFF08\u5065\u5EB7\u5B58\u647A\u6B63\u5728\u6E96\u5099 ${_waitingCount} \u5F35\u5F71\u50CF\uFF0C\u8ACB\u904E 5\u201310 \u5206\u9418\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\uFF09`;
     } else if (_fetchFailCount > 0) {
       _imagingTail = `\uFF08${_fetchFailCount} \u5F35\u5F71\u50CF\u56E0\u7DB2\u8DEF\u554F\u984C\u672A\u6293\u5230\uFF0C\u8ACB\u518D\u6309\u4E00\u6B21\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u6293\uFF09`;
+    }
+    if (_confirmingCount > 0) {
+      _imagingTail += `\uFF08\u5065\u5EB7\u5B58\u647A\u4ECD\u5728\u78BA\u8A8D ${_confirmingCount} \u5F35\u5F71\u50CF\u6E05\u55AE\uFF0C\u7D04\u5E7E\u5206\u9418\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u53D6\u5F97\u5716\u7247\uFF09`;
     }
     const _waitingTail = _imagingTail;
     let _summaryLine;
@@ -9444,7 +9475,7 @@
       localFilename: _localFilename
     });
     await showResultBadge(total);
-    if (fetchImagingEnabled && patientOverride.id_no && _waitingCount > 0 && !errors.length) {
+    if (fetchImagingEnabled && patientOverride.id_no && (_waitingCount > 0 || _confirmingCount > 0) && !errors.length) {
       try {
         const _imgList = (imgIdx >= 0 && settled[imgIdx]?.status === "fulfilled" ? settled[imgIdx].value?.rawList : null) ?? [];
         const _baselineReady = _imgList.filter((row) => {
@@ -9452,7 +9483,13 @@
           const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
           return st === "1" && seq !== "" && seq !== "-";
         }).length;
-        await startPrepPolling(patientOverride.id_no, _waitingCount, BASE, _baselineReady);
+        await startPrepPolling(
+          patientOverride.id_no,
+          _waitingCount,
+          BASE,
+          _baselineReady,
+          _confirmingCount
+        );
       } catch (e) {
         console.warn("[imaging-prep-poll] start failed:", e);
       }

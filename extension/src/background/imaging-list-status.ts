@@ -30,6 +30,25 @@ export function imagingRowHasUsableImage(row: any): boolean {
   return s === "A" || s === "1";
 }
 
+// True for a row NHI is still CONFIRMING server-side — its jpG_STATUS is
+// neither a final image verdict ("1" ready / "A" triggerable / "2" no-image)
+// nor an in-flight trigger ("0"). The observed code is "-" (資料確認中), but
+// per the module's "don't enumerate transient codes" rule we define it by
+// EXCLUSION: any non-empty status outside the known-final set still counts as
+// confirming. Live-verified 2026-06-17: a patient whose whole list was "-" at
+// sync time had every row resolve to "A"/"2" minutes later — i.e. "-" is a
+// transient state that settles into a real verdict, NOT "no image". Treating
+// it as no-image (the pre-fix behaviour) silently dropped real X-ray/CT images.
+export function imagingRowIsConfirming(row: any): boolean {
+  const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
+  return s !== "" && s !== "1" && s !== "A" && s !== "2" && s !== "0";
+}
+
+// Count of still-confirming rows in a list (0 when fully settled).
+export function countImagingConfirming(rows: any[]): number {
+  return rows.reduce((n, r) => n + (imagingRowIsConfirming(r) ? 1 : 0), 0);
+}
+
 // True when the list shows no ready/triggerable image yet (so the caller
 // should wait and refetch). Empty list → true (nothing usable yet); the
 // caller bounds this with its own attempt budget / length guard.

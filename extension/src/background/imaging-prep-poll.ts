@@ -32,6 +32,7 @@ import {
   NHI_BEARER_TOKEN_KEY,
   NHI_BEARER_TOKEN_TTL_MS,
 } from "./constants.js";
+import { imagingRowIsConfirming } from "./imaging-list-status.js";
 import { purgeBearerToken } from "./storage-migration.js";
 
 export type ImagingPrepStatus = "polling" | "ready" | "unavailable" | "timeout" | "session-expired";
@@ -46,7 +47,13 @@ export interface ImagingPrepState {
   // not merely the disappearance of "0" (which also happens on 0→"2"
   // no-image or a phantom 0→"A" revert).
   baselineReady: number;
-  count: number; // # rows still not fetchable we're waiting on ("0" or "A")
+  // # rows that were still "資料確認中" (jpG_STATUS "-") at sync start — NHI
+  // hadn't finished confirming the list, so they couldn't be triggered yet.
+  // 0 for the normal triggered-wait flow. When > 0 AND no triggered rows
+  // exist (pure-confirming sync), the poll's terminal can declare "ready"
+  // once these settle into usable ("A"/"1") images, prompting a re-sync.
+  confirmingInitial: number;
+  count: number; // # rows still not fetchable we're waiting on ("0"/"A"/confirming)
   lastPolledAt: number; // epoch ms of last successful poll (0 = never)
   pollAttempts: number; // # poll cycles executed
   status: ImagingPrepStatus;
@@ -66,15 +73,20 @@ export async function startPrepPolling(
   initialCount: number,
   baseUrl: string,
   baselineReady = 0,
+  confirmingInitial = 0,
 ): Promise<void> {
-  if (!patientId || initialCount <= 0) return;
+  // Start when EITHER triggered rows are waiting OR the list still had
+  // confirming ("-") rows at sync end (NHI finishes confirming in the
+  // background; the poll re-checks and prompts a re-sync when they settle).
+  if (!patientId || (initialCount <= 0 && confirmingInitial <= 0)) return;
   const now = Date.now();
   const state: ImagingPrepState = {
     patientId,
     startedAt: now,
     initialCount,
     baselineReady,
-    count: initialCount,
+    confirmingInitial,
+    count: initialCount + confirmingInitial,
     lastPolledAt: 0,
     pollAttempts: 0,
     status: "polling",
@@ -168,6 +180,7 @@ export async function pollPrepCount(): Promise<void> {
   let nextPreparing = 0;
   let nextStuck = 0;
   let nextFetchable = 0;
+  let nextConfirming = 0;
   try {
     const r = await fetch(url, {
       method: "GET",
@@ -216,6 +229,10 @@ export async function pollPrepCount(): Promise<void> {
       } else if (status === "1") {
         const seq = String((row as any)?.ipL_CASE_SEQ_NO ?? (row as any)?.ipl_CASE_SEQ_NO ?? "");
         if (seq && seq !== "-") nextFetchable++;
+      } else if (imagingRowIsConfirming(row)) {
+        // "資料確認中" ("-") — NHI still confirming this row. Keep polling;
+        // it'll settle into "A"/"1"/"2".
+        nextConfirming++;
       }
     }
   } catch (e: any) {
@@ -237,10 +254,22 @@ export async function pollPrepCount(): Promise<void> {
   //               (no image). Re-syncing won't help, so say so honestly and
   //               stop the alarm instead of looping a false "已備齊".
   const gotNewBytes = nextFetchable > state.baselineReady;
-  const nextCount = nextPreparing + nextStuck;
+  const nextCount = nextPreparing + nextStuck + nextConfirming;
+  // Pure-confirming sync (no triggered rows): once the "-" rows have all
+  // settled, declare "ready" if any became usable ("A" triggerable / "1"
+  // fetchable) so the user re-syncs to actually pull them in. Gated on
+  // initialCount === 0 so the carefully-tuned triggered-wait terminal —
+  // which must NOT flip to "ready" on a phantom "0"→"A" revert (that loop
+  // was the v0.16 bug) — is left completely untouched whenever this sync
+  // triggered anything.
+  const confirmingSettledUsable =
+    state.confirmingInitial > 0 &&
+    state.initialCount === 0 &&
+    nextConfirming === 0 &&
+    (nextStuck > 0 || nextFetchable > 0);
   let nextStatus: ImagingPrepStatus;
-  if (nextPreparing > 0) nextStatus = "polling";
-  else if (gotNewBytes) nextStatus = "ready";
+  if (nextPreparing > 0 || nextConfirming > 0) nextStatus = "polling";
+  else if (gotNewBytes || confirmingSettledUsable) nextStatus = "ready";
   else nextStatus = "unavailable";
   await _writeState({
     ...state,

@@ -90,7 +90,7 @@ function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
 }
 import { rocToISO } from "../nhi-adapters.js";
 import { fetchDischargeSummaryHtmls } from "./discharge-summary-fetcher.js";
-import { imagingListNeedsResolve } from "./imaging-list-status.js";
+import { countImagingConfirming, imagingListNeedsResolve } from "./imaging-list-status.js";
 import {
   adaptSettledLists,
   fetchNhiListsInTab,
@@ -472,11 +472,16 @@ export async function runNhiApiSync({
             refetchImagingListUntilResolved({
               tabId,
               url: imagingUrl,
-              // 8×3s ≈ 24s. A first entry after the ~1wk image cache expires
-              // re-confirms the list slower than a brand-new patient (~10s),
-              // so give it more headroom — only costs latency when image
-              // download is on AND the list is genuinely still preparing.
-              maxAttempts: 8,
+              // 20×3s ≈ 60s. Bumped from 24s (v0.20.13): a patient with a
+              // LARGE imaging history makes NHI's server-side list-confirm
+              // take much longer than 24s, so the old budget expired with
+              // every row still "資料確認中" ("-") → 0 candidates → real
+              // X-ray/CT images silently dropped. The loop early-exits the
+              // instant ANY row exposes a usable image, so this only costs
+              // latency when the list is genuinely still confirming; the
+              // cross-sync prep-poll picks up anything still unresolved at
+              // 60s (NHI can take minutes), so we don't block longer.
+              maxAttempts: 20,
               intervalMs: 3000,
             }),
         );
@@ -488,6 +493,14 @@ export async function runNhiApiSync({
         errors.push(`imaging list confirm: ${e?.message || e}`);
       }
     }
+    // How many rows are STILL "資料確認中" ("-") after the in-sync confirm
+    // wait. These have real images coming, but NHI hasn't settled them into
+    // "A"/"1"/"2" yet — so they produce no candidate this sync. Captured to
+    // (a) message honestly (vs "無影像檔") and (b) drive the cross-sync
+    // prep-poll re-check so the user is prompted to re-sync once they settle.
+    settled[imgIdx].value.jpegConfirmingCount = fetchImagingEnabled
+      ? countImagingConfirming(visits)
+      : 0;
     if (visits.length > 0) {
       try {
         const detail = await withProgressTimer(
@@ -1128,13 +1141,22 @@ export async function runNhiApiSync({
           "　此次只取得文字報告，未下載影像圖片。如需 X 光／電腦斷層等圖片，請勾選「一併下載影像圖片」後重新取得。",
         );
       } else {
-        // Opted IN, but EVERY imaging row was image-less at NHI side
-        // (jpG_STATUS "2" 無影像檔 / no fetchable candidate) → the gate
-        // at "imagingJpegCandidates.length > 0" never fired, so jpegTotal
-        // stayed unset and the detailed stats line above was skipped.
-        // Tell the user these rows are text-only rather than leaving the
-        // bare count to imply a missing-image bug.
-        breakdown.push(`　這 ${items.length} 筆影像檢查沒有可下載的圖片，只取得文字報告。`);
+        // Opted IN but NO fetchable candidate this sync (no "A"/"1" row).
+        // The pre-fix code lumped all such rows into "沒有可下載的圖片",
+        // which was WRONG for "資料確認中" ("-") rows — NHI was still
+        // confirming the list and real images were coming. Split them:
+        //   • 資料確認中 ("-") → still preparing; tell the user to re-sync.
+        //   • 無影像檔 ("2")  → genuinely text-only.
+        const confirming = (s.value.jpegConfirmingCount as number) ?? 0;
+        const noImage = Math.max(0, items.length - confirming);
+        if (confirming > 0) {
+          breakdown.push(
+            `　${confirming} 筆影像仍在健康存摺備製中（資料確認中），稍後再按「取得健康存摺資料」即可取得圖片。`,
+          );
+        }
+        if (noImage > 0) {
+          breakdown.push(`　這 ${noImage} 筆影像檢查無影像檔，只取得文字報告。`);
+        }
       }
     }
     // Save body sample for first endpoint with raw>0 but adapted=0 (adapter
@@ -1395,6 +1417,13 @@ export async function runNhiApiSync({
     imgIdx >= 0 && settled[imgIdx].status === "fulfilled"
       ? (settled[imgIdx].value.jpegFetchFailedCount ?? 0)
       : 0;
+  // Rows still "資料確認中" ("-") at sync end — NHI hadn't settled the list,
+  // so these couldn't be triggered/fetched yet. Real images are coming;
+  // the cross-sync prep-poll re-checks and the tail tells the user to re-sync.
+  const _confirmingCount =
+    imgIdx >= 0 && settled[imgIdx].status === "fulfilled"
+      ? (settled[imgIdx].value.jpegConfirmingCount ?? 0)
+      : 0;
   // Both cases asking the user to re-sync are surfaced as ONE
   // consolidated trailing parenthetical when at least one is non-zero;
   // wording adapts to which case(s) apply. Single tail avoids the
@@ -1407,6 +1436,14 @@ export async function runNhiApiSync({
     _imagingTail = `（健康存摺正在準備 ${_waitingCount} 張影像，請過 5–10 分鐘後再按「取得健康存摺資料」即可補齊）`;
   } else if (_fetchFailCount > 0) {
     _imagingTail = `（${_fetchFailCount} 張影像因網路問題未抓到，請再按一次「取得健康存摺資料」即可補抓）`;
+  }
+  // 資料確認中 ("-") rows: NHI is still confirming the list server-side, so
+  // their images aren't ready to trigger yet. Appended as its own clause so
+  // the user knows a re-sync (after NHI settles, ~minutes) will pull them in.
+  // Usually the only case (a list still confirming has no usable rows to
+  // trigger), but appended (not else-if'd) so a mixed sync surfaces both.
+  if (_confirmingCount > 0) {
+    _imagingTail += `（健康存摺仍在確認 ${_confirmingCount} 張影像清單，約幾分鐘後再按「取得健康存摺資料」即可取得圖片）`;
   }
   // Keep the old _waitingTail name for backward compatibility with
   // the assignment at _summaryLine — _imagingTail subsumes it.
@@ -1447,7 +1484,12 @@ export async function runNhiApiSync({
   // chrome.storage so the popup banner shows live progress. Stops on
   // count=0 / 30-min cap / session expired / new sync / user dismiss.
   // Counts only — NEVER fetches bytes or modifies the stashed bundle.
-  if (fetchImagingEnabled && patientOverride.id_no && _waitingCount > 0 && !errors.length) {
+  if (
+    fetchImagingEnabled &&
+    patientOverride.id_no &&
+    (_waitingCount > 0 || _confirmingCount > 0) &&
+    !errors.length
+  ) {
     try {
       // Baseline = images already fetchable ("1" + real seq) in THIS sync's
       // list, captured before the triggered rows can prepare. The poll then
@@ -1463,7 +1505,13 @@ export async function runNhiApiSync({
         const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
         return st === "1" && seq !== "" && seq !== "-";
       }).length;
-      await startPrepPolling(patientOverride.id_no, _waitingCount, BASE, _baselineReady);
+      await startPrepPolling(
+        patientOverride.id_no,
+        _waitingCount,
+        BASE,
+        _baselineReady,
+        _confirmingCount,
+      );
     } catch (e) {
       console.warn("[imaging-prep-poll] start failed:", e);
     }
