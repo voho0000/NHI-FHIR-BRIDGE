@@ -10,11 +10,13 @@
 
 ---
 
+> 🏛️ **非官方產品**:本專案是獨立開源工具,**並非**衛生福利部中央健康保險署(健保署)、衛生福利部或任何政府機關的官方產品,**亦未經其背書或審核**。「健康存摺」「NHI」等名稱僅用於描述本工具所處理的資料來源。
+>
 > ⚠️ **免責聲明**:本工具**僅供參考,無法保證資料完全準確** —— NHI 的 JSON 偶有 schema 變動、未涵蓋的 edge case、或對應 bug 都可能造成落差。臨床判讀或正式用途請**以[健保署健康存摺](https://myhealthbank.nhi.gov.tw/)顯示的內容為主**;本工具產出的 FHIR 檔僅作個人備份 / 開發測試 / 跨系統匯入的參考。
 >
 > 🔒 **對安全性有疑慮?** 先看 [**給民眾的安全說明**](docs/SECURITY_FOR_USERS.md) —— 不講工程術語,解釋資料路徑、Bridge 不會做的事、內建保護、常見 Q&A。
 >
-> 🛒 **Chrome Web Store**:審查中(上架後在此補連結)。在那之前可從 [GitHub Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest) 下載最新 zip,用「載入未封裝項目」安裝(見下方)。
+> 🛒 **Chrome Web Store**:**尚未上架**(準備送審中;通過後在此補連結)。目前請從 [GitHub Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest) 下載最新 zip,用「載入未封裝項目」安裝(見下方)。
 
 ---
 
@@ -133,7 +135,7 @@ docker compose up -d
 
 完整內容:[給民眾的安全說明](docs/SECURITY_FOR_USERS.md) · [隱私權政策](docs/PRIVACY.md) · [弱點通報](SECURITY.md) · 修補紀錄見 [CHANGELOG.md](CHANGELOG.md)。
 
-> ⚠️ 健康存摺資料屬敏感個資,請遵守《個人資料保護法》;你**只能擷取自己的**健保資料,擷取他人屬違法。
+> ⚠️ 健康存摺資料屬敏感個資,請遵守《個人資料保護法》;你**只能擷取自己有權檢視的**健保資料(本人,或經健保署眷屬功能同意綁定、目前切換顯示的眷屬),擷取你無權檢視的他人資料屬違法。
 
 ---
 

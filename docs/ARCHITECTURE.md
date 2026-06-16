@@ -108,7 +108,7 @@ sequenceDiagram
 
 **關鍵設計**：
 
-- **完全沒有 AI / LLM**：extension 直接打 NHI 的 JSON 端點取得結構化資料，mapper 是純確定性 TypeScript。PHI 永不送雲端、無 prompt engineering、無 AI 推論不確定性。NHI 真的改 API 時專案會直接壞掉（靠 PR 修），不會偷偷把 PHI 送出去 fallback
+- **extension / 後端 / mapper 完全沒有 AI / LLM**：extension 直接打 NHI 的 JSON 端點取得結構化資料，mapper 是純確定性 TypeScript。這三者永不把 PHI 送雲端、無 prompt engineering、無 AI 推論不確定性。NHI 真的改 API 時專案會直接壞掉（靠 PR 修），不會偷偷把 PHI 送出去 fallback。（注意：使用者可主動開啟的外部 SMART App「醫析 MediPrisma」其「AI 問答」會把資料送到雲端 LLM —— 那是該第三方工具的**選用**功能，與本專案的 extension／後端／mapper 無關。）
 - **共用 mapper**：`packages/mapper` 同時被 backend (Hono) 和 extension (service worker) import。模式 A 在 SW 內完成 FHIR 轉換，模式 B 則由後端執行——同一份 mapper 程式碼，輸出相同
 - **stableId + 雜湊 Patient.id**：身分證從不出現在 FHIR `Patient.id` 或 `subject.reference`；只存在 `Patient.identifier[].value`。`derivePatientId()` 走純 SHA-1（無 salt），讓 backend 與 extension 對同一個身分證算出相同 `Patient.id`——這是模式 A 下載 Bundle → backend `/fhir/import` 流程要 round-trip 的前提。殘留風險與緩解詳見 [安全模型 §Patient.id 反推風險](#patientid-反推風險與緩解)
 

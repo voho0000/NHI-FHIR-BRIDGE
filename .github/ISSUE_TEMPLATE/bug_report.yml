@@ -1,0 +1,54 @@
+name: 🐞 Bug 回報 / Bug report
+description: 回報轉換錯誤、UI 問題、或其他 bug
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感謝回報！**送出前請務必移除所有真實個人健康資料。**
+  - type: checkboxes
+    id: phi-ack
+    attributes:
+      label: ⚠️ 隱私確認 / Privacy acknowledgement
+      description: 這是必填。含真實 PHI 的 issue 會被直接刪除。
+      options:
+        - label: 我確認這份回報**不含**任何真實身分證／姓名／生日／病歷號／健康存摺截圖／真實匯出 bundle；所有範例資料皆為合成假資料。
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Bridge 版本 / Version
+      description: popup 右下角或 manifest 的版本號（例 v0.20.15）
+      placeholder: v0.20.x
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 使用模式 / Mode
+      options:
+        - 模式 A — 純擴充功能（下載 JSON）
+        - 模式 B — 擴充功能 + 本機後端
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 發生什麼事 / What happened?
+      description: 描述問題、預期行為、與實際行為。
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 重現步驟 / Steps to reproduce
+      description: 若牽涉特定資料，請改用**合成假資料**描述（例：哪個 NHI 頁面、哪類醫令碼）。
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+  - type: textarea
+    id: env
+    attributes:
+      label: 環境 / Environment
+      placeholder: Chrome 版本、作業系統

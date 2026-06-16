@@ -51,5 +51,8 @@ Key invariants:
 - Patient-scoped tokens use **exact** match against `Patient/<id>`, not
   substring (Taiwan national IDs are fixed-length with no separator, so
   substring matching could leak A12345678 → A123456789)
-- No AI / LLM integration of any kind — PHI never leaves the user's
-  machine through any third-party API call
+- The Bridge, backend, and mapper have **no AI / LLM integration** — FHIR
+  conversion is pure deterministic code, and none of them send PHI to any
+  third-party API. (An external SMART app the user may *choose* to launch —
+  e.g. MediPrisma — can use cloud AI; that is the app's own optional feature,
+  separate from this project.)

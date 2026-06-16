@@ -26,7 +26,9 @@ Relevant env:
 - `ALLOWED_EXTENSION_IDS` — comma-separated chrome-extension IDs allowed via CORS
 - `ALLOW_CORS_ORIGINS` — extra origins beyond the built-in localhost defaults
 
-No LLM / AI integration of any kind. PHI never leaves the host.
+No LLM / AI integration in the backend or mapper. PHI stays on the host
+unless the user explicitly exports it or launches an external SMART app that
+uses cloud AI — that app's own optional feature, separate from this backend.
 
 ## Tests + lint
 

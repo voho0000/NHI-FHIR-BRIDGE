@@ -1,0 +1,26 @@
+name: 💡 功能建議 / Feature request
+description: 建議新功能、新的 NHI 頁面支援、或 FHIR 對應改進
+labels: [enhancement]
+body:
+  - type: checkboxes
+    id: phi-ack
+    attributes:
+      label: ⚠️ 隱私確認 / Privacy acknowledgement
+      options:
+        - label: 我確認這份建議**不含**任何真實個人健康資料（範例皆為合成假資料）。
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解決的問題 / What problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建議做法 / Proposed solution
+  - type: textarea
+    id: context
+    attributes:
+      label: 補充 / Additional context
+      description: 若關於某個 NHI 頁面或 LOINC 對應，請附上**合成**範例或公開規格連結。

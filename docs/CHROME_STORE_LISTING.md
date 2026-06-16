@@ -19,7 +19,7 @@
 ### Short description（≤132 字元，繁中）
 
 ```
-將台灣健保署「健康存摺」的就醫、用藥、檢驗、影像紀錄一鍵轉成 FHIR R4 國際標準格式。資料只在本機處理，不上雲、不接 AI。
+將台灣健保署「健康存摺」的就醫、用藥、檢驗、影像紀錄一鍵轉成 FHIR R4 國際標準格式。Bridge 本身只在本機處理，不上雲、不接 AI。非政府官方產品。
 ```
 
 字數：63 字（含標點），遠低於 132 字元上限。
@@ -69,6 +69,9 @@ GitHub：https://github.com/voho0000/NHI-FHIR-BRIDGE
 授權：Apache License 2.0
 回報問題：請至 GitHub Issues
 
+▍非官方聲明
+本擴充功能為獨立開源專案，並非衛生福利部中央健康保險署（健保署）、衛生福利部或任何政府機關的官方產品，亦未經其背書或審核。「健康存摺」「NHI」等名稱僅用於描述本工具處理的資料來源。
+
 ▍免責聲明
 NHI 偶有 API schema 變動，可能造成輸出與真實情況不一致。臨床判讀或正式用途請以健保署官方網站為準。
 ```
@@ -110,6 +113,9 @@ Diagnosis codes (ICD-10-CM), medications, lab items all preserve both Traditiona
 GitHub: https://github.com/voho0000/NHI-FHIR-BRIDGE
 License: Apache License 2.0
 Issues: please file at GitHub Issues
+
+▍Not an official product
+This is an independent open-source project. It is NOT an official product of Taiwan's National Health Insurance Administration (NHIA), the Ministry of Health and Welfare, or any government agency, and is not endorsed or reviewed by them. Names like "My Health Bank" / "NHI" are used only to describe the data source this tool processes.
 
 ▍Disclaimer
 NHI API schemas occasionally change, which may cause discrepancies between output and the official portal display. For clinical decisions, the NHI official portal is authoritative.

@@ -106,10 +106,29 @@ CI 會在每次 PR / push 跑 `vitest`、`biome check` 與 `tsc --noEmit`（含 
 
 ---
 
+## 測試資料 / 不要貼真實 PHI
+
+本專案處理真實民眾的健康資料，請嚴守：
+
+- **commit、PR、issue、截圖、附件一律不得含真實 PHI** —— 真實身分證／姓名／
+  生日／病歷號／健康存摺截圖／真實匯出 bundle，或足以識別個人的「醫院＋日期＋
+  診斷／用藥」組合。
+- **測試與 fixtures 一律用 checksum 故意無效的合成身分證**（如 `F223456789`、
+  `P123456789`、`B223456789`）。唯一允許的 checksum-valid 例外是規格書範例
+  `A123456789`。CI gate `scripts/check-no-real-twid.mjs` 會掃描所有 git-tracked
+  檔案，比對到通過官方 checksum 的台灣身分證即 fail。
+- 需要可展示的資料時，用
+  [`demo/synthetic-fhir-bundle.json`](demo/synthetic-fhir-bundle.json)（見
+  [`docs/DEMO_SYNTHETIC_BUNDLE.md`](docs/DEMO_SYNTHETIC_BUNDLE.md)）。
+- mapper / observation / coding / resource 建構的改動，請對照
+  [`CLAUDE.md`](CLAUDE.md) 的 FHIR R4 檢查表自我稽核（新增 LOINC 對應需先
+  WebFetch loinc.org 查證）。
+
 ## PR Checklist
 
 開 PR 之前請確認：
 
+- [ ] **沒有真實 PHI**（見上節）；測試資料皆為 checksum 無效的合成碼
 - [ ] `npm test` 全綠（backend-ts vitest）
 - [ ] `npm run lint`（biome）無警告
 - [ ] `npm run typecheck`（tsc --noEmit）通過

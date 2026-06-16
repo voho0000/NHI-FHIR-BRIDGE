@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 安全弱點通報 / Security disclosure
+    url: https://github.com/voho0000/NHI-FHIR-BRIDGE/blob/main/SECURITY.md
+    about: 請勿以公開 issue 通報安全弱點；改走 SECURITY.md 的私下管道。
+  - name: 💬 一般問題 / Questions & discussion
+    url: https://github.com/voho0000/NHI-FHIR-BRIDGE/discussions
+    about: 使用問題、想法討論請走 Discussions（請勿貼真實健康資料）。
