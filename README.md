@@ -91,10 +91,10 @@ flowchart LR
   - 平均約 40 秒（看 NHI 速度，慢的時候可達 2 分鐘）後出現「**📥 下載健康紀錄檔**」按鈕
   - 勾選「抓影像」會多花最多 ~90 秒觸發 NHI 備圖，且 NHI 備圖需 5–10 分鐘後再同步一次才能取回影像
   - 按下會跳「另存新檔」對話框讓你選位置
-  - 檔名範例：`nhi-P12345XXXX-20250517-20260517-v0.9.3.json`
+  - 檔名範例：`nhi-P12345XXXX-20250517-20260517-vX.Y.Z.json`（`vX.Y.Z` 為當前 bridge 版本）
     - `P12345****` ＝ 身分證後 4 碼半遮罩（避免下載夾被瞄到，檔案內容仍是真實值（未開啟去識別化時））
     - `20250517-20260517` ＝ 這次抓的健保資料區間（起–訖日）
-    - `v0.9.3` ＝ 產生這個檔案的 bridge 版本，方便除錯
+    - 版本號 ＝ 產生這個檔案的 bridge 版本，方便除錯（也寫在 `Bundle.meta.tag`）
 - **④ 查看**：按「**🚀 開啟「醫析 MediPrisma」**」在新分頁開啟內建的查看工具
   - 把剛下載的 JSON 拖到頁面、或點頁面上的「**匯入資料**」按鈕選檔
   - 可瀏覽就醫紀錄、用藥時間軸、檢驗趨勢圖、中英對照
@@ -194,7 +194,11 @@ https://your-smart-app.example.com/launch
 
 **後端必須先設定 `SYNC_API_KEY`**（v0.18.4+）：未設 key 時 CORS 鎖在 loopback origin，外部（非 localhost）SMART App — 包含 GitHub Pages 上的 demo「醫析 MediPrisma」— 拿不到後端的 CORS 存取。FHIR / SMART discovery 端點（不含 PHI）仍對所有 origin 開放（符合 SMART on FHIR App Launch IG §3.1）；PHI 端點由 OAuth2 token 保護。
 
-詳見 [docs/ARCHITECTURE.md — CORS 雙層設計](docs/ARCHITECTURE.md#cors-雙層設計)；對接 contract 詳見 [docs/SMART_APP_INTEGRATION_v0.9.2.md](docs/SMART_APP_INTEGRATION_v0.9.2.md)（Encounter.type 雙維度 + coding.system 規範）。
+詳見 [docs/ARCHITECTURE.md — CORS 雙層設計](docs/ARCHITECTURE.md#cors-雙層設計)。
+
+**對接 SMART app 開發者**：
+- 穩定的 `Encounter.type`（kind + channel 雙維度 + coding.system）契約 → [docs/SMART_APP_INTEGRATION_v0.9.2.md](docs/SMART_APP_INTEGRATION_v0.9.2.md)
+- **最新的消費端變更（v0.19→v0.20.7：就醫關聯、住院手術 Procedure/partOf、檢驗判讀校正）→ [docs/SMART_APP_CHANGES_v0.20.md](docs/SMART_APP_CHANGES_v0.20.md)**（先前版本見 `docs/SMART_APP_CHANGES_v0.18.14.md`）
 
 ---
 
@@ -293,13 +297,13 @@ docker compose up -d
 | IHKE 頁面代碼 | 內容 | 產出 FHIR 資源 |
 |---------------|------|----------------|
 | IHKE3101S01 | 個人基本資料 | `Patient` |
-| IHKE3303S01/S02 | 就醫紀錄（門診 / 急診 / 藥局；含詳細診斷） | `Encounter`（含雙維度 type：kind + channel） |
-| IHKE3309S01/S02 | 住院紀錄 | `Encounter` (IMP class) |
-| IHKE3306S01/S02 | 藥品醫囑 | `MedicationRequest` |
+| IHKE3303S01/S02 | 就醫紀錄（西醫門診 / 急診 / 藥局；含詳細診斷） | `Encounter`（含雙維度 type：kind + channel；急診依處置碼分類 EMER） |
+| IHKE3309S01/S02 | 住院紀錄 + 住院手術（`op_CODE`/次處置） | `Encounter` (IMP) + `Procedure`（ICD-10-PCS，主/次以 `partOf` 串接） |
+| IHKE3306S01/S02 | 藥品醫囑 | `MedicationRequest`（依 NHI 申報型別掛到對應就醫） |
 | IHKE3307S01 | 慢性處方箋 | `MedicationRequest`（含 courseOfTherapyType=continuous） |
-| IHKE3401S01/S02 | 檢驗檢查 | `DiagnosticReport` + `Observation` |
+| IHKE3409S01 | 檢驗檢查（其他檢驗資料） | `DiagnosticReport` + `Observation`（判讀用 NHI `assaY_MARK` 校正；依採檢日掛就醫） |
 | IHKE3408S01/S02 | 影像檢查 | `DiagnosticReport` |
-| IHKE3301S05 | 手術醫療程序 | `Procedure` |
+| IHKE3301S05 → IHKE3308S02 | 手術 / 處置（清單為 metadata，明細才有 PCS 碼 + 執行日） | `Procedure`（NHI 醫令碼 + ICD-10-PCS） |
 | IHKE3202S01 | 藥物過敏 | `AllergyIntolerance` |
 | IHKE3203S01 | 預防接種 / 疫苗 | `Immunization` |
 | IHKE3209S01 | 重大傷病 | `Condition` |

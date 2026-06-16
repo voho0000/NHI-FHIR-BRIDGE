@@ -2,7 +2,7 @@
 
 這份文件說明 NHI-FHIR Bridge 在資料安全上的設計與做法，盡量不用工程術語，方便評估是否適合自己使用。
 
-> 最後更新：2026-06-12（對應 bridge **v0.18.4**）
+> 最後更新：2026-06-16（對應 bridge **v0.20.7**）。本文描述的資料流 / 權限 / 保護機制自 v0.18 起未變 —— v0.19–v0.20 的更新只動到 FHIR 資料模型與就醫關聯，不涉及隱私或權限。
 
 ---
 
@@ -69,7 +69,7 @@
 | **權限要求清單 + 為何需要** | README 跟 Chrome Web Store 商店頁面都會列 |
 | **每一版的修改紀錄** | [GitHub Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases) — 寫得很詳細 |
 
-如果身邊有熟悉前端開發的朋友，可以請他們瀏覽 `extension/src/background.js`（核心檔案），確認是否有對外傳送資料的程式碼。
+如果身邊有熟悉前端開發的朋友，可以請他們瀏覽 `extension/src/background/`（核心程式，TypeScript 原始碼；`extension/dist/` 為打包後產物），確認是否有對外傳送資料的程式碼。
 
 ---
 

@@ -48,7 +48,7 @@ docker compose up --build
 
 | Path | Purpose |
 |------|---------|
-| `src/api/fhir.ts`   | `/fhir/*` REST endpoints (Patient + 7 per-patient types) |
+| `src/api/fhir.ts`   | `/fhir/*` REST endpoints (Patient + per-patient clinical resource types) |
 | `src/api/smart.ts`  | SMART OAuth2 authorize/token/launch-context |
 | `src/api/sync.ts`   | `/sync/upload-structured` + audit/log/status reads |
 | `src/core/`         | config, sqlite, migrate, auth middleware |
