@@ -1,6 +1,6 @@
 # Privacy Policy / 隱私權政策
 
-**Last updated / 最後更新**：2026-06-13
+**Last updated / 最後更新**：2026-06-17
 **Effective date / 生效日期**：2026-05-24
 
 ---
@@ -9,7 +9,7 @@
 
 ### 一、本擴充功能是什麼
 
-NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrome 擴充功能，協助使用者將自己在台灣健保署「健康存摺」(`https://myhealthbank.nhi.gov.tw/`) 上的個人醫療紀錄，轉換為 HL7 FHIR R4 國際標準格式，**僅供使用者本人**作為個人健康資料備份、臨床研究、或匯入相容軟體之用。
+NHI-FHIR Bridge（以下稱「本擴充功能」）是一款開源 Chrome 擴充功能，協助使用者將自己在台灣健保署「健康存摺」(`https://myhealthbank.nhi.gov.tw/`) 上的個人醫療紀錄，轉換為 HL7 FHIR R4 國際標準格式，**僅供使用者本人**作為個人健康資料備份、臨床研究、或匯入相容軟體之用。
 
 原始碼公開於 https://github.com/voho0000/NHI-FHIR-BRIDGE （Apache License 2.0）。
 
@@ -61,7 +61,7 @@ NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrom
 
 ### 六、使用者責任與限制
 
-- 使用者**只能擷取自己**的健康存摺紀錄。擷取他人資料屬違法行為，與本擴充功能開發者無關
+- 使用者**只能擷取自己有權檢視**的健康存摺紀錄 —— 亦即你本人的紀錄，或健保署「眷屬」功能中經對方同意綁定、目前切換顯示的眷屬紀錄。擷取你無權檢視之他人資料屬違法行為，與本擴充功能開發者無關
 - 健康存摺資料屬「個人資料保護法」定義之**敏感性個人資料**；使用者應自行妥善保管下載的 JSON 檔案
 - 本工具僅供參考，不保證資料準確；臨床判讀請以健保署官方網站顯示之內容為主
 
@@ -77,6 +77,7 @@ NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrom
 
 如政策有實質變更（例如新增資料收集），將更新本頁面之「最後更新」日期並於 GitHub repository 中標示。
 
+- 2026-06-17：釐清擷取範圍 —— 擴充功能擷取的是「健康存摺目前切換顯示的那個人」之資料；經健保署眷屬功能同意綁定者亦在授權範圍內（先前措辭誤寫為「只能擷取自己」）。產品名稱統一為「NHI-FHIR Bridge」（移除舊有「Capture」字樣）。此為措辭釐清，未變更任何資料處理行為。
 - 2026-06-13：localhost / 127.0.0.1 主機權限自 v0.18.6 起改為 `optional_host_permissions` — 安裝時不再要求，僅在使用者主動啟用「上傳後端」模式時才動態請求。一般使用者安裝時只會被要求存取健保署網域。
 - 2026-06-12：更正暫存機制描述（健康紀錄檔自 v0.14 起實際暫存於 `chrome.storage.local` 並以下載完成／1 小時 TTL 清除，並非 `chrome.storage.session` 隨瀏覽器關閉清除）；補列 `unlimitedStorage` 權限；去識別化模式下 `Patient.id` 雜湊改以半遮身分證計算（v0.18.4）。
 
@@ -94,7 +95,7 @@ NHI-FHIR-Bridge Capture（以下稱「本擴充功能」）是一款開源 Chrom
 
 ### 1. What this extension is
 
-NHI-FHIR-Bridge Capture (the "Extension") is an open-source Chrome extension that helps a user convert their own personal health records from Taiwan's NHI "My Health Bank" portal (`https://myhealthbank.nhi.gov.tw/`) into the HL7 FHIR R4 standard format, **for the user's personal use only** — as a personal health record backup, for clinical research on one's own data, or for import into FHIR-compatible software.
+NHI-FHIR Bridge (the "Extension") is an open-source Chrome extension that helps a user convert their own personal health records from Taiwan's NHI "My Health Bank" portal (`https://myhealthbank.nhi.gov.tw/`) into the HL7 FHIR R4 standard format, **for the user's personal use only** — as a personal health record backup, for clinical research on one's own data, or for import into FHIR-compatible software.
 
 Source code is publicly available at https://github.com/voho0000/NHI-FHIR-BRIDGE under the Apache License 2.0.
 
@@ -144,7 +145,7 @@ Both paths are **user-initiated** with the destination **fully controlled by the
 
 ### 6. User responsibilities
 
-- Users **may only capture their own** NHI records. Capturing another person's records is illegal and outside the scope of this Extension
+- Users **may only capture records they are authorized to view** — i.e. their own records, or those of a dependent they are legitimately bound to and currently switched to via NHI's "dependents" (眷屬) feature. Capturing records you are not authorized to view is illegal and outside the scope of this Extension
 - NHI records are sensitive personal data under Taiwan's Personal Data Protection Act; the user is solely responsible for safeguarding downloaded files
 - This tool is for reference only; for clinical decisions, the official NHI portal display is authoritative
 

@@ -205,7 +205,7 @@ injection of remote sources, no remote module loading.
 https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html
 ```
 
-> ⚠️ 上面這個 URL 需要先**開啟 GitHub Pages** 才會生效。步驟見文末。
+> ✅ 已上線可用（GitHub Pages 來源 = `main` 分支 `/docs`，2026-06-17 實測回 HTTP 200）。直接貼這個 URL 即可。
 
 ---
 
@@ -220,71 +220,69 @@ https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html
 
 ---
 
-## 7. 截圖（你需要自己準備）
+## 7. 截圖（已備妥，放在 repo 的 `store-screenshots/`）
 
-至少 1 張、建議 4-5 張（1280×800 或 640×400 PNG）：
+4 張行銷風截圖已產生好，皆 **1280×800 PNG**，直接上傳即可：
 
-1. ✅ Popup 主畫面（剛打開、病人資料卡片）
-2. ✅ Sync 進度條中（顯示「📥 取得 163 筆…（已 27 秒）」）
-3. ✅ 完成畫面（「✅ 已產生 285 筆健康紀錄」+ 下載按鈕）
-4. ✅ （加分）Dashboard 看 FHIR Patient 列表
-5. ✅ （加分）SMART App 用本工具產出的資料
+| 檔案 | 內容 |
+|------|------|
+| `store-screenshots/store-1-login.png` | 登入步驟 + 標語「健康存摺，一鍵轉成 FHIR」 |
+| `store-screenshots/store-2-profile.png` | 基本資料步驟（示意名 王小明，無真實身分證） |
+| `store-screenshots/store-3-download.png` | 取得完成 + 下載健康存摺檔 |
+| `store-screenshots/store-4-view.png` | 選用：開啟「醫析 MediPrisma」瀏覽 |
 
-實際操作 → Chrome DevTools → Device toolbar → 設成 1280×800 → 截圖。或直接放大瀏覽器截圖。
+如要重產：`node /tmp/shotgen/gen.mjs`（puppeteer-core 驅動本機 Chrome，body[data-mode] 強制 local 模式避免漏出後端按鈕）。
 
 ---
 
 ## 8. Promotional images（選填但建議有）
 
-| 規格 | 用途 |
-|------|------|
-| Small promo tile: 440×280 PNG | 出現在搜尋結果列表（即使 Unlisted 也會出現在 store URL 預覽） |
-| Marquee: 1400×560 PNG | 大型 feature banner（你大概不用，是 Google 主動推 feature 才會用到） |
+| 規格 | 檔案（已備妥） | 用途 |
+|------|------|------|
+| Small promo tile: 440×280 PNG | `store-screenshots/promo-tile-440x280.png` | 出現在搜尋結果列表（即使 Unlisted 也會出現在 store URL 預覽） |
+| Marquee: 1400×560 PNG | `store-screenshots/marquee-1400x560.png` | 大型 feature banner（你大概不用，是 Google 主動推 feature 才會用到） |
 
 ---
 
 ## 9. 上架 checklist 總彙
 
-提交前確認：
+本機端準備（程式 / 文件 / 素材）全部就緒，下列只剩「在 Dev Console 貼上 / 上傳 / 勾選」的人工動作：
 
-- [ ] Zip 已上傳（最新版本，見 GitHub Releases / `git tag`）
-- [x] ~~Manifest 描述對齊~~ (v0.9.5 已修正)
-- [ ] Short description（繁中、英文）
-- [ ] Long description（繁中、英文）
-- [ ] Single purpose statement
-- [ ] 6 個 permission justifications
-- [ ] 1 個 host permission justification（NHI）+ 2 個 optional host permission（localhost / 127.0.0.1，v0.18.6 起改 optional）
-- [ ] Remote code: No
+文件/素材已備妥（✅ = 本機已就緒，照本文件複製即可）：
+
+- [x] Manifest 描述對齊（v0.9.5）+ 名稱統一「NHI-FHIR Bridge」（無 "Capture" 殘留）
+- [x] Short / Long description（繁中＋英文）— 見本文件第 2 節
+- [x] Single purpose statement — 第 3 節
+- [x] 6 個 permission justifications — 第 4 節（alarms / unlimitedStorage 皆實際使用中，非冗權限）
+- [x] Host permission（NHI）+ optional host（localhost / 127.0.0.1）說明 — 第 4 節
+- [x] Privacy policy 已上線：`https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html`（HTTP 200 實測）
+- [x] 4 張 1280×800 截圖 + promo tile + marquee — 在 `store-screenshots/`
+- [x] Remote code: No（executeScript 只用 `func:`，無遠端載入）
+
+提交時要在 Dev Console 做的人工步驟（只有你能做）：
+
+- [ ] 上傳最新 zip（push tag 後由 `release.yml` 自動產 `nhi-fhir-bridge-extension-vX.Y.Z.zip`，到 GitHub Releases 下載）
+- [ ] 貼 Short / Long description（繁中＋英文）
+- [ ] 貼 Single purpose statement
+- [ ] 貼 6 個 permission justifications + host permission 說明
+- [ ] Remote code 選 No
 - [ ] Privacy disclosure 勾選 PII + Health information
 - [ ] 三個 certification 都勾 Yes
-- [ ] Privacy policy URL（GitHub Pages 已開啟、能用瀏覽器打開）
-- [ ] 至少 1 張 1280×800 截圖
-- [ ] Visibility 選 Unlisted
-- [ ] Category 選 Productivity
+- [ ] 貼 Privacy policy URL
+- [ ] 上傳 4 張截圖（+ 選填 promo tile）
+- [ ] Visibility 選 Unlisted、Category 選 Productivity、Pricing Free
 
 ---
 
-## 10. 怎麼把 PRIVACY.md 變成可公開存取的 URL
+## 10. Privacy policy URL（已上線，無需再設定）
 
-GitHub Pages 最快路徑：
-
-```
-1. 把 docs/PRIVACY.md commit + push 到 main
-2. GitHub repo → Settings → Pages
-3. Source: Deploy from a branch
-4. Branch: main / Folder: /docs
-5. Save → 等 1-2 分鐘
-6. 上線網址：https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html
-   （或如果 .md 沒自動轉成 .html → 用 https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY 也可能 work）
-```
-
-如果懶得用 GitHub Pages，第二快是直接貼 GitHub raw markdown URL：
+✅ **已完成**。GitHub Pages 已啟用（Source = `main` 分支 `/docs`），privacy policy 上線且 2026-06-17 實測回 HTTP 200：
 
 ```
-https://github.com/voho0000/NHI-FHIR-BRIDGE/blob/main/docs/PRIVACY.md
+https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html
 ```
 
-Chrome Web Store 過去**有時候**會接受 github blob URL，但 review 偶爾會嫌「不夠正式」。**還是 GitHub Pages 比較穩**。
+Jekyll 會自動把 `docs/PRIVACY.md` 轉成 `PRIVACY.html`，所以每次 push 更新 PRIVACY.md 後網頁也會自動跟著更新（push 後約 1-2 分鐘）。直接把上面這個 URL 貼進 Dev Console 的 Privacy policy 欄位即可，不必再做任何設定。
 
 ---
 
