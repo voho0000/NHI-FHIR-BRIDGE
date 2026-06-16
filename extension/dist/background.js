@@ -5987,6 +5987,36 @@
       throw new Error(`POST upload-structured ${r.status}: ${(await r.text()).slice(0, 200)}`);
     return await r.json();
   }
+  var MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
+  function chunkItemsBySize(items, maxBytes = MAX_UPLOAD_BYTES) {
+    const batches = [];
+    let cur = [];
+    let curBytes = 0;
+    for (const it of items) {
+      const sz = JSON.stringify(it).length;
+      if (cur.length > 0 && curBytes + sz > maxBytes) {
+        batches.push(cur);
+        cur = [];
+        curBytes = 0;
+      }
+      cur.push(it);
+      curBytes += sz;
+    }
+    if (cur.length > 0) batches.push(cur);
+    return batches;
+  }
+  async function postStructuredChunked(backend, page_type, items, syncApiKey, patientOverride) {
+    const batches = chunkItemsBySize(items);
+    if (batches.length <= 1) {
+      return await postStructured(backend, page_type, items, syncApiKey, patientOverride);
+    }
+    let count = 0;
+    for (const batch of batches) {
+      const data = await postStructured(backend, page_type, batch, syncApiKey, patientOverride);
+      count += data.count || 0;
+    }
+    return { count, batches: batches.length };
+  }
   async function exportPatientBundle(backend, syncApiKey, patientId, deidentify) {
     const fhirPid = effectiveFhirPatientId(patientId, deidentify ?? await isMaskEnabled());
     const expUrl = `${backend}/fhir/export?patient=${encodeURIComponent(fhirPid)}`;
@@ -9337,7 +9367,13 @@
           totalResources: total
         });
         try {
-          const data = await postStructured(backend, page_type, items, syncApiKey, uploadOverride);
+          const data = await postStructuredChunked(
+            backend,
+            page_type,
+            items,
+            syncApiKey,
+            uploadOverride
+          );
           total += data.count || 0;
         } catch (e) {
           errors.push(`upload ${page_type}: ${e.message}`);

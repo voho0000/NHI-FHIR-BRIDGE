@@ -3,6 +3,14 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.9 重點 — 2026-06-16（backend 模式:影像上傳分批,避開 32 MB body 上限）
+
+只影響**進階自架 backend 模式**,預設「下載到磁碟」流程與 FHIR 輸出皆不變(SMART app 對接合約不變):
+
+- **backend 上傳改為按 size 自動分批**:backend 對任何請求 body 設 32 MB 上限(防 OOM)。「抓影像」開啟時,影像的 base64 JPG 會 inline 進 items(每張 ~2–3 MB);先前每個 `page_type` 的所有 items 包在**單一 POST** 送出,影像量大的病人(多 frame CT/US)單批可破 80 MB → backend 回 **413**,該批影像就**靜默地沒上傳到 backend**(同步不會崩,其他類型照常,只在 errors 留一行)。現在 `postStructuredChunked` 依序列化大小把 items 打包成低於上限的子批、分多次 POST(backend upsert 為 per-resource 冪等,多次 POST 同 page_type 會正確累加)。一般小的 page_type 仍是單批,行為與舊版逐位元組相同。
+- 殘留限制(誠實標記):單一一筆影像 study 若 inline 太多 frame、**自己就超過 32 MB**,無法再切(一筆 = 一個 FHIR resource),仍會 413 —— 這是不可分割的單資源上限,屬罕見。
+- CI:新增 `extension/tests/backend-upload-chunk.test.js`(打包不漏件、保序、多件批不超上限、超大單件獨立成批)。
+
 ## 0.20.8 重點 — 2026-06-16（上架前整備:名稱統一、AI/雲端文案釐清、release zip 修正）
 
 純整備版,無 FHIR 資料模型或關聯邏輯變更(對接 SMART app 合約不變)。源自上架前第三方稽核:

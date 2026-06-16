@@ -31,7 +31,7 @@ import {
 } from "../nhi-adapters.js";
 import { ENDPOINT_LABEL_ZH, NHI_API_ENDPOINTS } from "../nhi-endpoints.js";
 import { maybeFetchPatientIdFromNhi } from "./auth.js";
-import { exportPatientBundle, postStructured, postSyncLog } from "./backend-upload.js";
+import { exportPatientBundle, postStructuredChunked, postSyncLog } from "./backend-upload.js";
 import { clearResultBadge, showResultBadge } from "./badge.js";
 import { assembleLocalBundle, stashFhirBundle } from "./bundle.js";
 import {
@@ -1279,7 +1279,13 @@ export async function runNhiApiSync({
         totalResources: total,
       });
       try {
-        const data = await postStructured(backend, page_type, items, syncApiKey, uploadOverride);
+        const data = await postStructuredChunked(
+          backend,
+          page_type,
+          items,
+          syncApiKey,
+          uploadOverride,
+        );
         total += data.count || 0;
       } catch (e) {
         errors.push(`upload ${page_type}: ${e.message}`);
