@@ -482,11 +482,6 @@
   var PENDING_IMAGING_TTL_MS = 8 * 24 * 60 * 60 * 1e3;
   var NHI_BEARER_TOKEN_KEY = "nhiBearerToken";
   var NHI_BEARER_TOKEN_TTL_MS = 30 * 60 * 1e3;
-  var IMAGING_PREP_POLL_ALARM = "imaging-prep-poll";
-  var IMAGING_PREP_STATE_KEY = "imagingPrepState";
-  var IMAGING_PREP_BASE_KEY = "imagingPrepBase";
-  var IMAGING_PREP_MAX_MS = 30 * 60 * 1e3;
-  var IMAGING_PREP_POLL_INTERVAL_MIN = 1;
   var DEBUG_STASH_BODY_SAMPLES = false;
   var LOCAL_PAGE_TYPE_ORDER = [
     "encounters",
@@ -6109,22 +6104,6 @@
     }
   }
 
-  // src/background/imaging-list-status.ts
-  function imagingRowHasUsableImage(row) {
-    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
-    return s === "A" || s === "1";
-  }
-  function imagingRowIsConfirming(row) {
-    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
-    return s !== "" && s !== "1" && s !== "A" && s !== "2" && s !== "0";
-  }
-  function countImagingConfirming(rows) {
-    return rows.reduce((n, r) => n + (imagingRowIsConfirming(r) ? 1 : 0), 0);
-  }
-  function imagingListNeedsResolve(rows) {
-    return !rows.some(imagingRowHasUsableImage);
-  }
-
   // src/background/storage-migration.ts
   async function migrateSyncToLocal() {
     try {
@@ -6179,152 +6158,6 @@
     try {
       await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY);
     } catch {
-    }
-  }
-
-  // src/background/imaging-prep-poll.ts
-  async function startPrepPolling(patientId, initialCount, baseUrl, baselineReady = 0, confirmingInitial = 0) {
-    if (!patientId || initialCount <= 0 && confirmingInitial <= 0) return;
-    const now = Date.now();
-    const state = {
-      patientId,
-      startedAt: now,
-      initialCount,
-      baselineReady,
-      confirmingInitial,
-      count: initialCount + confirmingInitial,
-      lastPolledAt: 0,
-      pollAttempts: 0,
-      status: "polling"
-    };
-    await chrome.storage.local.set({
-      [IMAGING_PREP_STATE_KEY]: state,
-      [IMAGING_PREP_BASE_KEY]: baseUrl
-    });
-    chrome.alarms.create(IMAGING_PREP_POLL_ALARM, {
-      periodInMinutes: IMAGING_PREP_POLL_INTERVAL_MIN,
-      delayInMinutes: IMAGING_PREP_POLL_INTERVAL_MIN
-    });
-  }
-  async function stopPrepPolling(opts) {
-    await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
-    });
-    if (!opts?.keepState) {
-      await chrome.storage.local.remove([IMAGING_PREP_STATE_KEY, IMAGING_PREP_BASE_KEY]).catch(() => {
-      });
-    }
-  }
-  async function _loadBearerToken(patientId) {
-    const obj = await chrome.storage.local.get(NHI_BEARER_TOKEN_KEY);
-    const stash = obj[NHI_BEARER_TOKEN_KEY];
-    if (!stash) return null;
-    if (Date.now() - stash.savedAt > NHI_BEARER_TOKEN_TTL_MS) {
-      await chrome.storage.local.remove(NHI_BEARER_TOKEN_KEY).catch(() => {
-      });
-      return null;
-    }
-    if (stash.patientId !== patientId) return null;
-    return stash.token || null;
-  }
-  async function _writeState(state) {
-    await chrome.storage.local.set({ [IMAGING_PREP_STATE_KEY]: state });
-  }
-  async function pollPrepCount() {
-    const stored = await chrome.storage.local.get([IMAGING_PREP_STATE_KEY, IMAGING_PREP_BASE_KEY]);
-    const state = stored[IMAGING_PREP_STATE_KEY];
-    const baseUrl = stored[IMAGING_PREP_BASE_KEY];
-    if (!state || !baseUrl) {
-      await stopPrepPolling();
-      return;
-    }
-    if (Date.now() - state.startedAt >= IMAGING_PREP_MAX_MS) {
-      await _writeState({ ...state, status: "timeout" });
-      await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
-      });
-      await purgeBearerToken();
-      return;
-    }
-    const token = await _loadBearerToken(state.patientId);
-    if (!token) {
-      await _writeState({ ...state, status: "session-expired" });
-      await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
-      });
-      return;
-    }
-    const url = `${baseUrl}/api/ihke3000/ihke3408s01/page_load?s_type=&s_sort=A1&_=${Date.now()}`;
-    let nextPreparing = 0;
-    let nextStuck = 0;
-    let nextFetchable = 0;
-    let nextConfirming = 0;
-    try {
-      const r = await fetch(url, {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-          "X-Requested-With": "XMLHttpRequest"
-        }
-      });
-      if (r.status === 401 || r.status === 403) {
-        await _writeState({ ...state, status: "session-expired" });
-        await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
-        });
-        await purgeBearerToken();
-        return;
-      }
-      if (!r.ok) {
-        await _writeState({
-          ...state,
-          pollAttempts: state.pollAttempts + 1,
-          lastPolledAt: Date.now(),
-          error: `HTTP ${r.status}`
-        });
-        return;
-      }
-      const body = await r.json();
-      const list = body && body.sp_IHKE3408S01_data || [];
-      for (const row of list) {
-        const status = String(row?.jpG_STATUS ?? row?.jpg_STATUS ?? "");
-        if (status === "0") {
-          nextPreparing++;
-        } else if (status === "A") {
-          nextStuck++;
-        } else if (status === "1") {
-          const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
-          if (seq && seq !== "-") nextFetchable++;
-        } else if (imagingRowIsConfirming(row)) {
-          nextConfirming++;
-        }
-      }
-    } catch (e) {
-      await _writeState({
-        ...state,
-        pollAttempts: state.pollAttempts + 1,
-        lastPolledAt: Date.now(),
-        error: String(e?.message || e)
-      });
-      return;
-    }
-    const gotNewBytes = nextFetchable > state.baselineReady;
-    const nextCount = nextPreparing + nextStuck + nextConfirming;
-    const confirmingSettledUsable = state.confirmingInitial > 0 && state.initialCount === 0 && nextConfirming === 0 && (nextStuck > 0 || nextFetchable > 0);
-    let nextStatus;
-    if (nextPreparing > 0 || nextConfirming > 0) nextStatus = "polling";
-    else if (gotNewBytes || confirmingSettledUsable) nextStatus = "ready";
-    else nextStatus = "unavailable";
-    await _writeState({
-      ...state,
-      count: nextCount,
-      pollAttempts: state.pollAttempts + 1,
-      lastPolledAt: Date.now(),
-      status: nextStatus,
-      error: void 0
-    });
-    if (nextStatus !== "polling") {
-      await chrome.alarms.clear(IMAGING_PREP_POLL_ALARM).catch(() => {
-      });
-      await purgeBearerToken();
     }
   }
 
@@ -8389,6 +8222,22 @@
     return map;
   }
 
+  // src/background/imaging-list-status.ts
+  function imagingRowHasUsableImage(row) {
+    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
+    return s === "A" || s === "1";
+  }
+  function imagingRowIsConfirming(row) {
+    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
+    return s !== "" && s !== "1" && s !== "A" && s !== "2" && s !== "0";
+  }
+  function countImagingConfirming(rows) {
+    return rows.reduce((n, r) => n + (imagingRowIsConfirming(r) ? 1 : 0), 0);
+  }
+  function imagingListNeedsResolve(rows) {
+    return !rows.some(imagingRowHasUsableImage);
+  }
+
   // src/background/nhi-list-fetch.ts
   async function fetchNhiListsInTab(tabId, fetchSpec) {
     let settledRaw;
@@ -8749,8 +8598,6 @@
     await clearResultBadge();
     await chrome.storage.local.remove([PENDING_BUNDLE_KEY, PENDING_BUNDLE_JSON_KEY]).catch(() => {
     });
-    await stopPrepPolling().catch(() => {
-    });
     const fetchSpec = NHI_API_ENDPOINTS.map((ep) => {
       const path = ep.supportsDateRange ? applyDateRangeToPath(ep.path, dateRange) : ep.path;
       return { name: ep.name, url: BASE + path, method: "GET" };
@@ -8898,16 +8745,17 @@
             () => refetchImagingListUntilResolved({
               tabId,
               url: imagingUrl,
-              // 20×3s ≈ 60s. Bumped from 24s (v0.20.13): a patient with a
-              // LARGE imaging history makes NHI's server-side list-confirm
-              // take much longer than 24s, so the old budget expired with
-              // every row still "資料確認中" ("-") → 0 candidates → real
-              // X-ray/CT images silently dropped. The loop early-exits the
-              // instant ANY row exposes a usable image, so this only costs
-              // latency when the list is genuinely still confirming; the
-              // cross-sync prep-poll picks up anything still unresolved at
-              // 60s (NHI can take minutes), so we don't block longer.
-              maxAttempts: 20,
+              // 10×3s ≈ 30s. Catches a fast-confirming list in one sync; the
+              // loop early-exits the instant ANY row exposes a usable image,
+              // so the 30s only fully elapses for a genuinely still-confirming
+              // list. We deliberately DON'T block longer (v0.20.14: was briefly
+              // 60s): a large-history patient's list can take minutes to settle
+              // server-side, which 30s OR 60s both miss — and the live prep
+              // poller that used to re-check across syncs was removed, so those
+              // are handled by the user re-syncing (the count-less "部分影像仍
+              // 在備製中，過幾分鐘再取得" tail tells them to). 30s keeps the
+              // confirm wait from holding up the rest of the sync.
+              maxAttempts: 10,
               intervalMs: 3e3
             })
           );
@@ -9440,17 +9288,8 @@
     const _waitingCount = imgIdx >= 0 && settled[imgIdx].status === "fulfilled" ? settled[imgIdx].value.jpegTriggeredWaitingCount ?? 0 : 0;
     const _fetchFailCount = imgIdx >= 0 && settled[imgIdx].status === "fulfilled" ? settled[imgIdx].value.jpegFetchFailedCount ?? 0 : 0;
     const _confirmingCount = imgIdx >= 0 && settled[imgIdx].status === "fulfilled" ? settled[imgIdx].value.jpegConfirmingCount ?? 0 : 0;
-    let _imagingTail = "";
-    if (_waitingCount > 0 && _fetchFailCount > 0) {
-      _imagingTail = `\uFF08\u5065\u5EB7\u5B58\u647A\u6B63\u5728\u6E96\u5099 ${_waitingCount} \u5F35\u5F71\u50CF\u3001\u53E6 ${_fetchFailCount} \u5F35\u5F71\u50CF\u56E0\u7DB2\u8DEF\u554F\u984C\u672A\u6293\u5230\uFF0C\u8ACB\u904E 5\u201310 \u5206\u9418\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\uFF09`;
-    } else if (_waitingCount > 0) {
-      _imagingTail = `\uFF08\u5065\u5EB7\u5B58\u647A\u6B63\u5728\u6E96\u5099 ${_waitingCount} \u5F35\u5F71\u50CF\uFF0C\u8ACB\u904E 5\u201310 \u5206\u9418\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\uFF09`;
-    } else if (_fetchFailCount > 0) {
-      _imagingTail = `\uFF08${_fetchFailCount} \u5F35\u5F71\u50CF\u56E0\u7DB2\u8DEF\u554F\u984C\u672A\u6293\u5230\uFF0C\u8ACB\u518D\u6309\u4E00\u6B21\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u6293\uFF09`;
-    }
-    if (_confirmingCount > 0) {
-      _imagingTail += `\uFF08\u5065\u5EB7\u5B58\u647A\u4ECD\u5728\u78BA\u8A8D ${_confirmingCount} \u5F35\u5F71\u50CF\u6E05\u55AE\uFF0C\u7D04\u5E7E\u5206\u9418\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u53D6\u5F97\u5716\u7247\uFF09`;
-    }
+    const _imagingPending = _waitingCount > 0 || _confirmingCount > 0 || _fetchFailCount > 0;
+    const _imagingTail = _imagingPending ? "\uFF08\u90E8\u5206\u5F71\u50CF\u4ECD\u5728\u5065\u5EB7\u5B58\u647A\u5099\u88FD\u4E2D\uFF0C\u8ACB\u904E\u5E7E\u5206\u9418\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\uFF09" : "";
     const _waitingTail = _imagingTail;
     let _summaryLine;
     if (errors.length) {
@@ -9475,25 +9314,6 @@
       localFilename: _localFilename
     });
     await showResultBadge(total);
-    if (fetchImagingEnabled && patientOverride.id_no && (_waitingCount > 0 || _confirmingCount > 0) && !errors.length) {
-      try {
-        const _imgList = (imgIdx >= 0 && settled[imgIdx]?.status === "fulfilled" ? settled[imgIdx].value?.rawList : null) ?? [];
-        const _baselineReady = _imgList.filter((row) => {
-          const st = String(row?.jpG_STATUS ?? row?.jpg_STATUS ?? "");
-          const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? "");
-          return st === "1" && seq !== "" && seq !== "-";
-        }).length;
-        await startPrepPolling(
-          patientOverride.id_no,
-          _waitingCount,
-          BASE,
-          _baselineReady,
-          _confirmingCount
-        );
-      } catch (e) {
-        console.warn("[imaging-prep-poll] start failed:", e);
-      }
-    }
     if (mode !== "local")
       try {
         await postSyncLog(backend, syncApiKey, {
@@ -9610,26 +9430,10 @@
         })();
       }
       setActiveSyncCtx(null);
-      stopPrepPolling().catch(() => {
-      });
       try {
         sendResponse({ ok: true });
       } catch {
       }
-      return true;
-    }
-    if (msg?.type === "dismissPrepBanner") {
-      stopPrepPolling().then(() => {
-        try {
-          sendResponse({ ok: true });
-        } catch {
-        }
-      }).catch(() => {
-        try {
-          sendResponse({ ok: false });
-        } catch {
-        }
-      });
       return true;
     }
     if (msg?.type === "getSyncStatus") {
@@ -9691,11 +9495,6 @@
       await sweepPendingBundleIfStale().catch(() => {
       });
       await sweepStaleBearerToken().catch(() => {
-      });
-    }
-    if (alarm.name === IMAGING_PREP_POLL_ALARM) {
-      await pollPrepCount().catch((e) => {
-        console.warn("[imaging-prep-poll] cycle failed:", e);
       });
     }
   });

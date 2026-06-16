@@ -499,14 +499,6 @@
     syncBlockedReason: byId("sync-blocked-reason"),
     apiSyncRange: byId("api-sync-range"),
     stopBtn: byId("stop-btn"),
-    // v0.16.0: imaging prep banner — appears post-sync when NHI is still
-    // preparing N images. Lives in imaging-prep-banner.ts.
-    prepBanner: byId("imaging-prep-banner"),
-    prepIcon: byId("prep-icon"),
-    prepTitle: byId("prep-title"),
-    prepProgress: byId("prep-progress"),
-    prepCloseBtn: byId("prep-close-btn"),
-    prepCtaBtn: byId("prep-cta-btn"),
     ovName: byId("ov-name"),
     ovBirthDate: byId("ov-birth-date"),
     ovGender: byId("ov-gender"),
@@ -1880,9 +1872,6 @@
   var SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
   var ICON_LOCK = `${SVG}<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
   var ICON_INFO = `${SVG}<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
-  var ICON_CLOCK = `${SVG}<circle cx="12" cy="12" r="9"/><polyline points="12 7.5 12 12 15 13.5"/></svg>`;
-  var ICON_CHECK = `${SVG}<circle cx="12" cy="12" r="9"/><polyline points="8.5 12.5 11 15 16 9"/></svg>`;
-  var ICON_ALERT = `${SVG}<path d="M12 3.5 21 19H3z"/><line x1="12" y1="10" x2="12" y2="14"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
   var ICON_CHEVRON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
 
   // src/popup/wizard.ts
@@ -2945,6 +2934,29 @@
     if (currentMode() === "backend") testBackendConnection();
   }
 
+  // src/popup/imaging-toggle.ts
+  function syncJpgNote(enabled) {
+    if (els.imagingJpgNote) {
+      els.imagingJpgNote.hidden = !enabled;
+    }
+  }
+  async function loadFetchImagingEnabled() {
+    const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
+    const enabled = fetchImagingEnabled === true;
+    if (els.fetchImagingEnabled) {
+      els.fetchImagingEnabled.checked = enabled;
+    }
+    if (els.fetchImagingOff) {
+      els.fetchImagingOff.checked = !enabled;
+    }
+    syncJpgNote(enabled);
+  }
+  async function onFetchImagingToggle() {
+    const enabled = els.fetchImagingEnabled?.checked === true;
+    await chrome.storage.local.set({ fetchImagingEnabled: enabled });
+    syncJpgNote(enabled);
+  }
+
   // src/popup/sync-client.ts
   async function isOnNhiLoginPage(tabId, url) {
     if (url?.pathname && /IHKE3099/.test(url.pathname)) return true;
@@ -3101,109 +3113,6 @@
     chrome.storage.local.set({ smartAppLaunchUrl: v });
   }
 
-  // src/popup/imaging-prep-banner.ts
-  var IMAGING_PREP_STATE_KEY = "imagingPrepState";
-  function _elapsedText(state2) {
-    const ms = Date.now() - state2.startedAt;
-    const minutes = Math.max(0, Math.floor(ms / 6e4));
-    if (minutes < 1) return "\u525B\u958B\u59CB";
-    if (minutes === 1) return "\u5DF2\u7B49\u5019 1 \u5206\u9418";
-    return `\u5DF2\u7B49\u5019 ${minutes} \u5206\u9418`;
-  }
-  function _render(state2) {
-    const banner = els.prepBanner;
-    if (!banner) return;
-    if (!state2) {
-      banner.hidden = true;
-      return;
-    }
-    banner.hidden = false;
-    const icon = els.prepIcon;
-    const title = els.prepTitle;
-    const progress = els.prepProgress;
-    const cta = els.prepCtaBtn;
-    const IMAGING_PREP_MAX_MS = 30 * 60 * 1e3;
-    const overdue = Date.now() - state2.startedAt >= IMAGING_PREP_MAX_MS;
-    const status = state2.status === "polling" && overdue ? "timeout" : state2.status;
-    banner.dataset.state = status;
-    if (status === "ready") {
-      icon.innerHTML = ICON_CHECK;
-      title.textContent = "\u5F71\u50CF\u5DF2\u5099\u9F4A";
-      progress.textContent = `\u5065\u5EB7\u5B58\u647A\u5DF2\u6E96\u5099\u597D ${state2.initialCount} \u5F35\u5F71\u50CF\uFF0C\u6309\u4E0B\u65B9\u6309\u9215\u53D6\u5F97\u6700\u65B0\u8CC7\u6599\u3002`;
-      cta.hidden = false;
-    } else if (status === "unavailable") {
-      icon.innerHTML = ICON_INFO;
-      title.textContent = "\u90E8\u5206\u5F71\u50CF\u5065\u5EB7\u5B58\u647A\u7121\u6CD5\u63D0\u4F9B";
-      progress.textContent = `\u6709 ${state2.initialCount} \u5F35\u5F71\u50CF\u5065\u5EB7\u5B58\u647A\u76EE\u524D\u7121\u6CD5\u5099\u9F4A\uFF08\u5E38\u898B\u65BC\u8F03\u820A\u7684\u6AA2\u67E5\uFF09\uFF0C\u9019\u4E9B\u9805\u76EE\u53EA\u6703\u6709\u6587\u5B57\u5831\u544A\uFF0C\u5176\u9918\u8CC7\u6599\u5DF2\u53EF\u4E0B\u8F09\u3002`;
-      cta.hidden = true;
-    } else if (status === "timeout") {
-      icon.innerHTML = ICON_ALERT;
-      title.textContent = "\u7B49\u5019\u903E\u6642\uFF08\u5DF2\u8D85\u904E 30 \u5206\u9418\uFF09";
-      progress.textContent = `\u4ECD\u6709 ${state2.count || state2.initialCount} \u5F35\u5F71\u50CF\u5C1A\u672A\u5099\u9F4A\uFF0C\u5065\u5EB7\u5B58\u647A\u53EF\u80FD\u7121\u6CD5\u63D0\u4F9B\u3002\u53EF\u6309\u4E0B\u65B9\u6309\u9215\u518D\u8A66\u4E00\u6B21\uFF0C\u6216\u95DC\u9589\u6B64\u63D0\u793A\uFF08\u6587\u5B57\u5831\u544A\u5DF2\u53EF\u4E0B\u8F09\uFF09\u3002`;
-      cta.hidden = false;
-    } else if (status === "session-expired") {
-      icon.innerHTML = ICON_LOCK;
-      title.textContent = "\u5065\u5EB7\u5B58\u647A\u767B\u5165\u903E\u6642";
-      progress.textContent = "\u8ACB\u5148\u56DE\u5230\u5065\u5EB7\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\uFF0C\u518D\u6309\u4E0B\u65B9\u6309\u9215\u5373\u53EF\u7E7C\u7E8C\u53D6\u5F97\u3002";
-      cta.hidden = false;
-    } else {
-      icon.innerHTML = ICON_CLOCK;
-      title.textContent = "\u5065\u5EB7\u5B58\u647A\u6E96\u5099\u4E2D";
-      progress.textContent = `\u5269 ${state2.count} / ${state2.initialCount} \u5F35 \xB7 ${_elapsedText(state2)}`;
-      cta.hidden = true;
-    }
-  }
-  async function _loadInitial() {
-    try {
-      const obj = await chrome.storage.local.get(IMAGING_PREP_STATE_KEY);
-      const state2 = obj[IMAGING_PREP_STATE_KEY] || null;
-      _render(state2);
-    } catch (e) {
-      console.warn("[imaging-prep-banner] initial load failed:", e);
-    }
-  }
-  function initImagingPrepBanner() {
-    if (!els.prepBanner) return;
-    _loadInitial();
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== "local") return;
-      if (!(IMAGING_PREP_STATE_KEY in changes)) return;
-      const newVal = changes[IMAGING_PREP_STATE_KEY]?.newValue || null;
-      _render(newVal);
-    });
-    els.prepCloseBtn?.addEventListener("click", () => {
-      chrome.runtime.sendMessage({ type: "dismissPrepBanner" }).catch(() => {
-        _render(null);
-      });
-    });
-    els.prepCtaBtn?.addEventListener("click", () => {
-      apiSyncNhi();
-    });
-  }
-
-  // src/popup/imaging-toggle.ts
-  function syncJpgNote(enabled) {
-    if (els.imagingJpgNote) {
-      els.imagingJpgNote.hidden = !enabled;
-    }
-  }
-  async function loadFetchImagingEnabled() {
-    const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
-    const enabled = fetchImagingEnabled === true;
-    if (els.fetchImagingEnabled) {
-      els.fetchImagingEnabled.checked = enabled;
-    }
-    if (els.fetchImagingOff) {
-      els.fetchImagingOff.checked = !enabled;
-    }
-    syncJpgNote(enabled);
-  }
-  async function onFetchImagingToggle() {
-    const enabled = els.fetchImagingEnabled?.checked === true;
-    await chrome.storage.local.set({ fetchImagingEnabled: enabled });
-    syncJpgNote(enabled);
-  }
-
   // src/popup/sync-range.ts
   async function loadSyncRange() {
     const { syncRange } = await chrome.storage.local.get("syncRange");
@@ -3256,7 +3165,6 @@
     await loadMaskNameEnabled();
     await loadFetchImagingEnabled();
     await loadSyncRange();
-    initImagingPrepBanner();
     await _refreshLocalBundleState();
     await loadBackendModeEnabled();
     await loadBackendUrl();

@@ -33,7 +33,6 @@ import {
 } from "./popup/constants.js";
 import { _refreshLocalBundleState, pushLocalBundleToBackend } from "./popup/data-state.js";
 import { els } from "./popup/els.js";
-import { initImagingPrepBanner } from "./popup/imaging-prep-banner.js";
 import { loadFetchImagingEnabled, onFetchImagingToggle } from "./popup/imaging-toggle.js";
 import {
   clearPatientOverride,
@@ -83,11 +82,6 @@ async function init() {
   await loadMaskNameEnabled();
   await loadFetchImagingEnabled();
   await loadSyncRange();
-  // v0.16.0: imaging prep banner reads chrome.storage and self-renders.
-  // Safe to init early — element is hidden by default; only shows when
-  // the SW poller has written state.
-  initImagingPrepBanner();
-
   // Seed local bundle state from storage so the data-state card is
   // populated as soon as the popup renders (no flash of "未產生").
   await _refreshLocalBundleState();

@@ -56,26 +56,6 @@ export const PENDING_IMAGING_TTL_MS = 8 * 24 * 60 * 60 * 1000; // 8 days
 export const NHI_BEARER_TOKEN_KEY = "nhiBearerToken";
 export const NHI_BEARER_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 min
 
-// v0.16.0 — imaging prep poll (count-only, no bundle hot-patch).
-// After a sync ends with N triggered-waiting rows, SW polls NHI's
-// IHKE3408S01 list endpoint every minute to count remaining
-// status=0 rows so the popup banner can show prep progress. Does
-// NOT auto-patch the bundle — user must re-sync to pull in newly-
-// ready bytes (per v0.15 architectural simplification — auto-patch
-// was removed because the moving-bundle UX was confusing).
-//
-// Differences from the deleted v0.14.x background poll:
-//   - Counts only, never fetches bytes or modifies pendingFhirBundle.
-//   - Single 30-min budget (matches NHI bearer TTL); no resume across
-//     browser restarts beyond that window.
-//   - Stops promptly on session-expired, count=0, new sync, or
-//     user-dismiss.
-export const IMAGING_PREP_POLL_ALARM = "imaging-prep-poll";
-export const IMAGING_PREP_STATE_KEY = "imagingPrepState";
-export const IMAGING_PREP_BASE_KEY = "imagingPrepBase";
-export const IMAGING_PREP_MAX_MS = 30 * 60 * 1000; // 30 min
-export const IMAGING_PREP_POLL_INTERVAL_MIN = 1;
-
 // Debug toggle for the per-endpoint "first body sample" stash used to
 // diagnose adapter mismatches (raw_count > 0 but adapted_count == 0).
 // HARD-OFF in the published extension: the sample contains raw NHI payload
