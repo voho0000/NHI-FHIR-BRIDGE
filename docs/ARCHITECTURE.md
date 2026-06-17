@@ -190,4 +190,4 @@ migration 檔在 `backend-ts/drizzle/`，每個 PR 一同 review。
 5. **FHIR 驗證**：通過 TWNHIFHIR validator 三輪修正（Bundle / UCUM / OID / LOINC / ICD-10-CM / SNOMED），但未整合自動驗證進 CI
 6. **Mapper 測試覆蓋**：`backend-ts/tests/unit/`（19 個測試檔、約 590 個 unit test，隨版本成長），涵蓋所有 mapper（patient / observation / condition / medication / allergy / procedure / encounter / diagnostic-report / document-reference / immunization / careplan）以及 parsers / dispatch / **link（就醫關聯）** / imaging-dedup / tombstone / bundle-quality。缺口主要在端到端：FHIR validator 未自動化（見上一點）
 
-   > **就醫關聯（post-mapping linking）階段**：mapper 產出資源後，`packages/mapper/src/link.ts` 跑一次關聯傳遞 —— 用藥依 NHI 申報型別(住院/門診/急診)、檢驗依採檢日掛到正確的 `Encounter`；住院手術以 `Procedure.partOf` 串主/次處置。v0.20.0 移除了舊的 `dedupAdmissionDayAmb`（入院當天的門診/急診是源頭就醫，不該當重複刪）。詳見 `docs/SMART_APP_CHANGES_v0.20.md`。
+   > **就醫關聯（post-mapping linking）階段**：mapper 產出資源後，`packages/mapper/src/link.ts` 跑一次關聯傳遞 —— 用藥依 NHI 申報型別(住院/門診/急診)、檢驗依採檢日掛到正確的 `Encounter`；住院手術以 `Procedure.partOf` 串主/次處置。v0.20.0 移除了舊的 `dedupAdmissionDayAmb`（入院當天的門診/急診是源頭就醫，不該當重複刪）。

@@ -120,7 +120,7 @@ docker compose up -d
 
 **檢驗分組**:健康存摺把檢驗以扁平清單呈現,每筆帶醫令碼。Bridge 依 `(醫令碼, 日期, 醫院)` 分組成 `DiagnosticReport`,用多層對照規則(`NHI_TO_LOINC` 直對 + `PANEL_LOINC_MAP` panel 子項 + `LOINC_MAP` 顯示名,合計 200+ 條規則)對應 LOINC,並自動合併中英文重複列(如 `醣化血紅素 5.9%` + `HbA1c 5.9%`)。
 
-對接 SMART App 開發者:`Encounter.type` 契約見 [SMART_APP_INTEGRATION_v0.9.2.md](docs/SMART_APP_INTEGRATION_v0.9.2.md);最新消費端變更見 [SMART_APP_CHANGES_v0.20.md](docs/SMART_APP_CHANGES_v0.20.md)。
+對接 SMART App 開發者:資源結構、`Encounter.type`(雙維度 kind + channel)與就醫關聯等設計見 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ---
 
