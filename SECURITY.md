@@ -7,7 +7,7 @@ NHI 健康存摺). We take security reports seriously.
 
 如果你發現可能影響 PHI 機密性、完整性、或存取控制的漏洞，**請不要在公開 Issue 揭露**。
 
-請將細節寄到：**voho0000 [at] gmail.com**
+請將細節寄到：**voho0000@gmail.com**
 
 請在 email 中包含：
 
