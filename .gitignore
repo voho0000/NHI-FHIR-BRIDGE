@@ -64,3 +64,6 @@ Thumbs.db
 
 # Local-only files (audit notes etc.) — never commit
 *.local.md
+
+# Local-only internal dev notes (design discussions, audits) — kept on disk, out of the public repo
+docs/dev-notes/
