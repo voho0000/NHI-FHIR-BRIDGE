@@ -7382,6 +7382,74 @@
   var TIMEOUT_MS = 9e4;
   var INITIAL_WAIT_MS = 15e3;
   var MAX_TRIGGER_PER_SYNC_DEV = Number.POSITIVE_INFINITY;
+  function waitForTabCompleteLocal(tabId, timeoutMs) {
+    return new Promise((resolve) => {
+      const done = () => {
+        chrome.tabs.onUpdated.removeListener(listener);
+        clearTimeout(timer);
+        resolve();
+      };
+      const listener = (updatedTabId, changeInfo) => {
+        if (updatedTabId === tabId && changeInfo.status === "complete") {
+          done();
+        }
+      };
+      chrome.tabs.onUpdated.addListener(listener);
+      const timer = setTimeout(done, timeoutMs);
+    });
+  }
+  async function openImagingConfirmHiddenTab(visibleTabId, baseUrl) {
+    let token = null;
+    try {
+      const [res] = await chrome.scripting.executeScript({
+        target: { tabId: visibleTabId },
+        func: () => sessionStorage.getItem("token")
+      });
+      const v = res?.result;
+      if (typeof v === "string" && v.length > 0) token = v;
+    } catch {
+    }
+    if (!token) throw new Error(SESSION_EXPIRED_ERROR);
+    if (isCancelled()) throw new Error(CANCEL_ERROR);
+    const targetUrl = `${baseUrl}/IHKE3000/IHKE3408S01`;
+    const hiddenTab = await chrome.tabs.create({ active: false, url: targetUrl });
+    const hiddenTabId = hiddenTab.id;
+    if (hiddenTabId == null) {
+      throw new Error("imaging-confirm: hidden tab create returned no id");
+    }
+    setActiveImagingTabId(hiddenTabId);
+    try {
+      await waitForTabCompleteLocal(hiddenTabId, 15e3);
+      await chrome.scripting.executeScript({
+        target: { tabId: hiddenTabId },
+        func: (tok) => {
+          try {
+            sessionStorage.setItem("token", tok);
+          } catch {
+          }
+        },
+        args: [token]
+      });
+      await chrome.tabs.update(hiddenTabId, { url: targetUrl });
+      await waitForTabCompleteLocal(hiddenTabId, 15e3);
+      return hiddenTabId;
+    } catch (e) {
+      try {
+        await chrome.tabs.remove(hiddenTabId);
+      } catch {
+      }
+      setActiveImagingTabId(null);
+      throw e;
+    }
+  }
+  async function closeImagingConfirmHiddenTab(tabId) {
+    if (tabId == null) return;
+    try {
+      await chrome.tabs.remove(tabId);
+    } catch {
+    }
+    setActiveImagingTabId(null);
+  }
   var SW_TRIGGER_LOOP_WALL_CLOCK_MS = 9e4;
   var SW_TRIGGER_INTER_STEP_MS = 300;
   async function swPostNhiJson(url, body, token, timeoutMs = 15e3) {
@@ -8765,22 +8833,28 @@
       if (!(imgIdx >= 0 && settled[imgIdx].status === "fulfilled")) return;
       let visits = settled[imgIdx].value.rawList || [];
       if (fetchImagingEnabled && visits.length > 0 && imagingListNeedsResolve(visits)) {
+        let confirmTabId = null;
         try {
           const imgEp = NHI_API_ENDPOINTS[imgIdx];
           const imagingUrl = BASE + (imgEp.supportsDateRange ? applyDateRangeToPath(imgEp.path, dateRange) : imgEp.path);
+          try {
+            confirmTabId = await openImagingConfirmHiddenTab(tabId, BASE);
+          } catch (e) {
+            if (e?.message === SESSION_EXPIRED_ERROR || e?.message === CANCEL_ERROR) throw e;
+          }
+          const pollTabId = confirmTabId ?? tabId;
           const resolved = await withProgressTimer(
             (sec) => sec === 0 ? "\u{1F504} \u5065\u5EB7\u5B58\u647A\u6B63\u5728\u78BA\u8A8D\u5F71\u50CF\u6E05\u55AE\uFF0C\u8ACB\u7A0D\u5019\u2026" : `\u{1F504} \u5065\u5EB7\u5B58\u647A\u6B63\u5728\u78BA\u8A8D\u5F71\u50CF\u6E05\u55AE\uFF0C\u8ACB\u7A0D\u5019\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
             () => (
-              // 10×3s ≈ 30s, early-exits on the first usable row. When the list
-              // is still confirming this whole chain is DEFERRED past the other
-              // detail fan-outs (see _imagingDeferred), so NHI gets that ~1 min
-              // to settle the list in the background — by the time we run here it
-              // usually early-exits. Still-unsettled lists are handled by the
-              // user re-syncing (count-less reminder tail).
+              // 20×3s ≈ 60s, early-exits on the first usable row. With the page
+              // now RENDERED (hidden tab) NHI's confirmation is armed, so the
+              // poll actually converges instead of spinning. Still-unsettled
+              // lists (many rows, slow confirm) fall back to the user re-syncing
+              // (count-less reminder tail) — but the arm persists server-side.
               refetchImagingListUntilResolved({
-                tabId,
+                tabId: pollTabId,
                 url: imagingUrl,
-                maxAttempts: 10,
+                maxAttempts: 20,
                 intervalMs: 3e3
               })
             )
@@ -8791,6 +8865,8 @@
           }
         } catch (e) {
           errors.push(`imaging list confirm: ${e?.message || e}`);
+        } finally {
+          await closeImagingConfirmHiddenTab(confirmTabId);
         }
       }
       settled[imgIdx].value.jpegConfirmingCount = fetchImagingEnabled ? countImagingConfirming(visits) : 0;

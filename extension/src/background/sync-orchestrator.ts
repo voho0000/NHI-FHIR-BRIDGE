@@ -52,7 +52,9 @@ import {
 } from "./nhi-detail-fetchers.js";
 import {
   appendPendingImaging,
+  closeImagingConfirmHiddenTab,
   loadPendingImaging,
+  openImagingConfirmHiddenTab,
   pollFetchImagingJpegs,
   removePendingImaging,
   saveBearerTokenForBgPoll,
@@ -456,27 +458,42 @@ export async function runNhiApiSync({
     // imaging-list-status.ts). Narrative DR emission is unaffected by status,
     // so an opted-out sync gets identical reports either way.
     if (fetchImagingEnabled && visits.length > 0 && imagingListNeedsResolve(visits)) {
+      // ARM the confirmation first. A brand-new patient who never opened the
+      // 影像清單 page gets rows stuck at jpG_STATUS "-" (資料準備中) that NEVER
+      // advance — NHI only starts confirming images when the IHKE3408S01 page
+      // is actually RENDERED (live-verified 2026-06-17; a pure-API poll does
+      // NOT trigger it). Render it once in a HIDDEN tab (undisturbing), then
+      // poll THAT tab until rows resolve to A/1. Best-effort: if the render
+      // throws, fall back to the visible-tab poll (old behavior).
+      let confirmTabId: number | null = null;
       try {
         const imgEp = NHI_API_ENDPOINTS[imgIdx];
         const imagingUrl =
           BASE +
           (imgEp.supportsDateRange ? applyDateRangeToPath(imgEp.path, dateRange) : imgEp.path);
+        try {
+          confirmTabId = await openImagingConfirmHiddenTab(tabId, BASE);
+        } catch (e: any) {
+          // SESSION_EXPIRED / cancel propagate; other render failures just
+          // mean we poll the visible tab as before.
+          if (e?.message === SESSION_EXPIRED_ERROR || e?.message === CANCEL_ERROR) throw e;
+        }
+        const pollTabId = confirmTabId ?? tabId;
         const resolved = await withProgressTimer(
           (sec) =>
             sec === 0
               ? "🔄 健康存摺正在確認影像清單，請稍候…"
               : `🔄 健康存摺正在確認影像清單，請稍候…（已 ${sec} 秒）`,
           () =>
-            // 10×3s ≈ 30s, early-exits on the first usable row. When the list
-            // is still confirming this whole chain is DEFERRED past the other
-            // detail fan-outs (see _imagingDeferred), so NHI gets that ~1 min
-            // to settle the list in the background — by the time we run here it
-            // usually early-exits. Still-unsettled lists are handled by the
-            // user re-syncing (count-less reminder tail).
+            // 20×3s ≈ 60s, early-exits on the first usable row. With the page
+            // now RENDERED (hidden tab) NHI's confirmation is armed, so the
+            // poll actually converges instead of spinning. Still-unsettled
+            // lists (many rows, slow confirm) fall back to the user re-syncing
+            // (count-less reminder tail) — but the arm persists server-side.
             refetchImagingListUntilResolved({
-              tabId,
+              tabId: pollTabId,
               url: imagingUrl,
-              maxAttempts: 10,
+              maxAttempts: 20,
               intervalMs: 3000,
             }),
         );
@@ -486,6 +503,8 @@ export async function runNhiApiSync({
         }
       } catch (e: any) {
         errors.push(`imaging list confirm: ${e?.message || e}`);
+      } finally {
+        await closeImagingConfirmHiddenTab(confirmTabId);
       }
     }
     // Rows still "資料確認中" ("-") after the wait — real images coming, NHI

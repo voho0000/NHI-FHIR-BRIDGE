@@ -712,6 +712,93 @@ export async function triggerImagingRowsViaHiddenTab(
 }
 
 // ────────────────────────────────────────────────────────────────────
+// "資料準備中" ARM: render IHKE3408S01 in a hidden tab to kick off NHI's
+// server-side image confirmation.
+//
+// Live-verified 2026-06-17 (brand-new patient who had NEVER opened the
+// 影像清單 page): the IHKE3408S01 list API returns EVERY row as
+// jpG_STATUS "-" (資料準備中) and they NEVER advance — NHI lazily starts
+// confirming a patient's images only when the IHKE3408S01 page is actually
+// RENDERED. A pure-API page_load poll (what the orchestrator's
+// refetchImagingListUntilResolved does on the visible tab) does NOT trigger
+// it, so the rows sit at "-" forever and bridge reports no images. Rendering
+// the page once (27×"-" → 11×"A" + 20×"2" in the probe) arms it; thereafter
+// NHI keeps advancing the status on its own (this is why users who HAD
+// clicked into the imaging list once saw it "settle over minutes" — the
+// page visit was the hidden precondition).
+//
+// We render in a HIDDEN tab so the user's active tab is undisturbed.
+// Confirmation is per-PATIENT server-side, so once armed here the caller's
+// existing list poll (run against THIS hidden tab, or the visible one) sees
+// the rows resolve. Returns the rendered + token-injected hidden tab id; the
+// caller MUST close it via closeImagingConfirmHiddenTab once polling is done.
+export async function openImagingConfirmHiddenTab(
+  visibleTabId: number,
+  baseUrl: string,
+): Promise<number> {
+  // Read the session token from the visible tab (per-tab sessionStorage;
+  // a fresh hidden tab inherits cookies but NOT the token).
+  let token: string | null = null;
+  try {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId: visibleTabId },
+      func: () => sessionStorage.getItem("token"),
+    });
+    const v = (res as any)?.result;
+    if (typeof v === "string" && v.length > 0) token = v;
+  } catch {
+    // ignored — throw SESSION_EXPIRED below
+  }
+  if (!token) throw new Error(SESSION_EXPIRED_ERROR);
+  if (isCancelled()) throw new Error(CANCEL_ERROR);
+
+  const targetUrl = `${baseUrl}/IHKE3000/IHKE3408S01`;
+  const hiddenTab = await chrome.tabs.create({ active: false, url: targetUrl });
+  const hiddenTabId = hiddenTab.id;
+  if (hiddenTabId == null) {
+    throw new Error("imaging-confirm: hidden tab create returned no id");
+  }
+  // Register so stopSync can close it on cancel.
+  setActiveImagingTabId(hiddenTabId);
+  try {
+    await waitForTabCompleteLocal(hiddenTabId, 15_000);
+    // Inject the token (sessionStorage is shared across script worlds and
+    // survives the same-origin re-navigation below).
+    await chrome.scripting.executeScript({
+      target: { tabId: hiddenTabId },
+      func: (tok: string) => {
+        try {
+          sessionStorage.setItem("token", tok);
+        } catch {}
+      },
+      args: [token],
+    });
+    // Re-navigate so the SPA re-mounts WITH the token → it fires the real
+    // IHKE3408S01 list call that arms NHI's confirmation. Idempotent if the
+    // first load already landed on the list.
+    await chrome.tabs.update(hiddenTabId, { url: targetUrl });
+    await waitForTabCompleteLocal(hiddenTabId, 15_000);
+    return hiddenTabId;
+  } catch (e) {
+    // Render failed — close the tab so we don't leak it, then rethrow so
+    // the caller falls back to the visible-tab poll.
+    try {
+      await chrome.tabs.remove(hiddenTabId);
+    } catch {}
+    setActiveImagingTabId(null);
+    throw e;
+  }
+}
+
+export async function closeImagingConfirmHiddenTab(tabId: number | null): Promise<void> {
+  if (tabId == null) return;
+  try {
+    await chrome.tabs.remove(tabId);
+  } catch {}
+  setActiveImagingTabId(null);
+}
+
+// ────────────────────────────────────────────────────────────────────
 // PHASE 1c: TRIGGER VIA SW-DIRECT FETCH (v0.15+, default).
 //
 // Mirrors NHI's real Vue-click protocol (see top-of-file comment block)
