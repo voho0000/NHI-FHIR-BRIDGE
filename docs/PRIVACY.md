@@ -61,7 +61,7 @@ NHI-FHIR Bridge（以下稱「本擴充功能」）是一款開源 Chrome 擴充
 
 ### 六、使用者責任與限制
 
-- 使用者**只能擷取自己有權檢視**的健康存摺紀錄 —— 亦即你本人的紀錄，或健保署「眷屬」功能中經對方同意綁定、目前切換顯示的眷屬紀錄。擷取你無權檢視之他人資料屬違法行為，與本擴充功能開發者無關
+- 使用者**只能擷取自己有權檢視**的健康存摺紀錄 —— 亦即你本人的紀錄，或健保署「眷屬」功能中經對方同意綁定、目前切換顯示的眷屬紀錄。請勿用於擷取你無權檢視的他人資料；使用者應自行就其使用行為負責，與本擴充功能開發者無關
 - 健康存摺資料屬「個人資料保護法」定義之**敏感性個人資料**；使用者應自行妥善保管下載的 JSON 檔案
 - 本工具僅供參考，不保證資料準確；臨床判讀請以健保署官方網站顯示之內容為主
 
@@ -145,7 +145,7 @@ Both paths are **user-initiated** with the destination **fully controlled by the
 
 ### 6. User responsibilities
 
-- Users **may only capture records they are authorized to view** — i.e. their own records, or those of a dependent they are legitimately bound to and currently switched to via NHI's "dependents" (眷屬) feature. Capturing records you are not authorized to view is illegal and outside the scope of this Extension
+- Users **may only capture records they are authorized to view** — i.e. their own records, or those of a dependent they are legitimately bound to and currently switched to via NHI's "dependents" (眷屬) feature. Please do not use it to capture records you are not authorized to view; users are responsible for their own use, which is outside the scope of this Extension
 - NHI records are sensitive personal data under Taiwan's Personal Data Protection Act; the user is solely responsible for safeguarding downloaded files
 - This tool is for reference only; for clinical decisions, the official NHI portal display is authoritative
 
