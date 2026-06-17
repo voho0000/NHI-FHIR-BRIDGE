@@ -52,7 +52,7 @@ NHI-FHIR Bridge（以下稱「本擴充功能」）是一款開源 Chrome 擴充
 |------|------|
 | `activeTab` | 在使用者點擊擴充功能圖示後，存取當前分頁以執行健保署 API 請求 |
 | `storage` | 保存使用者偏好設定、同步進度，以及暫存待下載的健康紀錄檔（僅本機；清除機制見第三節） |
-| `scripting` | 將擷取邏輯注入健保署網域分頁，以使用 first-party cookie 呼叫 API |
+| `scripting` | 在健保署網域分頁中執行擷取邏輯，以沿用 first-party cookie 呼叫 API |
 | `downloads` | 將產生的 FHIR Bundle JSON 儲存至使用者本機 |
 | `alarms` | 維持背景同步流程之心跳，避免 Chrome MV3 service worker 在長時間同步時被回收；並每 10 分鐘檢查、清除逾時（1 小時）的本機暫存健康紀錄檔 |
 | `unlimitedStorage` | 含影像的健康紀錄檔可能超過瀏覽器預設儲存配額，需要此權限才能在本機暫存（仍受上述 1 小時 TTL 與下載後立即清除機制管控） |
