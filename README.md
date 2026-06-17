@@ -177,7 +177,11 @@ NHI-FHIR-BRIDGE/                 # npm workspaces monorepo
 ├── backend-ts/                 # Hono 後端 (TypeScript) + SQLite FHIR Store
 ├── frontend/                   # Next.js Dashboard
 ├── docs/                       # ARCHITECTURE / PRIVACY / SECURITY_FOR_USERS / SMART_APP_* …
+├── demo/                       # synthetic-fhir-bundle.json — 合成示範資料(演講/截圖用)
 ├── CHANGELOG.md                # 每版改了什麼(民眾友善)
+├── CONTRIBUTING.md             # 開發環境、PR checklist
+├── DEVELOPMENT_RULES.md        # 不可妥協的工程規範(FHIR R4 稽核、LOINC 查證、測試資料)
+├── CODE_OF_CONDUCT.md          # 行為準則 + 禁貼真實 PHI
 ├── SECURITY.md                 # 弱點通報窗口
 └── docker-compose.yml
 ```
@@ -191,7 +195,7 @@ npm run build:extension         # 重 build 擴充功能(或 cd extension && npm
 # 然後 chrome://extensions → 重新整理擴充功能卡片
 ```
 
-歡迎 Pull Request —— 開發流程、PR checklist、測試與 lint 指令見 [CONTRIBUTING.md](CONTRIBUTING.md);重大改動請先開 Issue 討論。
+歡迎 Pull Request —— 開發流程、PR checklist、測試與 lint 指令見 [CONTRIBUTING.md](CONTRIBUTING.md);**改 mapper / FHIR 對應前**請先讀 [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md)(FHIR R4 稽核、LOINC 查證、測試資料規則)。重大改動請先開 Issue 討論。
 
 ---
 

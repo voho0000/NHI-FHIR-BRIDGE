@@ -121,8 +121,8 @@ CI 會在每次 PR / push 跑 `vitest`、`biome check` 與 `tsc --noEmit`（含 
   [`demo/synthetic-fhir-bundle.json`](demo/synthetic-fhir-bundle.json)（見
   [`docs/DEMO_SYNTHETIC_BUNDLE.md`](docs/DEMO_SYNTHETIC_BUNDLE.md)）。
 - mapper / observation / coding / resource 建構的改動，請對照
-  [`CLAUDE.md`](CLAUDE.md) 的 FHIR R4 檢查表自我稽核（新增 LOINC 對應需先
-  WebFetch loinc.org 查證）。
+  [`DEVELOPMENT_RULES.md`](DEVELOPMENT_RULES.md) 的 FHIR R4 檢查表自我稽核
+  （新增 LOINC 對應需先 WebFetch loinc.org 查證）。
 
 ## PR Checklist
 

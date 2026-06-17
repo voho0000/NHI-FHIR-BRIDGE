@@ -42,6 +42,10 @@ frontend/.next/
 
 # Claude Code local settings (per-clone, not shared)
 .claude/
+# CLAUDE.md is local-only project memory for Claude Code (internal agent notes,
+# incident details, live-probe narratives) — not part of the public repo.
+# Contributor-facing engineering rules live in DEVELOPMENT_RULES.md instead.
+CLAUDE.md
 
 # OS
 .DS_Store

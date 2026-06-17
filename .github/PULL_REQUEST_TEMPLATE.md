@@ -15,8 +15,8 @@
       checksum **無效**的合成碼（見 `CONTRIBUTING.md`）。
 - [ ] 通過 `npm test`（backend + extension）與 `tsc --noEmit`、`biome check`。
 - [ ] 若動到 mapper／observation／coding／resource 建構：已依
-      [`CLAUDE.md`](../CLAUDE.md) 的 FHIR R4 檢查表自我稽核（LOINC 對應有
-      WebFetch loinc.org 查證）。
+      [`DEVELOPMENT_RULES.md`](../DEVELOPMENT_RULES.md) 的 FHIR R4 檢查表自我
+      稽核（LOINC 對應有 WebFetch loinc.org 查證）。
 - [ ] 若改動使用者可見的 UI 或文字：附上截圖或說明。
 - [ ] 文件（README／docs／CHANGELOG）已同步更新（如適用）。
 
