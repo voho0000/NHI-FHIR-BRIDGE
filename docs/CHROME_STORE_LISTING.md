@@ -226,16 +226,20 @@ https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html
 
 ---
 
-## 7. 截圖（已備妥，放在 repo 的 `store-screenshots/`）
+## 7. 圖片素材（全部集中在 repo 的 `store-assets/`）
 
-4 張行銷風截圖已產生好，皆 **1280×800 PNG**，直接上傳即可：
+所有要上傳到 Chrome 商店的圖片都集中在這個資料夾，直接拖上去即可。
+
+**商店圖示（128×128 PNG）**：`store-assets/store-icon-128.png`（即擴充功能本身的 icon-128）
+
+**截圖**（4 張，皆 **1280×800 PNG**）：
 
 | 檔案 | 內容 |
 |------|------|
-| `store-screenshots/store-1-login.png` | 登入步驟 + 標語「健康存摺，一鍵轉成 FHIR」 |
-| `store-screenshots/store-2-profile.png` | 基本資料步驟（示意名 王小明，無真實身分證） |
-| `store-screenshots/store-3-download.png` | 取得完成 + 下載健康存摺檔 |
-| `store-screenshots/store-4-view.png` | 選用：開啟外部工具「醫析 MediPrisma」瀏覽 |
+| `store-assets/store-1-login.png` | 登入步驟 + 標語「健康存摺，一鍵轉成 FHIR」 |
+| `store-assets/store-2-profile.png` | 基本資料步驟（示意名 王小明，無真實身分證） |
+| `store-assets/store-3-download.png` | 取得完成 + 下載健康存摺檔 |
+| `store-assets/store-4-view.png` | 選用：開啟外部工具「醫析 MediPrisma」瀏覽 |
 
 > ⚠️ **第 4 張的 caption 一定要標明 MediPrisma 是「選用的外部工具」**（非本擴充功能的一部分；它的 AI 問答會把資料送到雲端）。否則畫面出現第三方工具，會和描述裡「Bridge 本身不接 AI / 無第三方」互相矛盾，審核容易被挑。建議 caption：「選用：用外部工具『醫析 MediPrisma』瀏覽圖表（非本擴充功能、其 AI 功能會上雲）」。
 
@@ -247,8 +251,8 @@ https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html
 
 | 規格 | 檔案（已備妥） | 用途 |
 |------|------|------|
-| Small promo tile: 440×280 PNG | `store-screenshots/promo-tile-440x280.png` | 出現在搜尋結果列表（即使 Unlisted 也會出現在 store URL 預覽） |
-| Marquee: 1400×560 PNG | `store-screenshots/marquee-1400x560.png` | 大型 feature banner（你大概不用，是 Google 主動推 feature 才會用到） |
+| Small promo tile: 440×280 PNG | `store-assets/promo-tile-440x280.png` | 出現在搜尋結果列表（即使 Unlisted 也會出現在 store URL 預覽） |
+| Marquee: 1400×560 PNG | `store-assets/marquee-1400x560.png` | 大型 feature banner（你大概不用，是 Google 主動推 feature 才會用到） |
 
 ---
 
@@ -264,7 +268,7 @@ https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html
 - [x] 6 個 permission justifications — 第 4 節（alarms / unlimitedStorage 皆實際使用中，非冗權限）
 - [x] Host permission（NHI）+ optional host（localhost / 127.0.0.1）說明 — 第 4 節
 - [x] Privacy policy 已上線：`https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html`（HTTP 200 實測）
-- [x] 4 張 1280×800 截圖 + promo tile + marquee — 在 `store-screenshots/`
+- [x] 商店圖示 128×128 + 4 張 1280×800 截圖 + promo tile + marquee — 全在 `store-assets/`
 - [x] Remote code: No（executeScript 只用 `func:`，無遠端載入）
 
 提交時要在 Dev Console 做的人工步驟（只有你能做）：
@@ -277,7 +281,7 @@ https://voho0000.github.io/NHI-FHIR-BRIDGE/PRIVACY.html
 - [ ] Privacy disclosure 勾選 PII + Health information
 - [ ] 三個 certification 都勾 Yes
 - [ ] 貼 Privacy policy URL
-- [ ] 上傳 4 張截圖（+ 選填 promo tile）
+- [ ] 上傳商店圖示（128×128）+ 4 張截圖（+ 選填 promo tile）
 - [ ] Visibility 選 Unlisted、Category 選 Productivity、Pricing Free
 
 ---
