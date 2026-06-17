@@ -598,6 +598,19 @@
     const m = /^(\d{4})\b/.exec(s);
     return m ? `${m[1]}-01-01` : s;
   }
+  function redactDemographicsInText(text) {
+    if (!text || typeof text !== "string") return text;
+    return text.replace(
+      /((?:出生日期|出生年月日|生日)\s*[:：]\s*(?:<\/b>\s*)?)(\d{4})\s*[/.\-／]\s*\d{1,2}\s*[/.\-／]\s*\d{1,2}\s*日?/g,
+      (_m, label, year) => `${label}${year}`
+    ).replace(
+      /((?:出生日期|出生年月日|生日)\s*[:：]\s*(?:<\/b>\s*)?)(?:民國\s*)?\d{1,3}\s*[年/.\-／]\s*\d{1,2}\s*[月/.\-／]\s*\d{1,2}\s*日?/g,
+      (_m, label) => `${label}[\u5DF2\u53BB\u8B58\u5225]`
+    ).replace(
+      /((?:病歷號碼|病歷號數|病歷號|病歷編號)\s*[:：]\s*(?:<\/b>\s*)?)[A-Za-z0-9\-]+/g,
+      (_m, label) => `${label}[\u5DF2\u53BB\u8B58\u5225]`
+    );
+  }
   function normalizeNarrativeForDedup(s) {
     return (s ?? "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
   }
@@ -5959,6 +5972,16 @@
     }
     return value;
   }
+  function redactDemographicsDeep(value) {
+    if (typeof value === "string") return redactDemographicsInText(value);
+    if (Array.isArray(value)) return value.map((v) => redactDemographicsDeep(v));
+    if (value && typeof value === "object") {
+      const out = {};
+      for (const k in value) out[k] = redactDemographicsDeep(value[k]);
+      return out;
+    }
+    return value;
+  }
 
   // src/background/backend-upload.ts
   async function postStructured(backend, page_type, items, syncApiKey, patientOverride) {
@@ -9202,6 +9225,11 @@
       const idReplacement = maskId(patientOverride.id_no, "X");
       for (const key of Object.keys(byType)) {
         byType[key] = replaceNameDeep(byType[key], patientOverride.id_no, idReplacement);
+      }
+    }
+    if (maskEnabled) {
+      for (const key of Object.keys(byType)) {
+        byType[key] = redactDemographicsDeep(byType[key]);
       }
     }
     const drItems = byType.diagnostic_reports;

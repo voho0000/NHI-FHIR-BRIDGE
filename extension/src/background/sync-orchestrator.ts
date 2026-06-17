@@ -99,6 +99,7 @@ import {
   applyDateRangeToPath,
   deidentifyOverride,
   isMaskEnabled,
+  redactDemographicsDeep,
   replaceNameDeep,
 } from "./patient-override.js";
 import {
@@ -1199,6 +1200,18 @@ export async function runNhiApiSync({
     const idReplacement = maskId(patientOverride.id_no, "X");
     for (const key of Object.keys(byType)) {
       byType[key] = replaceNameDeep(byType[key], patientOverride.id_no, idReplacement);
+    }
+  }
+  // The name/id token-replace above can't catch the birth date + 病歷號碼
+  // baked into 出院病摘 HTML and 病理報告 narratives — those aren't the
+  // user-entered values, and a mistyped override DOB would leave the real
+  // one in cleartext. Scrub them label-anchored (出生日期 → year-only,
+  // 病歷號碼 → redacted) while the 出院病摘 HTML is still plaintext here
+  // (document-reference.ts base64-encodes it at map time). Covers both the
+  // local-bundle and backend-upload paths since this runs before the split.
+  if (maskEnabled) {
+    for (const key of Object.keys(byType)) {
+      byType[key] = redactDemographicsDeep(byType[key]);
     }
   }
   // Audit P2-7 (2026-06-12): PACS-exported JPEGs can carry patient

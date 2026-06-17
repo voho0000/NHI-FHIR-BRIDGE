@@ -131,6 +131,52 @@ export function deidBirthDate(iso: string | null | undefined): string {
 }
 
 /**
+ * Label-anchored redaction of demographic fields embedded in NHI free-text
+ * narratives and pre-rendered HTML (出院病摘 discharge summaries, 病理報告
+ * headers). Unlike the name/id token-replace scrub — which matches the value
+ * the user typed into the override form and silently misses when that value
+ * is wrong — this keys off the FIELD LABEL, so it redacts the REAL value
+ * regardless of what was entered into the form:
+ *
+ *   出生日期 / 生日    → keep the Gregorian birth YEAR, drop month + day
+ *                        (same HIPAA-Safe-Harbor year-only policy as
+ *                        deidBirthDate); 民國/ROC-form dates redacted whole.
+ *   病歷號碼 (chart no) → fully redacted.
+ *
+ * Visit / admission / collection dates carry DIFFERENT labels (採檢日期 /
+ * 住院日期 / 出院日期 …) and are deliberately preserved — the de-identified
+ * bundle is a limited dataset, not anonymized (it still carries hospital
+ * names + visit dates). Best-effort by design: NHI templates vary, so
+ * unusual layouts may slip through.
+ *
+ * Handles both plain text ("出生日期:1932／06／10", fullwidth slashes) and the
+ * 出院病摘 cell template ("出生日期：</b>1932-06-10</td>", value in a sibling
+ * tag). Applied at the extension's byType stage while the 出院病摘 HTML is
+ * still plaintext (document-reference.ts base64-encodes it at map time).
+ */
+export function redactDemographicsInText(text: string): string {
+  if (!text || typeof text !== "string") return text;
+  return (
+    text
+      // 出生日期 + Gregorian date → keep year, drop month/day.
+      .replace(
+        /((?:出生日期|出生年月日|生日)\s*[:：]\s*(?:<\/b>\s*)?)(\d{4})\s*[/.\-／]\s*\d{1,2}\s*[/.\-／]\s*\d{1,2}\s*日?/g,
+        (_m, label, year) => `${label}${year}`,
+      )
+      // 出生日期 + 民國/ROC-form date → redact whole (can't keep year inline).
+      .replace(
+        /((?:出生日期|出生年月日|生日)\s*[:：]\s*(?:<\/b>\s*)?)(?:民國\s*)?\d{1,3}\s*[年/.\-／]\s*\d{1,2}\s*[月/.\-／]\s*\d{1,2}\s*日?/g,
+        (_m, label) => `${label}[已去識別]`,
+      )
+      // 病歷號碼 / chart number → fully redacted.
+      .replace(
+        /((?:病歷號碼|病歷號數|病歷號|病歷編號)\s*[:：]\s*(?:<\/b>\s*)?)[A-Za-z0-9\-]+/g,
+        (_m, label) => `${label}[已去識別]`,
+      )
+  );
+}
+
+/**
  * Normalize a narrative report body for content-equality comparison.
  *
  * NHI's PACS/RIS ships the SAME radiology narrative through different

@@ -3,7 +3,13 @@
 // because they all operate on the popup-supplied `patientOverride` object
 // (id_no / name / birth_date / gender) and the mask-name preference.
 
-import { deidBirthDate, mapPatient, maskId, maskName } from "@nhi-fhir-bridge/mapper";
+import {
+  deidBirthDate,
+  mapPatient,
+  maskId,
+  maskName,
+  redactDemographicsInText,
+} from "@nhi-fhir-bridge/mapper";
 
 // Apply a {start, end} ISO date range to an endpoint path:
 //   - If path already has s_date= placeholders, fill them in.
@@ -110,6 +116,23 @@ export function replaceNameDeep(value, needle, replacement) {
   if (value && typeof value === "object") {
     const out = {};
     for (const k in value) out[k] = replaceNameDeep(value[k], needle, replacement);
+    return out;
+  }
+  return value;
+}
+
+// Deep-walk a JSON-like value applying label-anchored demographic redaction
+// (birth date → year-only, 病歷號碼 → redacted) to every string token. Runs
+// alongside replaceNameDeep when de-identifying: that scrub matches the
+// user-entered name / 身分證, this one keys off the FIELD LABEL so it still
+// catches the REAL birth date + chart number baked into 出院病摘 HTML and
+// 病理報告 narratives even when the override form's birth date was mistyped.
+export function redactDemographicsDeep(value) {
+  if (typeof value === "string") return redactDemographicsInText(value);
+  if (Array.isArray(value)) return value.map((v) => redactDemographicsDeep(v));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const k in value) out[k] = redactDemographicsDeep(value[k]);
     return out;
   }
   return value;

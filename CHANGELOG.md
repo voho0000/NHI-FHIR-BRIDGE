@@ -3,6 +3,18 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.16 重點 — 2026-06-17（去識別化修補:出院病摘／病理報告內文的生日＋病歷號碼也會被遮）
+
+使用者實測發現:去識別化開啟時,**出院病摘（DocumentReference HTML）與病理報告（DiagnosticReport.conclusion）內文裡的「出生日期」「病歷號碼」沒有被遮**。`Patient.birthDate` 結構欄位本來就正確（只留年份）,姓名／身分證在敘述裡也有被遮 —— 但生日與病歷號碼從來不在敘述掃描清單裡。
+
+根因:原本敘述去識別化（`replaceNameDeep`）是「拿使用者填入的姓名／身分證去 match-and-replace」,清單裡只有那兩項;若生日填錯,報告裡的真實生日也不會被掃到。
+
+- **新增 `redactDemographicsInText`（mapper/helpers）— 標籤錨定（label-anchored）去識別化**:認「出生日期：」「病歷號碼：」這種**欄位標籤**去遮後面的值,不靠比對使用者填的內容 → 即使生日亂填,報告內的真實生日照樣被遮。出生日期保留年份（與 `deidBirthDate` 一致）、病歷號碼整段遮掉。
+- **就醫／住院／採檢日期（標籤不同）刻意保留** —— 仍屬有限去識別（保留醫院名稱＋就醫日期）。
+- 同時涵蓋兩種版型:純文字（病理報告,全形斜線）與 `<b>標籤：</b>值` 的病摘 HTML 表格;在 extension byType 階段套用（病摘 HTML 此時仍是 plaintext,`document-reference.ts` 才會 base64 編碼）。本機與後端兩條路徑都過。
+- popup 去識別化說明補上「出院病摘／報告內文的生日與病歷號碼一併遮去」。
+- 驗證:對一份真實病摘實測,DiagnosticReport.conclusion 2→0、出院病摘 HTML 5→0 外洩,就醫／住院日期 5/5 全保留;新增 5 筆 mapper 單元測試,689 測試全綠。
+
 ## 0.20.15 重點 — 2026-06-17（影像清單「資料確認中」時改為後置,不再卡住其他資料的明細）
 
 承 v0.20.14:同步內「確認影像清單」最多等 30s,先前是**循序**卡在手術/慢箋/用藥明細之前。本版做條件式換位:
