@@ -3,6 +3,13 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 0.20.17 重點 — 2026-06-17（生日改用 年/月/日 三個下拉，比較好填）
+
+**「您的基本資料」的生日欄位改成 年/月/日 三個下拉選單。** 使用者反映原本的 `<input type="date">` 不好填 —— 原生日期選擇器一打開停在「當月」,要挑數十年前的生日得一直往回點。改成三個 `<select>`（年/月/日）直接點選:
+- 年:1900 ～ 今年(可直接打字跳到該年);月:1–12;日:依「年＋月」自動算出天數,不會出現 2/30 這種不存在的日期(閏年 2/29 也正確)。
+- 儲存格式不變,仍是 ISO `YYYY-MM-DD`;去識別化、年齡計算等下游邏輯完全不受影響。
+- 驗證同步更新:未選完整年月日會擋下並提示「生日請選完整年月日」。
+
 ## 0.20.16 重點 — 2026-06-17（去識別化:預設改為開啟＋修補病摘／報告內文的生日＋病歷號碼）
 
 **去識別化預設改為「開啟」（privacy-first）**:以往預設關閉（為了民眾自用要真實身分證讓 SMART App 比對）。考量本工具要上架公開、處理的是敏感健康資料,改為**預設開啟**,要保留完整個人備份（真實姓名／身分證／完整生日）的人再自行切到「關閉」。實作:`maskNameEnabled` 不存在時一律當「開啟」（`!== false`),只有使用者明確關閉才停用;四個讀取點（`isMaskEnabled`、popup 載入、backend 查詢 key、sync patientId）＋ popup 預設選「開啟」radio ＋ 說明文案全部對齊。既有使用者若從沒動過這個開關,升級後會自動變成開啟。

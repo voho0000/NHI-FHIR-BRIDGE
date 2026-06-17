@@ -500,7 +500,9 @@
     apiSyncRange: byId("api-sync-range"),
     stopBtn: byId("stop-btn"),
     ovName: byId("ov-name"),
-    ovBirthDate: byId("ov-birth-date"),
+    ovBirthYear: byId("ov-birth-year"),
+    ovBirthMonth: byId("ov-birth-month"),
+    ovBirthDay: byId("ov-birth-day"),
     ovGender: byId("ov-gender"),
     ovSaveBtn: byId("ov-save-btn"),
     ovClearBtn: byId("ov-clear-btn"),
@@ -2397,12 +2399,75 @@
   // src/popup/patient-form.ts
   var _storedIdNo = null;
   var _maskNameEnabled = true;
+  var _pad2 = (n) => String(n).padStart(2, "0");
+  function _daysInMonth(year, month) {
+    if (!month) return 31;
+    if (month === 2) {
+      if (!year) return 29;
+      return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
+    }
+    return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+  }
+  function _fillSelect(sel, placeholder, items) {
+    if (!sel) return;
+    const keep = sel.value;
+    sel.innerHTML = "";
+    const ph = document.createElement("option");
+    ph.value = "";
+    ph.textContent = placeholder;
+    sel.appendChild(ph);
+    for (const [value, label] of items) {
+      const o = document.createElement("option");
+      o.value = value;
+      o.textContent = label;
+      sel.appendChild(o);
+    }
+    if (keep && items.some(([v]) => v === keep)) sel.value = keep;
+  }
+  function _rebuildBirthDays() {
+    const y = Number(els.ovBirthYear?.value) || 0;
+    const m = Number(els.ovBirthMonth?.value) || 0;
+    const max = _daysInMonth(y, m);
+    const days = [];
+    for (let d = 1; d <= max; d++) days.push([String(d), String(d)]);
+    _fillSelect(els.ovBirthDay, "\u65E5", days);
+  }
+  function _populateBirthSelects() {
+    if (!els.ovBirthYear) return;
+    const curY = (/* @__PURE__ */ new Date()).getFullYear();
+    const years = [];
+    for (let y = curY; y >= 1900; y--) years.push([String(y), String(y)]);
+    _fillSelect(els.ovBirthYear, "\u5E74", years);
+    const months = [];
+    for (let m = 1; m <= 12; m++) months.push([String(m), String(m)]);
+    _fillSelect(els.ovBirthMonth, "\u6708", months);
+    _rebuildBirthDays();
+  }
+  function getBirthDateIso() {
+    const y = els.ovBirthYear?.value;
+    const m = els.ovBirthMonth?.value;
+    const d = els.ovBirthDay?.value;
+    if (!y || !m || !d) return "";
+    return `${y}-${_pad2(Number(m))}-${_pad2(Number(d))}`;
+  }
+  function setBirthDateIso(iso) {
+    const mm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+    if (els.ovBirthYear) els.ovBirthYear.value = mm ? mm[1] : "";
+    if (els.ovBirthMonth) els.ovBirthMonth.value = mm ? String(Number(mm[2])) : "";
+    _rebuildBirthDays();
+    if (els.ovBirthDay) els.ovBirthDay.value = mm ? String(Number(mm[3])) : "";
+  }
+  function onBirthPartChange() {
+    _rebuildBirthDays();
+    refreshOverrideSummary();
+  }
   async function loadPatientOverride() {
     const { patientOverride } = await chrome.storage.local.get("patientOverride");
     _storedIdNo = patientOverride?.id_no || null;
+    if (els.ovBirthYear && els.ovBirthYear.options.length <= 1) _populateBirthSelects();
     if (patientOverride) {
       els.ovName.value = patientOverride.name || "";
-      els.ovBirthDate.value = patientOverride.birth_date || "";
+      setBirthDateIso(patientOverride.birth_date || "");
       els.ovGender.value = patientOverride.gender || "";
     }
     _markStep2Confirmed(
@@ -2412,7 +2477,7 @@
   }
   function getPatientOverride() {
     const name = els.ovName.value.trim();
-    const birth_date = els.ovBirthDate.value.trim();
+    const birth_date = getBirthDateIso();
     const gender = els.ovGender.value;
     if (!_storedIdNo && !name && !birth_date && !gender) return null;
     const out = {};
@@ -2423,22 +2488,19 @@
     return out;
   }
   function validateBirthDate() {
-    const el = els.ovBirthDate;
-    if (!el) return null;
-    if (el.validity?.badInput) {
-      return "\u751F\u65E5\u8ACB\u586B\u5B8C\u6574\u5E74\u6708\u65E5";
-    }
-    const s = (el.value || "").trim();
-    if (!s) return "\u8ACB\u586B\u751F\u65E5";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "\u751F\u65E5\u8ACB\u586B\u5B8C\u6574\u5E74\u6708\u65E5";
-    const [y, m, d] = s.split("-").map(Number);
-    const dt = /* @__PURE__ */ new Date(`${s}T00:00:00Z`);
-    if (Number.isNaN(dt.getTime()) || dt.getUTCFullYear() !== y || dt.getUTCMonth() + 1 !== m || dt.getUTCDate() !== d) {
+    const y = els.ovBirthYear?.value;
+    const m = els.ovBirthMonth?.value;
+    const d = els.ovBirthDay?.value;
+    if (!y && !m && !d) return "\u8ACB\u586B\u751F\u65E5";
+    if (!y || !m || !d) return "\u751F\u65E5\u8ACB\u9078\u5B8C\u6574\u5E74\u6708\u65E5";
+    const iso = getBirthDateIso();
+    const [yy, mm, dd] = iso.split("-").map(Number);
+    const dt = /* @__PURE__ */ new Date(`${iso}T00:00:00Z`);
+    if (Number.isNaN(dt.getTime()) || dt.getUTCFullYear() !== yy || dt.getUTCMonth() + 1 !== mm || dt.getUTCDate() !== dd) {
       return "\u751F\u65E5\u4E0D\u662F\u6709\u6548\u65E5\u671F";
     }
-    const now = /* @__PURE__ */ new Date();
-    if (dt.getTime() > now.getTime()) return "\u751F\u65E5\u4E0D\u80FD\u662F\u672A\u4F86";
-    if (y < 1900) return "\u751F\u65E5\u5E74\u4EFD\u592A\u65E9\uFF0C\u8ACB\u78BA\u8A8D";
+    if (dt.getTime() > Date.now()) return "\u751F\u65E5\u4E0D\u80FD\u662F\u672A\u4F86";
+    if (yy < 1900) return "\u751F\u65E5\u5E74\u4EFD\u592A\u65E9\uFF0C\u8ACB\u78BA\u8A8D";
     return null;
   }
   function refreshOverrideSummary() {
@@ -2494,7 +2556,7 @@
     const dobError = validateBirthDate();
     if (dobError) {
       setStatus(`\u26D4 ${dobError}`, "error");
-      els.ovBirthDate.focus();
+      els.ovBirthYear?.focus();
       return;
     }
     if (!els.ovName.value.trim()) {
@@ -2504,7 +2566,7 @@
     }
     const ov = {
       name: els.ovName.value.trim() || null,
-      birth_date: els.ovBirthDate.value.trim(),
+      birth_date: getBirthDateIso(),
       gender: els.ovGender.value
     };
     if (!ov.name) delete ov.name;
@@ -2540,7 +2602,7 @@
     await chrome.storage.local.remove("patientOverride");
     _storedIdNo = null;
     els.ovName.value = "";
-    els.ovBirthDate.value = "";
+    setBirthDateIso("");
     els.ovGender.value = "";
     _markStep2Confirmed(false);
     refreshOverrideSummary();
@@ -3283,9 +3345,10 @@
   els.stopBtn.addEventListener("click", stopSync);
   els.ovSaveBtn.addEventListener("click", savePatientOverride);
   els.ovClearBtn.addEventListener("click", clearPatientOverride);
-  [els.ovName, els.ovBirthDate, els.ovGender].forEach(
-    (el) => el.addEventListener("input", refreshOverrideSummary)
-  );
+  [els.ovName, els.ovGender].forEach((el) => el.addEventListener("input", refreshOverrideSummary));
+  els.ovBirthYear?.addEventListener("change", onBirthPartChange);
+  els.ovBirthMonth?.addEventListener("change", onBirthPartChange);
+  els.ovBirthDay?.addEventListener("change", refreshOverrideSummary);
   els.launchBtn.addEventListener("click", launch);
   els.openSmartAppBtn?.addEventListener("click", () => {
     chrome.tabs.create({ url: STANDALONE_SMART_APP_URL });

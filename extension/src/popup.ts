@@ -38,6 +38,7 @@ import {
   clearPatientOverride,
   loadMaskNameEnabled,
   loadPatientOverride,
+  onBirthPartChange,
   onMaskNameToggle,
   refreshOverrideSummary,
   savePatientOverride,
@@ -317,9 +318,12 @@ els.syncApiBtn.addEventListener("click", apiSyncNhi);
 els.stopBtn.addEventListener("click", stopSync);
 els.ovSaveBtn.addEventListener("click", savePatientOverride);
 els.ovClearBtn.addEventListener("click", clearPatientOverride);
-[els.ovName, els.ovBirthDate, els.ovGender].forEach((el) =>
-  el.addEventListener("input", refreshOverrideSummary),
-);
+[els.ovName, els.ovGender].forEach((el) => el.addEventListener("input", refreshOverrideSummary));
+// 生日 selects: 年/月 changes rebuild the 日 list (leap / short months) then
+// refresh the summary; 日 alone only needs the summary refresh.
+els.ovBirthYear?.addEventListener("change", onBirthPartChange);
+els.ovBirthMonth?.addEventListener("change", onBirthPartChange);
+els.ovBirthDay?.addEventListener("change", refreshOverrideSummary);
 els.launchBtn.addEventListener("click", launch);
 
 // Step 4: plain new-tab open of the SMART App. URL is hardcoded

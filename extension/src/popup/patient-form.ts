@@ -32,12 +32,94 @@ let _storedIdNo = null;
 // defaults ON (privacy-first) — see loadMaskNameEnabled.
 let _maskNameEnabled = true;
 
+// ── 生日 = 年/月/日 三個下拉 ───────────────────────────────────────────────
+// Native <input type="date"> made picking a birthday painful (the calendar
+// opens on the current month, so reaching a year decades back is many clicks).
+// Three <select>s are far easier. Storage format is UNCHANGED: ISO "YYYY-MM-DD".
+const _pad2 = (n: number) => String(n).padStart(2, "0");
+
+function _daysInMonth(year: number, month: number): number {
+  if (!month) return 31;
+  if (month === 2) {
+    // Allow 29 until a year is chosen so a leap-day birthday isn't blocked.
+    if (!year) return 29;
+    return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
+  }
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+}
+
+function _fillSelect(sel: any, placeholder: string, items: Array<[string, string]>) {
+  if (!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = "";
+  const ph = document.createElement("option");
+  ph.value = "";
+  ph.textContent = placeholder;
+  sel.appendChild(ph);
+  for (const [value, label] of items) {
+    const o = document.createElement("option");
+    o.value = value;
+    o.textContent = label;
+    sel.appendChild(o);
+  }
+  // Preserve a prior selection if it's still a valid option.
+  if (keep && items.some(([v]) => v === keep)) sel.value = keep;
+}
+
+// Rebuild the 日 options for the picked 年/月 so impossible days (e.g. 2/30)
+// never show; preserves the chosen day when it still fits the month.
+export function _rebuildBirthDays() {
+  const y = Number(els.ovBirthYear?.value) || 0;
+  const m = Number(els.ovBirthMonth?.value) || 0;
+  const max = _daysInMonth(y, m);
+  const days: Array<[string, string]> = [];
+  for (let d = 1; d <= max; d++) days.push([String(d), String(d)]);
+  _fillSelect(els.ovBirthDay, "日", days);
+}
+
+function _populateBirthSelects() {
+  if (!els.ovBirthYear) return;
+  const curY = new Date().getFullYear();
+  const years: Array<[string, string]> = [];
+  for (let y = curY; y >= 1900; y--) years.push([String(y), String(y)]);
+  _fillSelect(els.ovBirthYear, "年", years);
+  const months: Array<[string, string]> = [];
+  for (let m = 1; m <= 12; m++) months.push([String(m), String(m)]);
+  _fillSelect(els.ovBirthMonth, "月", months);
+  _rebuildBirthDays();
+}
+
+function getBirthDateIso(): string {
+  const y = els.ovBirthYear?.value;
+  const m = els.ovBirthMonth?.value;
+  const d = els.ovBirthDay?.value;
+  if (!y || !m || !d) return "";
+  return `${y}-${_pad2(Number(m))}-${_pad2(Number(d))}`;
+}
+
+function setBirthDateIso(iso: string) {
+  const mm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  if (els.ovBirthYear) els.ovBirthYear.value = mm ? mm[1] : "";
+  if (els.ovBirthMonth) els.ovBirthMonth.value = mm ? String(Number(mm[2])) : "";
+  _rebuildBirthDays();
+  if (els.ovBirthDay) els.ovBirthDay.value = mm ? String(Number(mm[3])) : "";
+}
+
+// Wired in popup.ts to 年/月 change: rebuild 日 options then refresh summary.
+export function onBirthPartChange() {
+  _rebuildBirthDays();
+  refreshOverrideSummary();
+}
+
 export async function loadPatientOverride() {
   const { patientOverride } = await chrome.storage.local.get("patientOverride");
   _storedIdNo = patientOverride?.id_no || null;
+  // Fill the 年/月/日 option lists once (idempotent guard: only the
+  // placeholder present) before assigning a stored value.
+  if (els.ovBirthYear && els.ovBirthYear.options.length <= 1) _populateBirthSelects();
   if (patientOverride) {
     els.ovName.value = patientOverride.name || "";
-    els.ovBirthDate.value = patientOverride.birth_date || "";
+    setBirthDateIso(patientOverride.birth_date || "");
     els.ovGender.value = patientOverride.gender || "";
   }
   // A stored override with all required fields (name + gender + birth_date)
@@ -62,7 +144,7 @@ export function getPatientOverride() {
   // with the real cid by background's NHI fetch on first sync.
   // Returns null when nothing identifying is filled.
   const name = els.ovName.value.trim();
-  const birth_date = els.ovBirthDate.value.trim();
+  const birth_date = getBirthDateIso();
   const gender = els.ovGender.value;
   if (!_storedIdNo && !name && !birth_date && !gender) return null;
   // Phase-1 migration: incrementally-built override record.
@@ -75,50 +157,39 @@ export function getPatientOverride() {
 }
 
 /**
- * Validate the patient card's birth-date input. Returns null when OK,
- * otherwise a user-facing error string. Reads directly from the
- * <input type="date"> so we can detect partial-input states that
- * Chrome reports through `validity.badInput` (the input's `.value`
- * is "" in that case, indistinguishable from "blank" by string check
- * alone — that's why the old version of this function let partial
- * year-only entries slip through).
+ * Validate the patient card's birth-date (three 年/月/日 <select>s).
+ * Returns null when OK, otherwise a user-facing error string.
  *
- * Allowed states:
- *   - genuinely empty (the field is optional)
- *   - full ISO YYYY-MM-DD that round-trips through Date()
+ * Allowed: all three picked AND the composed date round-trips through Date().
  * Rejected:
- *   - year-only / year+month: the input renders blank value but
- *     validity.badInput is true
+ *   - nothing picked (field is required)
+ *   - only some of 年/月/日 picked (partial)
+ *   - an impossible date (the 日 list is month-aware, so this is a guard)
  *   - dates in the future
- *   - implausibly old dates (year < 1900)
+ *   - implausibly old dates (year < 1900 — the 年 list starts at 1900,
+ *     so this is a belt-and-suspenders guard)
  */
 export function validateBirthDate() {
-  const el = els.ovBirthDate;
-  if (!el) return null;
-  // Chrome's native date input: partial entry (just year, just yyyy-mm)
-  // surfaces here even though .value is "".
-  if (el.validity?.badInput) {
-    return "生日請填完整年月日";
-  }
-  const s = (el.value || "").trim();
-  // Birth date is now required — age affects every reference range
-  // and any downstream age-based UI; empty input lets a typo / browser
-  // quirk silently propagate as NaN.
-  if (!s) return "請填生日";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "生日請填完整年月日";
-  const [y, m, d] = s.split("-").map(Number);
-  const dt = new Date(`${s}T00:00:00Z`);
+  const y = els.ovBirthYear?.value;
+  const m = els.ovBirthMonth?.value;
+  const d = els.ovBirthDay?.value;
+  // Birth date is required — age affects every reference range and any
+  // downstream age-based UI.
+  if (!y && !m && !d) return "請填生日";
+  if (!y || !m || !d) return "生日請選完整年月日";
+  const iso = getBirthDateIso();
+  const [yy, mm, dd] = iso.split("-").map(Number);
+  const dt = new Date(`${iso}T00:00:00Z`);
   if (
     Number.isNaN(dt.getTime()) ||
-    dt.getUTCFullYear() !== y ||
-    dt.getUTCMonth() + 1 !== m ||
-    dt.getUTCDate() !== d
+    dt.getUTCFullYear() !== yy ||
+    dt.getUTCMonth() + 1 !== mm ||
+    dt.getUTCDate() !== dd
   ) {
     return "生日不是有效日期";
   }
-  const now = new Date();
-  if (dt.getTime() > now.getTime()) return "生日不能是未來";
-  if (y < 1900) return "生日年份太早，請確認";
+  if (dt.getTime() > Date.now()) return "生日不能是未來";
+  if (yy < 1900) return "生日年份太早，請確認";
   return null;
 }
 
@@ -133,8 +204,8 @@ export function refreshOverrideSummary() {
     // Build the summary as 「name · age · gender · masked-cid」 — each
     // optional segment skips itself when the underlying field is
     // unset / invalid, so the line stays clean while users are still
-    // filling in step 2. Live-refreshed on every input event via
-    // popup.ts's [ovName, ovBirthDate, ovGender]-input listener.
+    // filling in step 2. Live-refreshed on every input/change event via
+    // popup.ts's ovName/ovGender input + 生日 年/月/日 change listeners.
     //
     //   _maybeMask: respects the mask-name toggle (demo: 陳O明)
     //   _ageFromBirthDate: anniversary years, null on parse failure
@@ -201,7 +272,7 @@ export async function savePatientOverride() {
   const dobError = validateBirthDate();
   if (dobError) {
     setStatus(`⛔ ${dobError}`, "error");
-    els.ovBirthDate.focus();
+    els.ovBirthYear?.focus();
     return;
   }
   if (!els.ovName.value.trim()) {
@@ -215,7 +286,7 @@ export async function savePatientOverride() {
   // Phase-1 migration: id_no is added below.
   const ov: any = {
     name: els.ovName.value.trim() || null,
-    birth_date: els.ovBirthDate.value.trim(),
+    birth_date: getBirthDateIso(),
     gender: els.ovGender.value,
   };
   // Drop the key entirely (not set undefined) so the stored override stays clean.
@@ -310,7 +381,7 @@ export async function clearPatientOverride() {
   await chrome.storage.local.remove("patientOverride");
   _storedIdNo = null;
   els.ovName.value = "";
-  els.ovBirthDate.value = "";
+  setBirthDateIso("");
   els.ovGender.value = "";
   _markStep2Confirmed(false);
   refreshOverrideSummary();

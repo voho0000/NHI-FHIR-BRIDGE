@@ -474,8 +474,13 @@
     }
     .setting-row > select,
     .setting-row > input,
+    .setting-row > .dob-selects,
     .setting-row > .mode-toggle { flex: 1; }
     .setting-row > .mode-toggle { margin: 0; }
+    /* 生日 = 年/月/日 三個下拉並排（native date input 對挑數十年前的生日很難用） */
+    .dob-selects { display: flex; gap: 6px; }
+    .dob-selects select { flex: 1; min-width: 0; }
+    .dob-selects .dob-year { flex: 1.5; }
 
     /* Result section lives in the SAME panel. Hidden when no result.
        Each child gets vertical gap from .panel's flex layout. */
@@ -1481,7 +1486,11 @@
                64px label column so it's visible on open. -->
           <div class="setting-row">
             <span class="setting-label">生日 <span class="required">*</span></span>
-            <input type="date" id="ov-birth-date" required />
+            <div class="dob-selects" id="ov-birth">
+              <select id="ov-birth-year" class="dob-year" aria-label="出生年份"><option value="">年</option></select>
+              <select id="ov-birth-month" aria-label="出生月份"><option value="">月</option></select>
+              <select id="ov-birth-day" aria-label="出生日"><option value="">日</option></select>
+            </div>
           </div>
           <div class="setting-row">
             <span class="setting-label">性別 <span class="required">*</span></span>
