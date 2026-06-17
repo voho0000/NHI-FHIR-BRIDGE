@@ -18,7 +18,7 @@ flowchart LR
   smart["SMART App<br/>(外部)"]
 
   user -->|active tab cookies| ext
-  ext -->|fetch /api/ihke3000/...| user
+  ext -->|讀取健康存摺 API| user
   ext -. 模式 A：下載 .-> file
   ext -- 模式 B：上傳 --> backend
   backend --> db
@@ -87,12 +87,12 @@ sequenceDiagram
 
   User->>NHI: 用健保卡登入
   User->>Ext: 點「🔄 取得健康存摺資料」
-  Ext->>NHI: 自動帶入身分證 (IHKE3410)
-  par 13+ 個 NHI 端點平行抓
-    Ext->>NHI: GET /api/ihke3000/ihke3306s01/search (藥品)
-    Ext->>NHI: GET /api/ihke3000/ihke3303s01/search (就醫紀錄)
-    Ext->>NHI: GET /api/ihke3000/ihke3401s01/search (檢驗)
-    Ext->>NHI: ... 其他端點
+  Ext->>NHI: 自動帶入身分證
+  par 13+ 類健康存摺資料平行抓
+    Ext->>NHI: 讀取藥品紀錄
+    Ext->>NHI: 讀取就醫紀錄
+    Ext->>NHI: 讀取檢驗紀錄
+    Ext->>NHI: …其他類別
   end
   NHI-->>Ext: JSON
   Ext->>Ext: adapt*() — 轉成 mapper 接受的 shape
