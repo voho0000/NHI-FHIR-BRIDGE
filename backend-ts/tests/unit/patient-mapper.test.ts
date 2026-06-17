@@ -229,11 +229,11 @@ describe("deidBirthDate", () => {
 });
 
 describe("redactDemographicsInText (出院病摘 / 病理報告 narrative de-id)", () => {
-  test("plain-text header: 出生日期 keeps year, 病歷號碼 redacted", () => {
+  test("plain-text header: 出生日期 keeps year (month/day → XX), 病歷號碼 redacted", () => {
     // Pathology conclusion template: halfwidth colon, fullwidth slashes.
     const src = "病歷號碼:1234567 性別:男 出生日期:1932／06／10 年齡:93歲";
     const out = redactDemographicsInText(src);
-    expect(out).toContain("出生日期:1932");
+    expect(out).toContain("出生日期:1932／XX／XX");
     expect(out).not.toContain("1932／06／10");
     expect(out).toContain("病歷號碼:[已去識別]");
     expect(out).not.toContain("1234567");
@@ -242,27 +242,23 @@ describe("redactDemographicsInText (出院病摘 / 病理報告 narrative de-id)
     expect(out).toContain("性別:男");
   });
 
-  test("出院病摘 HTML cell: value in a sibling tag still scrubbed", () => {
-    const src =
-      '<td><b>出生日期：</b>1932-06-10</td><td><b>病歷號碼：</b>1234567</td>';
+  test("出院病摘 HTML cell: value in a sibling tag still scrubbed (year kept)", () => {
+    const src = "<td><b>出生日期：</b>1932-06-10</td><td><b>病歷號碼：</b>1234567</td>";
     const out = redactDemographicsInText(src);
-    expect(out).toContain("出生日期：</b>1932</td>");
+    expect(out).toContain("出生日期：</b>1932-XX-XX</td>");
     expect(out).not.toContain("1932-06-10");
     expect(out).toContain("病歷號碼：</b>[已去識別]</td>");
     expect(out).not.toContain("1234567");
   });
 
   test("visit / admission / collection dates are PRESERVED (different label)", () => {
-    const src =
-      '住院日期：</b>2025-01-15</td> 採檢日期:2025／05／22 出院日期：2025/05/30';
+    const src = "住院日期：</b>2025-01-15</td> 採檢日期:2025／05／22 出院日期：2025/05/30";
     const out = redactDemographicsInText(src);
     expect(out).toBe(src);
   });
 
   test("民國 / ROC-form birth date redacted whole", () => {
-    expect(redactDemographicsInText("出生日期:民國79年6月10日")).toBe(
-      "出生日期:[已去識別]",
-    );
+    expect(redactDemographicsInText("出生日期:民國79年6月10日")).toBe("出生日期:[已去識別]");
     expect(redactDemographicsInText("生日:79/6/10")).toBe("生日:[已去識別]");
   });
 

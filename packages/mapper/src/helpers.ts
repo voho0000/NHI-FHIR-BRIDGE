@@ -138,9 +138,14 @@ export function deidBirthDate(iso: string | null | undefined): string {
  * is wrong — this keys off the FIELD LABEL, so it redacts the REAL value
  * regardless of what was entered into the form:
  *
- *   出生日期 / 生日    → keep the Gregorian birth YEAR, drop month + day
- *                        (same HIPAA-Safe-Harbor year-only policy as
- *                        deidBirthDate); 民國/ROC-form dates redacted whole.
+ *   出生日期 / 生日    → keep the Gregorian birth YEAR + separators, mask
+ *                        month + day as XX ("1960/06/10" → "1960/XX/XX").
+ *                        Narrative text is display-only (not parsed for age
+ *                        math, unlike the structured Patient.birthDate which
+ *                        stays YYYY-01-01), so we don't fabricate a 01-01 —
+ *                        the mask makes it obvious month/day were removed.
+ *                        Birth YEAR is retained per HIPAA Safe Harbor;
+ *                        民國/ROC-form dates are redacted whole.
  *   病歷號碼 (chart no) → fully redacted.
  *
  * Visit / admission / collection dates carry DIFFERENT labels (採檢日期 /
@@ -158,10 +163,12 @@ export function redactDemographicsInText(text: string): string {
   if (!text || typeof text !== "string") return text;
   return (
     text
-      // 出生日期 + Gregorian date → keep year, drop month/day.
+      // 出生日期 + Gregorian date → keep year + separators, mask month/day as
+      // XX ("1960／06／10" → "1960／XX／XX"). Display-only narrative, so no
+      // fabricated 01-01; the XX makes the redaction self-evident.
       .replace(
-        /((?:出生日期|出生年月日|生日)\s*[:：]\s*(?:<\/b>\s*)?)(\d{4})\s*[/.\-／]\s*\d{1,2}\s*[/.\-／]\s*\d{1,2}\s*日?/g,
-        (_m, label, year) => `${label}${year}`,
+        /((?:出生日期|出生年月日|生日)\s*[:：]\s*(?:<\/b>\s*)?)(\d{4})(\s*[/.\-／]\s*)\d{1,2}(\s*[/.\-／]\s*)\d{1,2}/g,
+        (_m, label, year, sep1, sep2) => `${label}${year}${sep1}XX${sep2}XX`,
       )
       // 出生日期 + 民國/ROC-form date → redact whole (can't keep year inline).
       .replace(

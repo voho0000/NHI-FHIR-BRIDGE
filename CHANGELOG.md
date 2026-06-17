@@ -9,7 +9,7 @@ Newest first. GitHub Releases page keeps the latest version only; this file is t
 
 根因:原本敘述去識別化（`replaceNameDeep`）是「拿使用者填入的姓名／身分證去 match-and-replace」,清單裡只有那兩項;若生日填錯,報告裡的真實生日也不會被掃到。
 
-- **新增 `redactDemographicsInText`（mapper/helpers）— 標籤錨定（label-anchored）去識別化**:認「出生日期：」「病歷號碼：」這種**欄位標籤**去遮後面的值,不靠比對使用者填的內容 → 即使生日亂填,報告內的真實生日照樣被遮。出生日期保留年份（與 `deidBirthDate` 一致）、病歷號碼整段遮掉。
+- **新增 `redactDemographicsInText`（mapper/helpers）— 標籤錨定（label-anchored）去識別化**:認「出生日期：」「病歷號碼：」這種**欄位標籤**去遮後面的值,不靠比對使用者填的內容 → 即使生日亂填,報告內的真實生日照樣被遮。內文出生日期**保留年份、月日遮成 XX**（如 `1960／XX／XX`）—— 內文是顯示用、不拿來算年齡,所以不像結構欄位 `Patient.birthDate` 那樣補成 `YYYY-01-01`;病歷號碼整段遮掉。
 - **就醫／住院／採檢日期（標籤不同）刻意保留** —— 仍屬有限去識別（保留醫院名稱＋就醫日期）。
 - 同時涵蓋兩種版型:純文字（病理報告,全形斜線）與 `<b>標籤：</b>值` 的病摘 HTML 表格;在 extension byType 階段套用（病摘 HTML 此時仍是 plaintext,`document-reference.ts` 才會 base64 編碼）。本機與後端兩條路徑都過。
 - popup 去識別化說明補上「出院病摘／報告內文的生日與病歷號碼一併遮去」。

@@ -601,8 +601,8 @@
   function redactDemographicsInText(text) {
     if (!text || typeof text !== "string") return text;
     return text.replace(
-      /((?:出生日期|出生年月日|生日)\s*[:：]\s*(?:<\/b>\s*)?)(\d{4})\s*[/.\-／]\s*\d{1,2}\s*[/.\-／]\s*\d{1,2}\s*日?/g,
-      (_m, label, year) => `${label}${year}`
+      /((?:出生日期|出生年月日|生日)\s*[:：]\s*(?:<\/b>\s*)?)(\d{4})(\s*[/.\-／]\s*)\d{1,2}(\s*[/.\-／]\s*)\d{1,2}/g,
+      (_m, label, year, sep1, sep2) => `${label}${year}${sep1}XX${sep2}XX`
     ).replace(
       /((?:出生日期|出生年月日|生日)\s*[:：]\s*(?:<\/b>\s*)?)(?:民國\s*)?\d{1,3}\s*[年/.\-／]\s*\d{1,2}\s*[月/.\-／]\s*\d{1,2}\s*日?/g,
       (_m, label) => `${label}[\u5DF2\u53BB\u8B58\u5225]`
