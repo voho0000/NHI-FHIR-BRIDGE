@@ -2320,7 +2320,7 @@
     const key = els.syncApiKey.value.trim();
     const headers = key ? { "X-Sync-API-Key": key } : {};
     const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
-    const fhirPid = effectiveFhirPatientId(ov.id_no, maskNameEnabled === true);
+    const fhirPid = effectiveFhirPatientId(ov.id_no, maskNameEnabled !== false);
     try {
       const pr = await fetch(`${url}/fhir/Patient/${encodeURIComponent(fhirPid)}`, { headers });
       if (pr.status === 404) {
@@ -2396,7 +2396,7 @@
 
   // src/popup/patient-form.ts
   var _storedIdNo = null;
-  var _maskNameEnabled = false;
+  var _maskNameEnabled = true;
   async function loadPatientOverride() {
     const { patientOverride } = await chrome.storage.local.get("patientOverride");
     _storedIdNo = patientOverride?.id_no || null;
@@ -2552,7 +2552,7 @@
   }
   async function loadMaskNameEnabled() {
     const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
-    _maskNameEnabled = maskNameEnabled === true;
+    _maskNameEnabled = maskNameEnabled !== false;
     if (els.maskNameEnabled) els.maskNameEnabled.checked = _maskNameEnabled;
     if (els.maskNameOff) els.maskNameOff.checked = !_maskNameEnabled;
     syncDeidDetail(_maskNameEnabled);
@@ -3070,7 +3070,7 @@
       return;
     }
     const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
-    const patientId = effectiveFhirPatientId(rawId, maskNameEnabled === true);
+    const patientId = effectiveFhirPatientId(rawId, maskNameEnabled !== false);
     const ok = await testBackendConnection();
     if (!ok) {
       setStatus("\u26D4 \u9023\u4E0D\u4E0A\u672C\u6A5F\u4F3A\u670D\u5668 \u2014 \u8ACB\u770B\u4E0A\u65B9\u63D0\u793A\u8AAA\u660E", "error");

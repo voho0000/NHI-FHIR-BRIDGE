@@ -43,9 +43,13 @@ export function applyDateRangeToPath(path, dateRange) {
 export async function isMaskEnabled() {
   try {
     const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
-    return maskNameEnabled === true;
+    // De-identify defaults ON (privacy-first). An ABSENT key means the user
+    // hasn't chosen → treat as ON; only an explicit `false` (user toggled it
+    // off to keep a complete personal backup) disables it.
+    return maskNameEnabled !== false;
   } catch {
-    return false;
+    // Storage read failed — fail safe toward privacy (masked).
+    return true;
   }
 }
 
@@ -93,9 +97,10 @@ export function buildOverridePatient(ov, maskEnabled) {
   // birthDate is the one remaining cleartext PII field after the input
   // masking above (mapPatient keeps the masked-TWID identifier.system
   // as national-id so the field's TYPE stays self-describing). Name is
-  // masked upstream via `displayName`. Default OFF: the 民眾自用
-  // workflow needs the real id_no so SMART apps can match the patient —
-  // masking only matters when the bundle will be shared/demoed.
+  // masked upstream via `displayName`. De-identify defaults ON now
+  // (privacy-first, v0.20.16) — a user who wants a complete personal backup
+  // with the real id_no (e.g. so a SMART app matches them by national ID)
+  // toggles it off.
   if (maskEnabled && patient.birthDate) {
     patient.birthDate = deidBirthDate(patient.birthDate);
   }

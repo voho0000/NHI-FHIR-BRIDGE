@@ -156,8 +156,9 @@ export async function launch() {
   }
   // Backend tracks Patient under its hashed FHIR id, not the raw national
   // ID. De-identified syncs store under the masked-id hash (audit P1-1).
+  // De-identify defaults ON (absent key → ON); only explicit false disables.
   const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
-  const patientId = effectiveFhirPatientId(rawId, maskNameEnabled === true);
+  const patientId = effectiveFhirPatientId(rawId, maskNameEnabled !== false);
   // Re-test connection even if banner shows ok — backend may have gone
   // down since the last probe.
   const ok = await testBackendConnection();

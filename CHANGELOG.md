@@ -3,7 +3,9 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
-## 0.20.16 重點 — 2026-06-17（去識別化修補:出院病摘／病理報告內文的生日＋病歷號碼也會被遮）
+## 0.20.16 重點 — 2026-06-17（去識別化:預設改為開啟＋修補病摘／報告內文的生日＋病歷號碼）
+
+**去識別化預設改為「開啟」（privacy-first）**:以往預設關閉（為了民眾自用要真實身分證讓 SMART App 比對）。考量本工具要上架公開、處理的是敏感健康資料,改為**預設開啟**,要保留完整個人備份（真實姓名／身分證／完整生日）的人再自行切到「關閉」。實作:`maskNameEnabled` 不存在時一律當「開啟」（`!== false`),只有使用者明確關閉才停用;四個讀取點（`isMaskEnabled`、popup 載入、backend 查詢 key、sync patientId）＋ popup 預設選「開啟」radio ＋ 說明文案全部對齊。既有使用者若從沒動過這個開關,升級後會自動變成開啟。
 
 使用者實測發現:去識別化開啟時,**出院病摘（DocumentReference HTML）與病理報告（DiagnosticReport.conclusion）內文裡的「出生日期」「病歷號碼」沒有被遮**。`Patient.birthDate` 結構欄位本來就正確（只留年份）,姓名／身分證在敘述裡也有被遮 —— 但生日與病歷號碼從來不在敘述掃描清單裡。
 

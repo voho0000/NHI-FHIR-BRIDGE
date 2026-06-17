@@ -147,8 +147,10 @@ export async function checkBackendPatient() {
   // national ID — query / export by the hashed form. With the de-identify
   // toggle on, the backend ingested a MASKED id (deidentifyOverride), so
   // the lookup key must derive from the masked form too (audit P1-1).
+  // De-identify defaults ON (absent key → ON); only explicit false disables.
+  // Must match isMaskEnabled() so the lookup key matches what was ingested.
   const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
-  const fhirPid = effectiveFhirPatientId(ov.id_no, maskNameEnabled === true);
+  const fhirPid = effectiveFhirPatientId(ov.id_no, maskNameEnabled !== false);
   try {
     const pr = await fetch(`${url}/fhir/Patient/${encodeURIComponent(fhirPid)}`, { headers });
     if (pr.status === 404) {

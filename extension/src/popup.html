@@ -1506,17 +1506,17 @@
             <span class="setting-label">去識別化</span>
             <div class="mode-toggle" id="mask-name-toggle" role="radiogroup"
                  aria-label="輸出時是否去識別化（姓名／身分證／生日）">
-              <label class="mode-opt" title="預設：姓名／身分證／生日原樣輸出。">
-                <input type="radio" name="mask-name" id="mask-name-off" value="off" checked />
+              <label class="mode-opt" title="姓名／身分證／生日原樣輸出。要保留完整個人備份時才選。">
+                <input type="radio" name="mask-name" id="mask-name-off" value="off" />
                 關閉
               </label>
-              <label class="mode-opt" title="遮去姓名／身分證／生日並剝除影像 metadata。">
-                <input type="radio" name="mask-name" id="mask-name-on" value="on" />
+              <label class="mode-opt" title="預設：遮去姓名／身分證／生日並剝除影像 metadata。">
+                <input type="radio" name="mask-name" id="mask-name-on" value="on" checked />
                 開啟
               </label>
             </div>
             <span class="help-icon"
-                  data-tip="想把健康資料拿去分享、展示或測試前建議開啟。&#10;會遮去姓名／身分證／生日並剝除影像 metadata，但屬有限去識別（檔案仍含醫院名稱與就醫日期）。">ⓘ</span>
+                  data-tip="預設開啟以保護隱私：會遮去姓名／身分證／生日並剝除影像 metadata（屬有限去識別，檔案仍含醫院名稱與就醫日期）。&#10;若你只是要保留自己完整的個人備份（真實姓名／身分證／完整生日），再切到「關閉」。">ⓘ</span>
           </div>
           <div class="deid-detail" id="mask-deid-detail" hidden>
             開啟後：姓名遮成「陳O明」、身分證「F22345XXXX」、生日只留年份（如 1962-01-01）、出院病摘／報告內文的生日與病歷號碼一併遮去、影像附件剝除 EXIF／註解 metadata。<br />
@@ -1713,7 +1713,7 @@
               ✓ 這次資料已傳到本機伺服器
             </div>
             <div class="bundle-care-note">
-              📄 這份檔案含你完整的就醫資料，請妥善保管。要給第三方使用前，建議開啟去識別化，並約定使用期限與日後可要求刪除的權利。
+              📄 這份檔案含你完整的就醫資料，請妥善保管。要給第三方使用前，建議維持「去識別化」開啟（預設已開），並約定使用期限與日後可要求刪除的權利。
             </div>
           </div>
         </div>

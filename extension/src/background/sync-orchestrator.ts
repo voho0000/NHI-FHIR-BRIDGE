@@ -1181,10 +1181,9 @@ export async function runNhiApiSync({
     }
   }
 
-  // Mask gate is read fresh per sync — defaults OFF per the discussion
-  // (citizen-self-download doesn't need anonymization). When ON, also
-  // scrub the user's real name out of any NHI narrative field before
-  // it flows into the mapper.
+  // Mask gate is read fresh per sync — defaults ON (privacy-first, v0.20.16;
+  // only an explicit opt-out disables it). When ON, also scrub the user's
+  // real name out of any NHI narrative field before it flows into the mapper.
   const maskEnabled = await isMaskEnabled();
   if (maskEnabled && patientOverride.name) {
     const replacement = maskName(patientOverride.name);
@@ -1269,7 +1268,7 @@ export async function runNhiApiSync({
     // the subject-reference key all from this id_no, so masking it here
     // de-identifies the resource while keeping its references internally
     // consistent. Items themselves were already scrubbed above (byType
-    // name+id pass). Default OFF — real-data uploads are unaffected.
+    // name+id pass). Defaults ON now — opt out to upload real values.
     const uploadOverride = maskEnabled ? deidentifyOverride(patientOverride) : patientOverride;
     for (const [page_type, items] of Object.entries(byType as Record<string, any[]>)) {
       if (isCancelled()) throw new Error(CANCEL_ERROR);
@@ -1455,8 +1454,8 @@ export async function runNhiApiSync({
         // /sync/log lands in the dashboard's sync-history row. When the user
         // opted into de-identification, mask BOTH the id and the name here
         // too (v0.18.3) so the real 身分證 never reaches the backend on the
-        // de-id path. Default OFF → dashboard sees the raw values they typed
-        // (consistent with "民眾自用").
+        // de-id path. Defaults ON now (v0.20.16) → opt out to have the
+        // dashboard show the raw values you typed.
         // Audit P2-2 (2026-06-12): the history log NEVER needs the full
         // national ID — the dashboard only displays it. Always send the
         // half-masked form (human-recognizable, shoulder-surfing-safe)

@@ -28,8 +28,9 @@ let _storedIdNo = null;
 // Mask-patient-name toggle — defaults OFF (citizens downloading their
 // own data don't need anonymization). When ON: popup summary, FHIR
 // Bundle output, sync-log, and NHI report narrative all use the
-// masked form (郭一新 → 郭O新) instead of the real name.
-let _maskNameEnabled = false;
+// masked form (郭一新 → 郭O新) instead of the real name. De-identify
+// defaults ON (privacy-first) — see loadMaskNameEnabled.
+let _maskNameEnabled = true;
 
 export async function loadPatientOverride() {
   const { patientOverride } = await chrome.storage.local.get("patientOverride");
@@ -324,8 +325,10 @@ function syncDeidDetail(enabled: boolean) {
 }
 
 export async function loadMaskNameEnabled() {
+  // Default ON: an absent key (user never chose) is treated as 開啟; only an
+  // explicit false (toggled off for a full personal backup) shows 關閉.
   const { maskNameEnabled } = await chrome.storage.local.get("maskNameEnabled");
-  _maskNameEnabled = maskNameEnabled === true;
+  _maskNameEnabled = maskNameEnabled !== false;
   // Segmented toggle: set both radios (the 關閉 radio doesn't auto-check when
   // only the 開啟 radio is cleared).
   if (els.maskNameEnabled) els.maskNameEnabled.checked = _maskNameEnabled;
