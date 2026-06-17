@@ -47,7 +47,7 @@ flowchart LR
   smart["SMART App<br/>(臨床應用)"]
 
   user -->|分頁 session| ext
-  ext -->|GET /api/ihke3000/...| user
+  ext -->|讀取健康存摺各頁面資料| user
   ext -. 模式 A:下載到電腦 .-> file
   ext -- 模式 B:本機後端 --> backend
   backend --> db
@@ -101,22 +101,22 @@ docker compose up -d
 
 ## 產出哪些 FHIR 資源
 
-每個支援的 NHI 頁面都有穩定的 JSON 端點,擴充功能在瀏覽器內直接呼叫並做**確定性**的 FHIR 轉換:
+擴充功能在瀏覽器內直接讀取健康存摺各頁面的結構化資料,並做**確定性**的 FHIR 轉換:
 
-| NHI 頁面 | 內容 | 產出 FHIR 資源 |
-|---|---|---|
-| IHKE3101S01 | 個人基本資料 | `Patient` |
-| IHKE3303S01/S02 | 就醫紀錄(西醫門診 / 急診 / 藥局) | `Encounter`(雙維度 type:kind + channel;急診依處置碼判 EMER) |
-| IHKE3309S01/S02 | 住院 + 住院手術(`op_CODE`/次處置) | `Encounter` (IMP) + `Procedure`(ICD-10-PCS,主/次以 `partOf` 串接) |
-| IHKE3306S01/S02 | 藥品醫囑 | `MedicationRequest`(依 NHI 申報型別掛到對應就醫) |
-| IHKE3307S01 | 慢性處方箋 | `MedicationRequest`(`courseOfTherapyType=continuous`) |
-| IHKE3409S01 | 檢驗檢查 | `DiagnosticReport` + `Observation`(判讀用 NHI `assaY_MARK` 校正;依採檢日掛就醫) |
-| IHKE3408S01/S02 | 影像檢查(報告 + JPG) | `DiagnosticReport`(可選下載影像 frames) |
-| IHKE3301S05 → IHKE3308S02 | 手術 / 處置 | `Procedure`(NHI 醫令碼 + ICD-10-PCS) |
-| IHKE3202S01 | 藥物過敏 | `AllergyIntolerance` |
-| IHKE3203S01 | 預防接種 | `Immunization` |
-| IHKE3209S01 | 重大傷病 | `Condition` |
-| IHKE3402/3404S01 | 成人 / 癌症篩檢 | `Observation` |
+| 健康存摺資料 | 產出 FHIR 資源 |
+|---|---|
+| 個人基本資料 | `Patient` |
+| 就醫紀錄(西醫門診 / 急診 / 藥局) | `Encounter`(雙維度 type:kind + channel;急診依處置碼判 EMER) |
+| 住院 + 住院手術 | `Encounter` (IMP) + `Procedure`(ICD-10-PCS,主/次以 `partOf` 串接) |
+| 藥品醫囑 | `MedicationRequest`(依申報型別掛到對應就醫) |
+| 慢性處方箋 | `MedicationRequest`(`courseOfTherapyType=continuous`) |
+| 檢驗檢查 | `DiagnosticReport` + `Observation`(含判讀校正;依採檢日掛就醫) |
+| 影像檢查(報告 + JPG) | `DiagnosticReport`(可選下載影像 frames) |
+| 手術 / 處置 | `Procedure`(NHI 醫令碼 + ICD-10-PCS) |
+| 藥物過敏 | `AllergyIntolerance` |
+| 預防接種 | `Immunization` |
+| 重大傷病 | `Condition` |
+| 成人 / 癌症篩檢 | `Observation` |
 
 **檢驗分組**:健康存摺把檢驗以扁平清單呈現,每筆帶醫令碼。Bridge 依 `(醫令碼, 日期, 醫院)` 分組成 `DiagnosticReport`,用多層對照規則(`NHI_TO_LOINC` 直對 + `PANEL_LOINC_MAP` panel 子項 + `LOINC_MAP` 顯示名,合計 200+ 條規則)對應 LOINC,並自動合併中英文重複列(如 `醣化血紅素 5.9%` + `HbA1c 5.9%`)。
 
