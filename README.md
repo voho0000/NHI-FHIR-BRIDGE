@@ -16,7 +16,7 @@
 >
 > 🔒 **對安全性有疑慮?** 先看 [**給民眾的安全說明**](docs/SECURITY_FOR_USERS.md) —— 不講工程術語,解釋資料路徑、Bridge 不會做的事、內建保護、常見 Q&A。
 >
-> 🛒 **Chrome Web Store**:**尚未上架**(準備送審中;通過後在此補連結)。目前請從 [GitHub Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest) 下載最新 zip,用「載入未封裝項目」安裝(見下方)。
+> 🛒 **Chrome Web Store**:**尚未上架**(準備送審中;通過後在此補連結)。目前請從 [GitHub Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets) 下載最新 zip,用「載入未封裝項目」安裝(見下方)。
 
 ---
 
@@ -59,13 +59,13 @@ flowchart LR
 
 ---
 
-## 快速開始
+## 🚀 快速開始
 
 ### 🟢 模式 A — 純擴充功能(最快,~2 分鐘)
 
 不會程式也能用,不需要 Docker / Node / 任何指令。
 
-1. **下載擴充功能** —— 到 [Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest) 下載 `nhi-fhir-bridge-extension-vX.Y.Z.zip`,解壓到任意位置。
+1. **下載擴充功能** —— 到 [Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets) 下載 `nhi-fhir-bridge-extension-vX.Y.Z.zip`,解壓到任意位置。
 2. **載入 Chrome** —— `chrome://extensions` → 開「開發人員模式」→「載入未封裝項目」→ 選解壓出來的 **`dist/` 資料夾** → 工具列 🧩 把 **NHI-FHIR Bridge** 釘上來。
 3. **取得資料** —— 點工具列圖示,popup 是個四步驟精靈(預設「下載到電腦」):
    - **① 登入** —— 偵測你是否已在健康存摺分頁登入;沒有會帶你過去。
@@ -124,7 +124,7 @@ docker compose up -d
 
 ---
 
-## 隱私與安全
+## 🔒 隱私與安全
 
 **核心保證**:健康資料只在你的瀏覽器內處理 —— 不傳到開發者伺服器、不接任何 AI / LLM、不收 telemetry。FHIR 轉換是純規則程式碼(`packages/mapper`),沒有任何雲端 fallback。
 
