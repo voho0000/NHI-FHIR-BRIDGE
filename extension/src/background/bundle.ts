@@ -107,7 +107,7 @@ export function assembleLocalBundle(byType, patientOverride, maskEnabled) {
 //     >10 MB bundles via chrome.runtime.sendMessage size limits).
 //
 // Why local (was session pre-v0.14) — chrome.storage.session has a
-// hard 10 MB quota that MV3 does NOT allow extensions to raise. v0.14
+// hard 10 MB quota that Manifest V3 does NOT allow extensions to raise. v0.14
 // "抓影像" opt-in inlines base64 JPGs into the bundle (each ~2-3 MB);
 // even modest imaging sets blow past 10 MB and the stash silently
 // fails with "Session storage quota bytes exceeded". chrome.storage
@@ -165,7 +165,7 @@ export async function stashFhirBundle(
   // IRB reviewer — can immediately see which bridge produced it.
   // Matters for contract evolution (e.g. v0.9.2 changed Encounter.type
   // shape) and bug triage. chrome.runtime.getManifest() reads from the
-  // bundled manifest.json — guaranteed available in an MV3 SW.
+  // bundled manifest.json — guaranteed available in a Manifest V3 SW.
   const version = chrome.runtime.getManifest()?.version || "unknown";
   // "-img" suffix when the user opted into JPG fetching. Without
   // the toggle, the bundle has only narrative DRs (no presentedForm

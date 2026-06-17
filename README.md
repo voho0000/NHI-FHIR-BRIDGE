@@ -171,7 +171,7 @@ docker compose up -d
 NHI-FHIR-BRIDGE/                 # npm workspaces monorepo
 ├── packages/mapper/            # @nhi-fhir-bridge/mapper — NHI → FHIR R4 純對應邏輯
 │                               #   (backend 與 extension 共用,單一真相)
-├── extension/                  # Chrome MV3 擴充功能
+├── extension/                  # Chrome Manifest V3 擴充功能
 │   ├── src/                    #   開發 source(背景 SW + popup)
 │   └── dist/                   #   build 產出(commit 進 git,使用者直接 load)
 ├── backend-ts/                 # Hono 後端 (TypeScript) + SQLite FHIR Store

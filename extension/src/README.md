@@ -34,8 +34,8 @@ Tests / typecheck / lint: `npm run test:extension`, `tsc --noEmit`, `biome check
 
 ```
 src/popup/         — popup UI (4-step wizard, date range, settings)
-src/background/     — MV3 service worker: NHI API sync, imaging fetch, bundle build
-src/manifest.json  — MV3 config; host_permissions: myhealthbank.nhi.gov.tw only
+src/background/     — Manifest V3 service worker: NHI API sync, imaging fetch, bundle build
+src/manifest.json  — Manifest V3 config; host_permissions: myhealthbank.nhi.gov.tw only
                      (localhost is optional_host_permissions, requested on demand)
 packages/mapper/   — shared NHI → FHIR R4 mapping (also imported by backend-ts)
 ```

@@ -7,7 +7,7 @@
 // handler calls clearResultBadge).
 //
 // We composite the dot onto the existing icon at runtime with OffscreenCanvas
-// (available in the MV3 worker) and swap it in via chrome.action.setIcon —
+// (available in the Manifest V3 worker) and swap it in via chrome.action.setIcon —
 // no extra PNG assets to ship. The icon swap is browser-side UI: it survives
 // the worker unloading on its own, but NOT a full browser restart, so we
 // persist a boolean `unseenSyncResult` and re-apply on SW spin-up
@@ -82,7 +82,7 @@ export async function clearResultBadge() {
 }
 
 // Re-apply the dot on SW spin-up so an unseen result survives a browser
-// restart (the MV3 worker starts with no in-memory state). No-op when
+// restart (the Manifest V3 worker starts with no in-memory state). No-op when
 // nothing is pending.
 export async function restoreResultBadge() {
   try {

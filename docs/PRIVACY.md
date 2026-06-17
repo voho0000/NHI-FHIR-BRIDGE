@@ -55,7 +55,7 @@ NHI-FHIR Bridge（以下稱「本擴充功能」）是一款開源 Chrome 擴充
 | `storage` | 保存使用者偏好設定、同步進度，以及暫存待下載的健康紀錄檔；啟用影像下載時並暫存 NHI session bearer token 供背景抓圖（30 分鐘 TTL 後清除）。皆僅存於本機 `chrome.storage`，不外傳（清除機制見第三節） |
 | `scripting` | 在健保署網域分頁中執行擷取邏輯，以沿用 first-party cookie 呼叫 API |
 | `downloads` | 將產生的 FHIR Bundle JSON 儲存至使用者本機 |
-| `alarms` | 維持背景同步流程之心跳，避免 Chrome MV3 service worker 在長時間同步時被回收；並每 10 分鐘檢查、清除逾時（1 小時）的本機暫存健康紀錄檔 |
+| `alarms` | 維持背景同步流程之心跳，避免 Chrome Manifest V3 service worker 在長時間同步時被回收；並每 10 分鐘檢查、清除逾時（1 小時）的本機暫存健康紀錄檔 |
 | `unlimitedStorage` | 含影像的健康紀錄檔可能超過瀏覽器預設儲存配額，需要此權限才能在本機暫存（仍受上述 1 小時 TTL 與下載後立即清除機制管控） |
 | Host: `https://myhealthbank.nhi.gov.tw/*` | 擷取使用者本人的健康存摺紀錄（安裝時要求的唯一主機權限） |
 | Optional host: `http://localhost/*`、`http://127.0.0.1/*` | （選用，v0.18.6 起改為 optional_host_permissions）將 FHIR 資料上傳至使用者自架的本機後端。**安裝時不要求**；僅在使用者主動啟用「上傳後端」模式時，由擴充功能在當下請求授權 |
@@ -136,7 +136,7 @@ Both paths are **user-initiated** with the destination **fully controlled by the
 | `storage` | Save user preferences, sync progress, and the temporarily staged health-record bundle; when imaging download is enabled, also stage the NHI session bearer token for background fetching (cleared after a 30-minute TTL). All in local `chrome.storage` only, never transmitted (clearing mechanism in Section 3) |
 | `scripting` | Run capture logic inside NHI domain tabs so the first-party cookies/session are used for API calls |
 | `downloads` | Save the generated FHIR Bundle JSON to the user's local machine |
-| `alarms` | Keep service-worker heartbeat alive during long syncs to prevent MV3 worker termination; also runs a 10-minute sweep that clears locally staged bundles older than the 1-hour TTL |
+| `alarms` | Keep service-worker heartbeat alive during long syncs to prevent Manifest V3 worker termination; also runs a 10-minute sweep that clears locally staged bundles older than the 1-hour TTL |
 | `unlimitedStorage` | Bundles that include imaging can exceed the browser's default storage quota; this permission allows local staging (still bounded by the 1-hour TTL and cleared-on-download mechanisms above) |
 | Host: `https://myhealthbank.nhi.gov.tw/*` | Read the user's own health records from NHI (the only host permission requested at install) |
 | Optional host: `http://localhost/*`, `http://127.0.0.1/*` | (Optional, moved to optional_host_permissions in v0.18.6) Upload FHIR data to the user's self-hosted local backend. **Not requested at install**; requested on demand only when the user enables "Upload to backend" mode |

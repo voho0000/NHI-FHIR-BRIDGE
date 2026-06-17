@@ -9,7 +9,7 @@
 ```mermaid
 flowchart LR
   user["使用者瀏覽器<br/>(myhealthbank.nhi.gov.tw 已登入)"]
-  ext["Chrome Extension<br/>(MV3 service worker)"]
+  ext["Chrome Extension<br/>(Manifest V3 service worker)"]
   file["本機 FHIR Bundle<br/>JSON 檔"]
   backend["Hono Backend<br/>(localhost:8010)"]
   db[("SQLite FHIR Store")]
@@ -52,7 +52,7 @@ NHI-FHIR-BRIDGE/                     # npm workspaces
 │   │   └── main.ts                  # Hono app + CORS + lifespan
 │   ├── drizzle/                     # SQL migration
 │   └── tests/                       # vitest
-├── extension/                       # Chrome MV3 (TypeScript + esbuild)
+├── extension/                       # Chrome Manifest V3 (TypeScript + esbuild)
 │   ├── src/
 │   │   ├── background.ts            # service worker entry — 組裝 background/ 模組
 │   │   ├── background/              # sync-orchestrator / nhi-list-fetch / nhi-detail-fetchers

@@ -23,7 +23,7 @@
  *     the input UNCHANGED. Corrupting a clinical image is strictly
  *     worse than leaving metadata in it.
  *
- * Pure JS (no node:crypto / Buffer) so the same code runs in the MV3
+ * Pure JS (no node:crypto / Buffer) so the same code runs in the Manifest V3
  * service worker and in Node — same constraint as helpers.ts.
  */
 

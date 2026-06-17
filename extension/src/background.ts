@@ -56,7 +56,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup?.addListener?.(() => {
   migrateSyncToLocal();
   // Re-apply an unseen-result badge that a browser restart would
-  // otherwise drop (the MV3 worker starts with no in-memory state).
+  // otherwise drop (the Manifest V3 worker starts with no in-memory state).
   restoreResultBadge();
 });
 migrateSyncToLocal();
@@ -169,7 +169,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "getSyncStatus") {
     chrome.storage.local.get(STORAGE_KEY).then(async (data) => {
       const status = data[STORAGE_KEY] || null;
-      // Watchdog: an MV3 service worker can be killed mid-sync (Chrome's hard
+      // Watchdog: a Manifest V3 service worker can be killed mid-sync (Chrome's hard
       // ~5-min event-handler lifetime cap, or memory reclaim). If that happens
       // the persisted status is frozen at running:true forever and the popup
       // shows "取得中…" indefinitely with no recovery. Detect a stale heartbeat
