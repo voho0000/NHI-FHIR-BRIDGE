@@ -65,8 +65,8 @@ flowchart LR
 
 不會程式也能用,不需要 Docker / Node / 任何指令。
 
-1. **下載擴充功能** —— 到 [Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets) 下載 `nhi-fhir-bridge-extension-vX.Y.Z.zip`,解壓到任意位置。
-2. **載入 Chrome** —— `chrome://extensions` → 開「開發人員模式」→「載入未封裝項目」→ 選解壓出來的 **`dist/` 資料夾** → 工具列 🧩 把 **NHI-FHIR Bridge** 釘上來。
+1. **下載擴充功能** —— 到 [Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets) 下載 `nhi-fhir-bridge-extension-vX.Y.Z.zip`,解壓縮。解出來會是一個資料夾,裡面**直接**就是 `manifest.json`、`background.js`、`icons/` 等檔案。
+2. **載入 Chrome** —— `chrome://extensions` → 開「開發人員模式」→「載入未封裝項目」→ 選**剛解壓出來、裡面直接有 `manifest.json` 的那個資料夾** → 工具列 🧩 把 **NHI-FHIR Bridge** 釘上來。
 3. **取得資料** —— 點工具列圖示,popup 是個四步驟精靈(預設「下載到電腦」):
    - **① 登入** —— 偵測你是否已在健康存摺分頁登入;沒有會帶你過去。
    - **② 您的資料** —— 填**性別 + 生日 + 姓名**(三項必填)→ 按「儲存資料」。身分證**不用填**(取得時自動從健康存摺 session 帶入);要對外遮罩姓名,旁邊有小勾。

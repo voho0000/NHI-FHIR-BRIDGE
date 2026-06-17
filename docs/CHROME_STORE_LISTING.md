@@ -308,8 +308,10 @@ Jekyll 會自動把 `docs/PRIVACY.md` 轉成 `PRIVACY.html`，所以每次 push 
 # 1. 改 extension/manifest.json 的 "version" 欄位（例 0.9.9 → 0.9.10）
 # 2. 同步改 extension/package.json
 # 3. npm run build:extension
-# 4. cd extension && zip -r ../nhi-fhir-bridge-extension-vX.Y.Z.zip dist  (vX.Y.Z = 當前版本)
-#    （release.yml 已會在 push tag 時自動打包此 zip 並建 GitHub Release）
+# 4. cd extension/dist && zip -r ../../nhi-fhir-bridge-extension-vX.Y.Z.zip .  (vX.Y.Z = 當前版本)
+#    ⚠️ 一定要從 dist 內部打包（manifest.json 必須在 zip 根目錄）；
+#       zip ... dist 會把檔案包進 dist/ 子目錄 → Chrome Web Store 會拒收。
+#    （release.yml 已會在 push tag 時自動正確打包此 zip 並建 GitHub Release）
 # 5. Dev console → 你的 item → "Package" tab → "Upload new package"
 # 6. （如有修改 store listing 或 permissions）"Store listing" tab 同步更新
 # 7. Submit for review（通常 1 天內過）
