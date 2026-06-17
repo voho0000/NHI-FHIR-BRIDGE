@@ -35,7 +35,7 @@ Convert your Taiwan NHI "My Health Bank" records (visits, meds, labs, imaging) i
 ### Long description（繁中，建議 500-1500 字）
 
 ```
-NHI-FHIR Bridge 把你在健保署「健康存摺」(myhealthbank.nhi.gov.tw) 上的個人醫療紀錄，一鍵轉換為 HL7 FHIR R4 國際標準格式，方便你做個人健康資料備份、研究分析、或匯入任何能讀 FHIR 的軟體（例如 SMART on FHIR App）。
+NHI-FHIR Bridge 把你在健保署「健康存摺」(myhealthbank.nhi.gov.tw) 上的個人醫療紀錄，一鍵轉換為 HL7 FHIR R4 國際標準格式，方便你做個人健康資料備份、研究分析、或匯入其他能讀 FHIR 的軟體（例如 SMART on FHIR App）。
 
 ▍它能做什麼
 • 擷取以下健康存摺資料並轉為 FHIR：
@@ -151,7 +151,7 @@ Capture personal medical records from Taiwan's NHI "My Health Bank" portal (myhe
 | `storage` | 在本機儲存使用者偏好設定（性別、出生年）、同步進度，以及暫存待下載的健康紀錄檔（下載完成、使用者清除、或 1 小時 TTL 到期即刪除）。資料僅存在 chrome.storage，不傳送至任何外部伺服器。 |
 | `scripting` | 在健保署網域分頁中執行資料擷取程式；必須在該頁面 context 內執行，才能沿用瀏覽器既有的 first-party session cookie 呼叫健保署 API。 |
 | `downloads` | 將擷取轉換後的 FHIR Bundle JSON 檔儲存至使用者本機 Downloads 資料夾，由使用者點擊按鈕主動觸發。 |
-| `alarms` | 維持 Chrome MV3 service worker 在長時間同步（30 秒以上）過程中不被回收，確保資料完整擷取；並每 10 分鐘執行清掃，刪除逾時（1 小時）的本機暫存健康紀錄檔。 |
+| `alarms` | 維持 Chrome Manifest V3 service worker 在長時間同步（30 秒以上）過程中不被回收，確保資料完整擷取；並每 10 分鐘執行清掃，刪除逾時（1 小時）的本機暫存健康紀錄檔。 |
 | `unlimitedStorage` | 含醫療影像的健康紀錄檔可能超過 chrome.storage 預設配額，需要此權限才能在本機暫存；暫存於下載完成或 1 小時 TTL 後即清除，不傳送至任何外部伺服器。 |
 
 ### Host permissions（安裝時要求）
