@@ -1,7 +1,7 @@
 # Privacy Policy / 隱私權政策
 
 **Last updated / 最後更新**：2026-06-17
-**Effective date / 生效日期**：2026-05-24
+**Effective date / 生效日期**：2026-06-17
 
 ---
 
@@ -76,10 +76,6 @@ NHI-FHIR Bridge（以下稱「本擴充功能」）是一款開源 Chrome 擴充
 ### 九、政策變更
 
 如政策有實質變更（例如新增資料收集），將更新本頁面之「最後更新」日期並於 GitHub repository 中標示。
-
-- 2026-06-17：釐清擷取範圍 —— 擴充功能擷取的是「健康存摺目前切換顯示的那個人」之資料；經健保署眷屬功能同意綁定者亦在授權範圍內（先前措辭誤寫為「只能擷取自己」）。產品名稱統一為「NHI-FHIR Bridge」（移除舊有「Capture」字樣）。此為措辭釐清，未變更任何資料處理行為。
-- 2026-06-13：localhost / 127.0.0.1 主機權限自 v0.18.6 起改為 `optional_host_permissions` — 安裝時不再要求，僅在使用者主動啟用「上傳後端」模式時才動態請求。一般使用者安裝時只會被要求存取健保署網域。
-- 2026-06-12：更正暫存機制描述（健康紀錄檔自 v0.14 起實際暫存於 `chrome.storage.local` 並以下載完成／1 小時 TTL 清除，並非 `chrome.storage.session` 隨瀏覽器關閉清除）；補列 `unlimitedStorage` 權限；去識別化模式下 `Patient.id` 雜湊改以半遮身分證計算（v0.18.4）。
 
 ### 十、聯絡方式
 
@@ -160,9 +156,6 @@ The Extension does not knowingly collect any data from children under 13.
 ### 9. Changes
 
 Material changes (e.g. introducing any data collection) will be reflected in the "Last updated" date above and announced in the GitHub repository.
-
-- 2026-06-13: the localhost / 127.0.0.1 host permissions became `optional_host_permissions` in v0.18.6 — no longer requested at install, only requested on demand when the user enables "Upload to backend" mode. A normal install requests access to the NHI domain only.
-- 2026-06-12: corrected the staging-storage description (since v0.14 the bundle is staged in `chrome.storage.local` and cleared on download / 1-hour TTL, not in `chrome.storage.session` wiped on browser close); documented the `unlimitedStorage` permission; in de-identify mode, `Patient.id` is now hashed from the half-masked national ID (v0.18.4).
 
 ### 10. Contact
 
