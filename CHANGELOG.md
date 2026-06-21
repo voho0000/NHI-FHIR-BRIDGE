@@ -3,6 +3,10 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 1.0.2 — 2026-06-22（popup 標題同步改名）
+
+- **popup 視窗內的標題**從「NHI-FHIR Bridge」改為「**健康懷爾抓抓 NHI-FHIR-BRIDGE**」,與 manifest 顯示名稱一致。純文字,功能不變;實測一行放得下。
+
 ## 1.0.1 — 2026-06-20（改商店顯示名稱 + 權限提示說明）
 
 - **擴充功能顯示名稱改為「健康懷爾抓抓 NHI-FHIR-BRIDGE」**（manifest `name` / `default_title`）。商店網址 slug 不變，只有顯示名稱變。功能完全不變。
