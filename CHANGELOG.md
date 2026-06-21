@@ -3,6 +3,10 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 1.0.3 — 2026-06-22（下載完成的 CTA 改成 chip,不再是藍底線連結）
+
+- 下載完成後那條「**至 ④ 查看「醫析 MediPrisma」**」原本是藍色底線文字,改成**柔藍底圓角 chip + 尾端箭頭**(與 `.cta-reason` 同一套 `--notice-info` 樣式),看起來像刻意設計的按鈕。文字也縮短(拿掉開頭 `→` 與「開啟」)。純樣式,功能不變。
+
 ## 1.0.2 — 2026-06-22（popup 標題同步改名）
 
 - **popup 視窗內的標題**從「NHI-FHIR Bridge」改為「**健康懷爾抓抓 NHI-FHIR-BRIDGE**」,與 manifest 顯示名稱一致。純文字,功能不變;實測一行放得下。
