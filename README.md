@@ -3,6 +3,7 @@
 [![backend-ts + extension](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/backend-ts.yml/badge.svg)](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/backend-ts.yml)
 [![release](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/release.yml/badge.svg)](https://github.com/voho0000/NHI-FHIR-BRIDGE/actions/workflows/release.yml)
 [![license](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-安裝-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/nhi-fhir-bridge/aogfaciophnomidccgiohflpdifmaind)
 
 > 把台灣健保署「**健康存摺**」的就醫、用藥、檢驗、影像紀錄,在**你自己的瀏覽器內**一鍵轉成 **HL7 FHIR R4** 國際標準格式 —— 預設下載成 JSON 檔到你的電腦,也可選擇匯入任何讀得懂 FHIR 的工具或 SMART on FHIR App。
 
@@ -16,7 +17,7 @@
 >
 > 🔒 **對安全性有疑慮?** 先看 [**給民眾的安全說明**](docs/SECURITY_FOR_USERS.md) —— 不講工程術語,解釋資料路徑、Bridge 不會做的事、內建保護、常見 Q&A。
 >
-> 🛒 **Chrome Web Store**:**尚未上架**(準備送審中;通過後在此補連結)。目前請從 [GitHub Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets) 下載最新 zip,用「載入未封裝項目」安裝(見下方)。
+> 🛒 **Chrome Web Store:已上架!** 👉 到 [**Chrome 線上應用程式商店**](https://chromewebstore.google.com/detail/nhi-fhir-bridge/aogfaciophnomidccgiohflpdifmaind) 按「加到 Chrome」一鍵安裝(最簡單)。也可從 [GitHub Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets) 下載 zip 手動安裝(見下方)。
 
 ---
 
@@ -61,13 +62,18 @@ flowchart LR
 
 ## 🚀 快速開始
 
-### 🟢 模式 A — 純擴充功能(最快,~2 分鐘)
+### 🟢 模式 A — 純擴充功能(最快)
 
 不會程式也能用,不需要 Docker / Node / 任何指令。
 
-1. **下載擴充功能** —— 到 [Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets) 下載 `nhi-fhir-bridge-extension-vX.Y.Z.zip`,解壓縮。解出來會是一個資料夾,裡面**直接**就是 `manifest.json`、`background.js`、`icons/` 等檔案。
-2. **載入 Chrome** —— `chrome://extensions` → 開「開發人員模式」→「載入未封裝項目」→ 選**剛解壓出來、裡面直接有 `manifest.json` 的那個資料夾** → 工具列 🧩 把 **NHI-FHIR Bridge** 釘上來。
-3. **取得資料** —— 點工具列圖示,popup 是個四步驟精靈(預設「下載到電腦」):
+**第 1 步 — 安裝(二選一):**
+
+- 🟢 **最簡單 —— Chrome 線上應用程式商店**:開 [**Chrome Web Store**](https://chromewebstore.google.com/detail/nhi-fhir-bridge/aogfaciophnomidccgiohflpdifmaind) → 按「**加到 Chrome**」。
+- 🔧 **手動(進階 / 想自行檢視程式碼)**:到 [Releases](https://github.com/voho0000/NHI-FHIR-BRIDGE/releases/latest#:~:text=Assets) 下載 `nhi-fhir-bridge-extension-vX.Y.Z.zip` 解壓 → `chrome://extensions` → 開「開發人員模式」→「載入未封裝項目」→ 選裡面**直接有 `manifest.json`** 的那個資料夾。
+
+裝好後在工具列 🧩 把 **NHI-FHIR Bridge** 釘上來。
+
+**第 2 步 — 取得資料** —— 點工具列圖示,popup 是個四步驟精靈(預設「下載到電腦」):
    - **① 登入** —— 偵測你是否已在健康存摺分頁登入;沒有會帶你過去。
    - **② 您的資料** —— 填**性別 + 生日 + 姓名**(三項必填)→ 按「儲存資料」。身分證**不用填**(取得時自動從健康存摺 session 帶入);要對外遮罩姓名,旁邊有小勾。
    - **③ 取得** —— 按「取得健康存摺資料」。約 40 秒(慢時可達 2 分鐘)後出現「下載健康紀錄檔」。勾「一併下載影像」會多花時間觸發 NHI 備圖;若這次影像還在備製中,過幾分鐘再同步一次即可補齊。
