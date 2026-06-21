@@ -3,6 +3,11 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 1.0.1 — 2026-06-20（改商店顯示名稱 + 權限提示說明）
+
+- **擴充功能顯示名稱改為「健康懷爾抓抓 NHI-FHIR-BRIDGE」**（manifest `name` / `default_title`）。商店網址 slug 不變，只有顯示名稱變。功能完全不變。
+- **新增「為什麼安裝時 Chrome 說『讀取以及變更』」說明**（[給民眾的安全說明](docs/SECURITY_FOR_USERS.md) Q5 + 商店描述）：那是 Chrome 對所有「能存取網站」的擴充功能的固定字眼，描述權限的最大能力（讀+寫），非實際行為 —— 本工具只讀取、不修改健保署網站任何內容。
+
 ## 1.0.0 — 2026-06-17 🎉 首次公開發布（Chrome Web Store 上架）
 
 **這是第一個正式對外版本。** 功能上與 0.20.18 完全相同 —— 沒有任何程式變動,只是把版號從 `0.20.x` 升格為 `1.0.0`,標記「第一個正式、對外承諾穩定的版本」這個里程碑。
