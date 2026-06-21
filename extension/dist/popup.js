@@ -1769,6 +1769,12 @@
     nhiTabId: null
   };
 
+  // src/popup/icons.ts
+  var SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+  var ICON_LOCK = `${SVG}<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
+  var ICON_INFO = `${SVG}<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+  var ICON_CHEVRON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
+
   // src/popup/step-logic.ts
   function _shouldJumpToResultStep(prev, status) {
     if (status.running && prev?.running) return false;
@@ -1869,12 +1875,6 @@
       return false;
     }
   }
-
-  // src/popup/icons.ts
-  var SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
-  var ICON_LOCK = `${SVG}<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
-  var ICON_INFO = `${SVG}<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
-  var ICON_CHEVRON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
 
   // src/popup/wizard.ts
   function _markStep2Confirmed(yes) {
@@ -2088,7 +2088,14 @@
       const actionBtn = document.createElement("button");
       actionBtn.type = "button";
       actionBtn.className = "status-action";
-      actionBtn.textContent = action.label;
+      const msg = document.createElement("span");
+      msg.className = "status-action-msg";
+      msg.textContent = action.label;
+      actionBtn.appendChild(msg);
+      const jump = document.createElement("span");
+      jump.className = "status-action-jump";
+      jump.innerHTML = ICON_CHEVRON;
+      actionBtn.appendChild(jump);
       actionBtn.addEventListener("click", action.onClick);
       els.status.appendChild(actionBtn);
     }
@@ -2195,7 +2202,7 @@
     let action = null;
     if (status.phase === "downloaded") {
       action = {
-        label: "\u2192 \u81F3 \u2463 \u67E5\u770B \u958B\u555F\u300C\u91AB\u6790 MediPrisma\u300D",
+        label: "\u81F3 \u2463 \u67E5\u770B\u300C\u91AB\u6790 MediPrisma\u300D",
         onClick: () => _setActiveStep(4)
       };
     }

@@ -7,6 +7,7 @@
 
 import { _refreshLocalBundleState, checkBackendPatient } from "./data-state.js";
 import { els } from "./els.js";
+import { ICON_CHEVRON } from "./icons.js";
 import { state } from "./state.js";
 import { _shouldJumpToResultStep } from "./step-logic.js";
 import { _fmtElapsed, currentMode } from "./utils.js";
@@ -72,7 +73,16 @@ export function setStatus(text, kind?, breakdown?, errors?, action?) {
     const actionBtn = document.createElement("button");
     actionBtn.type = "button";
     actionBtn.className = "status-action";
-    actionBtn.textContent = action.label;
+    // Chip layout: label span (textContent — safe) + trailing chevron
+    // span (innerHTML of a trusted constant SVG, not user data).
+    const msg = document.createElement("span");
+    msg.className = "status-action-msg";
+    msg.textContent = action.label;
+    actionBtn.appendChild(msg);
+    const jump = document.createElement("span");
+    jump.className = "status-action-jump";
+    jump.innerHTML = ICON_CHEVRON;
+    actionBtn.appendChild(jump);
     actionBtn.addEventListener("click", action.onClick);
     els.status.appendChild(actionBtn);
   }
@@ -211,7 +221,7 @@ function _renderStatus() {
   let action = null;
   if (status.phase === "downloaded") {
     action = {
-      label: "→ 至 ④ 查看 開啟「醫析 MediPrisma」",
+      label: "至 ④ 查看「醫析 MediPrisma」",
       onClick: () => _setActiveStep(4),
     };
   }
