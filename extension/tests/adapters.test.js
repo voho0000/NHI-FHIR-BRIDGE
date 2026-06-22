@@ -1015,6 +1015,22 @@ describe("adaptInpatientEncounter", () => {
     });
     expect(r.reason_zh).toBe("I10 原發性高血壓");
   });
+
+  // v1.0.5 (#26 住院): the 住院 detail's sp_IHKE3302S11_data drug list flows
+  // through options.rx_order_codes → surfaced for the linker (mapEncounter then
+  // carries it on Encounter.__rxOrderCodes).
+  test("v1.0.5 surfaces rx_order_codes from options (住院 drug list)", () => {
+    const r = adaptInpatientEncounter(
+      { in_DATE: "114/05/18", hosp_ABBR: "長庚嘉義", icd9cm_CODE: "R042" },
+      { rx_order_codes: ["A037697100", "AB45993100"] },
+    );
+    expect(r.rx_order_codes).toEqual(["A037697100", "AB45993100"]);
+  });
+
+  test("v1.0.5 no options → rx_order_codes defaults to empty array", () => {
+    const r = adaptInpatientEncounter({ in_DATE: "114/05/18", hosp_ABBR: "X" });
+    expect(r.rx_order_codes).toEqual([]);
+  });
 });
 
 // ── adaptEncounterFromMedExpense — IHKE3303 ─────────────────────────────

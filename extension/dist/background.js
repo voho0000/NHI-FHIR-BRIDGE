@@ -910,9 +910,10 @@
     } else {
       idDiscriminator = code || display;
     }
+    const hospital = (raw.hospital ?? "").trim();
     const resource = {
       resourceType: "DiagnosticReport",
-      id: stableId(patientId, idDiscriminator, raw.date ?? ""),
+      id: stableId(patientId, idDiscriminator, raw.date ?? "", hospital),
       meta: { versionId: "1", source: "nhi-fhir-bridge/scraper" },
       status: raw.status ?? "final",
       subject: { reference: `Patient/${patientId}` },
@@ -937,7 +938,6 @@
     } else if (raw.date) {
       resource.issued = `${raw.date}T00:00:00+08:00`;
     }
-    const hospital = (raw.hospital ?? "").trim();
     if (hospital) {
       resource.performer = [{ display: hospital }];
     }
@@ -1197,12 +1197,49 @@
     IMP: [ACTCODE_SYSTEM, "IMP", "inpatient encounter"],
     EMER: [ACTCODE_SYSTEM, "EMER", "emergency"]
   };
+  function encounterStableId(patientId, encClass, raw) {
+    const date = String(raw.date ?? "");
+    const hospital = String(raw.hospital ?? "").trim();
+    if (encClass === "IMP") {
+      return stableId(patientId, date, "IMP", hospital);
+    }
+    const primary = raw.reason_code ? normalizeIcd10Cm(String(raw.reason_code)) : "";
+    const secondaries = (Array.isArray(raw.secondary_diagnoses) ? raw.secondary_diagnoses : []).map((s) => s?.code ? normalizeIcd10Cm(String(s.code)) : "").filter(Boolean).sort();
+    const dxKey = [primary, ...secondaries].join(",");
+    const partAmt = String(raw.part_amt ?? "").trim();
+    const applDot = String(raw.appl_dot ?? "").trim();
+    return stableId(patientId, date, hospital, dxKey, partAmt, applDot);
+  }
+  var ENC_CLASS_RANK = { EMER: 3, IMP: 2, AMB: 1 };
+  function encClassRank(enc) {
+    return ENC_CLASS_RANK[String(enc?.class?.code ?? "").toUpperCase()] ?? 0;
+  }
+  function dedupEncountersPreferClass(resources) {
+    const winner = /* @__PURE__ */ new Map();
+    for (const r of resources) {
+      if (r?.resourceType !== "Encounter") continue;
+      const prev = winner.get(r.id);
+      if (!prev || encClassRank(r) > encClassRank(prev)) winner.set(r.id, r);
+    }
+    const emitted = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const r of resources) {
+      if (r?.resourceType !== "Encounter") {
+        out.push(r);
+        continue;
+      }
+      if (emitted.has(r.id)) continue;
+      emitted.add(r.id);
+      out.push(winner.get(r.id) ?? r);
+    }
+    return out;
+  }
   function mapEncounter(raw, patientId) {
     const encClass = String(raw.class ?? "AMB").toUpperCase();
     const classEntry = CLASS_MAP[encClass] ?? CLASS_MAP.AMB;
     const resource = {
       resourceType: "Encounter",
-      id: stableId(patientId, raw.date ?? "", encClass, (raw.hospital ?? "").trim()),
+      id: encounterStableId(patientId, encClass, raw),
       meta: { versionId: "1", source: "nhi-fhir-bridge/scraper" },
       status: "finished",
       class: {
@@ -1300,6 +1337,8 @@
     if (clinicalNote) {
       resource.note = [{ text: clinicalNote }];
     }
+    const rxCodes = Array.isArray(raw.rx_order_codes) ? raw.rx_order_codes : [];
+    if (rxCodes.length > 0) resource.__rxOrderCodes = rxCodes;
     return resource;
   }
 
@@ -1390,8 +1429,10 @@
     const drugName = (raw.drug_name ?? "").trim();
     if (!drugName) return null;
     const idParts = [canonicalDrugKey(drugName), String(raw.date ?? "")];
+    const hospKey = String(raw.hospital ?? "").trim();
     const qtyKey = String(raw.quantity ?? "").trim();
     const dxKey = String(raw.indication_code ?? "").trim();
+    if (hospKey) idParts.push(`h:${hospKey}`);
     if (qtyKey) idParts.push(`q:${qtyKey}`);
     if (dxKey) idParts.push(`d:${dxKey}`);
     const medId = stableId(patientId, ...idParts);
@@ -1531,9 +1572,10 @@
       const drugName = (item.drug_name ?? "").trim();
       if (!drugName) continue;
       const datePart = (item.date ?? "").slice(0, 10);
+      const hospKey = String(item.hospital ?? "").trim();
       const qtyKey = String(item.quantity ?? "").trim();
       const dxKey = String(item.indication_code ?? "").trim();
-      const key = `${datePart}|${canonicalDrugKey(drugName)}|${qtyKey}|${dxKey}`;
+      const key = `${datePart}|${canonicalDrugKey(drugName)}|${hospKey}|${qtyKey}|${dxKey}`;
       const existing = byKey.get(key);
       if (existing === void 0) {
         byKey.set(key, item);
@@ -4655,51 +4697,54 @@
       const disp = String(it.display ?? "").toLowerCase();
       const key = `${it.date ?? ""}|${it.hospital ?? ""}`;
       if (disp.includes("systolic blood pressure")) {
-        const v = byKey.get(key) ?? {};
-        v.systolic = it;
+        const v = byKey.get(key) ?? { systolic: [], diastolic: [] };
+        v.systolic.push(it);
         byKey.set(key, v);
       } else if (disp.includes("diastolic blood pressure")) {
-        const v = byKey.get(key) ?? {};
-        v.diastolic = it;
+        const v = byKey.get(key) ?? { systolic: [], diastolic: [] };
+        v.diastolic.push(it);
         byKey.set(key, v);
       } else {
         passThrough.push(it);
       }
     }
+    const tryAdd = (components, src, loinc, display) => {
+      if (!src) return;
+      const val = src.value;
+      if (val === null || val === void 0 || val === "" || val === "-" || val === "\u2014") return;
+      const num = Number.parseFloat(String(val).replace(/,/g, ""));
+      if (!Number.isFinite(num)) return;
+      components.push({
+        loinc,
+        display,
+        value: num,
+        unit: src.unit || "mmHg",
+        interpretation_text: src.reference_range || ""
+      });
+    };
     for (const parts of byKey.values()) {
-      const s = parts.systolic;
-      const d = parts.diastolic;
-      const primary = s ?? d;
-      if (!primary) continue;
-      const components = [];
-      const tryAdd = (src, loinc, display) => {
-        if (!src) return;
-        const val = src.value;
-        if (val === null || val === void 0 || val === "" || val === "-" || val === "\u2014") return;
-        const num = Number.parseFloat(String(val).replace(/,/g, ""));
-        if (!Number.isFinite(num)) return;
-        components.push({
-          loinc,
-          display,
-          value: num,
-          unit: src.unit || "mmHg",
-          interpretation_text: src.reference_range || ""
-        });
-      };
-      tryAdd(s, "8480-6", "Systolic blood pressure");
-      tryAdd(d, "8462-4", "Diastolic blood pressure");
-      if (components.length === 0) continue;
-      const combined = { ...primary };
-      combined.display = "Blood Pressure";
-      combined.code = "";
-      combined.order_code = "";
-      combined.order_name = "Blood Pressure";
-      combined.category = "vital-signs";
-      combined.bp_components = components;
-      combined.bp_panel_loinc = "85354-9";
-      combined.value = void 0;
-      combined.unit = void 0;
-      passThrough.push(combined);
+      const n = Math.max(parts.systolic.length, parts.diastolic.length);
+      for (let i = 0; i < n; i++) {
+        const s = parts.systolic[i];
+        const d = parts.diastolic[i];
+        const primary = s ?? d;
+        if (!primary) continue;
+        const components = [];
+        tryAdd(components, s, "8480-6", "Systolic blood pressure");
+        tryAdd(components, d, "8462-4", "Diastolic blood pressure");
+        if (components.length === 0) continue;
+        const combined = { ...primary };
+        combined.display = "Blood Pressure";
+        combined.code = "";
+        combined.order_code = "";
+        combined.order_name = "Blood Pressure";
+        combined.category = "vital-signs";
+        combined.bp_components = components;
+        combined.bp_panel_loinc = "85354-9";
+        combined.value = void 0;
+        combined.unit = void 0;
+        passThrough.push(combined);
+      }
     }
     return passThrough;
   }
@@ -4955,7 +5000,8 @@
     if (raw.bp_components) {
       const date = raw.date ?? "";
       const hospital = raw.hospital ?? "";
-      const obsId2 = stableId(patientId, "obs", "BP_PANEL", date, hospital);
+      const bpValueKey = raw.bp_components.map((c) => `${c.loinc}:${c.value}`).join(",");
+      const obsId2 = stableId(patientId, "obs", "BP_PANEL", date, hospital, bpValueKey);
       const componentResources = [];
       for (const c of raw.bp_components) {
         const qty = {
@@ -5302,9 +5348,11 @@
         })
       );
     }
+    const hospital = (raw.hospital ?? "").trim();
+    const reasonKey = raw.reason_code ? normalizeIcd10Cm(String(raw.reason_code)) : "";
     const resource = {
       resourceType: "Procedure",
-      id: stableId(patientId, code || display, raw.date ?? ""),
+      id: stableId(patientId, code || display, raw.date ?? "", hospital, reasonKey),
       meta: { versionId: "1", source: "nhi-fhir-bridge/scraper" },
       status: raw.status ?? "completed",
       subject: { reference: `Patient/${patientId}` },
@@ -5338,14 +5386,17 @@
       if (txt) rc.text = txt;
       if (rc.coding || rc.text) resource.reasonCode = [rc];
     }
-    const hospital = (raw.hospital ?? "").trim();
     if (hospital) {
       resource.performer = [{ actor: { display: hospital } }];
     }
     const partOfCode = (raw.part_of_code ?? "").trim();
     if (partOfCode) {
       resource.partOf = [
-        { reference: `Procedure/${stableId(patientId, partOfCode, raw.date ?? "")}` }
+        // Recompute the primary's id with the SAME extra key parts — a 次處置
+        // shares its primary's hospital + 診斷 within one admission.
+        {
+          reference: `Procedure/${stableId(patientId, partOfCode, raw.date ?? "", hospital, reasonKey)}`
+        }
       ];
     }
     const encounterClass = (raw.encounter_class ?? "").trim();
@@ -5689,17 +5740,30 @@
     }
     return out;
   }
+  function medOrderCode(r) {
+    const coding = r.medicationCodeableConcept?.coding;
+    return Array.isArray(coding) ? String(coding[0]?.code ?? "").trim() : "";
+  }
   function linkEncountersInResources(candidates, resources) {
     const visitClassByRes = /* @__PURE__ */ new Map();
-    for (const r of resources) {
-      if (r && r.__nhiVisitClass !== void 0) {
+    const rxCodesByEnc = /* @__PURE__ */ new Map();
+    const captureTransients = (r) => {
+      if (!r) return;
+      if (r.__nhiVisitClass !== void 0) {
         visitClassByRes.set(r, String(r.__nhiVisitClass));
         delete r.__nhiVisitClass;
       }
-    }
+      if (Array.isArray(r.__rxOrderCodes)) {
+        rxCodesByEnc.set(r, r.__rxOrderCodes);
+        delete r.__rxOrderCodes;
+      }
+    };
+    for (const r of resources) captureTransients(r);
+    for (const e of candidates) captureTransients(e);
     if (candidates.length === 0) return;
     const exactIndex = /* @__PURE__ */ new Map();
     const impByHosp = /* @__PURE__ */ new Map();
+    const rxIndex = /* @__PURE__ */ new Map();
     const byId = /* @__PURE__ */ new Map();
     for (const e of candidates) {
       if (e.resourceType !== "Encounter") continue;
@@ -5712,6 +5776,12 @@
       arr.push(e.id);
       exactIndex.set(key, arr);
       const cls = (e.class ?? {}).code ?? "";
+      const rxCodes = rxCodesByEnc.get(e);
+      if (rxCodes && rxCodes.length > 0) {
+        const rxArr = rxIndex.get(key) ?? [];
+        rxArr.push({ id: e.id, codes: new Set(rxCodes), isInpatient: cls === "IMP" });
+        rxIndex.set(key, rxArr);
+      }
       if (cls === "IMP") {
         const end = String((e.period ?? {}).end ?? "").slice(0, 10);
         if (end) {
@@ -5729,6 +5799,18 @@
       const hosp = resourceHospital(r);
       const date = resourceDate(r);
       if (!hosp || !date) continue;
+      if (r.resourceType === "MedicationRequest") {
+        const vp2 = r.dispenseRequest?.validityPeriod;
+        const isInpatientCourse = !!(vp2?.start && vp2?.end);
+        const rxAtKey = rxIndex.get(`${hosp} ${date}`) ?? [];
+        const relevant = rxAtKey.filter((e) => isInpatientCourse ? e.isInpatient : !e.isInpatient);
+        if (relevant.length > 0) {
+          const oc = medOrderCode(r);
+          const hits = oc ? relevant.filter((e) => e.codes.has(oc)) : [];
+          if (hits.length === 1) r.encounter = { reference: `Encounter/${hits[0].id}` };
+          continue;
+        }
+      }
       const matches = [...exactIndex.get(`${hosp} ${date}`) ?? []];
       if (matches.length === 0) {
         for (const [start, end, eid] of impByHosp.get(hosp) ?? []) {
@@ -6474,6 +6556,11 @@
       reason_zh: icdName_zh ? icdCode ? `${icdCode} ${icdName_zh}` : icdName_zh : "",
       reason_code: icdCode,
       secondary_diagnoses: options && Array.isArray(options.secondary_diagnoses) ? options.secondary_diagnoses : [],
+      // #26 (住院): NHI 藥品代碼 of every drug listed in this admission's
+      // sp_IHKE3302S11_data — the linker attaches inpatient MedicationRequests to
+      // THIS 住院 by drug code (same rule as 門診), demoting the validityPeriod
+      // heuristic to a no-list fallback. Same contract as adaptEncounterFromMedExpense.
+      rx_order_codes: options && Array.isArray(options.rx_order_codes) ? options.rx_order_codes : [],
       hospital: item.hosp_ABBR || item.hosp_abbr || "",
       row_id: item.row_ID || item.row_id || ""
     };
@@ -6525,6 +6612,19 @@
       // returned no secondaries.
       secondary_diagnoses: options && Array.isArray(options.secondary_diagnoses) ? options.secondary_diagnoses : [],
       hospital,
+      // Billing — KEPT (previously discarded). These join the encounter-merge
+      // key: two 申報 rows are the SAME visit only when 部分負擔 (part_AMT) AND
+      // 申請點數 (appl_DOT) ALSO match — different billing ⇒ different visit even
+      // with the same ICD (user rule 2026-06-22). Raw string kept verbatim
+      // (commas included); the value is never interpreted, only compared for
+      // equality inside the stableId.
+      part_amt: String(item.part_AMT ?? item.part_amt ?? "").trim(),
+      appl_dot: String(item.appl_DOT ?? item.appl_dot ?? "").trim(),
+      // NHI 醫令碼 of the drugs this visit prescribed (from S02 detail's
+      // sp_IHKE3302S04_data). Carried to the mapper → Encounter.__rxOrderCodes
+      // (transient) so the linker attaches MedicationRequests to the EXACT
+      // prescribing visit, not by date heuristic (#26).
+      rx_order_codes: options && Array.isArray(options.rx_order_codes) ? options.rx_order_codes : [],
       // Pass through for the eventual IHKE3303S02 detail fetch (Phase B).
       row_id: item.roW_ID || item.row_id || ""
     };
@@ -6981,9 +7081,10 @@
       }
       all.push(...mapped);
     }
+    const merged = dedupEncountersPreferClass(all);
     const seen = /* @__PURE__ */ new Set();
     const unique = [];
-    for (const r of all) {
+    for (const r of merged) {
       const key = `${r.resourceType}/${r.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -8625,6 +8726,19 @@
     }
     return out;
   }
+  function rxOrderCodesFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return [];
+    const codes = /* @__PURE__ */ new Set();
+    for (const listKey of ["sp_IHKE3302S04_data", "sp_IHKE3302S11_data"]) {
+      const list = Array.isArray(main[listKey]) ? main[listKey] : [];
+      for (const item of list) {
+        const c = String(item?.order_code || item?.order_CODE || "").trim();
+        if (c) codes.add(c);
+      }
+    }
+    return [...codes];
+  }
 
   // src/background/sync-orchestrator.ts
   var SESSION_EXPIRED_HINT = "\u5065\u5EB7\u5B58\u647A\u767B\u5165\u903E\u6642\uFF08\u96FB\u8166\u4F11\u7720\u6216\u9592\u7F6E\u592A\u4E45\uFF09\uFF0C\u8ACB\u56DE\u5065\u5EB7\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\uFF0C\u518D\u6309\u4E00\u6B21\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\u3002";
@@ -8724,13 +8838,15 @@
             const cls = classFromS02Detail(detail) || "AMB";
             const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
             const primaryDiagnosis = primaryIcdFromS02Detail(detail);
+            const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
             const visit = visits[i];
             const rowId2 = visit.roW_ID || visit.row_id || visit.row_ID;
             const isPharmacy = rowId2 ? pharmacyRowIds.has(rowId2) : false;
             const it = adaptEncounterFromMedExpense(visit, cls, {
               pharmacy: isPharmacy,
               primary_diagnosis: primaryDiagnosis,
-              secondary_diagnoses: secondaryDiagnoses
+              secondary_diagnoses: secondaryDiagnoses,
+              rx_order_codes: rxOrderCodes
             });
             if (it) reAdapted.push(it);
           }
@@ -8762,9 +8878,11 @@
             const detail = detailMap?.get(i) || null;
             const primaryDiagnosis = primaryIcdFromS02Detail(detail);
             const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
+            const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
             const it = adaptInpatientEncounter(visits[i], {
               primary_diagnosis: primaryDiagnosis,
-              secondary_diagnoses: secondaryDiagnoses
+              secondary_diagnoses: secondaryDiagnoses,
+              rx_order_codes: rxOrderCodes
             });
             if (it) reAdapted.push(it);
             const mainRow = pickS02MainRow(detail);

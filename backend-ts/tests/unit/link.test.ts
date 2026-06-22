@@ -373,3 +373,141 @@ describe("repairDocumentReferenceEncounters", () => {
     expect(d.context.encounter).toBeUndefined();
   });
 });
+
+// #26 — a MedicationRequest links to the visit that PRESCRIBED it (the Encounter
+// whose __rxOrderCodes contains the med's NHI 醫令碼), not by date heuristic.
+describe("med ↔ Encounter linking by prescribed-drug list (#26)", () => {
+  const encRx = (
+    id: string,
+    hosp: string,
+    date: string,
+    cls: string,
+    rx: string[],
+  ): Record<string, any> => ({
+    resourceType: "Encounter",
+    id,
+    class: { code: cls },
+    serviceProvider: { display: hosp },
+    period: { start: `${date}T00:00:00+08:00` },
+    __rxOrderCodes: rx,
+  });
+  const med = (id: string, hosp: string, date: string, orderCode: string): Record<string, any> => ({
+    resourceType: "MedicationRequest",
+    id,
+    requester: { display: hosp },
+    authoredOn: `${date}T00:00:00+08:00`,
+    medicationCodeableConcept: { coding: [{ system: "nhi-drug", code: orderCode }] },
+  });
+
+  test("two same-day visits: each drug links to the visit that ordered it", () => {
+    const cough = encRx("cough", "長庚嘉義", "2026-06-02", "EMER", ["AB45993100"]);
+    const ckd = encRx("ckd", "長庚嘉義", "2026-06-02", "AMB", ["BC26476100"]);
+    const mCough = med("m1", "長庚嘉義", "2026-06-02", "AB45993100");
+    const mCkd = med("m2", "長庚嘉義", "2026-06-02", "BC26476100");
+    linkEncountersInResources([cough, ckd], [mCough, mCkd]);
+    expect(mCough.encounter).toEqual({ reference: "Encounter/cough" });
+    expect(mCkd.encounter).toEqual({ reference: "Encounter/ckd" });
+  });
+
+  test("a 藥局/IC卡 dispense NOT in any visit's list stays UNLINKED (no date guess)", () => {
+    const cough = encRx("cough", "長庚嘉義", "2026-06-02", "AMB", ["AB45993100"]);
+    const pharmacy = med("mp", "長庚嘉義", "2026-06-02", "ZZ99999999");
+    linkEncountersInResources([cough], [pharmacy]);
+    expect(pharmacy.encounter).toBeUndefined();
+  });
+
+  test("the transient __rxOrderCodes is stripped from the Encounter", () => {
+    const cough = encRx("cough", "長庚嘉義", "2026-06-02", "AMB", ["AB45993100"]);
+    linkEncountersInResources([cough], []);
+    expect(cough.__rxOrderCodes).toBeUndefined();
+  });
+
+  test("no drug-list data at (hospital,date) → falls through to the heuristic", () => {
+    const visit = amb("v", "長庚嘉義", "2026-06-02"); // no __rxOrderCodes
+    const m = med("m", "長庚嘉義", "2026-06-02", "AB45993100");
+    linkEncountersInResources([visit], [m]);
+    expect(m.encounter).toEqual({ reference: "Encounter/v" });
+  });
+
+  test("inpatient-course med (validityPeriod) links to the 住院 even when the gateway has a drug list", () => {
+    // Regression guard (2026-06-23): the admission-day gateway 急診 has a 申報 drug
+    // list, but the inpatient continuation drug isn't in it — the drug-list rule
+    // must NOT strand it; it links to the 住院 by its validityPeriod span.
+    const gateway = encRx("gw", "VGH", "2025-01-28", "EMER", ["GATEWAYDRUG"]);
+    const impStay = imp("imp", "VGH", "2025-01-28", "2025-01-30");
+    const inpMed: Record<string, any> = {
+      resourceType: "MedicationRequest",
+      id: "inp-med",
+      requester: { display: "VGH" },
+      authoredOn: "2025-01-28T00:00:00+08:00",
+      medicationCodeableConcept: { coding: [{ code: "INPATIENTDRUG" }] }, // not in the gateway list
+      dispenseRequest: {
+        validityPeriod: { start: "2025-01-28T00:00:00+08:00", end: "2025-01-30T23:59:59+08:00" },
+      },
+    };
+    linkEncountersInResources([gateway, impStay], [inpMed]);
+    expect(inpMed.encounter).toEqual({ reference: "Encounter/imp" });
+  });
+
+  // v1.0.5 — the 住院 detail (IHKE3309S02) DOES carry a per-drug list
+  // (sp_IHKE3302S11_data). With it captured on the IMP Encounter's __rxOrderCodes,
+  // inpatient meds link by drug code (same rule as 門診); validityPeriod span-match
+  // is demoted to the no-list fallback.
+  test("inpatient-course med links to the 住院 by its drug list — robust to a non-spanning validityPeriod", () => {
+    // 更耐 over period-match: the med's window doesn't equal the stay (date quirk)
+    // and a same-day gateway 門診 exists — without the drug-list rule the fallback
+    // would mislink it to the single-day gateway. Its code IS in the 住院 list → 住院.
+    const gateway = encRx("gw", "長庚嘉義", "2025-05-18", "AMB", ["GATEWAYDRUG"]);
+    const impStay = {
+      ...imp("imp", "長庚嘉義", "2025-05-18", "2025-05-22"),
+      __rxOrderCodes: ["A037697100"],
+    };
+    const inpMed: Record<string, any> = {
+      resourceType: "MedicationRequest",
+      id: "inp-med",
+      requester: { display: "長庚嘉義" },
+      authoredOn: "2025-05-18T00:00:00+08:00",
+      medicationCodeableConcept: { coding: [{ code: "A037697100" }] },
+      dispenseRequest: {
+        validityPeriod: { start: "2025-05-18T00:00:00+08:00", end: "2025-05-19T23:59:59+08:00" },
+      },
+    };
+    linkEncountersInResources([gateway, impStay], [inpMed]);
+    expect(inpMed.encounter).toEqual({ reference: "Encounter/imp" });
+  });
+
+  test("inpatient drug NOT in the 住院 list stays UNLINKED — even though validityPeriod spans the stay (自備藥)", () => {
+    // User rule 2026-06-23: once the 住院 list IS captured it is authoritative — a
+    // drug absent from it (patient's 自備藥, never billed) is NOT period-matched into
+    // the stay. Absence from the list ≠ "not taken". 寧願獨立也不要亂塞.
+    const impStay = {
+      ...imp("imp", "長庚嘉義", "2025-05-18", "2025-05-22"),
+      __rxOrderCodes: ["A037697100"],
+    };
+    const selfSupplied: Record<string, any> = {
+      resourceType: "MedicationRequest",
+      id: "self-med",
+      requester: { display: "長庚嘉義" },
+      authoredOn: "2025-05-18T00:00:00+08:00",
+      medicationCodeableConcept: { coding: [{ code: "SELFSUPPLIED" }] },
+      dispenseRequest: {
+        validityPeriod: { start: "2025-05-18T00:00:00+08:00", end: "2025-05-22T23:59:59+08:00" },
+      },
+    };
+    linkEncountersInResources([impStay], [selfSupplied]);
+    expect(selfSupplied.encounter).toBeUndefined();
+  });
+
+  test("outpatient med on an admission day links to its 門診 list, ignoring the same-day 住院 list", () => {
+    // isInpatient-scoping for the OPD side: an outpatient med (no validityPeriod)
+    // consults only the 門診/急診 lists; the same-day 住院 list is not relevant to it.
+    const gateway = encRx("gw", "長庚嘉義", "2025-05-18", "AMB", ["GATEWAYDRUG"]);
+    const impStay = {
+      ...imp("imp", "長庚嘉義", "2025-05-18", "2025-05-22"),
+      __rxOrderCodes: ["INPATIENTDRUG"],
+    };
+    const opdMed = med("opd", "長庚嘉義", "2025-05-18", "GATEWAYDRUG");
+    linkEncountersInResources([gateway, impStay], [opdMed]);
+    expect(opdMed.encounter).toEqual({ reference: "Encounter/gw" });
+  });
+});

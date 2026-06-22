@@ -1,3 +1,4 @@
+import * as systems from "@nhi-fhir-bridge/mapper";
 /**
  * De-identification invariants for buildOverridePatient.
  *
@@ -17,7 +18,6 @@
  * assembleLocalBundle propagates patient.id to every mapper.
  */
 import { describe, expect, test } from "vitest";
-import * as systems from "@nhi-fhir-bridge/mapper";
 
 // SYNTHETIC identity — id_no is deliberately checksum-INVALID (scripts/
 // check-no-real-twid.mjs gates CI on this). Never put a real or

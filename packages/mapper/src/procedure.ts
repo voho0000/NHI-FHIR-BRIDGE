@@ -68,9 +68,15 @@ export function mapProcedure(
     );
   }
 
+  // Hospital + primary diagnosis (ICD) are part of the id (2026-06-23): two
+  // procedures under the same NHI code on the same day belong to DIFFERENT
+  // visits when the hospital OR the 診斷 differs — without them they collapsed
+  // (same class of bug as the old Encounter (date,class,hospital) over-merge).
+  const hospital = ((raw.hospital ?? "") as string).trim();
+  const reasonKey = raw.reason_code ? normalizeIcd10Cm(String(raw.reason_code)) : "";
   const resource: Record<string, any> = {
     resourceType: "Procedure",
-    id: stableId(patientId, code || display, raw.date ?? ""),
+    id: stableId(patientId, code || display, raw.date ?? "", hospital, reasonKey),
     meta: { versionId: "1", source: "nhi-fhir-bridge/scraper" },
     status: raw.status ?? "completed",
     subject: { reference: `Patient/${patientId}` },
@@ -118,7 +124,6 @@ export function mapProcedure(
   // day as an Encounter doesn't get its `encounter` reference back-filled,
   // so SMART apps showing "procedures grouped by visit" would leave it
   // un-grouped.
-  const hospital = ((raw.hospital ?? "") as string).trim();
   if (hospital) {
     resource.performer = [{ actor: { display: hospital } }];
   }
@@ -131,7 +136,11 @@ export function mapProcedure(
   const partOfCode = ((raw.part_of_code ?? "") as string).trim();
   if (partOfCode) {
     resource.partOf = [
-      { reference: `Procedure/${stableId(patientId, partOfCode, raw.date ?? "")}` },
+      // Recompute the primary's id with the SAME extra key parts — a 次處置
+      // shares its primary's hospital + 診斷 within one admission.
+      {
+        reference: `Procedure/${stableId(patientId, partOfCode, raw.date ?? "", hospital, reasonKey)}`,
+      },
     ];
   }
 

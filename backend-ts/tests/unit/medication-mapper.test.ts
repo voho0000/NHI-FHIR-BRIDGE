@@ -436,3 +436,27 @@ describe("mapMedicationsDedup", () => {
     expect(resources[0]!.dosageInstruction).toBeUndefined();
   });
 });
+
+// Hospital joins the medication fingerprint (2026-06-23) — same class of bug as
+// the old Encounter (date,class,hospital) over-merge: the same drug/qty/dx the
+// same day at two hospitals are two distinct orders, not one.
+describe("medication id — hospital in the fingerprint", () => {
+  const mk = (hospital: string) => ({
+    drug_name: "Forxiga 10mg",
+    code: "BC26476100",
+    date: "2026-06-02",
+    quantity: "28",
+    indication_code: "N1832",
+    hospital,
+  });
+
+  test("identical order at TWO hospitals stays distinct (was silently merged)", () => {
+    const resources = mapMedicationsDedup([mk("長庚嘉義"), mk("臺北榮總")], PATIENT_ID);
+    expect(resources).toHaveLength(2);
+    expect(resources[0]!.id).not.toBe(resources[1]!.id);
+  });
+
+  test("same order at the SAME hospital still collapses to one (no over-split)", () => {
+    expect(mapMedicationsDedup([mk("長庚嘉義"), mk("長庚嘉義")], PATIENT_ID)).toHaveLength(1);
+  });
+});

@@ -112,9 +112,16 @@ export function mapMedicationRequest(
   // dx, so they still collapse; only orders that differ in quantity OR
   // indication stay distinct. Empty fields are omitted so meds without a
   // qty / diagnosis keep a clean fingerprint.
+  // Hospital is ALSO part of the fingerprint (2026-06-23): the same drug, qty
+  // and indication prescribed the same day at TWO hospitals is two distinct
+  // orders, not one — without it they collapsed (same class of bug as the old
+  // Encounter (date,class,hospital) over-merge). The 中英 language variants of
+  // ONE order share the hospital, so they still collapse as designed.
   const idParts = [canonicalDrugKey(drugName), String(raw.date ?? "")];
+  const hospKey = String(raw.hospital ?? "").trim();
   const qtyKey = String(raw.quantity ?? "").trim();
   const dxKey = String(raw.indication_code ?? "").trim();
+  if (hospKey) idParts.push(`h:${hospKey}`);
   if (qtyKey) idParts.push(`q:${qtyKey}`);
   if (dxKey) idParts.push(`d:${dxKey}`);
   const medId = stableId(patientId, ...idParts);
@@ -349,15 +356,17 @@ export function mapMedicationsDedup(rawItems: any[], patientId: string): Record<
     const drugName = ((item.drug_name ?? "") as string).trim();
     if (!drugName) continue;
     const datePart = ((item.date ?? "") as string).slice(0, 10);
-    // Group key mirrors the stableId fingerprint (drug + date + qty + dx):
-    // language-only 中英 variants of ONE order share quantity + indication
-    // and still collapse, but two distinct orders of the same drug on the
-    // same day (different qty or different diagnosis) stay separate instead
-    // of one silently overwriting the other. See mapMedicationRequest for
-    // the 5/18 泰克胃通 qty=2/dx-R042 vs qty=1/dx-K92.0 post-mortem.
+    // Group key MUST mirror the stableId fingerprint (drug + date + hospital +
+    // qty + dx) — otherwise this dedup collapses rows that mapMedicationRequest
+    // would give distinct ids, silently dropping one. Language-only 中英 variants
+    // of ONE order share all these and still collapse, but two distinct orders of
+    // the same drug on the same day (different hospital, qty OR diagnosis) stay
+    // separate. Hospital added 2026-06-23 (same drug/qty/dx at two hospitals are
+    // two orders); see mapMedicationRequest for the 5/18 泰克胃通 qty-post-mortem.
+    const hospKey = String(item.hospital ?? "").trim();
     const qtyKey = String(item.quantity ?? "").trim();
     const dxKey = String(item.indication_code ?? "").trim();
-    const key = `${datePart}|${canonicalDrugKey(drugName)}|${qtyKey}|${dxKey}`;
+    const key = `${datePart}|${canonicalDrugKey(drugName)}|${hospKey}|${qtyKey}|${dxKey}`;
     const existing = byKey.get(key);
     if (existing === undefined) {
       byKey.set(key, item);

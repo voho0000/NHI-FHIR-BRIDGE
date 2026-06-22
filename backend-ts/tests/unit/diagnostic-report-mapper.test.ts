@@ -288,3 +288,29 @@ describe("mapDiagnosticReport", () => {
     });
   });
 });
+
+// Hospital joins the DiagnosticReport id (2026-06-23) — two reports under the
+// same NHI code on the same day at different hospitals are distinct.
+describe("DiagnosticReport id — hospital in the key", () => {
+  const mk = (hospital: string) =>
+    mapDiagnosticReport(
+      {
+        display: "Chest X-ray",
+        code: "32001C",
+        system: "nhi",
+        category: "RAD",
+        conclusion: "No active lung lesion",
+        date: "2026-06-02",
+        hospital,
+      },
+      PID,
+    );
+
+  test("same code+date+conclusion at DIFFERENT hospitals → distinct ids", () => {
+    expect(mk("長庚嘉義")!.id).not.toBe(mk("臺北榮總")!.id);
+  });
+
+  test("same code+date+conclusion at the SAME hospital → same id (still dedups)", () => {
+    expect(mk("長庚嘉義")!.id).toBe(mk("長庚嘉義")!.id);
+  });
+});

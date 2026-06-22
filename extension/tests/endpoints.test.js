@@ -8,11 +8,11 @@
 //     (catches a typo turning resources into orphaned strings).
 //   - Names are unique.
 
-import { describe, expect, test } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { NHI_API_ENDPOINTS, ENDPOINT_LABEL_ZH } from "../src/nhi-endpoints.ts";
+import { describe, expect, test } from "vitest";
+import { ENDPOINT_LABEL_ZH, NHI_API_ENDPOINTS } from "../src/nhi-endpoints.ts";
 
 // After the v0.13.x background.js split, SW logic lives across
 // src/background.js + src/background/*.js. The text-scanning tests below
@@ -54,9 +54,7 @@ const LOCAL_BUNDLE_PAGE_TYPES = (() => {
   // so the test follows the constant wherever it lives.
   const m = SW_SOURCE.match(/const\s+LOCAL_PAGE_TYPE_ORDER\s*=\s*\[([\s\S]*?)\]/);
   if (!m) return new Set();
-  return new Set(
-    [...m[1].matchAll(/"([^"]+)"/g)].map((mm) => mm[1]),
-  );
+  return new Set([...m[1].matchAll(/"([^"]+)"/g)].map((mm) => mm[1]));
 })();
 
 describe("NHI endpoint registry", () => {
@@ -80,9 +78,9 @@ describe("NHI endpoint registry", () => {
     // Path segment is `[^/]+` (not `[A-Za-z0-9]+`) so it also matches the
     // templatized `${cfg.path}` interpolation in nhi-detail-fetchers.js,
     // not just a hardcoded endpoint name.
-    const detailUrls = [
-      ...SW_SOURCE.matchAll(/\/api\/ihke3000\/[^/]+\/page_load\?[^`'"\s]+/g),
-    ].map((m) => m[0]);
+    const detailUrls = [...SW_SOURCE.matchAll(/\/api\/ihke3000\/[^/]+\/page_load\?[^`'"\s]+/g)].map(
+      (m) => m[0],
+    );
     expect(detailUrls.length).toBeGreaterThan(0);
     const offenders = detailUrls.filter(
       (u) => /[?&]rid=/.test(u) || /[?&]t=\$/.test(u) || /[?&]t=[1-9]/.test(u),
@@ -100,18 +98,13 @@ describe("NHI endpoint registry", () => {
     //                   re-called from the polling loop to refresh
     //                   ipL_CASE_SEQ_NO for triggered rows)
     const detailUrlsCridCtype = detailUrls.filter(
-      (u) =>
-        !/\/IHKE3408S03\/page_load/.test(u) &&
-        !/\/ihke3408s01\/page_load/.test(u),
+      (u) => !/\/IHKE3408S03\/page_load/.test(u) && !/\/ihke3408s01\/page_load/.test(u),
     );
     // Positive assertion: every page_load detail URL DOES use crid+ctype.
     const missing = detailUrlsCridCtype.filter(
       (u) => !/[?&]crid=/.test(u) || !/[?&]ctype=/.test(u),
     );
-    expect(
-      missing,
-      `detail URLs missing crid or ctype params: ${missing.join(", ")}`,
-    ).toEqual([]);
+    expect(missing, `detail URLs missing crid or ctype params: ${missing.join(", ")}`).toEqual([]);
   });
 
   test("every page_type used by an endpoint is in background.js _LOCAL_PAGE_TYPE_ORDER", () => {
@@ -122,9 +115,7 @@ describe("NHI endpoint registry", () => {
     // the constant out of background.js source keeps this test honest
     // even when someone updates one side and forgets the other.
     const pageTypes = new Set(NHI_API_ENDPOINTS.map((e) => e.page_type));
-    const missing = [...pageTypes].filter(
-      (pt) => !LOCAL_BUNDLE_PAGE_TYPES.has(pt),
-    );
+    const missing = [...pageTypes].filter((pt) => !LOCAL_BUNDLE_PAGE_TYPES.has(pt));
     expect(
       missing,
       `page_types missing from _LOCAL_PAGE_TYPE_ORDER (local bundle will silently drop these): ${missing.join(", ") || "(none)"}`,

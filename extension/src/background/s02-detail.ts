@@ -107,3 +107,28 @@ export function secondaryIcdsFromS02Detail(body) {
   }
   return out;
 }
+
+// Pull the NHI 藥品代碼 of every drug this encounter LISTED, used to link a
+// MedicationRequest to the EXACT visit that listed it: a med whose order_code is
+// in this list belongs here; one that isn't is a 藥局/IC卡 dispense (or 自備藥)
+// with no 申報 entry and must stay unlinked (user rule 2026-06-23 — 寧願獨立也不
+// 要亂塞; absence from a list ≠ "not taken"). De-duped string[].
+//
+// Two sources, same row shape (order_code = NHI 藥品代碼), unioned:
+//   • 門診/急診 detail (IHKE3303S02) → sp_IHKE3302S04_data (prescribed drugs)
+//   • 住院 detail   (IHKE3309S02) → sp_IHKE3302S11_data (the admission's given
+//     drugs; verified 2026-06-23 against a 長庚嘉義 5/18–5/22 raw — the earlier
+//     belief that the 住院 detail carries no drug list was wrong).
+export function rxOrderCodesFromS02Detail(body) {
+  const main = pickS02MainRow(body);
+  if (!main) return [];
+  const codes = new Set();
+  for (const listKey of ["sp_IHKE3302S04_data", "sp_IHKE3302S11_data"]) {
+    const list = Array.isArray(main[listKey]) ? main[listKey] : [];
+    for (const item of list) {
+      const c = String(item?.order_code || item?.order_CODE || "").trim();
+      if (c) codes.add(c);
+    }
+  }
+  return [...codes];
+}

@@ -6,6 +6,7 @@
 import {
   GROUP_HANDLERS,
   LIST_HANDLERS,
+  dedupEncountersPreferClass,
   dedupProcedures,
   linkEncountersInResources,
   maskId,
@@ -47,9 +48,14 @@ export function assembleLocalBundle(byType, patientOverride, maskEnabled) {
   // local mode has to do it explicitly. Without this dedup, the local
   // Bundle ends up inflated relative to what backend stores from the
   // identical NHI input.
+  // Resolve same-id Encounter collisions FIRST (the merge key excludes class,
+  // so an empty 門診 stub can share an id with a real 急診 sibling — keep the
+  // stronger class). After this, encounters are unique by id, so the generic
+  // keep-first dedup below only collapses non-encounter duplicates.
+  const merged = dedupEncountersPreferClass(all);
   const seen = new Set();
   const unique = [];
-  for (const r of all) {
+  for (const r of merged) {
     const key = `${r.resourceType}/${r.id}`;
     if (seen.has(key)) continue;
     seen.add(key);

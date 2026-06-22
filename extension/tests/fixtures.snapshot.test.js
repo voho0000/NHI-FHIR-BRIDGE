@@ -13,10 +13,10 @@
 // Fixtures live in ./fixtures/. Each is documented with a `_source`
 // + `_note` describing what it represents (live capture vs synthetic).
 
-import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { describe, expect, test } from "vitest";
 
 import {
   adaptAdultPreventive,
@@ -56,7 +56,9 @@ describe("adapter fixture snapshots", () => {
   });
 
   test("IHKE3408S02 imaging (real_INSPECT_DATE null → falls back to func_DATE)", () => {
-    expect(adaptImagingReportFromDetail(load("ihke3408-imaging-detail.json"))).toMatchInlineSnapshot(`
+    expect(
+      adaptImagingReportFromDetail(load("ihke3408-imaging-detail.json")),
+    ).toMatchInlineSnapshot(`
       {
         "category": "RAD",
         "code": "33070B",
@@ -87,7 +89,9 @@ describe("adapter fixture snapshots", () => {
   });
 
   test("IHKE3308S02 procedure detail (inpatient — exe_S_DATE > func_DATE; op_CODE → code)", () => {
-    expect(adaptProcedureFromDetail(load("ihke3308-procedure-inpatient.json"))).toMatchInlineSnapshot(`
+    expect(
+      adaptProcedureFromDetail(load("ihke3308-procedure-inpatient.json")),
+    ).toMatchInlineSnapshot(`
       [
         {
           "body_site": "",
@@ -110,7 +114,9 @@ describe("adapter fixture snapshots", () => {
   });
 
   test("IHKE3308S02 procedure detail (outpatient — null icd9cm_CODE_CNAME tolerated)", () => {
-    expect(adaptProcedureFromDetail(load("ihke3308-procedure-outpatient.json"))).toMatchInlineSnapshot(`
+    expect(
+      adaptProcedureFromDetail(load("ihke3308-procedure-outpatient.json")),
+    ).toMatchInlineSnapshot(`
       [
         {
           "body_site": "",
@@ -135,6 +141,7 @@ describe("adapter fixture snapshots", () => {
   test("IHKE3303 encounter (outpatient defaulting to AMB)", () => {
     expect(adaptEncounterFromMedExpense(load("ihke3303-encounter.json"))).toMatchInlineSnapshot(`
       {
+        "appl_dot": "100",
         "channel": "IC卡資料",
         "class": "AMB",
         "date": "2025-05-18",
@@ -142,11 +149,13 @@ describe("adapter fixture snapshots", () => {
         "end_date": "",
         "hospital": "長庚嘉義",
         "kind": "門診",
+        "part_amt": "50",
         "provider": "",
         "reason": "I10 Essential hypertension",
         "reason_code": "I10",
         "reason_zh": "I10 原發性高血壓",
         "row_id": "AAFxzWAAIAAIATTAAY",
+        "rx_order_codes": [],
         "secondary_diagnoses": [],
         "type_display": "IC卡資料",
       }
@@ -193,7 +202,9 @@ describe("adapter fixture snapshots", () => {
   });
 
   test("IHKE3209 catastrophic illness (problem-list Condition)", () => {
-    expect(adaptCatastrophicIllness(load("ihke3209-catastrophic-illness.json"))).toMatchInlineSnapshot(`
+    expect(
+      adaptCatastrophicIllness(load("ihke3209-catastrophic-illness.json")),
+    ).toMatchInlineSnapshot(`
       {
         "category": "problem-list-item",
         "clinical_status": "active",

@@ -148,9 +148,14 @@ export function mapDiagnosticReport(
     idDiscriminator = code || display;
   }
 
+  // Hospital is part of the id too (2026-06-23): two reports under the same NHI
+  // code on the same day at DIFFERENT hospitals are distinct (the content
+  // fingerprint above usually already diverges, but hospital makes it explicit —
+  // same class of bug as the old Encounter (date,class,hospital) over-merge).
+  const hospital = ((raw.hospital ?? "") as string).trim();
   const resource: Record<string, any> = {
     resourceType: "DiagnosticReport",
-    id: stableId(patientId, idDiscriminator, raw.date ?? ""),
+    id: stableId(patientId, idDiscriminator, raw.date ?? "", hospital),
     meta: { versionId: "1", source: "nhi-fhir-bridge/scraper" },
     status: raw.status ?? "final",
     subject: { reference: `Patient/${patientId}` },
@@ -178,7 +183,6 @@ export function mapDiagnosticReport(
     resource.issued = `${raw.date}T00:00:00+08:00`;
   }
 
-  const hospital = ((raw.hospital ?? "") as string).trim();
   if (hospital) {
     resource.performer = [{ display: hospital }];
   }

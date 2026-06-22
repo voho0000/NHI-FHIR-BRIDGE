@@ -1142,3 +1142,36 @@ describe("mapObservation — NHI Chinese interpretation (成人預防保健, aud
     expect(obs?.interpretation?.[0]?.coding?.[0]?.code).toBe("N");
   });
 });
+
+// BP panel: multiple readings the same day at the same hospital (2026-06-23).
+// The old combiner stored a single systolic/diastolic per (date, hospital), so a
+// SECOND reading silently overwrote the first — a different 數值 was lost. Now
+// each reading survives as its own value-distinct panel.
+describe("BP panel — multiple same-day same-hospital readings", () => {
+  const sys = (value: number) => ({
+    display: "Systolic blood pressure",
+    value,
+    unit: "mmHg",
+    date: "2026-06-02",
+    hospital: "長庚嘉義",
+  });
+  const dia = (value: number) => ({
+    display: "Diastolic blood pressure",
+    value,
+    unit: "mmHg",
+    date: "2026-06-02",
+    hospital: "長庚嘉義",
+  });
+  const bpPanels = (items: Record<string, any>[]) =>
+    mapObservationsGrouped(items, PATIENT_ID).filter((r) => r.resourceType === "Observation");
+
+  test("two DIFFERENT readings the same day+hospital stay as TWO panels (none lost)", () => {
+    const bp = bpPanels([sys(120), dia(80), sys(140), dia(90)]);
+    expect(bp).toHaveLength(2);
+    expect(bp[0]!.id).not.toBe(bp[1]!.id);
+  });
+
+  test("one reading the same day+hospital → exactly one panel", () => {
+    expect(bpPanels([sys(120), dia(80)])).toHaveLength(1);
+  });
+});

@@ -108,6 +108,7 @@ import {
   classFromS02Detail,
   pickS02MainRow,
   primaryIcdFromS02Detail,
+  rxOrderCodesFromS02Detail,
   secondaryIcdsFromS02Detail,
 } from "./s02-detail.js";
 import {
@@ -288,6 +289,9 @@ export async function runNhiApiSync({
           const cls = classFromS02Detail(detail) || "AMB";
           const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
           const primaryDiagnosis = primaryIcdFromS02Detail(detail);
+          // NHI 醫令碼 of every drug this visit prescribed — the linker uses it to
+          // attach MedicationRequests to the EXACT prescribing Encounter (#26).
+          const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
           const visit = visits[i];
           const rowId = visit.roW_ID || visit.row_id || visit.row_ID;
           const isPharmacy = rowId ? pharmacyRowIds.has(rowId) : false;
@@ -295,6 +299,7 @@ export async function runNhiApiSync({
             pharmacy: isPharmacy,
             primary_diagnosis: primaryDiagnosis,
             secondary_diagnoses: secondaryDiagnoses,
+            rx_order_codes: rxOrderCodes,
           });
           if (it) reAdapted.push(it);
         }
@@ -355,9 +360,14 @@ export async function runNhiApiSync({
           const detail = detailMap?.get(i) || null;
           const primaryDiagnosis = primaryIcdFromS02Detail(detail);
           const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
+          // #26 (住院): the 住院 detail's sp_IHKE3302S11_data drug list lets the
+          // linker attach inpatient MedicationRequests to THIS admission by drug
+          // code (same rule as 門診), not just by the validityPeriod heuristic.
+          const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
           const it = adaptInpatientEncounter(visits[i], {
             primary_diagnosis: primaryDiagnosis,
             secondary_diagnoses: secondaryDiagnoses,
+            rx_order_codes: rxOrderCodes,
           });
           if (it) reAdapted.push(it);
           // 出院病摘 candidacy gate — `has_XML` on the S02 detail body

@@ -46,13 +46,83 @@ const CLASS_MAP: Record<string, [string, string, string]> = {
   EMER: [ACTCODE_SYSTEM, "EMER", "emergency"],
 };
 
+// Encounter stable id == merge key. Two raw rows collapse to one Encounter iff
+// they produce the same id.
+//
+//   • IMP (住院): legacy (date, "IMP", hospital) tuple — UNCHANGED. The
+//     DocumentReference (出院病摘) mapper recomputes this exact tuple to point at
+//     the stay (document-reference.ts), so it must stay stable; and one
+//     admission == one Encounter regardless of ICD.
+//   • AMB / EMER (門診/急診): (date, hospital, 主診斷 + 全部次診斷[sorted set],
+//     部分負擔 part_amt, 申請點數 appl_dot) — NO class. User rule (2026-06-22):
+//     a single day can hold MANY 門診 (different 科別), so merge ONLY when the
+//     FULL diagnosis set AND both billing figures match. Different primary OR
+//     different secondary set OR different 部分負擔/申請點數 ⇒ different visit
+//     (even if the primary ICD is shared). Class is deliberately excluded — 門診
+//     vs 急診 already differ in billing, and excluding it lets an empty duplicate
+//     申報 row (which defaults to 門診) absorb into its real sibling; the surviving
+//     class is then resolved by dedupEncountersPreferClass.
+function encounterStableId(
+  patientId: string,
+  encClass: string,
+  raw: Record<string, any>,
+): string {
+  const date = String(raw.date ?? "");
+  const hospital = String(raw.hospital ?? "").trim();
+  if (encClass === "IMP") {
+    return stableId(patientId, date, "IMP", hospital);
+  }
+  const primary = raw.reason_code ? normalizeIcd10Cm(String(raw.reason_code)) : "";
+  const secondaries = (Array.isArray(raw.secondary_diagnoses) ? raw.secondary_diagnoses : [])
+    .map((s: any) => (s?.code ? normalizeIcd10Cm(String(s.code)) : ""))
+    .filter(Boolean)
+    .sort();
+  const dxKey = [primary, ...secondaries].join(",");
+  const partAmt = String(raw.part_amt ?? "").trim();
+  const applDot = String(raw.appl_dot ?? "").trim();
+  return stableId(patientId, date, hospital, dxKey, partAmt, applDot);
+}
+
+// The merge key excludes class, so an empty duplicate 申報 row that defaulted to
+// 門診(AMB) can land on the same id as a real 急診(EMER) sibling. Resolve such
+// same-id Encounter collisions by keeping the strongest class (EMER > IMP > AMB)
+// — never let an empty AMB stub override a real EMER/IMP visit. Non-Encounter
+// resources and already-unique Encounters pass through untouched; output order
+// is preserved (each id emitted at its first occurrence).
+const ENC_CLASS_RANK: Record<string, number> = { EMER: 3, IMP: 2, AMB: 1 };
+function encClassRank(enc: Record<string, any>): number {
+  return ENC_CLASS_RANK[String(enc?.class?.code ?? "").toUpperCase()] ?? 0;
+}
+export function dedupEncountersPreferClass(
+  resources: Record<string, any>[],
+): Record<string, any>[] {
+  const winner = new Map<string, Record<string, any>>();
+  for (const r of resources) {
+    if (r?.resourceType !== "Encounter") continue;
+    const prev = winner.get(r.id);
+    if (!prev || encClassRank(r) > encClassRank(prev)) winner.set(r.id, r);
+  }
+  const emitted = new Set<string>();
+  const out: Record<string, any>[] = [];
+  for (const r of resources) {
+    if (r?.resourceType !== "Encounter") {
+      out.push(r);
+      continue;
+    }
+    if (emitted.has(r.id)) continue;
+    emitted.add(r.id);
+    out.push(winner.get(r.id) ?? r);
+  }
+  return out;
+}
+
 export function mapEncounter(raw: Record<string, any>, patientId: string): Record<string, any> {
   const encClass = String(raw.class ?? "AMB").toUpperCase();
   const classEntry = CLASS_MAP[encClass] ?? CLASS_MAP.AMB!;
 
   const resource: Record<string, any> = {
     resourceType: "Encounter",
-    id: stableId(patientId, raw.date ?? "", encClass, ((raw.hospital ?? "") as string).trim()),
+    id: encounterStableId(patientId, encClass, raw),
     meta: { versionId: "1", source: "nhi-fhir-bridge/scraper" },
     status: "finished",
     class: {
@@ -186,6 +256,14 @@ export function mapEncounter(raw: Record<string, any>, patientId: string): Recor
   if (clinicalNote) {
     resource.note = [{ text: clinicalNote }];
   }
+
+  // Transient — STRIPPED by linkEncountersInResources before the bundle (not
+  // valid FHIR). NHI 醫令碼 of the drugs this visit prescribed (#26): the linker
+  // attaches a MedicationRequest to this Encounter only when the med's order
+  // code appears here, so a 藥局/IC卡 dispense with no 申報 encounter stays
+  // unlinked instead of being date-matched onto an unrelated same-day visit.
+  const rxCodes = Array.isArray(raw.rx_order_codes) ? raw.rx_order_codes : [];
+  if (rxCodes.length > 0) resource.__rxOrderCodes = rxCodes;
 
   return resource;
 }

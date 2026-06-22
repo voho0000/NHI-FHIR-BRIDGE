@@ -600,6 +600,11 @@ export function adaptInpatientEncounter(item, options) {
     reason_code: icdCode,
     secondary_diagnoses:
       options && Array.isArray(options.secondary_diagnoses) ? options.secondary_diagnoses : [],
+    // #26 (住院): NHI 藥品代碼 of every drug listed in this admission's
+    // sp_IHKE3302S11_data — the linker attaches inpatient MedicationRequests to
+    // THIS 住院 by drug code (same rule as 門診), demoting the validityPeriod
+    // heuristic to a no-list fallback. Same contract as adaptEncounterFromMedExpense.
+    rx_order_codes: options && Array.isArray(options.rx_order_codes) ? options.rx_order_codes : [],
     hospital: item.hosp_ABBR || item.hosp_abbr || "",
     row_id: item.row_ID || item.row_id || "",
   };
@@ -716,6 +721,19 @@ export function adaptEncounterFromMedExpense(item, classHint, options) {
     secondary_diagnoses:
       options && Array.isArray(options.secondary_diagnoses) ? options.secondary_diagnoses : [],
     hospital,
+    // Billing — KEPT (previously discarded). These join the encounter-merge
+    // key: two 申報 rows are the SAME visit only when 部分負擔 (part_AMT) AND
+    // 申請點數 (appl_DOT) ALSO match — different billing ⇒ different visit even
+    // with the same ICD (user rule 2026-06-22). Raw string kept verbatim
+    // (commas included); the value is never interpreted, only compared for
+    // equality inside the stableId.
+    part_amt: String(item.part_AMT ?? item.part_amt ?? "").trim(),
+    appl_dot: String(item.appl_DOT ?? item.appl_dot ?? "").trim(),
+    // NHI 醫令碼 of the drugs this visit prescribed (from S02 detail's
+    // sp_IHKE3302S04_data). Carried to the mapper → Encounter.__rxOrderCodes
+    // (transient) so the linker attaches MedicationRequests to the EXACT
+    // prescribing visit, not by date heuristic (#26).
+    rx_order_codes: options && Array.isArray(options.rx_order_codes) ? options.rx_order_codes : [],
     // Pass through for the eventual IHKE3303S02 detail fetch (Phase B).
     row_id: item.roW_ID || item.row_id || "",
   };

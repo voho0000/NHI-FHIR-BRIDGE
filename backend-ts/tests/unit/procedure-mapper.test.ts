@@ -334,3 +334,57 @@ describe("Procedure partOf (主/次處置 grouping)", () => {
     expect(out.find((p) => p.id === "inpS")!.partOf).toEqual([{ reference: "Procedure/rich" }]);
   });
 });
+
+// Hospital + primary 診斷 join the Procedure id (2026-06-23) — two procedures
+// under the same NHI code on the same day belong to different visits when the
+// hospital OR the診斷 differs (same class of bug as the old Encounter merge).
+describe("Procedure id — hospital + 診斷 in the key", () => {
+  const mk = (over: Record<string, any>) =>
+    mapProcedure(
+      {
+        display: "Aerosol therapy",
+        code: "57021C",
+        date: "2026-06-02",
+        hospital: "長庚嘉義",
+        ...over,
+      },
+      PID,
+    );
+
+  test("same code+date at DIFFERENT hospitals → distinct ids", () => {
+    expect(mk({ hospital: "長庚嘉義" })!.id).not.toBe(mk({ hospital: "臺北榮總" })!.id);
+  });
+
+  test("same code+date+hospital under DIFFERENT 診斷 → distinct ids", () => {
+    expect(mk({ reason_code: "R053" })!.id).not.toBe(mk({ reason_code: "J45" })!.id);
+  });
+
+  test("identical (code+date+hospital+診斷) → same id (still dedups)", () => {
+    expect(mk({ reason_code: "R053" })!.id).toBe(mk({ reason_code: "R053" })!.id);
+  });
+
+  test("partOf recomputes the primary's id with the same extra key parts", () => {
+    const primary = mapProcedure(
+      {
+        display: "Primary",
+        code: "PRIMARY",
+        date: "2026-06-02",
+        hospital: "長庚嘉義",
+        reason_code: "N1832",
+      },
+      PID,
+    );
+    const secondary = mapProcedure(
+      {
+        display: "Sub",
+        code: "SUB",
+        date: "2026-06-02",
+        hospital: "長庚嘉義",
+        reason_code: "N1832",
+        part_of_code: "PRIMARY",
+      },
+      PID,
+    );
+    expect(secondary!.partOf[0].reference).toBe(`Procedure/${primary!.id}`);
+  });
+});

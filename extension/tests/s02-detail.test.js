@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { classFromS02Detail } from "../src/background/s02-detail.ts";
+import { classFromS02Detail, rxOrderCodesFromS02Detail } from "../src/background/s02-detail.ts";
 
 // Wrap a main row the way NHI's IHKE3303S02 endpoint does.
 function body(main) {
@@ -46,5 +46,51 @@ describe("classFromS02Detail", () => {
   test("null / empty body → null", () => {
     expect(classFromS02Detail(null)).toBeNull();
     expect(classFromS02Detail({})).toBeNull();
+  });
+});
+
+describe("rxOrderCodesFromS02Detail (#26)", () => {
+  test("pulls the de-duped NHI 醫令碼 from sp_IHKE3302S04_data", () => {
+    const out = rxOrderCodesFromS02Detail(
+      body({
+        sp_IHKE3302S04_data: [
+          { order_code: "AB45993100", drug_name: "愛克痰發泡錠600毫克" },
+          { order_code: "AC27456238", drug_name: "樂麗康注射液" },
+          { order_code: "AB45993100", drug_name: "愛克痰 (dup row)" }, // de-duped
+        ],
+      }),
+    );
+    expect(out).toEqual(["AB45993100", "AC27456238"]);
+  });
+
+  test("no drug list → empty array", () => {
+    expect(rxOrderCodesFromS02Detail(body({ sp_IHKE3302S04_data: [] }))).toEqual([]);
+    expect(rxOrderCodesFromS02Detail(body({}))).toEqual([]);
+    expect(rxOrderCodesFromS02Detail(null)).toEqual([]);
+  });
+
+  // v1.0.5: the 住院 detail (IHKE3309S02) carries its drug list under
+  // sp_IHKE3302S11_data (same row shape, order_code = NHI 藥品代碼).
+  test("pulls the 住院 drug list from sp_IHKE3302S11_data", () => {
+    const out = rxOrderCodesFromS02Detail(
+      body({
+        sp_IHKE3302S11_data: [
+          { order_code: "A037697100", drug_NAME: "便通樂膜衣錠" },
+          { order_code: "AB45993100", drug_NAME: "愛克痰發泡錠" },
+          { order_code: "A037697100", drug_NAME: "便通樂 (dup row)" }, // de-duped
+        ],
+      }),
+    );
+    expect(out).toEqual(["A037697100", "AB45993100"]);
+  });
+
+  test("unions 門診 (S04) + 住院 (S11) lists, de-duped across both", () => {
+    const out = rxOrderCodesFromS02Detail(
+      body({
+        sp_IHKE3302S04_data: [{ order_code: "OPD0000001" }],
+        sp_IHKE3302S11_data: [{ order_code: "INP0000001" }, { order_code: "OPD0000001" }],
+      }),
+    );
+    expect(out).toEqual(["OPD0000001", "INP0000001"]);
   });
 });

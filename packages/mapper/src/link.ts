@@ -83,6 +83,14 @@ function reasonCodeSet(r: Record<string, any>): Set<string> {
   return out;
 }
 
+// NHI 醫令碼 of a MedicationRequest. coding[0] is the NHI drug code (or, absent
+// one, the HIS-local code). Used to match a med against an Encounter's
+// prescribed-drug list (Encounter.__rxOrderCodes) for #26.
+function medOrderCode(r: Record<string, any>): string {
+  const coding = r.medicationCodeableConcept?.coding;
+  return Array.isArray(coding) ? String(coding[0]?.code ?? "").trim() : "";
+}
+
 /**
  * Add `encounter` reference to each linkable resource by (hospital, date).
  *
@@ -107,15 +115,34 @@ export function linkEncountersInResources(
   // FHIR and must never reach the bundle, even when there are no candidate
   // Encounters to link against.
   const visitClassByRes = new Map<Record<string, any>, string>();
-  for (const r of resources) {
-    if (r && r.__nhiVisitClass !== undefined) {
+  // Also capture + STRIP Encounter.__rxOrderCodes (the visit's prescribed-drug
+  // NHI 醫令碼, set by mapEncounter for #26) — transient, never valid FHIR.
+  // Captured from BOTH arrays so it's stripped whether candidates and resources
+  // are the same array (local mode) or separate (backend).
+  const rxCodesByEnc = new Map<Record<string, any>, string[]>();
+  const captureTransients = (r: Record<string, any>) => {
+    if (!r) return;
+    if (r.__nhiVisitClass !== undefined) {
       visitClassByRes.set(r, String(r.__nhiVisitClass));
       delete r.__nhiVisitClass;
     }
-  }
+    if (Array.isArray(r.__rxOrderCodes)) {
+      rxCodesByEnc.set(r, r.__rxOrderCodes as string[]);
+      delete r.__rxOrderCodes;
+    }
+  };
+  for (const r of resources) captureTransients(r);
+  for (const e of candidates) captureTransients(e);
   if (candidates.length === 0) return;
   const exactIndex = new Map<string, string[]>();
   const impByHosp = new Map<string, Array<[string, string, string]>>();
+  // (hospital, date) → encounters that listed drugs + their 醫令碼 set (#26).
+  // isInpatient lets the linker pick the RIGHT list per med (住院 list for an
+  // inpatient-course med, 門診/急診 lists for an outpatient med).
+  const rxIndex = new Map<
+    string,
+    Array<{ id: string; codes: Set<string>; isInpatient: boolean }>
+  >();
   const byId = new Map<string, Record<string, any>>();
 
   for (const e of candidates) {
@@ -129,6 +156,17 @@ export function linkEncountersInResources(
     arr.push(e.id);
     exactIndex.set(key, arr);
     const cls = (e.class ?? {}).code ?? "";
+    // #26: index this visit's listed-drug 醫令碼 by (hospital, date). Tag each
+    // entry with isInpatient so the linker checks the RIGHT list per med:
+    // inpatient-course meds → the 住院(IMP) list (sp_IHKE3302S11); outpatient meds
+    // → the 門診/急診 lists (sp_IHKE3302S04). Stops an inpatient continuation from
+    // being stranded by / matched against the admission-day gateway's list.
+    const rxCodes = rxCodesByEnc.get(e);
+    if (rxCodes && rxCodes.length > 0) {
+      const rxArr = rxIndex.get(key) ?? [];
+      rxArr.push({ id: e.id, codes: new Set(rxCodes), isInpatient: cls === "IMP" });
+      rxIndex.set(key, rxArr);
+    }
     if (cls === "IMP") {
       const end = String((e.period ?? {}).end ?? "").slice(0, 10);
       if (end) {
@@ -148,6 +186,35 @@ export function linkEncountersInResources(
     const hosp = resourceHospital(r);
     const date = resourceDate(r);
     if (!hosp || !date) continue;
+    // #26: a MedicationRequest prefers to link to the visit that LISTED it — the
+    // Encounter whose 醫令碼 list contains this med's order code. Each visit's S02
+    // drug list is authoritative for the MEDS OF ITS OWN KIND:
+    //   • outpatient med       → the 門診/急診 lists (sp_IHKE3302S04_data)
+    //   • inpatient-course med → the 住院 list (sp_IHKE3302S11_data); identified by
+    //     dispenseRequest.validityPeriod = [admit, discharge] (verified 2026-06-23:
+    //     the 住院 detail DOES carry a per-drug list — the earlier belief it didn't
+    //     was wrong). The med's OWN kind picks which lists are relevant, so an
+    //     inpatient continuation is never matched against (nor stranded by) the
+    //     admission-day gateway 門診/急診's list.
+    //
+    // When the relevant list WAS captured: link to the visit that listed this drug;
+    // a drug in NONE (藥局/IC卡 dispense, or 自備藥 never billed) or in MORE than one
+    // stays UNLINKED — no fall-through (user 2026-06-23: 寧願獨立也不要亂塞; absence
+    // from a list ≠ "not taken"). When NO relevant list is captured (old 住院 record
+    // with no sp_IHKE3302S11, or detail not fetched) we fall through to the
+    // (hospital,date)/class/period heuristic so those meds still link.
+    if (r.resourceType === "MedicationRequest") {
+      const vp = r.dispenseRequest?.validityPeriod;
+      const isInpatientCourse = !!(vp?.start && vp?.end);
+      const rxAtKey = rxIndex.get(`${hosp} ${date}`) ?? [];
+      const relevant = rxAtKey.filter((e) => (isInpatientCourse ? e.isInpatient : !e.isInpatient));
+      if (relevant.length > 0) {
+        const oc = medOrderCode(r);
+        const hits = oc ? relevant.filter((e) => e.codes.has(oc)) : [];
+        if (hits.length === 1) r.encounter = { reference: `Encounter/${hits[0]!.id}` };
+        continue;
+      }
+    }
     const matches: string[] = [...(exactIndex.get(`${hosp} ${date}`) ?? [])];
     if (matches.length === 0) {
       for (const [start, end, eid] of impByHosp.get(hosp) ?? []) {

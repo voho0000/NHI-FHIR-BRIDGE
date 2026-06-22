@@ -1262,61 +1262,78 @@ interface BpComponent {
 }
 
 function combineBpItems(items: Record<string, any>[]): Record<string, any>[] {
+  // Collect ARRAYS of systolic/diastolic per (date, hospital). 2026-06-23 fix:
+  // the old code stored a single systolic/diastolic per key, so a SECOND BP
+  // reading the same day at the same hospital silently overwrote the first —
+  // a different measurement (different 數值) was lost. Keep every reading.
   const byKey = new Map<
     string,
-    { systolic?: Record<string, any>; diastolic?: Record<string, any> }
+    { systolic: Record<string, any>[]; diastolic: Record<string, any>[] }
   >();
   const passThrough: Record<string, any>[] = [];
   for (const it of items) {
     const disp = String(it.display ?? "").toLowerCase();
     const key = `${it.date ?? ""}|${it.hospital ?? ""}`;
     if (disp.includes("systolic blood pressure")) {
-      const v = byKey.get(key) ?? {};
-      v.systolic = it;
+      const v = byKey.get(key) ?? { systolic: [], diastolic: [] };
+      v.systolic.push(it);
       byKey.set(key, v);
     } else if (disp.includes("diastolic blood pressure")) {
-      const v = byKey.get(key) ?? {};
-      v.diastolic = it;
+      const v = byKey.get(key) ?? { systolic: [], diastolic: [] };
+      v.diastolic.push(it);
       byKey.set(key, v);
     } else {
       passThrough.push(it);
     }
   }
 
+  const tryAdd = (
+    components: BpComponent[],
+    src: Record<string, any> | undefined,
+    loinc: string,
+    display: string,
+  ) => {
+    if (!src) return;
+    const val = src.value;
+    if (val === null || val === undefined || val === "" || val === "-" || val === "—") return;
+    const num = Number.parseFloat(String(val).replace(/,/g, ""));
+    if (!Number.isFinite(num)) return;
+    components.push({
+      loinc,
+      display,
+      value: num,
+      unit: src.unit || "mmHg",
+      interpretation_text: src.reference_range || "",
+    });
+  };
+
   for (const parts of byKey.values()) {
-    const s = parts.systolic;
-    const d = parts.diastolic;
-    const primary = s ?? d;
-    if (!primary) continue;
-    const components: BpComponent[] = [];
-    const tryAdd = (src: Record<string, any> | undefined, loinc: string, display: string) => {
-      if (!src) return;
-      const val = src.value;
-      if (val === null || val === undefined || val === "" || val === "-" || val === "—") return;
-      const num = Number.parseFloat(String(val).replace(/,/g, ""));
-      if (!Number.isFinite(num)) return;
-      components.push({
-        loinc,
-        display,
-        value: num,
-        unit: src.unit || "mmHg",
-        interpretation_text: src.reference_range || "",
-      });
-    };
-    tryAdd(s, "8480-6", "Systolic blood pressure");
-    tryAdd(d, "8462-4", "Diastolic blood pressure");
-    if (components.length === 0) continue;
-    const combined: Record<string, any> = { ...primary };
-    combined.display = "Blood Pressure";
-    combined.code = "";
-    combined.order_code = "";
-    combined.order_name = "Blood Pressure";
-    combined.category = "vital-signs";
-    combined.bp_components = components;
-    combined.bp_panel_loinc = "85354-9";
-    combined.value = undefined;
-    combined.unit = undefined;
-    passThrough.push(combined);
+    // Pair the i-th systolic with the i-th diastolic so MULTIPLE readings the
+    // same day at the same hospital stay as SEPARATE panels (NHI returns the
+    // halves in a consistent per-reading order; worst case a reading emits with
+    // just one half). Each surviving panel then gets a value-distinct stableId.
+    const n = Math.max(parts.systolic.length, parts.diastolic.length);
+    for (let i = 0; i < n; i++) {
+      const s = parts.systolic[i];
+      const d = parts.diastolic[i];
+      const primary = s ?? d;
+      if (!primary) continue;
+      const components: BpComponent[] = [];
+      tryAdd(components, s, "8480-6", "Systolic blood pressure");
+      tryAdd(components, d, "8462-4", "Diastolic blood pressure");
+      if (components.length === 0) continue;
+      const combined: Record<string, any> = { ...primary };
+      combined.display = "Blood Pressure";
+      combined.code = "";
+      combined.order_code = "";
+      combined.order_name = "Blood Pressure";
+      combined.category = "vital-signs";
+      combined.bp_components = components;
+      combined.bp_panel_loinc = "85354-9";
+      combined.value = undefined;
+      combined.unit = undefined;
+      passThrough.push(combined);
+    }
   }
 
   return passThrough;
@@ -1932,7 +1949,14 @@ function buildObservation(
   if (raw.bp_components) {
     const date = raw.date ?? "";
     const hospital = raw.hospital ?? "";
-    const obsId = stableId(patientId, "obs", "BP_PANEL", date, hospital);
+    // Value is part of the key (2026-06-23): two BP panels the same day at the
+    // same hospital with DIFFERENT readings must NOT collapse — different 數值 =
+    // different measurement (same rule the main Observation path already follows;
+    // this sub-path had only date+hospital). Key off each component's loinc+value.
+    const bpValueKey = (raw.bp_components as BpComponent[])
+      .map((c) => `${c.loinc}:${c.value}`)
+      .join(",");
+    const obsId = stableId(patientId, "obs", "BP_PANEL", date, hospital, bpValueKey);
     const componentResources: any[] = [];
     for (const c of raw.bp_components as BpComponent[]) {
       const qty: Quantity = {

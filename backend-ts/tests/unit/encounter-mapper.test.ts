@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { mapEncounter } from "@nhi-fhir-bridge/mapper";
+import { dedupEncountersPreferClass, mapEncounter } from "@nhi-fhir-bridge/mapper";
 
 const PID = "P001";
 
@@ -336,5 +336,153 @@ describe("mapEncounter", () => {
     const a = mapEncounter({ date: "2024-05-01", class: "IMP", hospital: "VGH" }, PID);
     const b = mapEncounter({ date: "2024-05-01", class: "IMP", hospital: "VGH" }, PID);
     expect(a.id).toBe(b.id);
+  });
+});
+
+// Encounter merge key (user rule, 2026-06-22). Two 申報 rows = the SAME visit
+// iff date + hospital + FULL diagnosis set (主診斷 + 全部次診斷, order-insensitive)
+// + 部分負擔 (part_amt) + 申請點數 (appl_dot) all match. Class is NOT in the key.
+// A single day can hold many 門診 (different 科別); different ICD-set OR different
+// billing ⇒ different visit even when the primary ICD is shared.
+describe("encounter merge key (date+hospital+dx-set+billing, no class)", () => {
+  const base = {
+    date: "2026-06-02",
+    hospital: "長庚嘉義",
+    reason_code: "R053",
+    part_amt: "300",
+    appl_dot: "1,241",
+  };
+
+  test("same date+hospital+ICD+billing → same id (the 3× R053 collapse to one)", () => {
+    const emer = mapEncounter({ ...base, class: "EMER" }, PID);
+    const ambStub = mapEncounter({ ...base, class: "AMB" }, PID); // empty-detail dup defaults to 門診
+    expect(emer.id).toBe(ambStub.id);
+  });
+
+  test("different primary ICD → different id (R053 cough vs N1832 CKD never merge)", () => {
+    const cough = mapEncounter({ ...base }, PID);
+    const ckd = mapEncounter(
+      { ...base, reason_code: "N1832", part_amt: "50", appl_dot: "1,496" },
+      PID,
+    );
+    expect(cough.id).not.toBe(ckd.id);
+  });
+
+  test("same primary, DIFFERENT 部分負擔 → different id", () => {
+    const a = mapEncounter({ ...base, part_amt: "300" }, PID);
+    const b = mapEncounter({ ...base, part_amt: "50" }, PID);
+    expect(a.id).not.toBe(b.id);
+  });
+
+  test("same primary, DIFFERENT 申請點數 → different id", () => {
+    const a = mapEncounter({ ...base, appl_dot: "1,241" }, PID);
+    const b = mapEncounter({ ...base, appl_dot: "1,496" }, PID);
+    expect(a.id).not.toBe(b.id);
+  });
+
+  test("same primary, DIFFERENT secondary set → different id (different 門診 can share primary)", () => {
+    const a = mapEncounter({ ...base, secondary_diagnoses: [{ code: "E119" }] }, PID);
+    const b = mapEncounter({ ...base, secondary_diagnoses: [{ code: "I10" }] }, PID);
+    expect(a.id).not.toBe(b.id);
+  });
+
+  test("secondary diagnoses compared as a SET (order-insensitive) → same id", () => {
+    const a = mapEncounter(
+      { ...base, secondary_diagnoses: [{ code: "E119" }, { code: "I10" }] },
+      PID,
+    );
+    const b = mapEncounter(
+      { ...base, secondary_diagnoses: [{ code: "I10" }, { code: "E119" }] },
+      PID,
+    );
+    expect(a.id).toBe(b.id);
+  });
+
+  test("class excluded from key: AMB vs EMER (identical date/hospital/ICD/billing) → same id", () => {
+    expect(mapEncounter({ ...base, class: "AMB" }, PID).id).toBe(
+      mapEncounter({ ...base, class: "EMER" }, PID).id,
+    );
+  });
+
+  test("IMP key stays admission-based — ignores ICD/billing so DocumentReference refs don't dangle", () => {
+    const a = mapEncounter(
+      { date: "2026-06-02", class: "IMP", hospital: "長庚嘉義", reason_code: "R053" },
+      PID,
+    );
+    const b = mapEncounter(
+      {
+        date: "2026-06-02",
+        class: "IMP",
+        hospital: "長庚嘉義",
+        reason_code: "N1832",
+        part_amt: "50",
+      },
+      PID,
+    );
+    expect(a.id).toBe(b.id); // one admission == one Encounter regardless of ICD
+  });
+});
+
+describe("dedupEncountersPreferClass", () => {
+  const enc = (cls: string, over: Record<string, any> = {}) =>
+    mapEncounter(
+      {
+        date: "2026-06-02",
+        hospital: "長庚嘉義",
+        reason_code: "R053",
+        part_amt: "300",
+        appl_dot: "1,241",
+        class: cls,
+        ...over,
+      },
+      PID,
+    );
+
+  test("same-id AMB stub + EMER sibling → one Encounter, EMER class wins", () => {
+    const stub = enc("AMB");
+    const real = enc("EMER");
+    expect(stub.id).toBe(real.id);
+    const out = dedupEncountersPreferClass([stub, real]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.class.code).toBe("EMER");
+  });
+
+  test("order-independent: EMER first then AMB → still EMER", () => {
+    const out = dedupEncountersPreferClass([enc("EMER"), enc("AMB")]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.class.code).toBe("EMER");
+  });
+
+  test("the user's 2026-06-02 case: 3× R053 (mixed class) + 1× N1832(+次診斷) → exactly 2 encounters", () => {
+    const ckd = mapEncounter(
+      {
+        date: "2026-06-02",
+        hospital: "長庚嘉義",
+        reason_code: "N1832",
+        reason: "N1832 Chronic kidney disease, stage 3b",
+        reason_zh: "N1832 慢性腎臟疾病stage 3b",
+        part_amt: "50",
+        appl_dot: "1,496",
+        class: "AMB",
+        secondary_diagnoses: [
+          { code: "I129", name_zh: "高血壓性慢性腎臟病" },
+          { code: "E119", name_zh: "第二型糖尿病" },
+        ],
+      },
+      PID,
+    );
+    const out = dedupEncountersPreferClass([enc("EMER"), enc("AMB"), enc("EMER"), ckd]);
+    expect(out).toHaveLength(2);
+    const byClass = Object.fromEntries(out.map((e) => [e.class.code, e]));
+    expect(byClass.EMER.reasonCode[0].coding[0].code).toBe("R05.3"); // cough → one EMER visit
+    expect(byClass.AMB.reasonCode[0].coding[0].code).toBe("N18.32"); // CKD survives as its own visit
+    expect(byClass.AMB.reasonCode).toHaveLength(3); // primary + 2 次診斷 preserved
+  });
+
+  test("non-Encounter resources pass through unchanged, order preserved", () => {
+    const med = { resourceType: "MedicationRequest", id: "m1" };
+    const out = dedupEncountersPreferClass([med, enc("AMB")]);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toBe(med);
   });
 });
