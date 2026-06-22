@@ -2056,7 +2056,7 @@
 
   // src/popup/status.ts
   var _elapsedTickerId = null;
-  function setStatus(text, kind, breakdown, errors, action) {
+  function setStatus(text, kind, breakdown, errors, actions) {
     els.status.className = kind || "";
     els.status.textContent = "";
     const hasErrors = Array.isArray(errors) && errors.length > 0;
@@ -2084,19 +2084,22 @@
       header.appendChild(dismissBtn);
     }
     els.status.appendChild(header);
-    if (action && typeof action.onClick === "function") {
+    const actionList = (Array.isArray(actions) ? actions : actions ? [actions] : []).filter(
+      (a) => a && typeof a.onClick === "function"
+    );
+    for (const act of actionList) {
       const actionBtn = document.createElement("button");
       actionBtn.type = "button";
       actionBtn.className = "status-action";
       const msg = document.createElement("span");
       msg.className = "status-action-msg";
-      msg.textContent = action.label;
+      msg.textContent = act.label;
       actionBtn.appendChild(msg);
       const jump = document.createElement("span");
       jump.className = "status-action-jump";
       jump.innerHTML = ICON_CHEVRON;
       actionBtn.appendChild(jump);
-      actionBtn.addEventListener("click", action.onClick);
+      actionBtn.addEventListener("click", act.onClick);
       els.status.appendChild(actionBtn);
     }
     if (breakdown?.length || hasErrors) {
@@ -2187,6 +2190,63 @@
     if (!status) return;
     applySyncStatus(status);
   }
+  var IMAGING_ARM_LABEL = "\u{1F5BC}\uFE0F \u958B\u555F\u5F71\u50CF\u6E05\u55AE\u9801\uFF0C\u67E5\u770B\u662F\u5426\u6709\u5F71\u50CF\u6A94";
+  function _buildStatusActions(status) {
+    const actions = [];
+    if (!status.running && status.imagingArmUrl) {
+      actions.push({
+        label: IMAGING_ARM_LABEL,
+        onClick: () => _openImagingArmTab(status.imagingArmUrl)
+      });
+    }
+    if (status.phase === "downloaded") {
+      actions.push({ label: "\u81F3 \u2463 \u67E5\u770B\u300C\u91AB\u6790 MediPrisma\u300D", onClick: () => _setActiveStep(4) });
+    }
+    return actions;
+  }
+  async function _openImagingArmTab(url) {
+    const showLoginHint = (msg) => {
+      const s = state.latestStatus;
+      setStatus(
+        msg,
+        "info",
+        s?.breakdown ?? null,
+        s?.errors ?? null,
+        s ? _buildStatusActions(s) : []
+      );
+    };
+    try {
+      const tabs = await chrome.tabs.query({ url: "https://myhealthbank.nhi.gov.tw/*" });
+      const target = tabs.find((t) => t.active) ?? tabs[0];
+      if (target?.id == null) {
+        showLoginHint("\u627E\u4E0D\u5230\u5DF2\u767B\u5165\u7684\u5065\u5EB7\u5B58\u647A\u5206\u9801 \u2014 \u8ACB\u5148\u56DE \u2460 \u767B\u5165\u5065\u5EB7\u5B58\u647A\uFF0C\u518D\u9EDE\u4E00\u6B21\u4E0B\u65B9\u6309\u9215\u3002");
+        return;
+      }
+      let loggedIn = true;
+      try {
+        const [res] = await chrome.scripting.executeScript({
+          target: { tabId: target.id },
+          func: () => !!sessionStorage.getItem("token") && !/IHKE3095S01|IHKE3001S99|IDLE/i.test(location.href)
+        });
+        loggedIn = res?.result === true;
+      } catch {
+        loggedIn = true;
+      }
+      if (!loggedIn) {
+        showLoginHint(
+          "\u5065\u5EB7\u5B58\u647A\u767B\u5165\u5DF2\u903E\u6642 \u2014 \u8ACB\u5148\u56DE\u5065\u5EB7\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\uFF0C\u518D\u9EDE\u4E00\u6B21\u4E0B\u65B9\u6309\u9215\u3002"
+        );
+        return;
+      }
+      await chrome.tabs.update(target.id, { url, active: true });
+      if (target.windowId != null) {
+        await chrome.windows.update(target.windowId, { focused: true }).catch(() => {
+        });
+      }
+    } catch {
+      showLoginHint("\u7121\u6CD5\u958B\u555F\u5F71\u50CF\u6E05\u55AE\u9801 \u2014 \u8ACB\u624B\u52D5\u56DE\u5065\u5EB7\u5B58\u647A\u5206\u9801\u3001\u9032\u5165\u300C\u5F71\u50CF\u6E05\u55AE\u300D\u9801\u5F8C\u518D\u91CD\u65B0\u53D6\u5F97\u3002");
+    }
+  }
   function _renderStatus() {
     const status = state.latestStatus;
     if (!status) return;
@@ -2199,14 +2259,7 @@
     const kind = status.running ? "info" : status.phase === "error" ? "error" : "success";
     const breakdown = status.running ? null : status.breakdown;
     const errors = status.running ? null : status.errors;
-    let action = null;
-    if (status.phase === "downloaded") {
-      action = {
-        label: "\u81F3 \u2463 \u67E5\u770B\u300C\u91AB\u6790 MediPrisma\u300D",
-        onClick: () => _setActiveStep(4)
-      };
-    }
-    setStatus(text, kind, breakdown, errors, action);
+    setStatus(text, kind, breakdown, errors, _buildStatusActions(status));
   }
   function applySyncStatus(status) {
     if (!status) return;

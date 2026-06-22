@@ -18,7 +18,7 @@ import { _refreshButtonStates, _refreshResultZone, _setActiveStep } from "./wiza
 // `[Ns]` prefix every second without spamming chrome.storage from the SW.
 let _elapsedTickerId = null;
 
-export function setStatus(text, kind?, breakdown?, errors?, action?) {
+export function setStatus(text, kind?, breakdown?, errors?, actions?) {
   // Build with DOM API — avoids innerHTML / XSS risk.
   // breakdown is an array of mixed entries:
   //   - phase timings prefixed with "⏱"  → 階段耗時
@@ -64,12 +64,15 @@ export function setStatus(text, kind?, breakdown?, errors?, action?) {
   }
   els.status.appendChild(header);
 
-  // Optional call-to-action button. Rendered between header and any
-  // breakdown/error details so it stays visually adjacent to the
-  // status text. Used by the "downloaded" phase to take users straight
-  // to step 4 (where the SMART app launcher lives) without making
-  // them mentally parse the wizard tabs.
-  if (action && typeof action.onClick === "function") {
+  // Optional call-to-action chip(s). Rendered between header and any
+  // breakdown/error details so they stay visually adjacent to the status
+  // text. Used by the "downloaded" phase (jump to step 4 — the SMART app
+  // launcher) and the imaging-arm case (open the 影像清單 page). Accepts a
+  // single action or an array; normalize so multiple chips can stack.
+  const actionList = (Array.isArray(actions) ? actions : actions ? [actions] : []).filter(
+    (a) => a && typeof a.onClick === "function",
+  );
+  for (const act of actionList) {
     const actionBtn = document.createElement("button");
     actionBtn.type = "button";
     actionBtn.className = "status-action";
@@ -77,13 +80,13 @@ export function setStatus(text, kind?, breakdown?, errors?, action?) {
     // span (innerHTML of a trusted constant SVG, not user data).
     const msg = document.createElement("span");
     msg.className = "status-action-msg";
-    msg.textContent = action.label;
+    msg.textContent = act.label;
     actionBtn.appendChild(msg);
     const jump = document.createElement("span");
     jump.className = "status-action-jump";
     jump.innerHTML = ICON_CHEVRON;
     actionBtn.appendChild(jump);
-    actionBtn.addEventListener("click", action.onClick);
+    actionBtn.addEventListener("click", act.onClick);
     els.status.appendChild(actionBtn);
   }
 
@@ -196,6 +199,84 @@ export async function refreshSyncStatusFromBackground() {
   applySyncStatus(status);
 }
 
+// Label for the imaging-arm chip — shared by _renderStatus and the
+// session-expiry retry render so the two never drift.
+const IMAGING_ARM_LABEL = "🖼️ 開啟影像清單頁，查看是否有影像檔";
+
+// CTA chip(s) for the current status. Two independent triggers, stacked when
+// both apply:
+//   1. imagingArmUrl — imaging opted-in but 0 image bytes came back (NHI
+//      confirmation expired / not yet armed). Opens the 影像清單 page in the
+//      user's EXISTING logged-in tab (see _openImagingArmTab).
+//   2. phase "downloaded" — bundle saved; jump to step 4 (SMART app launcher).
+function _buildStatusActions(status) {
+  const actions: Array<{ label: string; onClick: () => void }> = [];
+  if (!status.running && status.imagingArmUrl) {
+    actions.push({
+      label: IMAGING_ARM_LABEL,
+      onClick: () => _openImagingArmTab(status.imagingArmUrl),
+    });
+  }
+  if (status.phase === "downloaded") {
+    actions.push({ label: "至 ④ 查看「醫析 MediPrisma」", onClick: () => _setActiveStep(4) });
+  }
+  return actions;
+}
+
+// Open the 影像清單 page in the user's EXISTING logged-in NHI tab — it holds the
+// per-tab sessionStorage token AND the currently-selected 就醫對象 (for 眷屬
+// accounts a fresh tab / new login defaults back to 自己). Before navigating we
+// CHECK the tab is still logged in: a fresh tab, or a session that idled out
+// (NHI bounces it to IHKE3095S01 login / IHKE3001S99 IDLE and drops the token),
+// would otherwise dump the user on the login page with no explanation. When not
+// logged in we keep the popup open and re-render the SAME result card (breakdown
+// + chips preserved) with a clear "請先重新登入" hint so they can retry after.
+async function _openImagingArmTab(url) {
+  const showLoginHint = (msg) => {
+    const s = state.latestStatus;
+    setStatus(
+      msg,
+      "info",
+      s?.breakdown ?? null,
+      s?.errors ?? null,
+      s ? _buildStatusActions(s) : [],
+    );
+  };
+  try {
+    const tabs = await chrome.tabs.query({ url: "https://myhealthbank.nhi.gov.tw/*" });
+    const target = tabs.find((t) => t.active) ?? tabs[0];
+    if (target?.id == null) {
+      showLoginHint("找不到已登入的健康存摺分頁 — 請先回 ① 登入健康存摺，再點一次下方按鈕。");
+      return;
+    }
+    // Authenticated? token present AND not already on NHI's login / idle pages.
+    // executeScript failure (rare — tab mid-navigation) → assume OK + navigate.
+    let loggedIn = true;
+    try {
+      const [res] = await chrome.scripting.executeScript({
+        target: { tabId: target.id },
+        func: () =>
+          !!sessionStorage.getItem("token") && !/IHKE3095S01|IHKE3001S99|IDLE/i.test(location.href),
+      });
+      loggedIn = res?.result === true;
+    } catch {
+      loggedIn = true;
+    }
+    if (!loggedIn) {
+      showLoginHint(
+        "健康存摺登入已逾時 — 請先回健康存摺分頁重新登入，再點一次下方按鈕。",
+      );
+      return;
+    }
+    await chrome.tabs.update(target.id, { url, active: true });
+    if (target.windowId != null) {
+      await chrome.windows.update(target.windowId, { focused: true }).catch(() => {});
+    }
+  } catch {
+    showLoginHint("無法開啟影像清單頁 — 請手動回健康存摺分頁、進入「影像清單」頁後再重新取得。");
+  }
+}
+
 function _renderStatus() {
   const status = state.latestStatus;
   if (!status) return;
@@ -213,19 +294,10 @@ function _renderStatus() {
   const kind = status.running ? "info" : status.phase === "error" ? "error" : "success";
   const breakdown = status.running ? null : status.breakdown;
   const errors = status.running ? null : status.errors;
-  // Phase-specific CTA: after the bundle hits disk, surface a button
-  // that jumps the wizard to step 4 (SMART app launcher) so the user
-  // doesn't have to mentally locate "step ④" themselves. The status
-  // message body no longer includes the "接著至 ④ 查看..." suffix —
-  // it became this button.
-  let action = null;
-  if (status.phase === "downloaded") {
-    action = {
-      label: "至 ④ 查看「醫析 MediPrisma」",
-      onClick: () => _setActiveStep(4),
-    };
-  }
-  setStatus(text, kind, breakdown, errors, action);
+  // CTA chip(s) built by the shared helper (imaging-arm + downloaded → step 4).
+  // The imaging chip survives the "done"→"downloaded" transition because
+  // _transitionStatusToDownloaded spreads the prior status (imagingArmUrl).
+  setStatus(text, kind, breakdown, errors, _buildStatusActions(status));
 }
 
 export function applySyncStatus(status) {

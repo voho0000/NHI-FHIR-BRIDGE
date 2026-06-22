@@ -9180,6 +9180,7 @@
     _markPhase("imaging-jpeg-await");
     const byType = {};
     const breakdown = [];
+    let _imagingNeedsArm = false;
     for (let i = 0; i < settled.length; i++) {
       const ep = NHI_API_ENDPOINTS[i];
       const s = settled[i];
@@ -9254,7 +9255,10 @@
             );
           }
           if (noImage > 0) {
-            breakdown.push(`\u3000\u9019 ${noImage} \u7B46\u5F71\u50CF\u6AA2\u67E5\u7121\u5F71\u50CF\u6A94\uFF0C\u53EA\u53D6\u5F97\u6587\u5B57\u5831\u544A\u3002`);
+            breakdown.push(
+              `\u3000\u9019 ${noImage} \u7B46\u5F71\u50CF\u9019\u6B21\u6C92\u6709\u53D6\u5F97\u5716\u7247\u3002\u8ACB\u9EDE\u4E0B\u65B9\u6309\u9215\u958B\u555F\u300C\u5F71\u50CF\u6E05\u55AE\u300D\u9801\uFF0C\u67E5\u770B\u8A72\u7B46\u662F\u5426\u986F\u793A\u300C\u6709\u5F71\u50CF\u6A94\u300D\uFF1A\u986F\u793A\u300C\u6709\u5F71\u50CF\u6A94\u300D\u8868\u793A\u6709\u5716\uFF0C\u7A0D\u5019\u7D04 1 \u5206\u9418\u518D\u91CD\u65B0\u53D6\u5F97\u5373\u53EF\uFF1B\u986F\u793A\u300C\u7121\u5F71\u50CF\u6A94\u300D\u5247\u5065\u5EB7\u5B58\u647A\u76EE\u524D\u6C92\u6709\u5F71\u50CF\u5716\u7247\u53EF\u4E0B\u8F09\u3002`
+            );
+            _imagingNeedsArm = true;
           }
         }
       }
@@ -9424,7 +9428,12 @@
       errors: _humanizeErrors(errors),
       histno: patientOverride.id_no,
       mode,
-      localFilename: _localFilename
+      localFilename: _localFilename,
+      // Part A (v1.0.4): when imaging came back with 0 fetchable image bytes
+      // but rows exist, the popup surfaces a one-click link to the 影像清單 page
+      // so the user can arm NHI's confirmation themselves + re-sync. Absent
+      // (undefined) in every other case → popup renders no imaging CTA.
+      imagingArmUrl: _imagingNeedsArm ? `${BASE}/IHKE3000/IHKE3408S01` : void 0
     });
     await showResultBadge(total);
     if (mode !== "local")

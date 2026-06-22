@@ -1002,6 +1002,20 @@ export async function runNhiApiSync({
   // endpoints. Empty-result endpoints are omitted from the success
   // summary entirely — they add noise. Errors always show.
   const breakdown = [];
+  // Set when imaging was opted-in but 0 image bytes came back AND there ARE
+  // imaging rows (no "A"/"1" candidate). From the bulk list (all jpG_STATUS
+  // "2") we CANNOT tell apart: (a) a genuinely text-only study, (b) NHI's JPG
+  // preview — generated-on-view from the permanent DCM — not yet generated or
+  // expired, (c) a per-patient generation cooldown. Live-investigated
+  // 2026-06-22 (孫澄貴, the heavily-synced probe patient): 167 JPG frames on
+  // 6/19 → 0 on 6/22, ALL rows "2", yet OTHER family members still had 有影像檔,
+  // and the study detail showed JPG=無資料 while the DCM (15 MB) stayed intact.
+  // → the image data is safe; only the JPG-preview layer is affected, it's
+  // per-patient + NHI-side (NOT a bridge bug), and re-rendering can't conjure a
+  // purged preview back instantly. So instead of falsely claiming 無影像檔 we
+  // surface a one-click link to the 影像清單 page (imagingArmUrl) — the user can
+  // re-view it / re-sync, or wait a day or two for NHI to re-generate.
+  let _imagingNeedsArm = false;
   for (let i = 0; i < settled.length; i++) {
     const ep = NHI_API_ENDPOINTS[i];
     const s = settled[i];
@@ -1139,7 +1153,13 @@ export async function runNhiApiSync({
           );
         }
         if (noImage > 0) {
-          breakdown.push(`　這 ${noImage} 筆影像檢查無影像檔，只取得文字報告。`);
+          // Honest wording: do NOT claim 無影像檔 — we can't distinguish a
+          // genuinely image-less study from one whose NHI confirmation
+          // expired (both read jpG_STATUS "2"). Point the user at the arm.
+          breakdown.push(
+            `　這 ${noImage} 筆影像這次沒有取得圖片。請點下方按鈕開啟「影像清單」頁，查看該筆是否顯示「有影像檔」：顯示「有影像檔」表示有圖，稍候約 1 分鐘再重新取得即可；顯示「無影像檔」則健康存摺目前沒有影像圖片可下載。`,
+          );
+          _imagingNeedsArm = true;
         }
       }
     }
@@ -1455,6 +1475,11 @@ export async function runNhiApiSync({
     histno: patientOverride.id_no,
     mode,
     localFilename: _localFilename,
+    // Part A (v1.0.4): when imaging came back with 0 fetchable image bytes
+    // but rows exist, the popup surfaces a one-click link to the 影像清單 page
+    // so the user can arm NHI's confirmation themselves + re-sync. Absent
+    // (undefined) in every other case → popup renders no imaging CTA.
+    imagingArmUrl: _imagingNeedsArm ? `${BASE}/IHKE3000/IHKE3408S01` : undefined,
   });
 
   // Paint a red dot on the toolbar icon so a user who closed the popup
