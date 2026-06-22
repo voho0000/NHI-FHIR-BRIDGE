@@ -263,9 +263,7 @@ async function _openImagingArmTab(url) {
       loggedIn = true;
     }
     if (!loggedIn) {
-      showLoginHint(
-        "健康存摺登入已逾時 — 請先回健康存摺分頁重新登入，再點一次下方按鈕。",
-      );
+      showLoginHint("健康存摺登入已逾時 — 請先回健康存摺分頁重新登入，再點一次下方按鈕。");
       return;
     }
     await chrome.tabs.update(target.id, { url, active: true });
