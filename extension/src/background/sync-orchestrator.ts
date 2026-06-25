@@ -333,6 +333,10 @@ export async function runNhiApiSync({
   const inpatientProcedureItems: any[] = [];
   let dischargeFetched = 0;
   let dischargeFetchFailed = 0;
+  // getxml failure-code histogram (登入過期/401 vs 逾時 vs …) so the breakdown can
+  // show WHY 病摘 were lost, and we can tell throttle-401 from a real session
+  // expiry without guessing. Filled from fetchDischargeSummaryHtmls's reasons.
+  const dischargeFailReasons: Record<string, number> = {};
   const inpIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "inpatient");
   if (inpIdx >= 0 && settled[inpIdx].status === "fulfilled") {
     const visits = settled[inpIdx].value.rawList || [];
@@ -404,7 +408,7 @@ export async function runNhiApiSync({
         // candidate identification is never raced by the network step.
         if (dischargeCandidatesRaw.length > 0) {
           try {
-            const htmlMap = await withProgressTimer(
+            const { map: htmlMap, reasons: failReasons } = await withProgressTimer(
               (sec) =>
                 sec === 0
                   ? `📥 取得 ${dischargeCandidatesRaw.length} 份出院病摘…`
@@ -416,6 +420,9 @@ export async function runNhiApiSync({
                   candidates: dischargeCandidatesRaw.map(({ rowId, ctype }) => ({ rowId, ctype })),
                 }),
             );
+            for (const [k, v] of Object.entries(failReasons)) {
+              dischargeFailReasons[k] = (dischargeFailReasons[k] || 0) + v;
+            }
             for (const cand of dischargeCandidatesRaw) {
               const html = htmlMap.get(cand.rowId);
               if (!html) {
@@ -1190,7 +1197,33 @@ export async function runNhiApiSync({
     // user can see "0 已抓 / N 候選" when none succeeded, not silence.
     if (ep.name === "inpatient" && dischargeCandidates > 0) {
       const parts: string[] = [`${dischargeFetched}/${dischargeCandidates} 出院病摘`];
-      if (dischargeFetchFailed > 0) parts.push(`${dischargeFetchFailed} 抓取失敗`);
+      if (dischargeFetchFailed > 0) {
+        // Show WHY they failed (登入過期/401 vs 逾時 vs …) so a real session expiry
+        // is distinguishable from a throttle without guessing.
+        const lab = (k: string): string =>
+          k === "SESSION_EXPIRED"
+            ? "登入過期"
+            : k === "HTTP 429"
+              ? "限流"
+              : /^HTTP 5/.test(k)
+                ? "伺服器"
+                : /^HTTP 4/.test(k)
+                  ? "HTTP4xx"
+                  : /timeout/.test(k)
+                    ? "逾時"
+                    : /no html/.test(k)
+                      ? "空回應"
+                      : "網路";
+        const agg: Record<string, number> = {};
+        for (const [k, v] of Object.entries(dischargeFailReasons)) {
+          const l = lab(k);
+          agg[l] = (agg[l] || 0) + v;
+        }
+        const why = Object.entries(agg)
+          .map(([l, n]) => `${n}×${l}`)
+          .join("、");
+        parts.push(`${dischargeFetchFailed} 抓取失敗（${why ? `${why}・` : ""}可重抓）`);
+      }
       breakdown.push(`　${parts.join(" / ")}`);
     }
     if (items.length === 0) continue;

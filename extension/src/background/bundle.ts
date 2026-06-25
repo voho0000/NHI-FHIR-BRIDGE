@@ -41,7 +41,7 @@ export function assembleLocalBundle(byType, patientOverride, maskEnabled) {
 
   // Dedup by (resourceType, id) before assembling the Bundle. Multiple
   // NHI endpoints can feed the same page_type (e.g. encounters /
-  // inpatient / inpatient_legacy all → page_type="encounters"), and the
+  // inpatient both → page_type="encounters"), and the
   // mapper produces deterministic stable IDs — so two raw items that
   // describe the same medical event collapse to one resource. Backend
   // upsert handles this automatically (same stable ID = same DB row);

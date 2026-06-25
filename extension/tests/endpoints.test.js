@@ -181,4 +181,25 @@ describe("NHI endpoint registry", () => {
       }
     }
   });
+
+  test("住院 feed is IHKE3309S01 only — IHKE3308S01 must NOT be an endpoint (user rule 2026-06-23)", () => {
+    // Regression guard: the old inpatient_legacy (IHKE3308S01) feed minted
+    // PHANTOM admissions — IHKE3308 is the 處置/手術 domain (sibling IHKE3308S02 =
+    // surgery detail), so its rows include 門診手術 the patient's 住院 page
+    // (IHKE3309S01) never shows (real case: P22074 2025-08-04 C50.912 門診手術 with
+    // no 出院日). 住院 must come ONLY from IHKE3309S01.
+    const paths = NHI_API_ENDPOINTS.map((e) => e.path.toLowerCase());
+    expect(
+      paths.some((p) => p.includes("ihke3308s01")),
+      "IHKE3308S01 must NOT be an endpoint — it minted phantom 住院 from 門診手術; 住院 = IHKE3309S01 only",
+    ).toBe(false);
+    expect(
+      paths.some((p) => p.includes("ihke3309s01")),
+      "IHKE3309S01 (the sole 住院 list) must be present",
+    ).toBe(true);
+    expect(
+      NHI_API_ENDPOINTS.some((e) => e.name === "inpatient_legacy"),
+      "the removed inpatient_legacy endpoint must not be reintroduced",
+    ).toBe(false);
+  });
 });

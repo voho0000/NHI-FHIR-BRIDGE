@@ -70,7 +70,6 @@ const CANCER_SCREENING_ENDPOINTS = [
 export const ENDPOINT_LABEL_ZH = {
   encounters: "就醫",
   inpatient: "住院",
-  inpatient_legacy: "住院（舊）",
   procedures: "手術 / 處置",
   medications: "處方藥品",
   chronic_prescriptions: "慢性處方箋",
@@ -116,19 +115,17 @@ export const NHI_API_ENDPOINTS = [
     adapt: adaptEncounterFromMedExpense,
     supportsDateRange: true,
   },
-  // Inpatient (住院) — IHKE3309S01 is the primary list with in_DATE/out_DATE
-  // span. IHKE3308S01 carries a small set of older 住院 records with the
-  // same fields (func_DATE in some rows instead of in_DATE; adapter
-  // handles both). Both feed the same encounter mapper.
+  // Inpatient (住院) — IHKE3309S01 is the SOLE authoritative 住院 list (it is what
+  // 健康存摺's 住院 page renders; user rule 2026-06-23: 住院 = ONLY what IHKE3309S01
+  // shows, nothing else). The old IHKE3308S01 ("住院舊") feed was REMOVED: IHKE3308
+  // is the 處置/手術 domain (its sibling IHKE3308S02 is the surgery/處置 detail), so
+  // its rows include 門診手術 — feeding them here minted PHANTOM admissions (real
+  // case: P22074 2025-08-04 C50.912, a 門診手術 with no 出院日 + no 住院明細, which the
+  // patient's 住院 page does NOT show). Surgeries are unaffected — they come from
+  // the procedures path (IHKE3301S05 → IHKE3308S02 detail), independent of this.
   {
     name: "inpatient",
     path: "/api/ihke3000/ihke3309s01/page_load",
-    page_type: "encounters",
-    adapt: adaptInpatientEncounter,
-  },
-  {
-    name: "inpatient_legacy",
-    path: "/api/ihke3000/ihke3308s01/page_load",
     page_type: "encounters",
     adapt: adaptInpatientEncounter,
   },

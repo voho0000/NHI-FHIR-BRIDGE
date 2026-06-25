@@ -609,6 +609,21 @@
     ).replace(
       /((?:病歷號碼|病歷號數|病歷號|病歷編號)\s*[:：]\s*(?:<\/b>\s*)?)[A-Za-z0-9\-]+/g,
       (_m, label) => `${label}[\u5DF2\u53BB\u8B58\u5225]`
+    ).replace(
+      /((?:戶籍地址|通訊地址|聯絡地址|現住地址|住址|地址)\s*[:：]\s*(?:<\/b>\s*)?(?:<\/td>\s*<td[^>]*>\s*(?:<b>\s*<\/b>\s*)?)?)([^<\n\r]+)/g,
+      (_m, label) => `${label}[\u5DF2\u53BB\u8B58\u5225]`
+    ).replace(
+      /(<td[^>]*>\s*(?:<b>\s*)?(?:戶籍地址|通訊地址|聯絡地址|現住地址|住址|地址)\s*(?:<\/b>\s*)?<\/td>\s*<td[^>]*>\s*)([^<\n\r]+)/g,
+      (_m, label) => `${label}[\u5DF2\u53BB\u8B58\u5225]`
+    ).replace(
+      /((?:病患姓名|病人姓名|患者姓名)\s*[:：]\s*(?:<\/b>\s*)?(?:<\/td>\s*<td[^>]*>\s*)?)([一-鿿]{2,6})/g,
+      (_m, label, name) => `${label}${maskName(name)}`
+    ).replace(
+      /(病患資訊\s*[:：]\s*(?:[門急住]\s*[診院])?\s*)([^<\n\r]+?)(\s*(?:男性|女性|男|女)\s*\d{1,3}\s*歲)/g,
+      (_m, label, _mid, marker) => `${label}[\u5DF2\u53BB\u8B58\u5225]${marker}`
+    ).replace(
+      /(?<![0-9A-Za-z\-])(?=[0-9A-Za-z\-]*\d)[0-9A-Za-z][0-9A-Za-z\-]*(\s*(?:男性|女性|男|女)\s*\d{1,3}\s*歲)/g,
+      (_m, marker) => `[\u5DF2\u53BB\u8B58\u5225]${marker}`
     );
   }
   function normalizeNarrativeForDedup(s) {
@@ -6883,7 +6898,6 @@
   var ENDPOINT_LABEL_ZH = {
     encounters: "\u5C31\u91AB",
     inpatient: "\u4F4F\u9662",
-    inpatient_legacy: "\u4F4F\u9662\uFF08\u820A\uFF09",
     procedures: "\u624B\u8853 / \u8655\u7F6E",
     medications: "\u8655\u65B9\u85E5\u54C1",
     chronic_prescriptions: "\u6162\u6027\u8655\u65B9\u7B8B",
@@ -6922,19 +6936,17 @@
       adapt: adaptEncounterFromMedExpense,
       supportsDateRange: true
     },
-    // Inpatient (住院) — IHKE3309S01 is the primary list with in_DATE/out_DATE
-    // span. IHKE3308S01 carries a small set of older 住院 records with the
-    // same fields (func_DATE in some rows instead of in_DATE; adapter
-    // handles both). Both feed the same encounter mapper.
+    // Inpatient (住院) — IHKE3309S01 is the SOLE authoritative 住院 list (it is what
+    // 健康存摺's 住院 page renders; user rule 2026-06-23: 住院 = ONLY what IHKE3309S01
+    // shows, nothing else). The old IHKE3308S01 ("住院舊") feed was REMOVED: IHKE3308
+    // is the 處置/手術 domain (its sibling IHKE3308S02 is the surgery/處置 detail), so
+    // its rows include 門診手術 — feeding them here minted PHANTOM admissions (real
+    // case: P22074 2025-08-04 C50.912, a 門診手術 with no 出院日 + no 住院明細, which the
+    // patient's 住院 page does NOT show). Surgeries are unaffected — they come from
+    // the procedures path (IHKE3301S05 → IHKE3308S02 detail), independent of this.
     {
       name: "inpatient",
       path: "/api/ihke3000/ihke3309s01/page_load",
-      page_type: "encounters",
-      adapt: adaptInpatientEncounter
-    },
-    {
-      name: "inpatient_legacy",
-      path: "/api/ihke3000/ihke3308s01/page_load",
       page_type: "encounters",
       adapt: adaptInpatientEncounter
     },
@@ -8341,10 +8353,10 @@
     candidates
   }) {
     if (!Array.isArray(candidates) || candidates.length === 0) {
-      return /* @__PURE__ */ new Map();
+      return { map: /* @__PURE__ */ new Map(), reasons: {} };
     }
     const reqs = candidates.filter((c) => c?.rowId);
-    if (reqs.length === 0) return /* @__PURE__ */ new Map();
+    if (reqs.length === 0) return { map: /* @__PURE__ */ new Map(), reasons: {} };
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId },
       func: async (base, items) => {
@@ -8354,8 +8366,7 @@
           return { error: "SESSION_EXPIRED" };
         }
         const auth = `Bearer ${token}`;
-        async function fetchOne(rowId2, ctype) {
-          const url = `${base}/api/ihke3000/IHKE3309S02/getxml?crid=${encodeURIComponent(rowId2)}&ctype=${encodeURIComponent(ctype || "3")}`;
+        async function attemptGetxml(url) {
           const ac = new AbortController();
           const t = setTimeout(() => ac.abort(), 2e4);
           try {
@@ -8367,23 +8378,37 @@
             });
             clearTimeout(t);
             if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
+            if (r.status === 429 || r.status >= 500) return { retry: `HTTP ${r.status}` };
             if (!r.ok) return { error: `HTTP ${r.status}` };
             const body = await r.json();
             const html = body && typeof body.file_name === "string" && body.file_name.length > 0 ? body.file_name : null;
-            if (!html) return { error: "no html in body" };
+            if (!html) return { retry: "no html in body" };
             return { html };
           } catch (e) {
             clearTimeout(t);
-            return { error: e?.name === "AbortError" ? "timeout 20s" : String(e?.message || e) };
+            return { retry: e?.name === "AbortError" ? "timeout 20s" : String(e?.message || e) };
           }
+        }
+        async function fetchOne(rowId2, ctype) {
+          const url = `${base}/api/ihke3000/IHKE3309S02/getxml?crid=${encodeURIComponent(rowId2)}&ctype=${encodeURIComponent(ctype || "3")}`;
+          const MAX = 3;
+          let last = "unknown";
+          for (let i = 0; i < MAX; i++) {
+            if (i > 0) await new Promise((r) => setTimeout(r, 1200 * i));
+            const res = await attemptGetxml(url);
+            if ("html" in res) return res;
+            if (res.error) return res;
+            last = res.retry;
+          }
+          return { error: last };
         }
         const out = new Array(items.length);
         let next = 0;
-        const CONC = 3;
+        const CONC = 1;
         async function worker() {
           while (next < items.length) {
             const i = next++;
-            await new Promise((r) => setTimeout(r, Math.random() * 50));
+            await new Promise((r) => setTimeout(r, 250));
             const item = items[i];
             if (!item) continue;
             const res = await fetchOne(item.rowId, item.ctype);
@@ -8406,12 +8431,16 @@
     }
     const results = result?.results || [];
     const map = /* @__PURE__ */ new Map();
+    const reasons = {};
     for (const r of results) {
       if (r?.rowId && typeof r.html === "string" && r.html.length > 0) {
         map.set(r.rowId, r.html);
+      } else if (r) {
+        const k = String(r.error || "unknown");
+        reasons[k] = (reasons[k] || 0) + 1;
       }
     }
-    return map;
+    return { map, reasons };
   }
 
   // src/background/imaging-list-status.ts
@@ -8863,6 +8892,7 @@
     const inpatientProcedureItems = [];
     let dischargeFetched = 0;
     let dischargeFetchFailed = 0;
+    const dischargeFailReasons = {};
     const inpIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "inpatient");
     if (inpIdx >= 0 && settled[inpIdx].status === "fulfilled") {
       const visits = settled[inpIdx].value.rawList || [];
@@ -8908,7 +8938,7 @@
           dischargeCandidates = dischargeCandidatesRaw.length;
           if (dischargeCandidatesRaw.length > 0) {
             try {
-              const htmlMap = await withProgressTimer(
+              const { map: htmlMap, reasons: failReasons } = await withProgressTimer(
                 (sec) => sec === 0 ? `\u{1F4E5} \u53D6\u5F97 ${dischargeCandidatesRaw.length} \u4EFD\u51FA\u9662\u75C5\u6458\u2026` : `\u{1F4E5} \u53D6\u5F97 ${dischargeCandidatesRaw.length} \u4EFD\u51FA\u9662\u75C5\u6458\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
                 () => fetchDischargeSummaryHtmls({
                   tabId,
@@ -8916,6 +8946,9 @@
                   candidates: dischargeCandidatesRaw.map(({ rowId: rowId2, ctype }) => ({ rowId: rowId2, ctype }))
                 })
               );
+              for (const [k, v] of Object.entries(failReasons)) {
+                dischargeFailReasons[k] = (dischargeFailReasons[k] || 0) + v;
+              }
               for (const cand of dischargeCandidatesRaw) {
                 const html = htmlMap.get(cand.rowId);
                 if (!html) {
@@ -9390,7 +9423,16 @@
       }
       if (ep.name === "inpatient" && dischargeCandidates > 0) {
         const parts = [`${dischargeFetched}/${dischargeCandidates} \u51FA\u9662\u75C5\u6458`];
-        if (dischargeFetchFailed > 0) parts.push(`${dischargeFetchFailed} \u6293\u53D6\u5931\u6557`);
+        if (dischargeFetchFailed > 0) {
+          const lab = (k) => k === "SESSION_EXPIRED" ? "\u767B\u5165\u904E\u671F" : k === "HTTP 429" ? "\u9650\u6D41" : /^HTTP 5/.test(k) ? "\u4F3A\u670D\u5668" : /^HTTP 4/.test(k) ? "HTTP4xx" : /timeout/.test(k) ? "\u903E\u6642" : /no html/.test(k) ? "\u7A7A\u56DE\u61C9" : "\u7DB2\u8DEF";
+          const agg = {};
+          for (const [k, v] of Object.entries(dischargeFailReasons)) {
+            const l = lab(k);
+            agg[l] = (agg[l] || 0) + v;
+          }
+          const why = Object.entries(agg).map(([l, n]) => `${n}\xD7${l}`).join("\u3001");
+          parts.push(`${dischargeFetchFailed} \u6293\u53D6\u5931\u6557\uFF08${why ? `${why}\u30FB` : ""}\u53EF\u91CD\u6293\uFF09`);
+        }
         breakdown.push(`\u3000${parts.join(" / ")}`);
       }
       if (items.length === 0) continue;

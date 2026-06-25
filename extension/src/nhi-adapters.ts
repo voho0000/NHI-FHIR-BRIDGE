@@ -551,11 +551,12 @@ export function adaptAdultPreventive(row) {
   return out;
 }
 
-// IHKE3309S01 (住院 inpatient list) — gives proper admission/discharge.
-// Shape: {hosp_ID, hosp_ABBR, hosp_url, in_DATE, out_DATE,
-//         icd9cm_CODE, icd9cm_CODE_CNAME, ori_TYPE("3"), row_ID, ...}
-// IHKE3308S01 has the same shape for a small set of older 住院 records;
-// `func_DATE` instead of `in_DATE` in some rows — adapter accepts both.
+// IHKE3309S01 (住院 inpatient list) — the SOLE 住院 source (user rule 2026-06-23:
+// 住院 = only what 健康存摺's IHKE3309S01 page shows). Shape: {hosp_ID, hosp_ABBR,
+// hosp_url, in_DATE, out_DATE, icd9cm_CODE, icd9cm_CODE_CNAME, ori_TYPE("3"),
+// row_ID, ...}. (The old IHKE3308S01 "住院舊" feed was removed — it is the 處置/手術
+// domain and minted phantom admissions from 門診手術; see nhi-endpoints.ts.) The
+// func_DATE fallback below is kept defensively for any IHKE3309S01 row variant.
 export function adaptInpatientEncounter(item, options) {
   if (!item || typeof item !== "object") return null;
   const start = rocToISO(item.in_DATE || item.func_DATE || "");

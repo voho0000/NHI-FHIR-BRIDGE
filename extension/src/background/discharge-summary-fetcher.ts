@@ -31,10 +31,10 @@ import { SESSION_EXPIRED_ERROR } from "./constants.js";
  * `has_XML === "Y"` flag fired in the S02 detail body. Empty input
  * short-circuits with an empty Map.
  *
- * Returns `Map<row_ID, htmlString>` for rows that succeeded; row IDs
- * that errored or returned no `file_name` simply don't appear in the
- * map. Caller (orchestrator) consults the map by row_ID when building
- * adapter rows for the mapper.
+ * Returns `{ map: Map<row_ID, htmlString>, reasons: {error → count} }`.
+ * Successful rows go in the map; failed rows (error / no `file_name`) are
+ * tallied into `reasons` so the breakdown can show WHY 病摘 were lost
+ * (登入過期/401 vs 逾時 vs …) instead of a bare "N 抓取失敗".
  */
 export async function fetchDischargeSummaryHtmls({
   tabId,
@@ -44,12 +44,12 @@ export async function fetchDischargeSummaryHtmls({
   tabId: number;
   baseUrl: string;
   candidates: Array<{ rowId: string; ctype: string }>;
-}): Promise<Map<string, string>> {
+}): Promise<{ map: Map<string, string>; reasons: Record<string, number> }> {
   if (!Array.isArray(candidates) || candidates.length === 0) {
-    return new Map();
+    return { map: new Map(), reasons: {} };
   }
   const reqs = candidates.filter((c) => c?.rowId);
-  if (reqs.length === 0) return new Map();
+  if (reqs.length === 0) return { map: new Map(), reasons: {} };
 
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
@@ -61,10 +61,8 @@ export async function fetchDischargeSummaryHtmls({
       }
       const auth = `Bearer ${token}`;
 
-      async function fetchOne(rowId: string, ctype: string) {
-        const url =
-          `${base}/api/ihke3000/IHKE3309S02/getxml` +
-          `?crid=${encodeURIComponent(rowId)}&ctype=${encodeURIComponent(ctype || "3")}`;
+      // One getxml attempt → {html} | {error} (stop) | {retry} (transient).
+      async function attemptGetxml(url: string) {
         const ac = new AbortController();
         const t = setTimeout(() => ac.abort(), 20000);
         try {
@@ -76,6 +74,9 @@ export async function fetchDischargeSummaryHtmls({
           });
           clearTimeout(t);
           if (r.status === 401 || r.status === 403) return { error: "SESSION_EXPIRED" };
+          // Transient server states — retry rather than drop a 病摘 the gate
+          // (has_XML="Y") already confirmed exists.
+          if (r.status === 429 || r.status >= 500) return { retry: `HTTP ${r.status}` };
           if (!r.ok) return { error: `HTTP ${r.status}` };
           const body: any = await r.json();
           // NHI's envelope: `file_name` is the field that carries the
@@ -86,26 +87,52 @@ export async function fetchDischargeSummaryHtmls({
             body && typeof body.file_name === "string" && body.file_name.length > 0
               ? body.file_name
               : null;
-          if (!html) return { error: "no html in body" };
+          // has_XML="Y" promised a document, so an empty body is far more likely a
+          // transient NHI hiccup than a real absence — retry before giving up.
+          if (!html) return { retry: "no html in body" };
           return { html };
         } catch (e: any) {
           clearTimeout(t);
-          return { error: e?.name === "AbortError" ? "timeout 20s" : String(e?.message || e) };
+          // Network drop / 20s timeout — transient, retry.
+          return { retry: e?.name === "AbortError" ? "timeout 20s" : String(e?.message || e) };
         }
       }
 
-      // Bounded concurrency mirroring `fetchDetailsInTab`. The getxml
-      // endpoint streams ~13 KB per row; CONC=3 keeps NHI side from
-      // throttling without making 100-row patients take a minute.
+      // Retry transient failures (timeout / 5xx / 429 / network / empty body)
+      // with backoff. Without this a single network blip SILENTLY drops a 出院
+      //病摘 the gate already confirmed exists — the v1.0.6 miss (P22074 2025-01-17
+      // etc.: has_XML=Y, getxml 200 + real 病摘, lost to a no-retry blip during a
+      // 26-stay fan-out). SESSION_EXPIRED and deterministic 4xx stop immediately.
+      async function fetchOne(rowId: string, ctype: string) {
+        const url =
+          `${base}/api/ihke3000/IHKE3309S02/getxml` +
+          `?crid=${encodeURIComponent(rowId)}&ctype=${encodeURIComponent(ctype || "3")}`;
+        const MAX = 3;
+        let last = "unknown";
+        for (let i = 0; i < MAX; i++) {
+          if (i > 0) await new Promise((r) => setTimeout(r, 1200 * i)); // 1.2s, 2.4s backoff
+          const res: any = await attemptGetxml(url);
+          if ("html" in res) return res;
+          if (res.error) return res; // SESSION_EXPIRED / deterministic 4xx — stop
+          last = res.retry; // transient — loop and retry
+        }
+        return { error: last };
+      }
+
+      // SERIAL (CONC=1) + pacing. NHI throttles rapid getxml bursts by returning
+      // 401 — which the retry above deliberately SKIPS (401 = stop), so the 病摘 is
+      // silently dropped. Real case (P22074 2026-06-25): 6/23 lost at CONC=3, and a
+      // re-sync reproduced the SAME loss = NOT a transient blip — it's the burst
+      // tripping NHI's rate limit. One-request-at-a-time with a gap stays under the
+      // limit (the imaging "gentle > clever" lesson). ~23 rows × ~0.3s ≈ a few extra
+      // seconds — reliability > speed for 出院病摘.
       const out: Array<{ rowId: string; html?: string; error?: string }> = new Array(items.length);
       let next = 0;
-      const CONC = 3;
+      const CONC = 1;
       async function worker() {
         while (next < items.length) {
           const i = next++;
-          // Tiny jitter so 3 workers don't all hit NHI at the same
-          // microsecond (mirrors fetchDetailsInTab).
-          await new Promise((r) => setTimeout(r, Math.random() * 50));
+          await new Promise((r) => setTimeout(r, 250)); // pace serial requests
           const item = items[i];
           if (!item) continue;
           const res = await fetchOne(item.rowId, item.ctype);
@@ -127,12 +154,17 @@ export async function fetchDischargeSummaryHtmls({
   if ((result as any)?.error === "SESSION_EXPIRED") {
     throw new Error(SESSION_EXPIRED_ERROR);
   }
-  const results: Array<{ rowId: string; html?: string }> = (result as any)?.results || [];
+  const results: Array<{ rowId: string; html?: string; error?: string }> =
+    (result as any)?.results || [];
   const map = new Map<string, string>();
+  const reasons: Record<string, number> = {};
   for (const r of results) {
     if (r?.rowId && typeof r.html === "string" && r.html.length > 0) {
       map.set(r.rowId, r.html);
+    } else if (r) {
+      const k = String(r.error || "unknown");
+      reasons[k] = (reasons[k] || 0) + 1;
     }
   }
-  return map;
+  return { map, reasons };
 }

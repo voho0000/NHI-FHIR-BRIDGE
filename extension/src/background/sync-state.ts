@@ -70,7 +70,10 @@ export async function setStatus(partial) {
 // message; called every 3 seconds while the awaited promise is in flight.
 // Final setStatus call fires only on completion (so the "complete" message
 // replaces the "in-progress" one cleanly).
-export async function withProgressTimer(makeLabel, fn) {
+export async function withProgressTimer<T>(
+  makeLabel: (elapsedSec: number) => string,
+  fn: () => Promise<T>,
+): Promise<T> {
   const start = Date.now();
   await setStatus({ progress: makeLabel(0) });
   const interval = setInterval(() => {
