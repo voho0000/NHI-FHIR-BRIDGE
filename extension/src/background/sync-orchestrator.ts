@@ -52,9 +52,8 @@ import {
 } from "./nhi-detail-fetchers.js";
 import {
   appendPendingImaging,
-  closeImagingConfirmHiddenTab,
   loadPendingImaging,
-  openImagingConfirmHiddenTab,
+  openImagingConfirmForegroundTab,
   pollFetchImagingJpegs,
   removePendingImaging,
   saveBearerTokenForBgPoll,
@@ -482,35 +481,49 @@ export async function runNhiApiSync({
       // NOT trigger it). Render it once in a HIDDEN tab (undisturbing), then
       // poll THAT tab until rows resolve to A/1. Best-effort: if the render
       // throws, fall back to the visible-tab poll (old behavior).
-      let confirmTabId: number | null = null;
       try {
         const imgEp = NHI_API_ENDPOINTS[imgIdx];
         const imagingUrl =
           BASE +
           (imgEp.supportsDateRange ? applyDateRangeToPath(imgEp.path, dateRange) : imgEp.path);
+        // SINGLE gentle foreground arm (user-chosen 2026-06-25). Facts:
+        //   (1) Only a PAGE RENDER advances NHI's image confirmation — a pure-API
+        //       page_load poll does NOT (verified 2026-06-17; re-probed 2026-06-25:
+        //       ~64s of bare API polling left a 等候備齊 row unmoved). The SPA also
+        //       does NOT auto-refresh its own DOM, so staring at the page looks
+        //       "stuck at 資料確認中" even while server-side status moves.
+        //   (2) Some E-channel rows have a medical-grade DCM but NHI never makes a
+        //       JPG preview for them at all (live screenshot 2026-06-25: 臺北榮總
+        //       19012C, JPG=無資料, DCM=14.49MB+產製檔案). bridge only handles JPG,
+        //       so those rows are UN-fetchable no matter how many times we render.
+        // Given (1)+(2) auto-arm is fundamentally limited AND short-time repeated
+        // renders are exactly what tripped NHI's per-patient JPG cooldown (the
+        // reverted 6×-reload Part B). So the RELIABLE path is the user's own
+        // foreground visit via the 前往影像頁 button (set below). Here we keep only
+        // ONE gentle best-effort render — gated by imagingListNeedsResolve above, so
+        // it fires ONLY when the user hasn't already armed the list themselves
+        // (rows still un-resolved). No re-render loop, no navigate-back: gentle, so
+        // it can't trip the cooldown. If it's not enough, the button takes over.
         try {
-          confirmTabId = await openImagingConfirmHiddenTab(tabId, BASE);
+          await openImagingConfirmForegroundTab(tabId, BASE);
         } catch (e: any) {
-          // SESSION_EXPIRED / cancel propagate; other render failures just
-          // mean we poll the visible tab as before.
+          // SESSION_EXPIRED / cancel propagate; other render failures just mean we
+          // poll the (un-armed) tab as a best-effort fallback.
           if (e?.message === SESSION_EXPIRED_ERROR || e?.message === CANCEL_ERROR) throw e;
         }
-        const pollTabId = confirmTabId ?? tabId;
         const resolved = await withProgressTimer(
           (sec) =>
             sec === 0
               ? "🔄 健康存摺正在確認影像清單，請稍候…"
               : `🔄 健康存摺正在確認影像清單，請稍候…（已 ${sec} 秒）`,
+          // ~30s (10×3s), early-exits on the first usable row. One pass only — if
+          // the list is still unsettled the user re-syncs (count-less tail) or uses
+          // the 前往影像頁 button to arm it themselves.
           () =>
-            // 20×3s ≈ 60s, early-exits on the first usable row. With the page
-            // now RENDERED (hidden tab) NHI's confirmation is armed, so the
-            // poll actually converges instead of spinning. Still-unsettled
-            // lists (many rows, slow confirm) fall back to the user re-syncing
-            // (count-less reminder tail) — but the arm persists server-side.
             refetchImagingListUntilResolved({
-              tabId: pollTabId,
+              tabId,
               url: imagingUrl,
-              maxAttempts: 20,
+              maxAttempts: 10,
               intervalMs: 3000,
             }),
         );
@@ -520,8 +533,6 @@ export async function runNhiApiSync({
         }
       } catch (e: any) {
         errors.push(`imaging list confirm: ${e?.message || e}`);
-      } finally {
-        await closeImagingConfirmHiddenTab(confirmTabId);
       }
     }
     // Rows still "資料確認中" ("-") after the wait — real images coming, NHI
@@ -1045,7 +1056,21 @@ export async function runNhiApiSync({
     const { items, raw_count } = s.value;
     if (raw_count === 0) continue; // nothing to show
     let line: string;
-    if (items.length > raw_count && raw_count > 0) {
+    if (ep.name === "imaging" && Array.isArray(s.value.rawList) && s.value.rawList.length > 0) {
+      // 健保 ships ONE upload-channel ROW per channel (報告[A] / 影像[E]), so the
+      // raw row count over-counts the actual number of distinct STUDIES — a
+      // study's 報告 + 影像 channels share one (醫令碼, 日期, 院所). Show BOTH so
+      // "健保清單 N 列" reconciles with "M 件檢查" instead of the confusing
+      // mismatch the user kept hitting (2026-06-26: 5 列 vs 「4 筆」).
+      const rl = s.value.rawList;
+      const studyKeys = new Set(
+        rl.map(
+          (r: any) =>
+            `${r.order_CODE ?? r.order_code ?? ""}|${r.real_INSPECT_DATE ?? r.real_inspect_date ?? ""}|${r.hosp_ABBR ?? r.hosp_abbr ?? ""}`,
+        ),
+      );
+      line = `${label}：${studyKeys.size} 件（健保 ${rl.length} 筆上傳列）`;
+    } else if (items.length > raw_count && raw_count > 0) {
       // 1-to-many adapter (e.g. adult_preventive: one screening row →
       // ~18 Observations). Show both numbers so the user understands
       // why one record produced many.
@@ -1082,12 +1107,30 @@ export async function runNhiApiSync({
       // from trigger flow.
       const totalItems = (items?.length ?? 0) || 0;
       const narrativeOnly = Math.max(0, totalItems - total);
+      // DCM-only upload rows: an image channel (E) NHI settled to "2" 無 JPG but
+      // that still holds a DICOM original (imG_SIZE / img_ORI_SIZE > 0). bridge
+      // handles JPG only, so these yield no fetchable image — surface them so the
+      // upload-row tally reconciles (影像 + 文字 + 僅DICOM = 上傳列數) AND the user
+      // knows a DICOM original is downloadable from the imaging page if wanted.
+      const _rawList = Array.isArray(s.value.rawList) ? s.value.rawList : [];
+      const dcmOnly = _rawList.filter((r: any) => {
+        const st = String(r.jpG_STATUS ?? r.jpg_STATUS ?? r.JPG_STATUS ?? "");
+        const ori = String(r.ori_TYPE ?? r.ori_type ?? "");
+        const size = Number.parseInt(
+          String(r.imG_SIZE ?? r.img_SIZE ?? r.img_ORI_SIZE ?? r.img_size ?? "0"),
+          10,
+        );
+        return ori === "E" && st === "2" && Number.isFinite(size) && size > 0;
+      }).length;
       let imagingLine =
         frames > ready
-          ? `　含 ${ready}/${total} 筆影像 (${frames} frames)`
-          : `　含 ${ready}/${total} 張影像`;
+          ? `　影像 ${ready}/${total} 筆 (${frames} frames)`
+          : `　影像 ${ready}/${total} 筆`;
       if (narrativeOnly > 0) {
-        imagingLine += `，另 ${narrativeOnly} 筆僅敘述`;
+        imagingLine += `，文字報告 ${narrativeOnly} 筆`;
+      }
+      if (dcmOnly > 0) {
+        imagingLine += `，僅 DICOM 原始檔 ${dcmOnly} 筆（無 JPG、未下載）`;
       }
       // Secondary breakdown: cache vs fresh trigger vs waiting vs
       // failures. "等 NHI 端準備" is the user-facing label for
@@ -1166,8 +1209,12 @@ export async function runNhiApiSync({
         const noImage = Math.max(0, items.length - confirming);
         if (confirming > 0) {
           breakdown.push(
-            `　${confirming} 筆影像仍在健康存摺備製中（資料確認中），稍後再按「取得健康存摺資料」即可取得圖片。`,
+            `　${confirming} 筆影像仍在健康存摺備製中（資料確認中）。請點下方按鈕前往影像頁，待該筆顯示「影像檔」後，再按一次「取得健康存摺資料」即可補齊。`,
           );
+          // This per-row note IS where 資料確認中 is surfaced (the summary tail no
+          // longer fires off it), so a genuinely-stuck brand-new "-" patient
+          // still gets the 前往影像頁 button to arm NHI + re-check.
+          _imagingNeedsArm = true;
         }
         if (noImage > 0) {
           // Honest wording: do NOT claim 無影像檔 — we can't distinguish a
@@ -1475,20 +1522,22 @@ export async function runNhiApiSync({
     imgIdx >= 0 && settled[imgIdx].status === "fulfilled"
       ? (settled[imgIdx].value.jpegFetchFailedCount ?? 0)
       : 0;
-  // Rows still "資料確認中" ("-") at sync end — NHI hadn't settled the list,
-  // so these couldn't be triggered/fetched yet. Real images are coming; the
-  // count-less re-sync tail tells the user to re-fetch in a few minutes (once
-  // NHI settles the list, a re-sync triggers + fetches them normally).
-  const _confirmingCount =
-    imgIdx >= 0 && settled[imgIdx].status === "fulfilled"
-      ? (settled[imgIdx].value.jpegConfirmingCount ?? 0)
-      : 0;
-  // Imaging "still pending, re-sync later" tail — COUNT-LESS (user 2026-06-17:
-  // the live "1/5 張準備中" counts were unreliable, so the summary drops all
-  // numbers). One sentence covers every pending case — triggered-waiting /
-  // 資料確認中 ("-") / fetch-failed — since the user action is the same:
-  // re-sync in a few minutes. Per-category counts still live in 查看明細.
-  const _imagingPending = _waitingCount > 0 || _confirmingCount > 0 || _fetchFailCount > 0;
+  // Imaging "still pending, re-sync later" tail. COUNT-LESS (user 2026-06-17:
+  // live counts were unreliable). Fires ONLY on signals that (a) a re-sync will
+  // actually FETCH and (b) are VISIBLE in 查看明細's per-row stats:
+  // triggered-waiting (等候備齊 / 前次等候) + fetch-failed (抓取失敗).
+  //
+  // Deliberately NOT driven by the 資料確認中 ("-") count. That count is INVISIBLE
+  // in those per-row stats AND ambiguous + transient: a "-" row caught mid-sync
+  // almost always settles to "2" 無影像檔 (DCM-only / no-JPG), which a re-sync
+  // can NOT 補齊 — so promising "再按即可補齊" is a false nag. This was the
+  // recurring "明細全 0 卻還說備製中" complaint (2026-06-26): the list resolves to
+  // all-"2"/"1" by the time the user re-checks, yet the tail fired off a "-"
+  // snapshot taken mid-sync. Tying the tail to the visible fetchable signals
+  // makes "every category reads 0 ⇒ no tail" true by construction. A genuinely
+  // stuck brand-new "-" patient is still served by the per-row 資料確認中 note +
+  // the 前往影像頁 button — not this summary tail.
+  const _imagingPending = _waitingCount > 0 || _fetchFailCount > 0;
   const _imagingTail = _imagingPending
     ? "（部分影像仍在健康存摺備製中，請過幾分鐘後再按「取得健康存摺資料」即可補齊）"
     : "";
@@ -1518,11 +1567,15 @@ export async function runNhiApiSync({
     histno: patientOverride.id_no,
     mode,
     localFilename: _localFilename,
-    // Part A (v1.0.4): when imaging came back with 0 fetchable image bytes
-    // but rows exist, the popup surfaces a one-click link to the 影像清單 page
-    // so the user can arm NHI's confirmation themselves + re-sync. Absent
-    // (undefined) in every other case → popup renders no imaging CTA.
-    imagingArmUrl: _imagingNeedsArm ? `${BASE}/IHKE3000/IHKE3408S01` : undefined,
+    // v1.0.7: surface the one-click 前往影像頁 link whenever imaging is opted-in
+    // and ANY row didn't yield JPG bytes — both the "0 張可下載" case
+    // (_imagingNeedsArm, jpG_STATUS "2") AND the "部分備製中/等候備齊" case
+    // (_imagingPending: waiting / 資料確認中 / fetch-failed). The user's own
+    // foreground visit reliably arms NHI's confirmation (a real render, not a
+    // throttled bg tab), so the button is the dependable path when bridge's
+    // single gentle auto-arm wasn't enough. Absent (undefined) only when every
+    // imaging row was fetched → popup renders no CTA.
+    imagingArmUrl: _imagingNeedsArm || _imagingPending ? `${BASE}/IHKE3000/IHKE3408S01` : undefined,
   });
 
   // Paint a red dot on the toolbar icon so a user who closed the popup

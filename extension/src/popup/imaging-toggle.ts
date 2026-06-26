@@ -7,14 +7,22 @@
 // .checked) and passed through to the background orchestrator as part
 // of the startNhiApiSync payload.
 import { els } from "./els.js";
+import { state } from "./state.js";
 
-// The JPG≠DICOM reminder is only relevant once the user opts into imaging,
-// so it tracks the checkbox state (hidden when off → zero footprint for the
-// common text-report-only path).
-function syncJpgNote(enabled: boolean) {
-  if (els.imagingJpgNote) {
-    els.imagingJpgNote.hidden = !enabled;
-  }
+// The imaging note (JPG≠DICOM + inline 前往影像頁 link) is PRE-SYNC guidance.
+// Show it only when (一併下載 is on) AND (no sync result is showing yet): once a
+// bundle has been generated the result zone carries its OWN 前往影像頁 chip, and
+// keeping this note alongside it reads cluttered (user feedback 2026-06-26).
+// Called from the toggle handlers AND wizard's _refreshResultZone — so it
+// re-hides the moment a sync completes, and re-appears if the user clears the
+// result (status dismissed / bundle cleared).
+export function refreshImagingNoteVisibility() {
+  if (!els.imagingJpgNote) return;
+  const enabled = els.fetchImagingEnabled?.checked === true;
+  const bundleShown = !!els.pendingBundle && !els.pendingBundle.hidden;
+  const st = state.latestStatus;
+  const doneStatus = !!st && !st.running && (st.phase === "done" || st.phase === "downloaded");
+  els.imagingJpgNote.hidden = !(enabled && !bundleShown && !doneStatus);
 }
 
 export async function loadFetchImagingEnabled() {
@@ -28,11 +36,11 @@ export async function loadFetchImagingEnabled() {
   if (els.fetchImagingOff) {
     els.fetchImagingOff.checked = !enabled;
   }
-  syncJpgNote(enabled);
+  refreshImagingNoteVisibility();
 }
 
 export async function onFetchImagingToggle() {
   const enabled = els.fetchImagingEnabled?.checked === true;
   await chrome.storage.local.set({ fetchImagingEnabled: enabled });
-  syncJpgNote(enabled);
+  refreshImagingNoteVisibility();
 }

@@ -55,3 +55,21 @@ export function countImagingConfirming(rows: any[]): number {
 export function imagingListNeedsResolve(rows: any[]): boolean {
   return !rows.some(imagingRowHasUsableImage);
 }
+
+// Cross-sync sweep eviction rule: a pending-stash entry (a row triggered in a
+// PAST sync, awaiting NHI prep) is UNRECOVERABLE and must be dropped when its
+// row, looked up in the current list, has either:
+//   • rolled off the list entirely (oriTypeInList === undefined) — gone, OR
+//   • settled to "2" (無影像檔 — NHI's FINAL no-JPG verdict): S03 returns empty
+//     pics forever, so keeping it loops as 前次等候 every sync + fires the false
+//     "備製中" tail (DCM-only rows are the classic case).
+// Keeping it otherwise ("1" ready / "A" triggerable / "0"/"-" in-flight) is
+// correct. SAFE against a transient "2": if the row later flips to "1"/"A", the
+// normal sync candidate path re-detects + re-fetches it — the stash isn't the
+// only route back in.
+export function shouldEvictPendingRow(
+  oriTypeInList: string | undefined,
+  statusInList: string | undefined,
+): boolean {
+  return oriTypeInList === undefined || statusInList === "2";
+}

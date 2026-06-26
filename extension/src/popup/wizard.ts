@@ -14,6 +14,7 @@
 
 import { els } from "./els.js";
 import { ICON_CHEVRON, ICON_INFO, ICON_LOCK } from "./icons.js";
+import { refreshImagingNoteVisibility } from "./imaging-toggle.js";
 import { getPatientOverride, validateBirthDate } from "./patient-form.js";
 import { state } from "./state.js";
 import { _stepNumGlyph, currentMode } from "./utils.js";
@@ -161,6 +162,11 @@ export function _refreshResultZone() {
       els.syncApiBtn.textContent = shouldDemote ? "重新取得" : "取得健康存摺資料";
     }
   }
+
+  // Hide the pre-sync imaging hint once a result exists (and re-show it if the
+  // result is cleared). Centralized in imaging-toggle so the toggle-on reveal
+  // and the result-present hide can never disagree.
+  refreshImagingNoteVisibility();
 }
 
 export function _maybeAutoAdvance() {

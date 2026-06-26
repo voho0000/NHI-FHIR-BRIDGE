@@ -113,7 +113,14 @@ export function setStatus(text, kind?, breakdown?, errors?, actions?) {
         const lineEl = document.createElement("div");
         lineEl.className = "br-row";
         const colonIdx = row.indexOf("：");
-        if (colonIdx > 0 && colonIdx < row.length - 1) {
+        // Sub-notes are indented with a full-width space (　) and are free-form
+        // sentences that can carry their OWN colons (e.g. the imaging guidance
+        // "…是否顯示「有影像檔」：顯示…"). Never colon-split those into the label/value
+        // 2-column grid — splitting at an in-sentence colon squeezes one half to
+        // ~1 char wide and wraps CJK one-character-per-line (the 跑版 bug). Render
+        // any 　-indented note full-width instead.
+        const isNote = row.startsWith("　");
+        if (!isNote && colonIdx > 0 && colonIdx < row.length - 1) {
           const labelSpan = document.createElement("span");
           labelSpan.className = "br-label";
           labelSpan.textContent = row.slice(0, colonIdx);
@@ -205,9 +212,11 @@ const IMAGING_ARM_LABEL = "🖼️ 開啟影像清單頁，查看是否有影像
 
 // CTA chip(s) for the current status. Two independent triggers, stacked when
 // both apply:
-//   1. imagingArmUrl — imaging opted-in but 0 image bytes came back (NHI
-//      confirmation expired / not yet armed). Opens the 影像清單 page in the
-//      user's EXISTING logged-in tab (see _openImagingArmTab).
+//   1. imagingArmUrl — imaging opted-in and ANY row didn't yield JPG bytes:
+//      either 0 張可下載 (jpG_STATUS "2") OR 部分備製中/等候備齊 (still
+//      confirming). The user's own foreground visit reliably arms NHI's
+//      confirmation, so this is the dependable path. Opens the 影像清單 page in
+//      the user's EXISTING logged-in tab (see _openImagingArmTab).
 //   2. phase "downloaded" — bundle saved; jump to step 4 (SMART app launcher).
 function _buildStatusActions(status) {
   const actions: Array<{ label: string; onClick: () => void }> = [];
@@ -223,31 +232,23 @@ function _buildStatusActions(status) {
   return actions;
 }
 
-// Open the 影像清單 page in the user's EXISTING logged-in NHI tab — it holds the
-// per-tab sessionStorage token AND the currently-selected 就醫對象 (for 眷屬
-// accounts a fresh tab / new login defaults back to 自己). Before navigating we
-// CHECK the tab is still logged in: a fresh tab, or a session that idled out
-// (NHI bounces it to IHKE3095S01 login / IHKE3001S99 IDLE and drops the token),
-// would otherwise dump the user on the login page with no explanation. When not
-// logged in we keep the popup open and re-render the SAME result card (breakdown
-// + chips preserved) with a clear "請先重新登入" hint so they can retry after.
-async function _openImagingArmTab(url) {
-  const showLoginHint = (msg) => {
-    const s = state.latestStatus;
-    setStatus(
-      msg,
-      "info",
-      s?.breakdown ?? null,
-      s?.errors ?? null,
-      s ? _buildStatusActions(s) : [],
-    );
-  };
+// Navigate the user's EXISTING logged-in NHI tab to the 影像清單 page — SHARED by
+// the post-sync imaging-arm chip (_openImagingArmTab) AND the step-3 前往影像頁
+// button (wired in popup.ts). The existing tab holds the per-tab sessionStorage
+// token AND the currently-selected 就醫對象 (for 眷屬 accounts a fresh tab / new
+// login defaults back to 自己). Before navigating we CHECK the tab is still
+// logged in: a fresh tab, or a session that idled out (NHI bounces it to
+// IHKE3095S01 login / IHKE3001S99 IDLE and drops the token), would otherwise
+// dump the user on the login page with no explanation. Returns null on success,
+// or a human-readable problem message the caller surfaces however fits its
+// context (the chip re-renders the result card; the step-3 button shows it
+// inline next to the button).
+export async function navigateExistingTabToImaging(url: string): Promise<string | null> {
   try {
     const tabs = await chrome.tabs.query({ url: "https://myhealthbank.nhi.gov.tw/*" });
     const target = tabs.find((t) => t.active) ?? tabs[0];
     if (target?.id == null) {
-      showLoginHint("找不到已登入的健康存摺分頁 — 請先回 ① 登入健康存摺，再點一次下方按鈕。");
-      return;
+      return "找不到已登入的健康存摺分頁 — 請先回 ① 登入健康存摺，再點一次。";
     }
     // Authenticated? token present AND not already on NHI's login / idle pages.
     // executeScript failure (rare — tab mid-navigation) → assume OK + navigate.
@@ -263,15 +264,32 @@ async function _openImagingArmTab(url) {
       loggedIn = true;
     }
     if (!loggedIn) {
-      showLoginHint("健康存摺登入已逾時 — 請先回健康存摺分頁重新登入，再點一次下方按鈕。");
-      return;
+      return "健康存摺登入已逾時 — 請先回健康存摺分頁重新登入，再點一次。";
     }
     await chrome.tabs.update(target.id, { url, active: true });
     if (target.windowId != null) {
       await chrome.windows.update(target.windowId, { focused: true }).catch(() => {});
     }
+    return null;
   } catch {
-    showLoginHint("無法開啟影像清單頁 — 請手動回健康存摺分頁、進入「影像清單」頁後再重新取得。");
+    return "無法開啟影像清單頁 — 請手動回健康存摺分頁、進入「影像清單」頁。";
+  }
+}
+
+// Post-sync imaging-arm chip handler — navigates, and on a problem re-renders
+// the SAME result card (breakdown + chips preserved) with the problem as a hint
+// so the user can retry after fixing it.
+async function _openImagingArmTab(url) {
+  const problem = await navigateExistingTabToImaging(url);
+  if (problem) {
+    const s = state.latestStatus;
+    setStatus(
+      problem,
+      "info",
+      s?.breakdown ?? null,
+      s?.errors ?? null,
+      s ? _buildStatusActions(s) : [],
+    );
   }
 }
 

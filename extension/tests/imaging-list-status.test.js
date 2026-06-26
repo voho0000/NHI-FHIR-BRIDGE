@@ -4,6 +4,7 @@ import {
   imagingListNeedsResolve,
   imagingRowHasUsableImage,
   imagingRowIsConfirming,
+  shouldEvictPendingRow,
 } from "../src/background/imaging-list-status.ts";
 
 // Silent-bug gate (CLAUDE.md rule #8). The imaging-list "still preparing"
@@ -135,5 +136,28 @@ describe("imagingRowIsConfirming — still-confirming predicate", () => {
       { jpG_STATUS: "A" }, // triggerable (already settled)
     ];
     expect(countImagingConfirming(mixed)).toBe(2);
+  });
+});
+
+// Silent-bug gate (CLAUDE.md rule #8) for the v1.0.7 cross-sync sweep eviction.
+// Repro: a row triggered in a past sync gets stashed; once NHI settles it to
+// "2" (無影像檔 — e.g. a DCM-only row) the sweep kept it (rid still in list) and
+// S03 returned empty pics forever → it re-stashed as 前次等候 EVERY sync and
+// fired the false "備製中" tail. shouldEvictPendingRow now drops it.
+describe("shouldEvictPendingRow — drop unrecoverable pending-stash entries", () => {
+  it("rid rolled off the list (oriType undefined) → evict", () => {
+    expect(shouldEvictPendingRow(undefined, undefined)).toBe(true);
+    expect(shouldEvictPendingRow(undefined, "A")).toBe(true);
+  });
+
+  it("rid present + settled to '2' (無影像檔 / DCM-only) → evict (the 前次等候 leak)", () => {
+    expect(shouldEvictPendingRow("E", "2")).toBe(true);
+    expect(shouldEvictPendingRow("A", "2")).toBe(true);
+  });
+
+  it("rid present + still in-flight ('1'/'A'/'0'/'-') → KEEP", () => {
+    for (const status of ["1", "A", "0", "-"]) {
+      expect(shouldEvictPendingRow("E", status)).toBe(false);
+    }
   });
 });

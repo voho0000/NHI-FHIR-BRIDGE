@@ -476,6 +476,7 @@
   var DEFAULT_MODE = "local";
   var NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
   var NHI_LOGIN_URL = "https://myhealthbank.nhi.gov.tw/IHKE3000/IHKE3095S01";
+  var NHI_IMAGING_URL = "https://myhealthbank.nhi.gov.tw/IHKE3000/IHKE3408S01";
   var PENDING_BUNDLE_KEY = "pendingFhirBundle";
   var PENDING_BUNDLE_JSON_KEY = "pendingFhirBundleJson";
   var RANGE_LABELS = {
@@ -553,6 +554,10 @@
     // JPG≠DICOM reminder — revealed only when 一併下載 is selected
     // (imaging-toggle.ts toggles [hidden]).
     imagingJpgNote: byId("imaging-jpg-note"),
+    // Up-front 前往影像頁 button + its inline problem message, inside the JPG note
+    // (revealed together). Lets the user arm NHI's image prep BEFORE syncing.
+    imagingArmPrefetchBtn: byId("imaging-arm-prefetch-btn"),
+    imagingArmPrefetchMsg: byId("imaging-arm-prefetch-msg"),
     openNhiSection: byId("open-nhi-section"),
     openNhiBtn: byId("open-nhi-btn"),
     nhiNeedsLoginSection: byId("nhi-needs-login-section"),
@@ -1876,6 +1881,32 @@
     }
   }
 
+  // src/popup/imaging-toggle.ts
+  function refreshImagingNoteVisibility() {
+    if (!els.imagingJpgNote) return;
+    const enabled = els.fetchImagingEnabled?.checked === true;
+    const bundleShown = !!els.pendingBundle && !els.pendingBundle.hidden;
+    const st = state.latestStatus;
+    const doneStatus = !!st && !st.running && (st.phase === "done" || st.phase === "downloaded");
+    els.imagingJpgNote.hidden = !(enabled && !bundleShown && !doneStatus);
+  }
+  async function loadFetchImagingEnabled() {
+    const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
+    const enabled = fetchImagingEnabled === true;
+    if (els.fetchImagingEnabled) {
+      els.fetchImagingEnabled.checked = enabled;
+    }
+    if (els.fetchImagingOff) {
+      els.fetchImagingOff.checked = !enabled;
+    }
+    refreshImagingNoteVisibility();
+  }
+  async function onFetchImagingToggle() {
+    const enabled = els.fetchImagingEnabled?.checked === true;
+    await chrome.storage.local.set({ fetchImagingEnabled: enabled });
+    refreshImagingNoteVisibility();
+  }
+
   // src/popup/wizard.ts
   function _markStep2Confirmed(yes) {
     state.step2Confirmed = !!yes;
@@ -1962,6 +1993,7 @@
         els.syncApiBtn.textContent = shouldDemote ? "\u91CD\u65B0\u53D6\u5F97" : "\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599";
       }
     }
+    refreshImagingNoteVisibility();
   }
   function _maybeAutoAdvance() {
     if (state.activeStep === 1 && _isStepDone(1)) _setActiveStep(2);
@@ -2118,7 +2150,8 @@
           const lineEl = document.createElement("div");
           lineEl.className = "br-row";
           const colonIdx = row.indexOf("\uFF1A");
-          if (colonIdx > 0 && colonIdx < row.length - 1) {
+          const isNote = row.startsWith("\u3000");
+          if (!isNote && colonIdx > 0 && colonIdx < row.length - 1) {
             const labelSpan = document.createElement("span");
             labelSpan.className = "br-label";
             labelSpan.textContent = row.slice(0, colonIdx);
@@ -2204,23 +2237,12 @@
     }
     return actions;
   }
-  async function _openImagingArmTab(url) {
-    const showLoginHint = (msg) => {
-      const s = state.latestStatus;
-      setStatus(
-        msg,
-        "info",
-        s?.breakdown ?? null,
-        s?.errors ?? null,
-        s ? _buildStatusActions(s) : []
-      );
-    };
+  async function navigateExistingTabToImaging(url) {
     try {
       const tabs = await chrome.tabs.query({ url: "https://myhealthbank.nhi.gov.tw/*" });
       const target = tabs.find((t) => t.active) ?? tabs[0];
       if (target?.id == null) {
-        showLoginHint("\u627E\u4E0D\u5230\u5DF2\u767B\u5165\u7684\u5065\u5EB7\u5B58\u647A\u5206\u9801 \u2014 \u8ACB\u5148\u56DE \u2460 \u767B\u5165\u5065\u5EB7\u5B58\u647A\uFF0C\u518D\u9EDE\u4E00\u6B21\u4E0B\u65B9\u6309\u9215\u3002");
-        return;
+        return "\u627E\u4E0D\u5230\u5DF2\u767B\u5165\u7684\u5065\u5EB7\u5B58\u647A\u5206\u9801 \u2014 \u8ACB\u5148\u56DE \u2460 \u767B\u5165\u5065\u5EB7\u5B58\u647A\uFF0C\u518D\u9EDE\u4E00\u6B21\u3002";
       }
       let loggedIn = true;
       try {
@@ -2233,16 +2255,29 @@
         loggedIn = true;
       }
       if (!loggedIn) {
-        showLoginHint("\u5065\u5EB7\u5B58\u647A\u767B\u5165\u5DF2\u903E\u6642 \u2014 \u8ACB\u5148\u56DE\u5065\u5EB7\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\uFF0C\u518D\u9EDE\u4E00\u6B21\u4E0B\u65B9\u6309\u9215\u3002");
-        return;
+        return "\u5065\u5EB7\u5B58\u647A\u767B\u5165\u5DF2\u903E\u6642 \u2014 \u8ACB\u5148\u56DE\u5065\u5EB7\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\uFF0C\u518D\u9EDE\u4E00\u6B21\u3002";
       }
       await chrome.tabs.update(target.id, { url, active: true });
       if (target.windowId != null) {
         await chrome.windows.update(target.windowId, { focused: true }).catch(() => {
         });
       }
+      return null;
     } catch {
-      showLoginHint("\u7121\u6CD5\u958B\u555F\u5F71\u50CF\u6E05\u55AE\u9801 \u2014 \u8ACB\u624B\u52D5\u56DE\u5065\u5EB7\u5B58\u647A\u5206\u9801\u3001\u9032\u5165\u300C\u5F71\u50CF\u6E05\u55AE\u300D\u9801\u5F8C\u518D\u91CD\u65B0\u53D6\u5F97\u3002");
+      return "\u7121\u6CD5\u958B\u555F\u5F71\u50CF\u6E05\u55AE\u9801 \u2014 \u8ACB\u624B\u52D5\u56DE\u5065\u5EB7\u5B58\u647A\u5206\u9801\u3001\u9032\u5165\u300C\u5F71\u50CF\u6E05\u55AE\u300D\u9801\u3002";
+    }
+  }
+  async function _openImagingArmTab(url) {
+    const problem = await navigateExistingTabToImaging(url);
+    if (problem) {
+      const s = state.latestStatus;
+      setStatus(
+        problem,
+        "info",
+        s?.breakdown ?? null,
+        s?.errors ?? null,
+        s ? _buildStatusActions(s) : []
+      );
     }
   }
   function _renderStatus() {
@@ -3054,29 +3089,6 @@
     if (currentMode() === "backend") testBackendConnection();
   }
 
-  // src/popup/imaging-toggle.ts
-  function syncJpgNote(enabled) {
-    if (els.imagingJpgNote) {
-      els.imagingJpgNote.hidden = !enabled;
-    }
-  }
-  async function loadFetchImagingEnabled() {
-    const { fetchImagingEnabled } = await chrome.storage.local.get("fetchImagingEnabled");
-    const enabled = fetchImagingEnabled === true;
-    if (els.fetchImagingEnabled) {
-      els.fetchImagingEnabled.checked = enabled;
-    }
-    if (els.fetchImagingOff) {
-      els.fetchImagingOff.checked = !enabled;
-    }
-    syncJpgNote(enabled);
-  }
-  async function onFetchImagingToggle() {
-    const enabled = els.fetchImagingEnabled?.checked === true;
-    await chrome.storage.local.set({ fetchImagingEnabled: enabled });
-    syncJpgNote(enabled);
-  }
-
   // src/popup/sync-client.ts
   async function isOnNhiLoginPage(tabId, url) {
     if (url?.pathname && /IHKE3099/.test(url.pathname)) return true;
@@ -3367,6 +3379,18 @@
   });
   els.maskNameToggle?.addEventListener("change", onMaskNameToggle);
   els.fetchImagingToggle?.addEventListener("change", onFetchImagingToggle);
+  els.imagingArmPrefetchBtn?.addEventListener("click", async () => {
+    const msgEl = els.imagingArmPrefetchMsg;
+    if (msgEl) {
+      msgEl.hidden = true;
+      msgEl.textContent = "";
+    }
+    const problem = await navigateExistingTabToImaging(NHI_IMAGING_URL);
+    if (problem && msgEl) {
+      msgEl.textContent = problem;
+      msgEl.hidden = false;
+    }
+  });
   els.apiSyncRange?.addEventListener("change", onSyncRangeChange);
   els.smartAppUrl.addEventListener("change", onSmartAppUrlChange);
   els.downloadBundleBtn.addEventListener("click", downloadPendingBundle);

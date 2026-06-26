@@ -25,6 +25,10 @@ export const NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
 // here also handles users sitting on a public sub-page like 問答專區
 // where a plain reload would just re-render the same un-auth page).
 export const NHI_LOGIN_URL = "https://myhealthbank.nhi.gov.tw/IHKE3000/IHKE3095S01";
+// 影像清單頁 (IHKE3408S01). Rendering this page is what arms NHI's per-patient
+// JPG confirmation — the up-front "前往影像頁" button (step 3) and the post-sync
+// imaging-arm chip both navigate the user's logged-in tab here.
+export const NHI_IMAGING_URL = "https://myhealthbank.nhi.gov.tw/IHKE3000/IHKE3408S01";
 
 export const PENDING_BUNDLE_KEY = "pendingFhirBundle";
 // v0.16.1: bundle storage split. Metadata (~200 B) lives in

@@ -78,6 +78,10 @@ export const els = {
   // JPG≠DICOM reminder — revealed only when 一併下載 is selected
   // (imaging-toggle.ts toggles [hidden]).
   imagingJpgNote: byId("imaging-jpg-note"),
+  // Up-front 前往影像頁 button + its inline problem message, inside the JPG note
+  // (revealed together). Lets the user arm NHI's image prep BEFORE syncing.
+  imagingArmPrefetchBtn: byId("imaging-arm-prefetch-btn"),
+  imagingArmPrefetchMsg: byId("imaging-arm-prefetch-msg"),
   openNhiSection: byId("open-nhi-section"),
   openNhiBtn: byId("open-nhi-btn"),
   nhiNeedsLoginSection: byId("nhi-needs-login-section"),

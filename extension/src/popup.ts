@@ -26,6 +26,7 @@ import {
   testBackendConnection,
 } from "./popup/connection.js";
 import {
+  NHI_IMAGING_URL,
   NHI_LANDING,
   NHI_LOGIN_URL,
   PENDING_BUNDLE_KEY,
@@ -46,6 +47,7 @@ import {
 import { state } from "./popup/state.js";
 import {
   applySyncStatus,
+  navigateExistingTabToImaging,
   refreshSyncStatusFromBackground,
   setStatus,
   stopSync,
@@ -251,6 +253,23 @@ els.maskNameToggle?.addEventListener("change", onMaskNameToggle);
 // Bind on the radiogroup container — change bubbles from whichever radio
 // (不下載 / 一併下載) the user picks.
 els.fetchImagingToggle?.addEventListener("change", onFetchImagingToggle);
+// Up-front "前往影像頁" button (revealed with the JPG note when 一併下載 is on):
+// navigate the user's logged-in NHI tab to the 影像清單 page so they can arm
+// NHI's image prep BEFORE syncing → first sync isn't half-empty. On a problem
+// (no NHI tab / session expired) show the message inline beside the button
+// rather than silently dumping them on a login page.
+els.imagingArmPrefetchBtn?.addEventListener("click", async () => {
+  const msgEl = els.imagingArmPrefetchMsg;
+  if (msgEl) {
+    msgEl.hidden = true;
+    msgEl.textContent = "";
+  }
+  const problem = await navigateExistingTabToImaging(NHI_IMAGING_URL);
+  if (problem && msgEl) {
+    msgEl.textContent = problem;
+    msgEl.hidden = false;
+  }
+});
 els.apiSyncRange?.addEventListener("change", onSyncRangeChange);
 els.smartAppUrl.addEventListener("change", onSmartAppUrlChange);
 

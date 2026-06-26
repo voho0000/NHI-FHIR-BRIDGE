@@ -144,6 +144,33 @@
       margin-top: 7px;
     }
     .imaging-jpg-note strong { font-weight: 600; }
+    /* Up-front "前往影像頁" guidance, revealed with the JPG note when 一併下載
+       is on. Sets the expectation that NHI prepares JPGs lazily, and gives a
+       one-click path to arm it BEFORE syncing (so the first sync isn't half-
+       empty). The button reuses .status-action's tint; full-width here. */
+    /* Up-front "前往影像頁" — an INLINE link (not a full-width button) so the
+       step-3 settings area stays compact and doesn't duplicate the prominent
+       post-sync 前往影像頁 chip in the result zone (showing two big imaging
+       buttons at once read as cluttered). One compact line sets the JPG-prep
+       expectation + offers the arm. */
+    .imaging-jpg-note .imaging-arm-link {
+      display: inline;
+      padding: 0;
+      border: none;
+      background: none;
+      font: inherit;
+      color: #1d4ed8;
+      font-weight: 600;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .imaging-jpg-note .imaging-arm-link:hover { color: #1e40af; }
+    .imaging-arm-prefetch-msg {
+      margin-top: 6px;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--notice-warn-fg, #92400e);
+    }
 
     /* De-identify detail — same contextual reveal as the imaging note,
        shown only when 去識別化 is 開啟. Warning line in amber. */
@@ -1277,6 +1304,7 @@
       transition: background 0.12s, color 0.12s;
       position: relative;
       user-select: none;
+      white-space: nowrap;
     }
     .mode-opt input[type="radio"] {
       position: absolute;
@@ -1288,6 +1316,23 @@
       color: #1d4ed8;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
       font-weight: 600;
+    }
+    /* "BETA" tag on 一併下載 — imaging fetch is still experimental (NHI's
+       JPG prep is flaky / per-patient throttled), so flag it as in-development
+       to set expectations. Amber pill, small + all-caps. */
+    .beta-badge {
+      margin-left: 5px;
+      padding: 2px 4px;
+      font-size: 9px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: #b45309;
+      background: #fef3c7;
+      border: 0.5px solid #fcd34d;
+      border-radius: 4px;
+      vertical-align: middle;
     }
 
 
@@ -1617,9 +1662,9 @@
               <input type="radio" name="fetch-imaging" id="fetch-imaging-off" value="off" checked />
               不下載
             </label>
-            <label class="mode-opt" title="連 X 光、電腦斷層的影像圖片一起下載；第一次大約多花 5-10 分鐘，檔案會明顯變大。">
+            <label class="mode-opt" title="連 X 光、電腦斷層的影像圖片一起下載；第一次大約多花 5-10 分鐘，檔案會明顯變大。（BETA：影像功能仍在開發中，健保 JPG 備製不穩定）">
               <input type="radio" name="fetch-imaging" id="fetch-imaging-on" value="on" />
-              一併下載
+              一併下載<span class="beta-badge">BETA</span>
             </label>
           </div>
           <span class="help-icon"
@@ -1629,7 +1674,8 @@
              (imaging-toggle.ts toggles [hidden]). Sets the expectation that
              NHI 健康存摺 exposes JPG previews, not diagnostic-grade DICOM. -->
         <div class="imaging-jpg-note" id="imaging-jpg-note" hidden>
-          影像為健康存摺提供的 <strong>JPG 圖檔</strong>，非原始 DICOM 醫學影像檔。
+          影像為健康存摺提供的 <strong>JPG 圖檔</strong>，非原始 DICOM 醫學影像檔。健保需約 1 分鐘備製，建議先<button type="button" class="imaging-arm-link" id="imaging-arm-prefetch-btn">前往影像頁</button>再取得，較能一次抓齊。
+          <div class="imaging-arm-prefetch-msg" id="imaging-arm-prefetch-msg" hidden></div>
         </div>
 
         <!-- Backend connection status — only in backend mode. Single

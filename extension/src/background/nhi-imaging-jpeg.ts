@@ -63,6 +63,7 @@ import {
   PENDING_IMAGING_TTL_MS,
   SESSION_EXPIRED_ERROR,
 } from "./constants.js";
+import { shouldEvictPendingRow } from "./imaging-list-status.js";
 import { isCancelled, setActiveImagingTabId } from "./sync-state.js";
 
 const POLL_INTERVAL_MS = 15_000;
@@ -712,6 +713,14 @@ export async function triggerImagingRowsViaHiddenTab(
 }
 
 // ────────────────────────────────────────────────────────────────────
+// ⚠️ DEPRECATED / UNUSED since v1.0.7 — do NOT re-wire these two functions.
+// The hidden-tab arm is UNRELIABLE: Chrome throttles background-tab timers, so
+// the imaging SPA's confirmation loop barely runs (its only real-world run
+// failed exactly this way, and forcing it through with a reload loop tripped
+// NHI's per-patient JPG cooldown). The sync flow now does ONE gentle
+// openImagingConfirmForegroundTab render + leans on the user-driven 前往影像頁
+// button (imagingArmUrl) as the dependable path. Kept only as reference.
+//
 // "資料準備中" ARM: render IHKE3408S01 in a hidden tab to kick off NHI's
 // server-side image confirmation.
 //
@@ -796,6 +805,41 @@ export async function closeImagingConfirmHiddenTab(tabId: number | null): Promis
     await chrome.tabs.remove(tabId);
   } catch {}
   setActiveImagingTabId(null);
+}
+
+// Foreground arm (v1.0.7, user-chosen 2026-06-25) — REPLACES the hidden-tab arm
+// above for the sync flow. The hidden-tab arm is UNRELIABLE: Chrome throttles
+// background-tab timers, so the imaging SPA's confirmation loop barely runs →
+// rows stay "-"/"2" → 0 images (its first real-world run failed exactly this way,
+// and trying to force it through with a 6×-reload loop is what tripped NHI's
+// per-patient JPG cooldown). Instead, navigate the user's MAIN (foreground,
+// already-logged-in) tab to IHKE3408S01 ONCE and LEAVE it there (the user opted
+// to NOT navigate back). Foreground tabs are NOT throttled → reliable arm; the
+// main tab already holds the session token in sessionStorage (it survives the
+// same-origin navigation) → no token inject, no login bounce. ONE render, never a
+// re-render loop — gentle, so it cannot trip the per-patient cooldown.
+// SESSION_EXPIRED / CANCEL propagate; any other failure lets the caller fall back
+// to polling the (un-armed) tab.
+export async function openImagingConfirmForegroundTab(
+  tabId: number,
+  baseUrl: string,
+): Promise<void> {
+  let token: string | null = null;
+  try {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => sessionStorage.getItem("token"),
+    });
+    const v = (res as any)?.result;
+    if (typeof v === "string" && v.length > 0) token = v;
+  } catch {
+    // ignored — throw SESSION_EXPIRED below
+  }
+  if (!token) throw new Error(SESSION_EXPIRED_ERROR);
+  if (isCancelled()) throw new Error(CANCEL_ERROR);
+  const targetUrl = `${baseUrl}/IHKE3000/IHKE3408S01`;
+  await chrome.tabs.update(tabId, { active: true, url: targetUrl });
+  await waitForTabCompleteLocal(tabId, 15_000);
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -1896,12 +1940,17 @@ export async function sweepPendingImaging(
   // between endpoints.
   const seqByRid = new Map<string, string>();
   const oriTypeByRid = new Map<string, string>();
+  const statusByRid = new Map<string, string>();
   let rowsWithSeq = 0;
   for (const row of list) {
     const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? row?.IPL_CASE_SEQ_NO ?? "");
     const rid = String(row?.row_ID ?? row?.rowid ?? row?.rowID ?? row?.roW_ID ?? "");
     const oriType = String(row?.ori_TYPE ?? row?.ori_type ?? "");
-    if (rid) oriTypeByRid.set(rid, oriType);
+    const status = String(row?.jpG_STATUS ?? row?.jpg_STATUS ?? row?.JPG_STATUS ?? "");
+    if (rid) {
+      oriTypeByRid.set(rid, oriType);
+      statusByRid.set(rid, status);
+    }
     if (seq && seq !== "-" && rid) {
       seqByRid.set(rid, seq);
       rowsWithSeq++;
@@ -1915,14 +1964,16 @@ export async function sweepPendingImaging(
   // still in list, it's a legitimate in-flight prep regardless of
   // channel — let stuck-retry attempt re-trigger and content dedup
   // handle the rest. 8-day pending-stash TTL is the upper bound.
+  // Evict pending entries NHI can no longer fulfil — rid rolled off the list,
+  // OR settled to "2" (無影像檔 final verdict; e.g. a DCM-only row whose S03
+  // returns empty pics forever). Without the "2" rule such a row loops as
+  // 前次等候 every sync + fires the false "備製中" tail. See shouldEvictPendingRow.
   const evictKeys = new Set<string>();
   for (const p of pending) {
     const rid = String(p.rid);
-    const oriInList = oriTypeByRid.get(rid);
-    if (oriInList === undefined) {
+    if (shouldEvictPendingRow(oriTypeByRid.get(rid), statusByRid.get(rid))) {
       evictKeys.add(`${p.rid}|${p.ctype}`);
     }
-    // rid present in list (any channel): keep.
   }
   if (evictKeys.size > 0) {
     console.info(

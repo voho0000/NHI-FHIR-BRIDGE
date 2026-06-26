@@ -7442,6 +7442,25 @@
     return byVisitIndex(reqs, results);
   }
 
+  // src/background/imaging-list-status.ts
+  function imagingRowHasUsableImage(row) {
+    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
+    return s === "A" || s === "1";
+  }
+  function imagingRowIsConfirming(row) {
+    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
+    return s !== "" && s !== "1" && s !== "A" && s !== "2" && s !== "0";
+  }
+  function countImagingConfirming(rows) {
+    return rows.reduce((n, r) => n + (imagingRowIsConfirming(r) ? 1 : 0), 0);
+  }
+  function imagingListNeedsResolve(rows) {
+    return !rows.some(imagingRowHasUsableImage);
+  }
+  function shouldEvictPendingRow(oriTypeInList, statusInList) {
+    return oriTypeInList === void 0 || statusInList === "2";
+  }
+
   // src/background/sync-state.ts
   var _cancelled = false;
   var _activeSyncCtx = null;
@@ -7511,11 +7530,11 @@
       const timer = setTimeout(done, timeoutMs);
     });
   }
-  async function openImagingConfirmHiddenTab(visibleTabId, baseUrl) {
+  async function openImagingConfirmForegroundTab(tabId, baseUrl) {
     let token = null;
     try {
       const [res] = await chrome.scripting.executeScript({
-        target: { tabId: visibleTabId },
+        target: { tabId },
         func: () => sessionStorage.getItem("token")
       });
       const v = res?.result;
@@ -7525,43 +7544,8 @@
     if (!token) throw new Error(SESSION_EXPIRED_ERROR);
     if (isCancelled()) throw new Error(CANCEL_ERROR);
     const targetUrl = `${baseUrl}/IHKE3000/IHKE3408S01`;
-    const hiddenTab = await chrome.tabs.create({ active: false, url: targetUrl });
-    const hiddenTabId = hiddenTab.id;
-    if (hiddenTabId == null) {
-      throw new Error("imaging-confirm: hidden tab create returned no id");
-    }
-    setActiveImagingTabId(hiddenTabId);
-    try {
-      await waitForTabCompleteLocal(hiddenTabId, 15e3);
-      await chrome.scripting.executeScript({
-        target: { tabId: hiddenTabId },
-        func: (tok) => {
-          try {
-            sessionStorage.setItem("token", tok);
-          } catch {
-          }
-        },
-        args: [token]
-      });
-      await chrome.tabs.update(hiddenTabId, { url: targetUrl });
-      await waitForTabCompleteLocal(hiddenTabId, 15e3);
-      return hiddenTabId;
-    } catch (e) {
-      try {
-        await chrome.tabs.remove(hiddenTabId);
-      } catch {
-      }
-      setActiveImagingTabId(null);
-      throw e;
-    }
-  }
-  async function closeImagingConfirmHiddenTab(tabId) {
-    if (tabId == null) return;
-    try {
-      await chrome.tabs.remove(tabId);
-    } catch {
-    }
-    setActiveImagingTabId(null);
+    await chrome.tabs.update(tabId, { active: true, url: targetUrl });
+    await waitForTabCompleteLocal(tabId, 15e3);
   }
   var SW_TRIGGER_LOOP_WALL_CLOCK_MS = 9e4;
   var SW_TRIGGER_INTER_STEP_MS = 300;
@@ -8228,12 +8212,17 @@
     const list = listResp.body.sp_IHKE3408S01_data || [];
     const seqByRid = /* @__PURE__ */ new Map();
     const oriTypeByRid = /* @__PURE__ */ new Map();
+    const statusByRid = /* @__PURE__ */ new Map();
     let rowsWithSeq = 0;
     for (const row of list) {
       const seq = String(row?.ipL_CASE_SEQ_NO ?? row?.ipl_CASE_SEQ_NO ?? row?.IPL_CASE_SEQ_NO ?? "");
       const rid = String(row?.row_ID ?? row?.rowid ?? row?.rowID ?? row?.roW_ID ?? "");
       const oriType = String(row?.ori_TYPE ?? row?.ori_type ?? "");
-      if (rid) oriTypeByRid.set(rid, oriType);
+      const status = String(row?.jpG_STATUS ?? row?.jpg_STATUS ?? row?.JPG_STATUS ?? "");
+      if (rid) {
+        oriTypeByRid.set(rid, oriType);
+        statusByRid.set(rid, status);
+      }
       if (seq && seq !== "-" && rid) {
         seqByRid.set(rid, seq);
         rowsWithSeq++;
@@ -8242,8 +8231,7 @@
     const evictKeys = /* @__PURE__ */ new Set();
     for (const p of pending) {
       const rid = String(p.rid);
-      const oriInList = oriTypeByRid.get(rid);
-      if (oriInList === void 0) {
+      if (shouldEvictPendingRow(oriTypeByRid.get(rid), statusByRid.get(rid))) {
         evictKeys.add(`${p.rid}|${p.ctype}`);
       }
     }
@@ -8441,22 +8429,6 @@
       }
     }
     return { map, reasons };
-  }
-
-  // src/background/imaging-list-status.ts
-  function imagingRowHasUsableImage(row) {
-    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
-    return s === "A" || s === "1";
-  }
-  function imagingRowIsConfirming(row) {
-    const s = String((row && (row.jpG_STATUS ?? row.jpg_STATUS ?? row.JPG_STATUS)) ?? "");
-    return s !== "" && s !== "1" && s !== "A" && s !== "2" && s !== "0";
-  }
-  function countImagingConfirming(rows) {
-    return rows.reduce((n, r) => n + (imagingRowIsConfirming(r) ? 1 : 0), 0);
-  }
-  function imagingListNeedsResolve(rows) {
-    return !rows.some(imagingRowHasUsableImage);
   }
 
   // src/background/nhi-list-fetch.ts
@@ -8984,31 +8956,25 @@
       if (!(imgIdx >= 0 && settled[imgIdx].status === "fulfilled")) return;
       let visits = settled[imgIdx].value.rawList || [];
       if (fetchImagingEnabled && visits.length > 0 && imagingListNeedsResolve(visits)) {
-        let confirmTabId = null;
         try {
           const imgEp = NHI_API_ENDPOINTS[imgIdx];
           const imagingUrl = BASE + (imgEp.supportsDateRange ? applyDateRangeToPath(imgEp.path, dateRange) : imgEp.path);
           try {
-            confirmTabId = await openImagingConfirmHiddenTab(tabId, BASE);
+            await openImagingConfirmForegroundTab(tabId, BASE);
           } catch (e) {
             if (e?.message === SESSION_EXPIRED_ERROR || e?.message === CANCEL_ERROR) throw e;
           }
-          const pollTabId = confirmTabId ?? tabId;
           const resolved = await withProgressTimer(
             (sec) => sec === 0 ? "\u{1F504} \u5065\u5EB7\u5B58\u647A\u6B63\u5728\u78BA\u8A8D\u5F71\u50CF\u6E05\u55AE\uFF0C\u8ACB\u7A0D\u5019\u2026" : `\u{1F504} \u5065\u5EB7\u5B58\u647A\u6B63\u5728\u78BA\u8A8D\u5F71\u50CF\u6E05\u55AE\uFF0C\u8ACB\u7A0D\u5019\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
-            () => (
-              // 20×3s ≈ 60s, early-exits on the first usable row. With the page
-              // now RENDERED (hidden tab) NHI's confirmation is armed, so the
-              // poll actually converges instead of spinning. Still-unsettled
-              // lists (many rows, slow confirm) fall back to the user re-syncing
-              // (count-less reminder tail) — but the arm persists server-side.
-              refetchImagingListUntilResolved({
-                tabId: pollTabId,
-                url: imagingUrl,
-                maxAttempts: 20,
-                intervalMs: 3e3
-              })
-            )
+            // ~30s (10×3s), early-exits on the first usable row. One pass only — if
+            // the list is still unsettled the user re-syncs (count-less tail) or uses
+            // the 前往影像頁 button to arm it themselves.
+            () => refetchImagingListUntilResolved({
+              tabId,
+              url: imagingUrl,
+              maxAttempts: 10,
+              intervalMs: 3e3
+            })
           );
           if (resolved?.rows?.length) {
             visits = resolved.rows;
@@ -9016,8 +8982,6 @@
           }
         } catch (e) {
           errors.push(`imaging list confirm: ${e?.message || e}`);
-        } finally {
-          await closeImagingConfirmHiddenTab(confirmTabId);
         }
       }
       settled[imgIdx].value.jpegConfirmingCount = fetchImagingEnabled ? countImagingConfirming(visits) : 0;
@@ -9344,7 +9308,15 @@
       const { items, raw_count } = s.value;
       if (raw_count === 0) continue;
       let line;
-      if (items.length > raw_count && raw_count > 0) {
+      if (ep.name === "imaging" && Array.isArray(s.value.rawList) && s.value.rawList.length > 0) {
+        const rl = s.value.rawList;
+        const studyKeys = new Set(
+          rl.map(
+            (r) => `${r.order_CODE ?? r.order_code ?? ""}|${r.real_INSPECT_DATE ?? r.real_inspect_date ?? ""}|${r.hosp_ABBR ?? r.hosp_abbr ?? ""}`
+          )
+        );
+        line = `${label}\uFF1A${studyKeys.size} \u4EF6\uFF08\u5065\u4FDD ${rl.length} \u7B46\u4E0A\u50B3\u5217\uFF09`;
+      } else if (items.length > raw_count && raw_count > 0) {
         line = `${label}\uFF1A${raw_count} \u7B46 \u2192 ${items.length} \u9805`;
       } else {
         line = `${label}\uFF1A${items.length} \u7B46`;
@@ -9366,9 +9338,22 @@
         const fetchFail = s.value.jpegFetchFailedCount ?? 0;
         const totalItems = (items?.length ?? 0) || 0;
         const narrativeOnly = Math.max(0, totalItems - total2);
-        let imagingLine = frames > ready ? `\u3000\u542B ${ready}/${total2} \u7B46\u5F71\u50CF (${frames} frames)` : `\u3000\u542B ${ready}/${total2} \u5F35\u5F71\u50CF`;
+        const _rawList = Array.isArray(s.value.rawList) ? s.value.rawList : [];
+        const dcmOnly = _rawList.filter((r) => {
+          const st = String(r.jpG_STATUS ?? r.jpg_STATUS ?? r.JPG_STATUS ?? "");
+          const ori = String(r.ori_TYPE ?? r.ori_type ?? "");
+          const size = Number.parseInt(
+            String(r.imG_SIZE ?? r.img_SIZE ?? r.img_ORI_SIZE ?? r.img_size ?? "0"),
+            10
+          );
+          return ori === "E" && st === "2" && Number.isFinite(size) && size > 0;
+        }).length;
+        let imagingLine = frames > ready ? `\u3000\u5F71\u50CF ${ready}/${total2} \u7B46 (${frames} frames)` : `\u3000\u5F71\u50CF ${ready}/${total2} \u7B46`;
         if (narrativeOnly > 0) {
-          imagingLine += `\uFF0C\u53E6 ${narrativeOnly} \u7B46\u50C5\u6558\u8FF0`;
+          imagingLine += `\uFF0C\u6587\u5B57\u5831\u544A ${narrativeOnly} \u7B46`;
+        }
+        if (dcmOnly > 0) {
+          imagingLine += `\uFF0C\u50C5 DICOM \u539F\u59CB\u6A94 ${dcmOnly} \u7B46\uFF08\u7121 JPG\u3001\u672A\u4E0B\u8F09\uFF09`;
         }
         const parts = [];
         parts.push(`${cache} \u5DF2\u5FEB\u53D6`);
@@ -9402,8 +9387,9 @@
           const noImage = Math.max(0, items.length - confirming);
           if (confirming > 0) {
             breakdown.push(
-              `\u3000${confirming} \u7B46\u5F71\u50CF\u4ECD\u5728\u5065\u5EB7\u5B58\u647A\u5099\u88FD\u4E2D\uFF08\u8CC7\u6599\u78BA\u8A8D\u4E2D\uFF09\uFF0C\u7A0D\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u53D6\u5F97\u5716\u7247\u3002`
+              `\u3000${confirming} \u7B46\u5F71\u50CF\u4ECD\u5728\u5065\u5EB7\u5B58\u647A\u5099\u88FD\u4E2D\uFF08\u8CC7\u6599\u78BA\u8A8D\u4E2D\uFF09\u3002\u8ACB\u9EDE\u4E0B\u65B9\u6309\u9215\u524D\u5F80\u5F71\u50CF\u9801\uFF0C\u5F85\u8A72\u7B46\u986F\u793A\u300C\u5F71\u50CF\u6A94\u300D\u5F8C\uFF0C\u518D\u6309\u4E00\u6B21\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\u3002`
             );
+            _imagingNeedsArm = true;
           }
           if (noImage > 0) {
             breakdown.push(
@@ -9564,8 +9550,7 @@
     const _fullBreakdown = [...breakdown, ..._phaseLines];
     const _waitingCount = imgIdx >= 0 && settled[imgIdx].status === "fulfilled" ? settled[imgIdx].value.jpegTriggeredWaitingCount ?? 0 : 0;
     const _fetchFailCount = imgIdx >= 0 && settled[imgIdx].status === "fulfilled" ? settled[imgIdx].value.jpegFetchFailedCount ?? 0 : 0;
-    const _confirmingCount = imgIdx >= 0 && settled[imgIdx].status === "fulfilled" ? settled[imgIdx].value.jpegConfirmingCount ?? 0 : 0;
-    const _imagingPending = _waitingCount > 0 || _confirmingCount > 0 || _fetchFailCount > 0;
+    const _imagingPending = _waitingCount > 0 || _fetchFailCount > 0;
     const _imagingTail = _imagingPending ? "\uFF08\u90E8\u5206\u5F71\u50CF\u4ECD\u5728\u5065\u5EB7\u5B58\u647A\u5099\u88FD\u4E2D\uFF0C\u8ACB\u904E\u5E7E\u5206\u9418\u5F8C\u518D\u6309\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\uFF09" : "";
     const _waitingTail = _imagingTail;
     let _summaryLine;
@@ -9589,11 +9574,15 @@
       histno: patientOverride.id_no,
       mode,
       localFilename: _localFilename,
-      // Part A (v1.0.4): when imaging came back with 0 fetchable image bytes
-      // but rows exist, the popup surfaces a one-click link to the 影像清單 page
-      // so the user can arm NHI's confirmation themselves + re-sync. Absent
-      // (undefined) in every other case → popup renders no imaging CTA.
-      imagingArmUrl: _imagingNeedsArm ? `${BASE}/IHKE3000/IHKE3408S01` : void 0
+      // v1.0.7: surface the one-click 前往影像頁 link whenever imaging is opted-in
+      // and ANY row didn't yield JPG bytes — both the "0 張可下載" case
+      // (_imagingNeedsArm, jpG_STATUS "2") AND the "部分備製中/等候備齊" case
+      // (_imagingPending: waiting / 資料確認中 / fetch-failed). The user's own
+      // foreground visit reliably arms NHI's confirmation (a real render, not a
+      // throttled bg tab), so the button is the dependable path when bridge's
+      // single gentle auto-arm wasn't enough. Absent (undefined) only when every
+      // imaging row was fetched → popup renders no CTA.
+      imagingArmUrl: _imagingNeedsArm || _imagingPending ? `${BASE}/IHKE3000/IHKE3408S01` : void 0
     });
     await showResultBadge(total);
     if (mode !== "local")
