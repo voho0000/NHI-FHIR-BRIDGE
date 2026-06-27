@@ -132,3 +132,41 @@ export function rxOrderCodesFromS02Detail(body) {
   }
   return [...codes];
 }
+
+// Pull the NHI 醫令碼 of every 檢驗 order this visit LISTED — the #26 drug-list
+// trick extended to labs, so a diagnosis-less lab Observation links to the EXACT
+// visit that ORDERED it (resolves the "3 同日同院門診, 檢驗掛錯診" bug the date-only
+// gateway can't). The 檢驗 醫令 live in (verified 2026-06-27 against a 長庚嘉義
+// 9/16 N18.32 CKD visit whose list carried 08003C/09002C/09015C… = Hb/BUN/Cr…):
+//   • 門診/急診 detail (IHKE3303S02) → sp_IHKE3302S07_data (order_CODE; each row
+//     also carries cure_CNAME + order_SEQ_NO)
+//   • 住院 detail (IHKE3309S02)     → sp_IHKE3302S10_data (住院逐筆檢驗/醫令)
+// DELIBERATELY NOT sp_IHKE3302S05 (處置/診察 非藥品醫囑 — 呼吸運動 etc.); that's a
+// separate list and not what a lab Observation matches. De-duped string[].
+export function labOrderCodesFromS02Detail(body) {
+  const main = pickS02MainRow(body);
+  if (!main) return [];
+  const codes = new Set();
+  for (const listKey of ["sp_IHKE3302S07_data", "sp_IHKE3302S10_data"]) {
+    const list = Array.isArray(main[listKey]) ? main[listKey] : [];
+    for (const item of list) {
+      const c = String(item?.order_CODE || item?.order_code || "").trim();
+      if (c) codes.add(c);
+    }
+  }
+  return [...codes];
+}
+
+// NHI 就醫序號 (func_SEQ_NO) from the S02 detail — NHI's OWN "this is one 就醫"
+// identifier. One 就醫 can be SPLIT into multiple 醫療費用申報 rows by 費用類別
+// (e.g. 9/16 CKD: a 檢驗 申報 740pt/0部分負擔 + a 診察+藥 申報 2001pt/50) — those
+// rows share the same func_SEQ_NO (live-verified "0032" on both). Used by
+// encounterStableId to merge such split rows into ONE Encounter. Returns "" when
+// absent. NOTE: only the NUMERIC form is a clean 就醫序號; some rows carry an
+// "ICnn" form (IC卡 序號) that does NOT identify the same 就醫 — the caller gates
+// on numeric-only and falls back to the billing key otherwise.
+export function funcSeqNoFromS02Detail(body) {
+  const main = pickS02MainRow(body);
+  if (!main) return "";
+  return String(main.func_SEQ_NO ?? main.func_seq_no ?? main.FUNC_SEQ_NO ?? "").trim();
+}

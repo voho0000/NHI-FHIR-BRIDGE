@@ -78,6 +78,19 @@ function encounterStableId(
     .filter(Boolean)
     .sort();
   const dxKey = [primary, ...secondaries].join(",");
+  // NHI 就醫序號 (func_SEQ_NO) — when it's the NUMERIC 就醫序號, it IS the "one
+  // 就醫" identifier: 申報 rows of the SAME 就醫 split by 費用類別 share it (live-
+  // verified 9/16 CKD — a 檢驗 申報 740pt/0部分負擔 + a 診察+藥 申報 2001pt/50 both
+  // carry "0032"). Use it IN PLACE of the (part_amt, appl_dot) billing key so
+  // those rows MERGE into one Encounter (also resolves the lab/med ambiguity that
+  // left them unlinked). ADDITIVE + safe: a non-numeric form (e.g. "IC02"/"IC03"
+  // — an IC卡 序號 that does NOT identify the same 就醫) or a missing value falls
+  // back to the unchanged billing key, so currently-merged pairs never split
+  // (live-verified 8/20: J189 IC02/IC03 stay merged via the billing key).
+  const funcSeq = String(raw.func_seq_no ?? "").trim();
+  if (/^\d+$/.test(funcSeq)) {
+    return stableId(patientId, date, hospital, dxKey, `fseq:${funcSeq}`);
+  }
   const partAmt = String(raw.part_amt ?? "").trim();
   const applDot = String(raw.appl_dot ?? "").trim();
   return stableId(patientId, date, hospital, dxKey, partAmt, applDot);
@@ -264,6 +277,14 @@ export function mapEncounter(raw: Record<string, any>, patientId: string): Recor
   // unlinked instead of being date-matched onto an unrelated same-day visit.
   const rxCodes = Array.isArray(raw.rx_order_codes) ? raw.rx_order_codes : [];
   if (rxCodes.length > 0) resource.__rxOrderCodes = rxCodes;
+
+  // Transient (STRIPPED by linkEncountersInResources) — NHI 醫令碼 of the 檢驗
+  // this visit ordered (#26 extended to labs): the linker attaches a diagnosis-
+  // less lab Observation to this Encounter only when the lab's order code appears
+  // here, so multiple same-day 門診 visits no longer all get the same labs dumped
+  // on whichever one the date gateway happened to pick.
+  const labCodes = Array.isArray(raw.lab_order_codes) ? raw.lab_order_codes : [];
+  if (labCodes.length > 0) resource.__labOrderCodes = labCodes;
 
   return resource;
 }

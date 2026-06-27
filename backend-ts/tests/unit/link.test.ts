@@ -50,6 +50,14 @@ function obs(id: string, hospital: string, date: string): Record<string, any> {
   };
 }
 
+// A lab Observation carrying an NHI 醫令碼 in code.coding (the signal the linker
+// matches against an Encounter's __labOrderCodes for #26-for-labs).
+function labObs(id: string, hospital: string, date: string, nhiCode: string): Record<string, any> {
+  const o = obs(id, hospital, date);
+  o.code = { coding: [{ system: "https://www.nhi.gov.tw/nhi-medical-order-code", code: nhiCode }] };
+  return o;
+}
+
 // NOTE: dedupAdmissionDayAmb removed v0.20.0 — see link.ts comment. A 門診/急診
 // on an admission day is the REAL gateway visit (患者就醫 → 被收住院), not an
 // IMP billing duplicate, so it is no longer deleted. Same-day 門診/急診 + 住院
@@ -213,6 +221,53 @@ describe("linkEncountersInResources — admission-day gateway disambiguation (v0
       [lab],
     );
     expect(lab.encounter).toBeUndefined();
+  });
+
+  // #26 extended to labs — the real 長庚嘉義 9/16 bug: 3 同日同院門診. CKD-stage-3b
+  // ordered the bloods (S07 = 08003C/09002C/09015C/09022C…), the second CKD visit
+  // was a 慢箋 refill (no labs), the N40.0 visit was 攝護腺 (no labs). Date-only
+  // linking can't pick → dumped all 20 labs on N40.0. The 檢驗醫令碼 list pins each
+  // lab to the visit that listed it.
+  test("lab order code pins the obs to the EXACT same-day visit that ordered it", () => {
+    const ckdLabs = enc("ckd-labs", "AMB", "VGH", "2025-09-16", null, ["N1832"]);
+    ckdLabs.__labOrderCodes = ["08003C", "09002C", "09015C", "09022C"];
+    const ckdRx = enc("ckd-rx", "AMB", "VGH", "2025-09-16", null, ["N1832"]); // 慢箋, no labs
+    const bph = enc("bph", "AMB", "VGH", "2025-09-16", null, ["N400"]); // 攝護腺, no labs
+    const cr = labObs("cr", "VGH", "2025-09-16", "09015C"); // Creatinine
+    const bun = labObs("bun", "VGH", "2025-09-16", "09002C"); // BUN
+    linkEncountersInResources([ckdLabs, ckdRx, bph], [cr, bun]);
+    expect(cr.encounter).toEqual({ reference: "Encounter/ckd-labs" });
+    expect(bun.encounter).toEqual({ reference: "Encounter/ckd-labs" });
+    // __labOrderCodes is transient — must be stripped from the bundle.
+    expect(ckdLabs.__labOrderCodes).toBeUndefined();
+  });
+
+  test("lab listed by TWO same-day visits → ambiguous → unlinked (never guess)", () => {
+    const a = enc("a", "AMB", "VGH", "2025-09-16", null);
+    a.__labOrderCodes = ["09015C"];
+    const b = enc("b", "AMB", "VGH", "2025-09-16", null);
+    b.__labOrderCodes = ["09015C"];
+    const cr = labObs("cr", "VGH", "2025-09-16", "09015C");
+    linkEncountersInResources([a, b], [cr]);
+    expect(cr.encounter).toBeUndefined();
+  });
+
+  test("lab whose code is in NO visit's 檢驗清單 falls through to the date gateway", () => {
+    const a = enc("a", "AMB", "VGH", "2025-09-16", null);
+    a.__labOrderCodes = ["09015C"];
+    const b = enc("b", "AMB", "VGH", "2025-09-16", null);
+    b.__labOrderCodes = ["08011C"];
+    const orphan = labObs("x", "VGH", "2025-09-16", "12345C"); // listed by neither
+    // 2 same-day gateways → date fallback also ambiguous → unlinked (no wrong guess).
+    linkEncountersInResources([a, b], [orphan]);
+    expect(orphan.encounter).toBeUndefined();
+  });
+
+  test("single same-day visit → lab still links via date gateway without order-code data", () => {
+    const only = enc("only", "AMB", "VGH", "2025-09-16", null); // no __labOrderCodes
+    const cr = labObs("cr", "VGH", "2025-09-16", "09015C");
+    linkEncountersInResources([only], [cr]);
+    expect(cr.encounter).toEqual({ reference: "Encounter/only" });
   });
 
   test("inpatient-course med links to the IMP by validityPeriod even when the gateway shares the dx", () => {

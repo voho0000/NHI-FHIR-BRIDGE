@@ -105,6 +105,8 @@ import {
 } from "./patient-override.js";
 import {
   classFromS02Detail,
+  funcSeqNoFromS02Detail,
+  labOrderCodesFromS02Detail,
   pickS02MainRow,
   primaryIcdFromS02Detail,
   rxOrderCodesFromS02Detail,
@@ -291,6 +293,13 @@ export async function runNhiApiSync({
           // NHI 醫令碼 of every drug this visit prescribed — the linker uses it to
           // attach MedicationRequests to the EXACT prescribing Encounter (#26).
           const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
+          // NHI 醫令碼 of every 檢驗 this visit ordered (sp_IHKE3302S07/S10) — the
+          // linker attaches diagnosis-less lab Observations to the EXACT ordering
+          // visit (#26 extended to labs; fixes "3 同日門診, 檢驗掛錯診").
+          const labOrderCodes = labOrderCodesFromS02Detail(detail);
+          // NHI 就醫序號 — merges 申報 rows of ONE 就醫 split across 費用類別
+          // (different part_AMT/appl_DOT) into one Encounter (see encounterStableId).
+          const funcSeqNo = funcSeqNoFromS02Detail(detail);
           const visit = visits[i];
           const rowId = visit.roW_ID || visit.row_id || visit.row_ID;
           const isPharmacy = rowId ? pharmacyRowIds.has(rowId) : false;
@@ -299,6 +308,8 @@ export async function runNhiApiSync({
             primary_diagnosis: primaryDiagnosis,
             secondary_diagnoses: secondaryDiagnoses,
             rx_order_codes: rxOrderCodes,
+            lab_order_codes: labOrderCodes,
+            func_seq_no: funcSeqNo,
           });
           if (it) reAdapted.push(it);
         }
@@ -367,10 +378,14 @@ export async function runNhiApiSync({
           // linker attach inpatient MedicationRequests to THIS admission by drug
           // code (same rule as 門診), not just by the validityPeriod heuristic.
           const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
+          // #26 (住院 labs): the 住院 detail's sp_IHKE3302S10_data 檢驗醫令 list lets
+          // the linker attach inpatient lab Observations to THIS admission by code.
+          const labOrderCodes = labOrderCodesFromS02Detail(detail);
           const it = adaptInpatientEncounter(visits[i], {
             primary_diagnosis: primaryDiagnosis,
             secondary_diagnoses: secondaryDiagnoses,
             rx_order_codes: rxOrderCodes,
+            lab_order_codes: labOrderCodes,
           });
           if (it) reAdapted.push(it);
           // 出院病摘 candidacy gate — `has_XML` on the S02 detail body

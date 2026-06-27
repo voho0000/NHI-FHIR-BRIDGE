@@ -404,6 +404,52 @@ describe("encounter merge key (date+hospital+dx-set+billing, no class)", () => {
     );
   });
 
+  // 就醫序號 (func_SEQ_NO) override (2026-06-28). NHI splits ONE 就醫 into multiple
+  // 申報 rows by 費用類別 (different part/appl); the NUMERIC 就醫序號 is shared
+  // across them, so it merges them IN PLACE OF the billing key. A non-numeric
+  // ("ICnn") or missing value falls back to the billing key (no regression).
+  test("numeric func_seq_no merges split-billing rows of ONE 就醫 (9/16 CKD 0032)", () => {
+    const labRow = mapEncounter(
+      { ...base, reason_code: "N1832", part_amt: "0", appl_dot: "740", func_seq_no: "0032" },
+      PID,
+    );
+    const rxRow = mapEncounter(
+      { ...base, reason_code: "N1832", part_amt: "50", appl_dot: "2,001", func_seq_no: "0032" },
+      PID,
+    );
+    expect(labRow.id).toBe(rxRow.id); // different billing, same 就醫序號 → one Encounter
+  });
+
+  test("a DIFFERENT same-day 就醫 (different func_seq_no) stays separate (N40.0 0033)", () => {
+    const ckd = mapEncounter({ ...base, reason_code: "N1832", func_seq_no: "0032" }, PID);
+    const bph = mapEncounter({ ...base, reason_code: "N400", func_seq_no: "0033" }, PID);
+    expect(ckd.id).not.toBe(bph.id);
+  });
+
+  test("same dx, DIFFERENT numeric func_seq_no → different id (two genuine 就醫)", () => {
+    const a = mapEncounter({ ...base, func_seq_no: "0040" }, PID);
+    const b = mapEncounter({ ...base, func_seq_no: "0041" }, PID);
+    expect(a.id).not.toBe(b.id);
+  });
+
+  test("NON-numeric func_seq_no (IC02/IC03) → billing-key fallback, currently-merged pair does NOT split (8/20 J189)", () => {
+    const ic03 = mapEncounter(
+      { ...base, reason_code: "J189", part_amt: "0", appl_dot: "374", func_seq_no: "IC03" },
+      PID,
+    );
+    const ic02 = mapEncounter(
+      { ...base, reason_code: "J189", part_amt: "0", appl_dot: "374", func_seq_no: "IC02" },
+      PID,
+    );
+    expect(ic03.id).toBe(ic02.id); // identical billing → still merged (NO regression)
+  });
+
+  test("missing func_seq_no → billing key unchanged", () => {
+    const a = mapEncounter({ ...base, part_amt: "0", appl_dot: "374" }, PID);
+    const b = mapEncounter({ ...base, part_amt: "50", appl_dot: "856" }, PID);
+    expect(a.id).not.toBe(b.id); // no func_seq_no → different billing → different id
+  });
+
   test("IMP key stays admission-based — ignores ICD/billing so DocumentReference refs don't dangle", () => {
     const a = mapEncounter(
       { date: "2026-06-02", class: "IMP", hospital: "長庚嘉義", reason_code: "R053" },

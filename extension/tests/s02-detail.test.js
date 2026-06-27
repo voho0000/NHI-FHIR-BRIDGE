@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { classFromS02Detail, rxOrderCodesFromS02Detail } from "../src/background/s02-detail.ts";
+import {
+  classFromS02Detail,
+  funcSeqNoFromS02Detail,
+  labOrderCodesFromS02Detail,
+  rxOrderCodesFromS02Detail,
+} from "../src/background/s02-detail.ts";
 
 // Wrap a main row the way NHI's IHKE3303S02 endpoint does.
 function body(main) {
@@ -92,5 +97,65 @@ describe("rxOrderCodesFromS02Detail (#26)", () => {
       }),
     );
     expect(out).toEqual(["OPD0000001", "INP0000001"]);
+  });
+});
+
+describe("labOrderCodesFromS02Detail (#26 for labs)", () => {
+  // The real 長庚嘉義 9/16 N18.32 CKD visit shape: the 檢驗醫令 ride in
+  // sp_IHKE3302S07_data, each row carrying order_CODE + cure_CNAME + order_SEQ_NO.
+  test("pulls the 門診 檢驗醫令碼 from sp_IHKE3302S07_data (order_CODE)", () => {
+    const out = labOrderCodesFromS02Detail(
+      body({
+        sp_IHKE3302S07_data: [
+          { order_CODE: "08003C", cure_CNAME: "血色素檢查", order_SEQ_NO: "1" },
+          { order_CODE: "09002C", cure_CNAME: "血中尿素氮", order_SEQ_NO: "3" },
+          { order_CODE: "09015C", cure_CNAME: "肌酸酐、血", order_SEQ_NO: "8" },
+          { order_CODE: "09015C", cure_CNAME: "肌酸酐 (dup)", order_SEQ_NO: "8" }, // de-duped
+        ],
+      }),
+    );
+    expect(out).toEqual(["08003C", "09002C", "09015C"]);
+  });
+
+  test("pulls the 住院 檢驗醫令碼 from sp_IHKE3302S10_data and unions with S07", () => {
+    const out = labOrderCodesFromS02Detail(
+      body({
+        sp_IHKE3302S07_data: [{ order_CODE: "09015C" }],
+        sp_IHKE3302S10_data: [{ order_code: "08011C" }, { order_CODE: "09015C" }],
+      }),
+    );
+    expect(out).toEqual(["09015C", "08011C"]);
+  });
+
+  test("does NOT consult the 處置/診察 非藥品醫囑 list (sp_IHKE3302S05)", () => {
+    // 呼吸運動 57010B / 體位引流 47045C live in S05 — must NOT be captured as labs.
+    const out = labOrderCodesFromS02Detail(
+      body({
+        sp_IHKE3302S05: [{ order_CODE: "57010B", cure_CNAME: "呼吸運動（次）" }],
+        sp_IHKE3302S07_data: [{ order_CODE: "09015C" }],
+      }),
+    );
+    expect(out).toEqual(["09015C"]);
+  });
+
+  test("empty / missing → []", () => {
+    expect(labOrderCodesFromS02Detail(body({ sp_IHKE3302S07_data: [] }))).toEqual([]);
+    expect(labOrderCodesFromS02Detail(body({}))).toEqual([]);
+    expect(labOrderCodesFromS02Detail(null)).toEqual([]);
+  });
+});
+
+describe("funcSeqNoFromS02Detail (就醫序號)", () => {
+  test("pulls func_SEQ_NO from the S02 main row (the 9/16 CKD 0032)", () => {
+    expect(funcSeqNoFromS02Detail(body({ func_SEQ_NO: "0032" }))).toBe("0032");
+  });
+
+  test("preserves the non-numeric IC form verbatim (caller gates on numeric)", () => {
+    expect(funcSeqNoFromS02Detail(body({ func_SEQ_NO: "IC02" }))).toBe("IC02");
+  });
+
+  test("missing → empty string", () => {
+    expect(funcSeqNoFromS02Detail(body({}))).toBe("");
+    expect(funcSeqNoFromS02Detail(null)).toBe("");
   });
 });

@@ -91,6 +91,22 @@ function medOrderCode(r: Record<string, any>): string {
   return Array.isArray(coding) ? String(coding[0]?.code ?? "").trim() : "";
 }
 
+// NHI 醫令碼(s) carried on a lab Observation / DiagnosticReport — any code.coding
+// entry shaped like an NHI order code (5 digits + a trailing letter, e.g. 09015C
+// / 08003C). Used to match a diagnosis-less lab against an Encounter's 檢驗醫令
+// list (Encounter.__labOrderCodes) — the #26 drug-list trick extended to labs.
+const NHI_ORDER_CODE_RE = /^\d{5}[A-Z]$/;
+function labOrderCodes(r: Record<string, any>): string[] {
+  const coding = r.code?.coding;
+  if (!Array.isArray(coding)) return [];
+  const out: string[] = [];
+  for (const c of coding) {
+    const code = String(c?.code ?? "").trim();
+    if (NHI_ORDER_CODE_RE.test(code)) out.push(code);
+  }
+  return out;
+}
+
 /**
  * Add `encounter` reference to each linkable resource by (hospital, date).
  *
@@ -120,6 +136,8 @@ export function linkEncountersInResources(
   // Captured from BOTH arrays so it's stripped whether candidates and resources
   // are the same array (local mode) or separate (backend).
   const rxCodesByEnc = new Map<Record<string, any>, string[]>();
+  // Encounter → its 檢驗醫令碼 Set (Encounter.__labOrderCodes, #26 for labs).
+  const labCodesByEnc = new Map<Record<string, any>, Set<string>>();
   const captureTransients = (r: Record<string, any>) => {
     if (!r) return;
     if (r.__nhiVisitClass !== undefined) {
@@ -129,6 +147,10 @@ export function linkEncountersInResources(
     if (Array.isArray(r.__rxOrderCodes)) {
       rxCodesByEnc.set(r, r.__rxOrderCodes as string[]);
       delete r.__rxOrderCodes;
+    }
+    if (Array.isArray(r.__labOrderCodes)) {
+      labCodesByEnc.set(r, new Set(r.__labOrderCodes as string[]));
+      delete r.__labOrderCodes;
     }
   };
   for (const r of resources) captureTransients(r);
@@ -286,8 +308,27 @@ export function linkEncountersInResources(
       if (dxHits.length === 1) r.encounter = { reference: `Encounter/${dxHits[0]!.id}` };
       continue;
     }
-    // Diagnosis-less resource (lab / report): prefer the single-day gateway
-    // visit over the 住院 whose span merely starts that day.
+    // Diagnosis-less resource (lab Observation / report): FIRST try the visit's
+    // 檢驗醫令 list (#26 for labs) — link to the visit whose sp_IHKE3302S07/S10
+    // listed this lab's NHI 醫令碼. Resolves the 多筆同日同院門診 case the date
+    // gateway below cannot: 3 visits share (hospital, date), but only the CKD
+    // visit's list carries 09015C/09002C… so the Cr/BUN obs pin THERE. Conservative
+    // like #26: link only on a UNIQUE hit; 0 or >1 (lab listed at multiple same-day
+    // visits, or no list captured) falls through to the gateway — never strand a
+    // lab on an ambiguous order-code match.
+    const lCodes = labOrderCodes(r);
+    if (lCodes.length > 0) {
+      const labHits = cands.filter((e) => {
+        const set = labCodesByEnc.get(e);
+        return !!set && lCodes.some((c) => set.has(c));
+      });
+      if (labHits.length === 1) {
+        r.encounter = { reference: `Encounter/${labHits[0]!.id}` };
+        continue;
+      }
+    }
+    // Date gateway fallback: prefer the single-day gateway visit over the 住院
+    // whose span merely starts that day.
     const gateways = cands.filter(
       (e) =>
         (e.class ?? {}).code !== "IMP" &&

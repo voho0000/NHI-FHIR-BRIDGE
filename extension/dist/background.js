@@ -1221,6 +1221,10 @@
     const primary = raw.reason_code ? normalizeIcd10Cm(String(raw.reason_code)) : "";
     const secondaries = (Array.isArray(raw.secondary_diagnoses) ? raw.secondary_diagnoses : []).map((s) => s?.code ? normalizeIcd10Cm(String(s.code)) : "").filter(Boolean).sort();
     const dxKey = [primary, ...secondaries].join(",");
+    const funcSeq = String(raw.func_seq_no ?? "").trim();
+    if (/^\d+$/.test(funcSeq)) {
+      return stableId(patientId, date, hospital, dxKey, `fseq:${funcSeq}`);
+    }
     const partAmt = String(raw.part_amt ?? "").trim();
     const applDot = String(raw.appl_dot ?? "").trim();
     return stableId(patientId, date, hospital, dxKey, partAmt, applDot);
@@ -1354,6 +1358,8 @@
     }
     const rxCodes = Array.isArray(raw.rx_order_codes) ? raw.rx_order_codes : [];
     if (rxCodes.length > 0) resource.__rxOrderCodes = rxCodes;
+    const labCodes = Array.isArray(raw.lab_order_codes) ? raw.lab_order_codes : [];
+    if (labCodes.length > 0) resource.__labOrderCodes = labCodes;
     return resource;
   }
 
@@ -5759,9 +5765,21 @@
     const coding = r.medicationCodeableConcept?.coding;
     return Array.isArray(coding) ? String(coding[0]?.code ?? "").trim() : "";
   }
+  var NHI_ORDER_CODE_RE = /^\d{5}[A-Z]$/;
+  function labOrderCodes(r) {
+    const coding = r.code?.coding;
+    if (!Array.isArray(coding)) return [];
+    const out = [];
+    for (const c of coding) {
+      const code = String(c?.code ?? "").trim();
+      if (NHI_ORDER_CODE_RE.test(code)) out.push(code);
+    }
+    return out;
+  }
   function linkEncountersInResources(candidates, resources) {
     const visitClassByRes = /* @__PURE__ */ new Map();
     const rxCodesByEnc = /* @__PURE__ */ new Map();
+    const labCodesByEnc = /* @__PURE__ */ new Map();
     const captureTransients = (r) => {
       if (!r) return;
       if (r.__nhiVisitClass !== void 0) {
@@ -5771,6 +5789,10 @@
       if (Array.isArray(r.__rxOrderCodes)) {
         rxCodesByEnc.set(r, r.__rxOrderCodes);
         delete r.__rxOrderCodes;
+      }
+      if (Array.isArray(r.__labOrderCodes)) {
+        labCodesByEnc.set(r, new Set(r.__labOrderCodes));
+        delete r.__labOrderCodes;
       }
     };
     for (const r of resources) captureTransients(r);
@@ -5869,6 +5891,17 @@
         });
         if (dxHits.length === 1) r.encounter = { reference: `Encounter/${dxHits[0].id}` };
         continue;
+      }
+      const lCodes = labOrderCodes(r);
+      if (lCodes.length > 0) {
+        const labHits = cands.filter((e) => {
+          const set = labCodesByEnc.get(e);
+          return !!set && lCodes.some((c) => set.has(c));
+        });
+        if (labHits.length === 1) {
+          r.encounter = { reference: `Encounter/${labHits[0].id}` };
+          continue;
+        }
       }
       const gateways = cands.filter(
         (e) => (e.class ?? {}).code !== "IMP" && String((e.period ?? {}).start ?? "").slice(0, 10) === date
@@ -6576,6 +6609,9 @@
       // THIS 住院 by drug code (same rule as 門診), demoting the validityPeriod
       // heuristic to a no-list fallback. Same contract as adaptEncounterFromMedExpense.
       rx_order_codes: options && Array.isArray(options.rx_order_codes) ? options.rx_order_codes : [],
+      // #26 (住院 labs): NHI 醫令碼 of every 檢驗 in sp_IHKE3302S10_data — links
+      // inpatient lab Observations to THIS 住院 by code.
+      lab_order_codes: options && Array.isArray(options.lab_order_codes) ? options.lab_order_codes : [],
       hospital: item.hosp_ABBR || item.hosp_abbr || "",
       row_id: item.row_ID || item.row_id || ""
     };
@@ -6640,6 +6676,15 @@
       // (transient) so the linker attaches MedicationRequests to the EXACT
       // prescribing visit, not by date heuristic (#26).
       rx_order_codes: options && Array.isArray(options.rx_order_codes) ? options.rx_order_codes : [],
+      // NHI 醫令碼 of the 檢驗 this visit ordered (S02 detail's sp_IHKE3302S07_data).
+      // Carried to the mapper → Encounter.__labOrderCodes (transient) so the linker
+      // attaches diagnosis-less lab Observations to the EXACT ordering visit (#26
+      // extended to labs) — not by the date gateway that fails on 多筆同日門診.
+      lab_order_codes: options && Array.isArray(options.lab_order_codes) ? options.lab_order_codes : [],
+      // NHI 就醫序號 (func_SEQ_NO) — carried to the mapper's encounterStableId so 申報
+      // rows of ONE 就醫 split by 費用類別 (different part/appl) merge into one
+      // Encounter. Numeric-only gate lives in encounterStableId.
+      func_seq_no: options?.func_seq_no ? String(options.func_seq_no) : "",
       // Pass through for the eventual IHKE3303S02 detail fetch (Phase B).
       row_id: item.roW_ID || item.row_id || ""
     };
@@ -8740,6 +8785,24 @@
     }
     return [...codes];
   }
+  function labOrderCodesFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return [];
+    const codes = /* @__PURE__ */ new Set();
+    for (const listKey of ["sp_IHKE3302S07_data", "sp_IHKE3302S10_data"]) {
+      const list = Array.isArray(main[listKey]) ? main[listKey] : [];
+      for (const item of list) {
+        const c = String(item?.order_CODE || item?.order_code || "").trim();
+        if (c) codes.add(c);
+      }
+    }
+    return [...codes];
+  }
+  function funcSeqNoFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return "";
+    return String(main.func_SEQ_NO ?? main.func_seq_no ?? main.FUNC_SEQ_NO ?? "").trim();
+  }
 
   // src/background/sync-orchestrator.ts
   var SESSION_EXPIRED_HINT = "\u5065\u5EB7\u5B58\u647A\u767B\u5165\u903E\u6642\uFF08\u96FB\u8166\u4F11\u7720\u6216\u9592\u7F6E\u592A\u4E45\uFF09\uFF0C\u8ACB\u56DE\u5065\u5EB7\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\uFF0C\u518D\u6309\u4E00\u6B21\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\u3002";
@@ -8840,6 +8903,8 @@
             const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
             const primaryDiagnosis = primaryIcdFromS02Detail(detail);
             const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
+            const labOrderCodes2 = labOrderCodesFromS02Detail(detail);
+            const funcSeqNo = funcSeqNoFromS02Detail(detail);
             const visit = visits[i];
             const rowId2 = visit.roW_ID || visit.row_id || visit.row_ID;
             const isPharmacy = rowId2 ? pharmacyRowIds.has(rowId2) : false;
@@ -8847,7 +8912,9 @@
               pharmacy: isPharmacy,
               primary_diagnosis: primaryDiagnosis,
               secondary_diagnoses: secondaryDiagnoses,
-              rx_order_codes: rxOrderCodes
+              rx_order_codes: rxOrderCodes,
+              lab_order_codes: labOrderCodes2,
+              func_seq_no: funcSeqNo
             });
             if (it) reAdapted.push(it);
           }
@@ -8881,10 +8948,12 @@
             const primaryDiagnosis = primaryIcdFromS02Detail(detail);
             const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
             const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
+            const labOrderCodes2 = labOrderCodesFromS02Detail(detail);
             const it = adaptInpatientEncounter(visits[i], {
               primary_diagnosis: primaryDiagnosis,
               secondary_diagnoses: secondaryDiagnoses,
-              rx_order_codes: rxOrderCodes
+              rx_order_codes: rxOrderCodes,
+              lab_order_codes: labOrderCodes2
             });
             if (it) reAdapted.push(it);
             const mainRow = pickS02MainRow(detail);

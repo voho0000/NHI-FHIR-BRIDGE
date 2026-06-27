@@ -606,6 +606,10 @@ export function adaptInpatientEncounter(item, options) {
     // THIS 住院 by drug code (same rule as 門診), demoting the validityPeriod
     // heuristic to a no-list fallback. Same contract as adaptEncounterFromMedExpense.
     rx_order_codes: options && Array.isArray(options.rx_order_codes) ? options.rx_order_codes : [],
+    // #26 (住院 labs): NHI 醫令碼 of every 檢驗 in sp_IHKE3302S10_data — links
+    // inpatient lab Observations to THIS 住院 by code.
+    lab_order_codes:
+      options && Array.isArray(options.lab_order_codes) ? options.lab_order_codes : [],
     hospital: item.hosp_ABBR || item.hosp_abbr || "",
     row_id: item.row_ID || item.row_id || "",
   };
@@ -735,6 +739,16 @@ export function adaptEncounterFromMedExpense(item, classHint, options) {
     // (transient) so the linker attaches MedicationRequests to the EXACT
     // prescribing visit, not by date heuristic (#26).
     rx_order_codes: options && Array.isArray(options.rx_order_codes) ? options.rx_order_codes : [],
+    // NHI 醫令碼 of the 檢驗 this visit ordered (S02 detail's sp_IHKE3302S07_data).
+    // Carried to the mapper → Encounter.__labOrderCodes (transient) so the linker
+    // attaches diagnosis-less lab Observations to the EXACT ordering visit (#26
+    // extended to labs) — not by the date gateway that fails on 多筆同日門診.
+    lab_order_codes:
+      options && Array.isArray(options.lab_order_codes) ? options.lab_order_codes : [],
+    // NHI 就醫序號 (func_SEQ_NO) — carried to the mapper's encounterStableId so 申報
+    // rows of ONE 就醫 split by 費用類別 (different part/appl) merge into one
+    // Encounter. Numeric-only gate lives in encounterStableId.
+    func_seq_no: options?.func_seq_no ? String(options.func_seq_no) : "",
     // Pass through for the eventual IHKE3303S02 detail fetch (Phase B).
     row_id: item.roW_ID || item.row_id || "",
   };
