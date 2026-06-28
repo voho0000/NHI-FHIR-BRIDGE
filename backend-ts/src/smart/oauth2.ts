@@ -138,8 +138,10 @@ export class SMARTAuthServer {
         .run();
     }
 
-    // medical-note SMART app on GitHub Pages.
+    // MediPrisma SMART app (mediprisma.tw, migrated from GitHub Pages —
+    // the github.io callback is kept so older installs still authorize).
     const mnUris = [
+      "https://mediprisma.tw/app/smart/callback",
       "https://voho0000.github.io/medical-note-smart-on-fhir/smart/callback",
       "http://localhost:3001/smart/callback",
       "http://localhost:3000/smart/callback",

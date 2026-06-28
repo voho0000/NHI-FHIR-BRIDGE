@@ -471,8 +471,8 @@
 
   // src/popup/constants.ts
   var DEFAULT_BACKEND = "http://localhost:8010";
-  var DEFAULT_SMART_APP_LAUNCH = "https://voho0000.github.io/medical-note-smart-on-fhir/smart/launch";
-  var STANDALONE_SMART_APP_URL = "https://voho0000.github.io/medical-note-smart-on-fhir/";
+  var DEFAULT_SMART_APP_LAUNCH = "https://mediprisma.tw/app/smart/launch";
+  var STANDALONE_SMART_APP_URL = "https://mediprisma.tw/app/";
   var DEFAULT_MODE = "local";
   var NHI_LANDING = "https://myhealthbank.nhi.gov.tw/IHKE3000";
   var NHI_LOGIN_URL = "https://myhealthbank.nhi.gov.tw/IHKE3000/IHKE3095S01";

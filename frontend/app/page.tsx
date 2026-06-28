@@ -166,7 +166,7 @@ export default function Dashboard() {
   };
 
   const launchSmartApp = async (patientId: string) => {
-    const launchUrl = "https://voho0000.github.io/medical-note-smart-on-fhir/smart/launch";
+    const launchUrl = "https://mediprisma.tw/app/smart/launch";
     // The launch token MUST come from the backend (audit F17) — a made-up
     // token can never pass /smart/authorize, so opening the SMART app with
     // one just strands the user on an OAuth error page. Fail loudly instead.

@@ -7,15 +7,14 @@ export const DEFAULT_BACKEND = "http://localhost:8010";
 // persisted in chrome.storage.local under `smartAppLaunchUrl`.
 // This URL is used for Mode B's OAuth launch flow (it expects to
 // receive iss + launch query params from a SMART on FHIR launch).
-export const DEFAULT_SMART_APP_LAUNCH =
-  "https://voho0000.github.io/medical-note-smart-on-fhir/smart/launch";
+export const DEFAULT_SMART_APP_LAUNCH = "https://mediprisma.tw/app/smart/launch";
 
 // Step 4 standalone-open URL. Hardcoded — the step 4 button always
 // opens this URL in a new tab with no query params (Mode A users
 // manually drag the downloaded JSON into the page). Distinct from
 // DEFAULT_SMART_APP_LAUNCH because that one is the OAuth /smart/launch
 // endpoint; this one is the SMART app's plain entry page.
-export const STANDALONE_SMART_APP_URL = "https://voho0000.github.io/medical-note-smart-on-fhir/";
+export const STANDALONE_SMART_APP_URL = "https://mediprisma.tw/app/";
 
 export const DEFAULT_MODE = "local";
 

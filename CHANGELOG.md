@@ -3,6 +3,13 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 1.0.9 — 2026-06-28（SMART app 網址更新至 mediprisma.tw）
+
+純設定更新,不改任何擷取邏輯與病人數值。
+
+- 「前往醫析」按鈕(Mode A 一鍵開啟)改連 `https://mediprisma.tw/app/`。
+- Mode B(SMART on FHIR 自動授權)的 launch 預設與 OAuth callback 一併更新至 `mediprisma.tw/app/`;backend 同步把 `https://mediprisma.tw` 加入 CORS 允許來源。為相容舊安裝,原 github.io 的 callback 與來源仍保留。
+
 ## 1.0.8 — 2026-06-28（檢驗連到正確的就診 + 同一次就醫被拆成多筆申報時正確合併）
 
 純擷取／資料結構修正,不改任何病人數值。

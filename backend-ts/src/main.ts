@@ -36,7 +36,11 @@ const LOOPBACK_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$
 // (myhealthbank.nhi.gov.tw) was dropped entirely: nothing of ours runs
 // on NHI pages (no content scripts), and an XSS there must not be able
 // to read the local bridge.
-const DEFAULT_THIRD_PARTY_ORIGINS = new Set(["https://voho0000.github.io"]);
+const DEFAULT_THIRD_PARTY_ORIGINS = new Set([
+  // MediPrisma SMART app's own dedicated domain (not shared like github.io).
+  "https://mediprisma.tw",
+  "https://voho0000.github.io",
+]);
 
 // Origins the operator explicitly configured — deliberate opt-in,
 // honored regardless of key mode.
