@@ -150,14 +150,14 @@ export function deidBirthDate(iso: string | null | undefined): string {
  *   地址 / 住址 / 戶籍·通訊·聯絡地址 (home address) → fully redacted. The value is
  *                        free-form Taiwan address text, so it is captured up to
  *                        the first tag / newline boundary and replaced wholesale.
- *   病患姓名 / 病人姓名 / 患者姓名 label → the labelled value is MASKED (孫翠霞 →
- *                        孫O霞) independent of the user-entered name, so a typo'd
+ *   病患姓名 / 病人姓名 / 患者姓名 label → the labelled value is MASKED (王小明 →
+ *                        王O明) independent of the user-entered name, so a typo'd
  *                        override no longer leaks NHI's real name. Pairs with the
  *                        病患資訊 rule so 出院病摘 and 病理報告 are covered separately
  *                        (a patient with no 出院病摘 is still covered via the report).
  *   病患資訊 report-header NAME + 病歷號 → these have no usable label, but they sit
  *                        between the 病患資訊 label and the 「性別 + 年齡」 marker
- *                        ("病患資訊：門診 孫翠霞 5020518-0 女性 54歲"). The value-based
+ *                        ("病患資訊：門診 王小明 1234567-0 女性 54歲"). The value-based
  *                        name scrub misses the name when the user-entered name ≠
  *                        NHI's real one (typo / 眷屬), so the name+chart-no span is
  *                        redacted STRUCTURALLY. A bare "<chart-no> 性別 N歲" without a
@@ -214,13 +214,13 @@ export function redactDemographicsInText(text: string): string {
         /(<td[^>]*>\s*(?:<b>\s*)?(?:戶籍地址|通訊地址|聯絡地址|現住地址|住址|地址)\s*(?:<\/b>\s*)?<\/td>\s*<td[^>]*>\s*)([^<\n\r]+)/g,
         (_m, label) => `${label}[已去識別]`,
       )
-      // 病患姓名 / 病人姓名 / 患者姓名 label → MASK the value in place (孫翠霞 →
-      // 孫O霞), INDEPENDENT of the user-entered override name. The value-based name
+      // 病患姓名 / 病人姓名 / 患者姓名 label → MASK the value in place (王小明 →
+      // 王O明), INDEPENDENT of the user-entered override name. The value-based name
       // scrub keys off what the user typed and silently misses NHI's real name on a
-      // typo / 眷屬 mix-up (孫俠霞 entered vs 孫翠霞 in the data, 2026-06-23); masking
+      // typo / 眷屬 mix-up (王俠明 entered vs 王小明 in the data, 2026-06-23); masking
       // the LABELLED value is robust and stays consistent with the structured
       // Patient.name mask. Same/sibling-<td> layouts both handled. CJK names only
-      // (2–6 漢字); an already-masked value (孫O霞 — not a pure CJK run) won't match.
+      // (2–6 漢字); an already-masked value (王O明 — not a pure CJK run) won't match.
       // This + the 病患資訊 rule below cover the two report families INDEPENDENTLY,
       // so a patient with NO 出院病摘 is still covered via their 病理報告 header.
       .replace(
@@ -229,7 +229,7 @@ export function redactDemographicsInText(text: string): string {
       )
       // 病患資訊 report header — the patient NAME (and the chart no beside it) sit
       // between the 病患資訊 label (+ optional 門診/急診/住院 visit-type) and the
-      // 「性別 + 年齡」 marker: "病患資訊：門 診 孫翠霞 5020518-0 女性 54歲 OPD". The
+      // 「性別 + 年齡」 marker: "病患資訊：門 診 王小明 1234567-0 女性 54歲 OPD". The
       // value-based name scrub (replaceNameDeep) MISSES the name here whenever the
       // user-entered name differs from NHI's real name (a typo, or 眷屬 entered the
       // wrong person) — it can only replace the exact string the user typed. So
@@ -243,7 +243,7 @@ export function redactDemographicsInText(text: string): string {
       // 病歷號 (chart no) embedded UNLABELLED in a report's patient-info header —
       // there is no "病歷號" word to anchor on. In NHI/hospital report headers the
       // chart number sits between the (already name-masked) name and the
-      // 「性別 + 年齡」 marker, e.g. "病患資訊：門診 孫O霞 5020518-0 女性 54歲 OPD".
+      // 「性別 + 年齡」 marker, e.g. "病患資訊：門診 王O明 1234567-0 女性 54歲 OPD".
       // The 性別+N歲 marker is the reliable anchor: redact the alphanumeric token
       // immediately before it, REQUIRING the token to contain a digit so the
       // name-mask 'O' / pure-letter tokens (e.g. visit-type "OPD") are spared.

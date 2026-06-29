@@ -320,19 +320,19 @@ describe("redactDemographicsInText (出院病摘 / 病理報告 narrative de-id)
     });
   });
 
-  // v1.0.6 — 病患姓名 label → MASK the value (孫翠霞 → 孫O霞) regardless of the
+  // v1.0.6 — 病患姓名 label → MASK the value (王小明 → 王O明) regardless of the
   // user-entered override name. Robust to a typo / 眷屬 mix-up; works for patients
   // with a 出院病摘 even when the 病理報告(病患資訊) path doesn't apply, and vice versa.
   describe("病患姓名 label masking (robust to wrong-entered name)", () => {
     test("masks the real name in place even when the override input was wrong", () => {
-      // User typed 孫俠霞 (so the value scrub missed it); the 出院病摘 carries the
-      // real 孫翠霞 — the label-anchored mask catches it regardless.
-      expect(redactDemographicsInText("病患姓名：孫翠霞")).toBe("病患姓名：孫O霞");
+      // User typed 王俠明 (so the value scrub missed it); the 出院病摘 carries the
+      // real 王小明 — the label-anchored mask catches it regardless.
+      expect(redactDemographicsInText("病患姓名：王小明")).toBe("病患姓名：王O明");
     });
 
     test("出院病摘 HTML cell (same cell) masked", () => {
-      const src = '<td class="content"><b>病患姓名：</b>孫翠霞</td>';
-      expect(redactDemographicsInText(src)).toBe('<td class="content"><b>病患姓名：</b>孫O霞</td>');
+      const src = '<td class="content"><b>病患姓名：</b>王小明</td>';
+      expect(redactDemographicsInText(src)).toBe('<td class="content"><b>病患姓名：</b>王O明</td>');
     });
 
     test("sibling-cell layout masked (4-char name → two middle O's)", () => {
@@ -347,11 +347,11 @@ describe("redactDemographicsInText (出院病摘 / 病理報告 narrative de-id)
       expect(redactDemographicsInText("患者姓名：林小華")).toBe("患者姓名：林O華");
     });
 
-    test("already-masked value (孫O霞) left untouched (idempotent)", () => {
-      const src = "病患姓名：孫O霞";
+    test("already-masked value (王O明) left untouched (idempotent)", () => {
+      const src = "病患姓名：王O明";
       expect(redactDemographicsInText(src)).toBe(src);
-      expect(redactDemographicsInText(redactDemographicsInText("病患姓名：孫翠霞"))).toBe(
-        "病患姓名：孫O霞",
+      expect(redactDemographicsInText(redactDemographicsInText("病患姓名：王小明"))).toBe(
+        "病患姓名：王O明",
       );
     });
 
@@ -365,20 +365,20 @@ describe("redactDemographicsInText (出院病摘 / 病理報告 narrative de-id)
   // wrong-entered name); a bare "<chartno> 性別 N歲" elsewhere still drops the chartno.
   describe("報告 header 去識別化 (病患資訊 + 性別+年齡 anchor)", () => {
     test("病患資訊 header: NAME + chart number redacted even when the entered name was wrong", () => {
-      // User entered 孫俠霞 but NHI's report carries the REAL name 孫翠霞, so the
+      // User entered 王俠明 but NHI's report carries the REAL name 王小明, so the
       // value-based name scrub never masked it. The 病患資訊 + 性別+年齡 anchors
       // redact the name+病歷號 span regardless of the entered value.
-      const src = "病患資訊： 門 診 孫翠霞 5020518-0 女性 54歲 OPD";
+      const src = "病患資訊： 門 診 王小明 1234567-0 女性 54歲 OPD";
       const out = redactDemographicsInText(src);
       expect(out).toBe("病患資訊： 門 診 [已去識別] 女性 54歲 OPD");
-      expect(out).not.toContain("孫翠霞");
-      expect(out).not.toContain("5020518-0");
+      expect(out).not.toContain("王小明");
+      expect(out).not.toContain("1234567-0");
       expect(out).toContain("女性 54歲"); // demographic anchor preserved
       expect(out).toContain("OPD");
     });
 
     test("病患資訊 header redacts the name even with NO chart number present", () => {
-      const src = "病患資訊： 門診 孫翠霞 女性 54歲 OPD";
+      const src = "病患資訊： 門診 王小明 女性 54歲 OPD";
       expect(redactDemographicsInText(src)).toBe("病患資訊： 門診 [已去識別] 女性 54歲 OPD");
     });
 
@@ -389,7 +389,7 @@ describe("redactDemographicsInText (出院病摘 / 病理報告 narrative de-id)
     });
 
     test("no 病患資訊 + no chart number: a CJK name before 性別 is NOT touched", () => {
-      const src = "孫O霞 女性 54歲 OPD";
+      const src = "王O明 女性 54歲 OPD";
       expect(redactDemographicsInText(src)).toBe(src);
     });
 
@@ -411,11 +411,11 @@ describe("redactDemographicsInText (出院病摘 / 病理報告 narrative de-id)
     });
 
     test("idempotent — 病患資訊 span + bare chart-no both stable on a second pass", () => {
-      const a = redactDemographicsInText("病患資訊： 門 診 孫翠霞 5020518-0 女性 54歲 OPD");
+      const a = redactDemographicsInText("病患資訊： 門 診 王小明 1234567-0 女性 54歲 OPD");
       expect(redactDemographicsInText(a)).toBe(a);
-      const b = redactDemographicsInText("孫O霞 5020518-0 女性 54歲");
+      const b = redactDemographicsInText("王O明 1234567-0 女性 54歲");
       expect(redactDemographicsInText(b)).toBe(b);
-      expect(b).toBe("孫O霞 [已去識別] 女性 54歲");
+      expect(b).toBe("王O明 [已去識別] 女性 54歲");
     });
   });
 });
