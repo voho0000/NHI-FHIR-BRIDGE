@@ -3,6 +3,13 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 1.0.11 — 2026-06-29（尿沉渣 RBC／WBC／上皮細胞:英文項目名也正確對應到尿沉渣 LOINC）
+
+純對應補強,不改病人數值。
+
+- 接續 1.0.10:部分醫院的「尿液一般檢查」(06012C)把尿沉渣鏡檢項目以**英文** `WBC`／`RBC`／`Epith Cell`(值如 `0-2 /HPF`)上傳。先前對照表只有中文「白血球計數／紅血球計數」的 key,這些英文列對不到 —— 1.0.10 起變成「無 LOINC」。
+- 現在補上英文 key,讓它們正確對應到**尿沉渣** LOINC(WBC→5821-4、RBC→5808-1、上皮細胞→5787-7),不再落空、也不會誤進血液。試紙的白血球酯酶／潛血等項目維持原本正確對應(以最長字串比對保護,不被英文 WBC／RBC 搶走)。
+
 ## 1.0.10 — 2026-06-29（修正:分泌物／尿液顯微鏡的白血球被誤標成血液嗜中性球）
 
 純擷取／對應修正,不改任何病人數值。

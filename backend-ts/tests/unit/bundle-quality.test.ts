@@ -5119,3 +5119,47 @@ describe("CI v1.0.10 — 非血液 NHI 碼不得繼承血液 CBC LOINC (13006C)"
     expect(findLoinc("08003C", "Hb")).toBe("718-7");
   });
 });
+
+// ── CI v1.0.11 — urine sediment 英文 WBC/RBC/Epith → 尿沉渣 LOINC ──
+// Follow-up to v1.0.10: 06012C 尿液一般檢查 ships its sediment-microscopy
+// items as bare English "WBC" / "RBC" / "Epith Cell" (value e.g. "0-2" /HPF).
+// They had no panel-map key → fell through to BLOOD CBC LOINCs (6690-2/789-8)
+// → after the v1.0.10 veto, degraded to uncoded. v1.0.11 maps bare English
+// WBC/RBC/Epith to the verified urine-sediment LOINCs, while the dipstick
+// leukocyte-esterase / occult-blood keys stay protected by longest-match.
+describe("CI v1.0.11 — urine sediment 英文 WBC/RBC/Epith (06012C)", () => {
+  test("bare English sediment counts → urine-sediment LOINCs (not blood, not none)", () => {
+    expect(findLoinc("06012C", "WBC")).toBe("5821-4"); // Leukocytes Urine sed
+    expect(findLoinc("06012C", "RBC")).toBe("5808-1"); // Erythrocytes Urine sed
+    expect(findLoinc("06012C", "Epith Cell")).toBe("5787-7"); // Epithelial Urine sed
+    expect(findLoinc("06012C", "WBC")).not.toBe("6690-2"); // not BLOOD WBC
+    expect(findLoinc("06012C", "RBC")).not.toBe("789-8"); // not BLOOD RBC
+  });
+
+  test("dipstick keys still win — esterase / occult blood not shadowed", () => {
+    expect(findLoinc("06013C", "WBC esterase")).toBe("5799-2"); // leukocyte esterase dipstick
+    expect(findLoinc("06013C", "Leukocyte")).toBe("5799-2");
+    expect(findLoinc("06013C", "Blood")).toBe("5794-3"); // urine occult blood dipstick
+    expect(findLoinc("06013C", "OB")).toBe("5794-3");
+  });
+
+  test("full obs: 06012C 'WBC' 0-2 → 5821-4 LOINC + specimen Urine", () => {
+    const items = [
+      {
+        order_code: "06012C",
+        code: "06012C",
+        display: "WBC",
+        value: "0-2",
+        unit: "/HPF",
+        date: "2025-02-11",
+        hospital: "某醫院",
+        order_name: "尿液一般檢查",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.code.coding.find((c: any) => c.system === "http://loinc.org")?.code).toBe("5821-4");
+    expect(o.specimen?.display).toBe("Urine");
+  });
+});

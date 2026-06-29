@@ -1030,15 +1030,35 @@
     //   25145-4 Bacteria [Presence] Urine sed Light microscopy (Ord)
     //   5783-6  Unidentified crystals [Presence] Urine sed (Ord)
     // Count-form keys (白血球計數/紅血球計數) outrank the dipstick
-    // leukocyte-esterase key (白血球酯脢→5799-2) by longest-match; there is
-    // deliberately NO bare 白血球/紅血球/wbc/rbc key — it would shadow the
-    // esterase dipstick or fall through to the BLOOD CBC LOINCs in the
-    // global map (wrong specimen).
+    // leukocyte-esterase key (白血球酯脢→5799-2) by longest-match.
+    //
+    // v1.0.11 (2026-06-29, real P10109 06012C bundle): some HIS ship the
+    // sediment items as BARE ENGLISH "WBC" / "RBC" / "Epith Cell" (value e.g.
+    // "0-2" /HPF). The earlier "deliberately NO bare wbc/rbc" stance backfired:
+    // with no panel key they fell through to the BLOOD CBC LOINCs in the global
+    // map (6690-2 / 789-8) — the very wrong-specimen it tried to avoid (and
+    // after the v1.0.10 blood-LOINC veto they degraded to uncoded). Adding them
+    // HERE (Path B1, resolves BEFORE the global map) is what actually prevents
+    // the blood fall-through. Shadow-safety: the dipstick keys are DISTINCT
+    // strings (leukocyte / leu / 白血球酯酶 / "wbc esterase" / blood / 潛血 / ob)
+    // and "wbc esterase" (11) beats bare "wbc" (3) via longest-match — so the
+    // dipstick esterase / occult-blood rows still route correctly; only a row
+    // whose display IS bare "WBC"/"RBC" (the microscopy count) lands on the
+    // sediment LOINC. Re-verified 5821-4 / 5808-1 / 5787-7 on loinc.org
+    // 2026-06-29 (all Qn, Urine sed, Microscopy.light.HPF). CI: bundle-quality
+    // "CI v1.0.11 — urine sediment 英文 WBC/RBC/Epith".
     \u4E0A\u76AE\u7D30\u80DE: "5787-7",
     "epi cell": "5787-7",
+    "epith cell": "5787-7",
+    // "Epith Cell" — the trailing "th" breaks epi/epithelial
+    epith: "5787-7",
     epithelial: "5787-7",
     \u767D\u8840\u7403\u8A08\u6578: "5821-4",
     \u7D05\u8840\u7403\u8A08\u6578: "5808-1",
+    wbc: "5821-4",
+    // bare English sediment WBC count (esterase = "wbc esterase"/leukocyte/leu, longer/distinct → still wins)
+    rbc: "5808-1",
+    // bare English sediment RBC count (occult blood = blood/潛血/ob, distinct → unaffected)
     \u7D30\u83CC: "25145-4",
     bacteria: "25145-4",
     \u7D50\u6676: "5783-6",
