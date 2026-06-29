@@ -3,6 +3,14 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 1.0.13 — 2026-06-30（住院無出院日的狀態改為 unknown,不再誤標「已結束」）
+
+純狀態標示修正,不改抓取、不改病人數值。
+
+- IC卡資料 的住院常只記到住院日、**沒有出院日**(出院日尚未寫回健保卡)。先前這類住院的 FHIR `Encounter.status` 被寫死成 `finished`(已結束)—— 但在沒有出院日的情況下,這等於宣稱它已結束,並不正確(這類住院也不一定還在院中)。
+- 現在:**住院(IMP)且無出院日 → `status` 標成 `unknown`**(忠實:有住院記錄,但無法判定是否已出院,不杜撰狀態)。有出院日的申報住院、以及門診/急診維持 `finished`(門診本就是單日、無結束日屬正常)。
+- 釐清:這類住院**一直都有被抓到並輸出**(影像驗證、實機 v1.0.12 匯出皆確認 4 筆住院含 2 筆 IC卡 都在);本次只修正其狀態標示,讓下游應用不會把「已結束卻無出院日」的住院誤判或隱藏。
+
 ## 1.0.12 — 2026-06-29（影像圖檔其實是 GIF:標示成正確格式 + 去識別支援 GIF）
 
 純格式修正,不改任何病人影像像素。

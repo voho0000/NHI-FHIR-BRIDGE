@@ -1424,7 +1424,11 @@
       resourceType: "Encounter",
       id: encounterStableId(patientId, encClass, raw),
       meta: { versionId: "1", source: "nhi-fhir-bridge/scraper" },
-      status: "finished",
+      // 住院(IMP)沒有出院日 → status "unknown". IC卡資料 的住院常只記到住院日,
+      // 出院日未寫回卡片,所以「沒有 out_DATE」並不代表還在住院(in-progress),也
+      // 不能斷定已結束(finished). 忠實搬運:無法判定就標 unknown,不杜撰狀態. 申報
+      // 住院 / 門診 / 急診照舊 finished(門診本就是單日、無 period.end 屬正常).
+      status: encClass === "IMP" && !raw.end_date ? "unknown" : "finished",
       class: {
         system: classEntry[0],
         code: classEntry[1],
