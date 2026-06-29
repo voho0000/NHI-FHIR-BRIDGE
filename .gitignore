@@ -29,6 +29,11 @@ dev-replay/
 **/dev-replay/
 *.html.captured
 
+# Real NHI 健康存摺 data captured for local mapper regression fixtures —
+# contains PHI, never commit.
+fixtures/local/
+**/fixtures/local/
+
 # Node
 node_modules/
 .next/
