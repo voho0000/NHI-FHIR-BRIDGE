@@ -3,6 +3,14 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 1.0.12 — 2026-06-29（影像圖檔其實是 GIF:標示成正確格式 + 去識別支援 GIF）
+
+純格式修正,不改任何病人影像像素。
+
+- 健保署「健康存摺」的影像端點(IHKE3408S03)欄位與流程都叫「JPG」,但實際回傳的圖檔其實是 **GIF89a**(實測抓回的 284 張影像 100% 都是 GIF,沒有一張是 JPEG)。先前程式整套假設它是 JPEG,衍生兩個問題:
+  - **格式標示錯誤**:產出的 FHIR `DiagnosticReport.presentedForm` 把每張圖都寫死標成 `image/jpeg`。下游若信任這個標示、用 JPEG 解碼器去開會失敗。現在改為**逐張嗅探檔頭**正確標示(GIF→`image/gif`、JPEG→`image/jpeg`)。
+  - **去識別對 GIF 失效(隱私)**:影像 metadata 去識別只認 JPEG 檔頭,GIF 直接原樣放行 —— 對健保署實際送的格式形同沒做。現在去識別**支援 GIF**(清除 GIF 的 Comment／Application／Plain-Text 區塊,像素完全不動);這批影像本身沒夾帶這類 metadata(去識別後 byte 完全相同、仍是合法 GIF),但日後若有夾帶病患資訊的圖檔(如 PACS 匯出)就會被正確清除。
+
 ## 1.0.11 — 2026-06-29（尿沉渣 RBC／WBC／上皮細胞:英文項目名也正確對應到尿沉渣 LOINC）
 
 純對應補強,不改病人數值。

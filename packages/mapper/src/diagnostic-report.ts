@@ -7,6 +7,7 @@
  */
 
 import { normalizeNarrativeForDedup, stableId } from "./helpers";
+import { imageMimeFromBase64 } from "./jpeg-deid";
 import * as systems from "./systems";
 
 const V2_0074 = "http://terminology.hl7.org/CodeSystem/v2-0074";
@@ -223,7 +224,10 @@ export function mapDiagnosticReport(
       // studies keep the raw display untouched.
       const title = rawJpgs.length > 1 ? `${display} (frame ${i + 1}/${rawJpgs.length})` : display;
       return {
-        contentType: "image/jpeg",
+        // NHI labels these "JPG" but in practice ships GIF89a — sniff the magic
+        // number per frame so the Attachment's contentType is honest (a consumer
+        // that trusts the label and decodes as JPEG would otherwise fail).
+        contentType: imageMimeFromBase64(b64),
         data: b64,
         size,
         title,

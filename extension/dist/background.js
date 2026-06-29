@@ -880,6 +880,167 @@
     return resource;
   }
 
+  // ../packages/mapper/src/jpeg-deid.ts
+  function detectImageFormat(bytes) {
+    if (bytes.length >= 2 && bytes[0] === 255 && bytes[1] === 216) return "jpeg";
+    if (bytes.length >= 6 && bytes[0] === 71 && // G
+    bytes[1] === 73 && // I
+    bytes[2] === 70 && // F
+    bytes[3] === 56 && // 8
+    (bytes[4] === 55 || bytes[4] === 57) && // 7 | 9
+    bytes[5] === 97) {
+      return "gif";
+    }
+    return "unknown";
+  }
+  function concatRanges(bytes, keep) {
+    const total = keep.reduce((n, [s, e]) => n + (e - s), 0);
+    const out = new Uint8Array(total);
+    let o = 0;
+    for (const [s, e] of keep) {
+      out.set(bytes.subarray(s, e), o);
+      o += e - s;
+    }
+    return out;
+  }
+  function stripJpegMetadata(bytes) {
+    if (bytes.length < 4 || bytes[0] !== 255 || bytes[1] !== 216) return bytes;
+    const keep = [[0, 2]];
+    let dropped = false;
+    let i = 2;
+    while (i + 1 < bytes.length) {
+      if (bytes[i] !== 255) return bytes;
+      const marker = bytes[i + 1] ?? 0;
+      if (marker === 218 || marker === 217) {
+        keep.push([i, bytes.length]);
+        i = bytes.length;
+        break;
+      }
+      if (marker === 1 || marker >= 208 && marker <= 215) {
+        keep.push([i, i + 2]);
+        i += 2;
+        continue;
+      }
+      if (i + 3 >= bytes.length) return bytes;
+      const len = (bytes[i + 2] ?? 0) << 8 | (bytes[i + 3] ?? 0);
+      const segEnd = i + 2 + len;
+      if (len < 2 || segEnd > bytes.length) return bytes;
+      if (marker === 225 || marker === 254) {
+        dropped = true;
+      } else {
+        keep.push([i, segEnd]);
+      }
+      i = segEnd;
+    }
+    if (!dropped) return bytes;
+    return concatRanges(bytes, keep);
+  }
+  function gifColorTableBytes(packed) {
+    if (!(packed & 128)) return 0;
+    const n = packed & 7;
+    return 3 * (1 << n + 1);
+  }
+  function skipGifSubBlocks(bytes, start) {
+    let p = start;
+    while (p < bytes.length) {
+      const len = bytes[p] ?? 0;
+      p += 1;
+      if (len === 0) return p;
+      p += len;
+    }
+    return -1;
+  }
+  function stripGifMetadata(bytes) {
+    if (bytes.length < 13) return bytes;
+    if (bytes[0] !== 71 || bytes[1] !== 73 || bytes[2] !== 70) return bytes;
+    const dataStart = 13 + gifColorTableBytes(bytes[10] ?? 0);
+    if (dataStart > bytes.length) return bytes;
+    const keep = [[0, dataStart]];
+    let dropped = false;
+    let i = dataStart;
+    while (i < bytes.length) {
+      const b = bytes[i] ?? 0;
+      if (b === 59) {
+        keep.push([i, i + 1]);
+        i += 1;
+        break;
+      }
+      if (b === 33) {
+        const label = bytes[i + 1] ?? 0;
+        const end = skipGifSubBlocks(bytes, i + 2);
+        if (end < 0) return bytes;
+        if (label === 254 || label === 255 || label === 1) {
+          dropped = true;
+        } else {
+          keep.push([i, end]);
+        }
+        i = end;
+        continue;
+      }
+      if (b === 44) {
+        if (i + 10 > bytes.length) return bytes;
+        let p = i + 10 + gifColorTableBytes(bytes[i + 9] ?? 0);
+        if (p + 1 > bytes.length) return bytes;
+        p += 1;
+        const end = skipGifSubBlocks(bytes, p);
+        if (end < 0) return bytes;
+        keep.push([i, end]);
+        i = end;
+        continue;
+      }
+      return bytes;
+    }
+    if (!dropped) return bytes;
+    return concatRanges(bytes, keep);
+  }
+  function stripImageMetadata(bytes) {
+    switch (detectImageFormat(bytes)) {
+      case "jpeg":
+        return stripJpegMetadata(bytes);
+      case "gif":
+        return stripGifMetadata(bytes);
+      default:
+        return bytes;
+    }
+  }
+  function base64ToBytes(b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  function bytesToBase64(bytes) {
+    let s = "";
+    const CHUNK = 32768;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      s += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(s);
+  }
+  function stripImageMetadataBase64(b64) {
+    try {
+      const bytes = base64ToBytes(b64);
+      const stripped = stripImageMetadata(bytes);
+      if (stripped === bytes) return b64;
+      return bytesToBase64(stripped);
+    } catch {
+      return b64;
+    }
+  }
+  function stripJpegMetadataBase64(b64) {
+    return stripImageMetadataBase64(b64);
+  }
+  function imageMimeFromBase64(b64) {
+    try {
+      const head = base64ToBytes(b64.slice(0, 16));
+      const fmt = detectImageFormat(head);
+      if (fmt === "gif") return "image/gif";
+      if (fmt === "jpeg") return "image/jpeg";
+    } catch {
+    }
+    return "image/jpeg";
+  }
+
   // ../packages/mapper/src/diagnostic-report.ts
   var V2_0074 = "http://terminology.hl7.org/CodeSystem/v2-0074";
   var CATEGORY_MAP = {
@@ -969,7 +1130,10 @@
         const size = Math.floor(b64.length * 3 / 4);
         const title = rawJpgs.length > 1 ? `${display} (frame ${i + 1}/${rawJpgs.length})` : display;
         return {
-          contentType: "image/jpeg",
+          // NHI labels these "JPG" but in practice ships GIF89a — sniff the magic
+          // number per frame so the Attachment's contentType is honest (a consumer
+          // that trusts the label and decodes as JPEG would otherwise fail).
+          contentType: imageMimeFromBase64(b64),
           data: b64,
           size,
           title
@@ -5687,64 +5851,6 @@
   }
   function hasFrames(item) {
     return framesOf(item).length > 0;
-  }
-
-  // ../packages/mapper/src/jpeg-deid.ts
-  function stripJpegMetadata(bytes) {
-    if (bytes.length < 4 || bytes[0] !== 255 || bytes[1] !== 216) return bytes;
-    const keep = [[0, 2]];
-    let dropped = false;
-    let i = 2;
-    while (i + 1 < bytes.length) {
-      if (bytes[i] !== 255) return bytes;
-      const marker = bytes[i + 1] ?? 0;
-      if (marker === 218 || marker === 217) {
-        keep.push([i, bytes.length]);
-        i = bytes.length;
-        break;
-      }
-      if (marker === 1 || marker >= 208 && marker <= 215) {
-        keep.push([i, i + 2]);
-        i += 2;
-        continue;
-      }
-      if (i + 3 >= bytes.length) return bytes;
-      const len = (bytes[i + 2] ?? 0) << 8 | (bytes[i + 3] ?? 0);
-      const segEnd = i + 2 + len;
-      if (len < 2 || segEnd > bytes.length) return bytes;
-      if (marker === 225 || marker === 254) {
-        dropped = true;
-      } else {
-        keep.push([i, segEnd]);
-      }
-      i = segEnd;
-    }
-    if (!dropped) return bytes;
-    const total = keep.reduce((n, [s, e]) => n + (e - s), 0);
-    const out = new Uint8Array(total);
-    let o = 0;
-    for (const [s, e] of keep) {
-      out.set(bytes.subarray(s, e), o);
-      o += e - s;
-    }
-    return out;
-  }
-  function stripJpegMetadataBase64(b64) {
-    try {
-      const bin = atob(b64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const stripped = stripJpegMetadata(bytes);
-      if (stripped === bytes) return b64;
-      let s = "";
-      const CHUNK = 32768;
-      for (let i = 0; i < stripped.length; i += CHUNK) {
-        s += String.fromCharCode(...stripped.subarray(i, i + CHUNK));
-      }
-      return btoa(s);
-    } catch {
-      return b64;
-    }
   }
 
   // ../packages/mapper/src/link.ts
