@@ -214,7 +214,12 @@ function rowId(v) {
 // Flatten S02 medication bodies → adapted drug rows. `adaptOpts` is
 // passed through to adaptMedicationFromDetail (null for regular meds,
 // { is_chronic: true } for chronic prescriptions).
-function collectDrugs(results, spec, adaptOpts) {
+//
+// Pure: takes the raw per-row results array (each `{ body }` | `{ error }`
+// | null) and returns adapted drug items. Exported so the fixture-based
+// regression harness reuses the EXACT same flattening the live fetchers
+// do — no drift between the test path and the shipped path.
+export function collectDrugs(results, spec, adaptOpts) {
   const drugs = [];
   for (const r of results) {
     if (!r || r.error || !r.body) continue;
@@ -240,6 +245,17 @@ function byVisitIndex(reqs, results) {
   return byIdx;
 }
 
+// Pure: flatten IHKE3306S02 regular-medication / chronic-prescription detail
+// bodies → adapted drug items. Exported (spec baked in) so the regression
+// harness reuses the exact same flattening + spec the live fetchers use.
+export function adaptMedicationResults(results) {
+  return collectDrugs(results, MEDICATION_SPEC, null);
+}
+
+export function adaptChronicMedicationResults(results) {
+  return collectDrugs(results, CHRONIC_MEDICATION_SPEC, { is_chronic: true });
+}
+
 // `skipRowIds`: Set<string> of row_IDs already fetched by another fan-out
 // (the chronic prescriptions pass). When the chronic list and the regular
 // meds list share a row_ID, we skip the regular call to avoid double-
@@ -250,7 +266,7 @@ export async function fetchMedicationDetails({ tabId, baseUrl, visits, skipRowId
     .map((v) => ({ row_ID: rowId(v) }))
     .filter((r) => r.row_ID && !skip.has(r.row_ID));
   const results = await fetchDetailsInTab(tabId, baseUrl, reqs, MEDICATION_SPEC);
-  return collectDrugs(results, MEDICATION_SPEC, null);
+  return adaptMedicationResults(results);
 }
 
 export async function fetchChronicMedicationDetails({ tabId, baseUrl, visits }) {
@@ -258,18 +274,29 @@ export async function fetchChronicMedicationDetails({ tabId, baseUrl, visits }) 
     .map((v) => ({ row_ID: rowId(v), ctype: String(v.ori_TYPE || v.ori_type || "") }))
     .filter((r) => r.row_ID);
   const results = await fetchDetailsInTab(tabId, baseUrl, reqs, CHRONIC_MEDICATION_SPEC);
-  return collectDrugs(results, CHRONIC_MEDICATION_SPEC, { is_chronic: true });
+  return adaptChronicMedicationResults(results);
 }
 
-export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
-  const reqs = visits
+// Build the per-row request descriptors for the imaging detail fan-out.
+// Pure + exported so the regression harness reconstructs the SAME
+// {row_ID,ctype,listIdx} parallel array the live fetcher feeds into
+// adaptImagingDetailResults below.
+export function buildImagingReqs(visits) {
+  return visits
     .map((v, listIdx) => ({
       row_ID: rowId(v),
       ctype: v.ori_TYPE || v.ori_type || "A",
       listIdx,
     }))
     .filter((r) => r.row_ID);
-  const results = await fetchDetailsInTab(tabId, baseUrl, reqs, IMAGING_SPEC);
+}
+
+// Pure: adapt IHKE3408S02 imaging detail bodies → { reports, jpegCandidates }.
+// `results` is the raw per-row results array (parallel to `reqs`), `reqs` the
+// {row_ID,ctype,listIdx} descriptors from buildImagingReqs, `visits` the
+// IHKE3408S01 list rows. Exported so the regression harness reuses the exact
+// same narrative-DR + jpeg-candidacy logic as the live sync — no drift.
+export function adaptImagingDetailResults({ results, reqs, visits }) {
   const reports = [];
   // `jpegCandidates` carries (rid, ctype, iplCaseSeqNo, needsTrigger,
   // mainMeta) for rows that actually have an image at NHI side.
@@ -462,14 +489,15 @@ export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
   return { reports, jpegCandidates };
 }
 
-export async function fetchProcedureDetails({ tabId, baseUrl, visits }) {
-  const reqs = visits
-    .map((v) => ({
-      row_ID: v.row_ID || v.row_id || v.rowid || v.rowID || "",
-      ctype: v.ori_type || v.ori_TYPE || "",
-    }))
-    .filter((r) => r.row_ID);
-  const results = await fetchDetailsInTab(tabId, baseUrl, reqs, PROCEDURE_SPEC);
+export async function fetchImagingDetails({ tabId, baseUrl, visits }) {
+  const reqs = buildImagingReqs(visits);
+  const results = await fetchDetailsInTab(tabId, baseUrl, reqs, IMAGING_SPEC);
+  return adaptImagingDetailResults({ results, reqs, visits });
+}
+
+// Pure: flatten IHKE3308S02 procedure detail bodies → adapted Procedure
+// items. Exported so the regression harness reuses the same flattening.
+export function adaptProcedureResults(results) {
   const procedures = [];
   for (const r of results) {
     if (!r || r.error || !r.body) continue;
@@ -483,6 +511,17 @@ export async function fetchProcedureDetails({ tabId, baseUrl, visits }) {
     }
   }
   return procedures;
+}
+
+export async function fetchProcedureDetails({ tabId, baseUrl, visits }) {
+  const reqs = visits
+    .map((v) => ({
+      row_ID: v.row_ID || v.row_id || v.rowid || v.rowID || "",
+      ctype: v.ori_type || v.ori_TYPE || "",
+    }))
+    .filter((r) => r.row_ID);
+  const results = await fetchDetailsInTab(tabId, baseUrl, reqs, PROCEDURE_SPEC);
+  return adaptProcedureResults(results);
 }
 
 export async function fetchEncounterDetails({ tabId, baseUrl, visits }) {

@@ -10,29 +10,24 @@
 //   - "backend" → POST per-page_type items to /sync/upload-structured,
 //                 then export the cumulative bundle for the popup.
 
-import {
-  dedupImagingItems,
-  maskId,
-  maskName,
-  stripJpegMetadataBase64,
-} from "@nhi-fhir-bridge/mapper";
-import {
-  // adaptEncounterFromMedExpense is invoked directly from the
-  // IHKE3303S02 detail fan-out (overrides the registry's classHint
-  // with 急診/住院 derived from the detail body), so it needs to be
-  // a named import — not only reachable via NHI_API_ENDPOINTS[i].adapt.
-  // Forgetting this re-import after extracting the endpoint registry
-  // in v0.6.3 shipped a ReferenceError that only fired in production
-  // syncs with non-empty encounters. Tests don't exercise that path.
-  adaptEncounterFromMedExpense,
-  adaptImageOnlyReportFromMeta,
-  adaptInpatientEncounter,
-  adaptInpatientProcedures,
-} from "../nhi-adapters.js";
+// maskId / maskName are still used directly here for the backend-upload
+// override de-identification (the byType narrative masking moved to
+// build-bundle's finalizeByType). The per-category adapters + S02 detail
+// helpers + dedup/redact/strip the orchestrator used to call inline now live
+// behind build-bundle.ts — see the import below.
+import { maskId, maskName } from "@nhi-fhir-bridge/mapper";
 import { ENDPOINT_LABEL_ZH, NHI_API_ENDPOINTS } from "../nhi-endpoints.js";
 import { maybeFetchPatientIdFromNhi } from "./auth.js";
 import { exportPatientBundle, postStructuredChunked, postSyncLog } from "./backend-upload.js";
 import { clearResultBadge, showResultBadge } from "./badge.js";
+import {
+  buildDischargeSummaryItems,
+  computePharmacyRowIds,
+  finalizeByType,
+  injectImagingJpegs,
+  reAdaptEncounters,
+  reAdaptInpatient,
+} from "./build-bundle.js";
 import { assembleLocalBundle, stashFhirBundle } from "./bundle.js";
 import {
   CANCEL_ERROR,
@@ -88,7 +83,6 @@ function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
     const timer = setTimeout(done, timeoutMs);
   });
 }
-import { rocToISO } from "../nhi-adapters.js";
 import { fetchDischargeSummaryHtmls } from "./discharge-summary-fetcher.js";
 import { countImagingConfirming, imagingListNeedsResolve } from "./imaging-list-status.js";
 import {
@@ -96,22 +90,7 @@ import {
   fetchNhiListsInTab,
   refetchImagingListUntilResolved,
 } from "./nhi-list-fetch.js";
-import {
-  applyDateRangeToPath,
-  deidentifyOverride,
-  isMaskEnabled,
-  redactDemographicsDeep,
-  replaceNameDeep,
-} from "./patient-override.js";
-import {
-  classFromS02Detail,
-  funcSeqNoFromS02Detail,
-  labOrderCodesFromS02Detail,
-  pickS02MainRow,
-  primaryIcdFromS02Detail,
-  rxOrderCodesFromS02Detail,
-  secondaryIcdsFromS02Detail,
-} from "./s02-detail.js";
+import { applyDateRangeToPath, deidentifyOverride, isMaskEnabled } from "./patient-override.js";
 import {
   isCancelled,
   resetCancelled,
@@ -257,18 +236,7 @@ export async function runNhiApiSync({
   // pickup events without resorting to hospital-name string matching.
   // (Adapter still uses hospital name as a defensive fallback if either
   // medication endpoint failed.)
-  const pharmacyRowIds = new Set();
-  for (const name of ["medications", "chronic_prescriptions"]) {
-    const idx = NHI_API_ENDPOINTS.findIndex((e) => e.name === name);
-    if (idx < 0 || settled[idx]?.status !== "fulfilled") continue;
-    for (const v of settled[idx].value.rawList || []) {
-      const id = v.row_ID || v.rowid || v.rowID;
-      const oriTypeName = v.ori_TYPE_NAME || v.ori_type_name || "";
-      if (id && oriTypeName.includes("藥局")) {
-        pharmacyRowIds.add(id);
-      }
-    }
-  }
+  const pharmacyRowIds = computePharmacyRowIds(settled);
 
   const encIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "encounters");
   if (encIdx >= 0 && settled[encIdx].status === "fulfilled") {
@@ -283,36 +251,9 @@ export async function runNhiApiSync({
           () => fetchEncounterDetails({ tabId, baseUrl: BASE, visits }),
         );
         // Re-adapt with classHint + secondary diagnoses + bilingual
-        // primary ICD all sourced from the S02 detail body.
-        const reAdapted = [];
-        for (let i = 0; i < visits.length; i++) {
-          const detail = detailMap?.get(i) || null;
-          const cls = classFromS02Detail(detail) || "AMB";
-          const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
-          const primaryDiagnosis = primaryIcdFromS02Detail(detail);
-          // NHI 醫令碼 of every drug this visit prescribed — the linker uses it to
-          // attach MedicationRequests to the EXACT prescribing Encounter (#26).
-          const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
-          // NHI 醫令碼 of every 檢驗 this visit ordered (sp_IHKE3302S07/S10) — the
-          // linker attaches diagnosis-less lab Observations to the EXACT ordering
-          // visit (#26 extended to labs; fixes "3 同日門診, 檢驗掛錯診").
-          const labOrderCodes = labOrderCodesFromS02Detail(detail);
-          // NHI 就醫序號 — merges 申報 rows of ONE 就醫 split across 費用類別
-          // (different part_AMT/appl_DOT) into one Encounter (see encounterStableId).
-          const funcSeqNo = funcSeqNoFromS02Detail(detail);
-          const visit = visits[i];
-          const rowId = visit.roW_ID || visit.row_id || visit.row_ID;
-          const isPharmacy = rowId ? pharmacyRowIds.has(rowId) : false;
-          const it = adaptEncounterFromMedExpense(visit, cls, {
-            pharmacy: isPharmacy,
-            primary_diagnosis: primaryDiagnosis,
-            secondary_diagnoses: secondaryDiagnoses,
-            rx_order_codes: rxOrderCodes,
-            lab_order_codes: labOrderCodes,
-            func_seq_no: funcSeqNo,
-          });
-          if (it) reAdapted.push(it);
-        }
+        // primary ICD + rx/lab order codes + 就醫序號, all sourced from the
+        // S02 detail body. (Pure — shared with the fixture regression loop.)
+        const reAdapted = reAdaptEncounters({ visits, detailMap, pharmacyRowIds });
         settled[encIdx].value.items = reAdapted;
         settled[encIdx].value.raw_count = reAdapted.length;
       } catch (e) {
@@ -359,60 +300,16 @@ export async function runNhiApiSync({
               : `📥 取得 ${visits.length} 筆住院紀錄詳情…（已 ${sec} 秒）`,
           () => fetchInpatientDetails({ tabId, baseUrl: BASE, visits }),
         );
-        const reAdapted = [];
-        // Build the discharge-summary candidate list during the same
-        // visit walk that runs the encounter re-adaptation, so the
-        // S02-detail body is iterated only once per row.
-        const dischargeCandidatesRaw: Array<{
-          rowId: string;
-          ctype: string;
-          hospital: string;
-          admissionDate: string;
-          dischargeDate: string;
-        }> = [];
-        for (let i = 0; i < visits.length; i++) {
-          const detail = detailMap?.get(i) || null;
-          const primaryDiagnosis = primaryIcdFromS02Detail(detail);
-          const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
-          // #26 (住院): the 住院 detail's sp_IHKE3302S11_data drug list lets the
-          // linker attach inpatient MedicationRequests to THIS admission by drug
-          // code (same rule as 門診), not just by the validityPeriod heuristic.
-          const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
-          // #26 (住院 labs): the 住院 detail's sp_IHKE3302S10_data 檢驗醫令 list lets
-          // the linker attach inpatient lab Observations to THIS admission by code.
-          const labOrderCodes = labOrderCodesFromS02Detail(detail);
-          const it = adaptInpatientEncounter(visits[i], {
-            primary_diagnosis: primaryDiagnosis,
-            secondary_diagnoses: secondaryDiagnoses,
-            rx_order_codes: rxOrderCodes,
-            lab_order_codes: labOrderCodes,
-          });
-          if (it) reAdapted.push(it);
-          // 出院病摘 candidacy gate — `has_XML` on the S02 detail body
-          // is NHI's signal that a discharge summary HTML document is
-          // available for this row via /getxml. `has_PDF` is a parallel
-          // signal for PDF rendering — v0.16 intentionally HTML-only.
-          const mainRow = pickS02MainRow(detail);
-          // Surgeries done during this stay (op_CODE / opcode_data) → Procedures.
-          // The 手術 list (IHKE3301S05) misses most of these; the 住院 detail is
-          // their only faithful source. Merged into the procedures bucket below.
-          if (mainRow) inpatientProcedureItems.push(...adaptInpatientProcedures(mainRow));
-          const hasXml = String(mainRow?.has_XML || mainRow?.has_xml || "").toUpperCase() === "Y";
-          if (!hasXml) continue;
-          const v = visits[i];
-          const rowId = String(v?.row_ID || v?.row_id || v?.roW_ID || "");
-          if (!rowId) continue;
-          dischargeCandidatesRaw.push({
-            rowId,
-            // ctype=3 (住院) — same value the detail page_load uses.
-            // Hardcoded because IHKE3309S02 only returns data for ctype=3
-            // and the modal's "查看檔案" link always sends t=3.
-            ctype: "3",
-            hospital: String(v?.hosp_ABBR || v?.hosp_abbr || ""),
-            admissionDate: rocToISO(v?.in_DATE || v?.func_DATE || "") || "",
-            dischargeDate: rocToISO(v?.out_DATE || "") || "",
-          });
-        }
+        // Re-adapt each 住院 row from its S02 detail body, collecting the two
+        // side-products of the same walk: surgeries (→ procedures bucket) and
+        // the 出院病摘 candidate list (has_XML="Y" rows). Pure — shared with
+        // the fixture regression loop.
+        const {
+          items: reAdapted,
+          inpatientProcedures,
+          dischargeCandidates: dischargeCandidatesRaw,
+        } = reAdaptInpatient({ visits, detailMap });
+        inpatientProcedureItems.push(...inpatientProcedures);
         settled[inpIdx].value.items = reAdapted;
         settled[inpIdx].value.raw_count = reAdapted.length;
         dischargeCandidates = dischargeCandidatesRaw.length;
@@ -437,21 +334,15 @@ export async function runNhiApiSync({
             for (const [k, v] of Object.entries(failReasons)) {
               dischargeFailReasons[k] = (dischargeFailReasons[k] || 0) + v;
             }
+            // Count hits/misses for the breakdown line, then build the
+            // document_references items via the shared pure helper.
             for (const cand of dischargeCandidatesRaw) {
-              const html = htmlMap.get(cand.rowId);
-              if (!html) {
-                dischargeFetchFailed++;
-                continue;
-              }
-              dischargeFetched++;
-              dischargeSummaryItems.push({
-                html,
-                row_id: cand.rowId,
-                hospital: cand.hospital,
-                admission_date: cand.admissionDate,
-                discharge_date: cand.dischargeDate,
-              });
+              if (htmlMap.get(cand.rowId)) dischargeFetched++;
+              else dischargeFetchFailed++;
             }
+            dischargeSummaryItems.push(
+              ...buildDischargeSummaryItems(dischargeCandidatesRaw, htmlMap),
+            );
           } catch (e: any) {
             errors.push(`discharge summary: ${e?.message || e}`);
           }
@@ -950,52 +841,15 @@ export async function runNhiApiSync({
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3);
 
-        // Re-key allResults by (rid|ctype) so we can match them back
-        // to the narrative items. Multiple rows share order_CODE so
-        // (rid|ctype) is the only safe identity.
-        const resultByKey = new Map<string, any>();
-        for (const r of allResults) {
-          if (!Array.isArray(r?.jpgBase64s) || r.jpgBase64s.length === 0) continue;
-          resultByKey.set(`${r.rid}|${r.ctype}`, r);
-        }
-
-        // Pass 1: inject jpgBase64s into existing narrative reports.
-        const items = settled[imgIdx].value.items || [];
-        const matchedKeys = new Set<string>();
-        for (const item of items) {
-          if (!item) continue;
-          const key = `${item.rid || ""}|${item.ctype || ""}`;
-          const match = resultByKey.get(key);
-          if (match) {
-            item.jpgBase64s = match.jpgBase64s;
-            item.iplCaseSeqNo = match.iplCaseSeqNo || null;
-            matchedKeys.add(key);
-          }
-        }
-
-        // Pass 2: for jpeg-ready candidates whose narrative path
-        // returned null (image-only rows), synthesize a DR item from
-        // mainMeta + jpgBase64s. Without this, X-ray / endoscopy
-        // rows with no typed report disappear from the bundle
-        // entirely even though the patient can see the image in
-        // 健康存摺.
-        for (const cand of imagingJpegCandidates) {
-          if (cand.hasNarrativeReport) continue;
-          const key = `${cand.rid}|${cand.ctype}`;
-          const match = resultByKey.get(key);
-          if (!match || !Array.isArray(match.jpgBase64s) || match.jpgBase64s.length === 0) {
-            continue;
-          }
-          const synth: any = adaptImageOnlyReportFromMeta(cand.mainMeta, {
-            rid: cand.rid,
-            ctype: cand.ctype,
-          });
-          if (!synth) continue;
-          synth.jpgBase64s = match.jpgBase64s;
-          synth.iplCaseSeqNo = match.iplCaseSeqNo || null;
-          items.push(synth);
-          matchedKeys.add(key);
-        }
+        // Inject fetched JPEG frames into the narrative items (pass 1) and
+        // synthesize image-only DRs for jpeg-ready rows whose narrative path
+        // returned null (pass 2). Pure — shared with the fixture regression
+        // loop. matchedKeys drives the pending-stash cleanup below.
+        const { items, matchedKeys } = injectImagingJpegs({
+          items: settled[imgIdx].value.items || [],
+          candidates: imagingJpegCandidates,
+          jpegResults: allResults,
+        });
         settled[imgIdx].value.items = items;
         settled[imgIdx].value.raw_count = items.length;
 
@@ -1037,8 +891,9 @@ export async function runNhiApiSync({
   }
   _markPhase("imaging-jpeg-await");
 
-  // Step 2: aggregate items by page_type, POST to backend.
-  const byType = {};
+  // Step 2: build the per-endpoint breakdown (UI strings) below, then
+  // aggregate items into page_type buckets via finalizeByType (shared with
+  // the fixture regression loop).
   // Per-endpoint breakdown so the final status can tell user exactly
   // which endpoints came back empty / mis-shaped. Use the Chinese label
   // when known; only fall back to the raw endpoint name for unmapped
@@ -1050,7 +905,7 @@ export async function runNhiApiSync({
   // "2") we CANNOT tell apart: (a) a genuinely text-only study, (b) NHI's JPG
   // preview — generated-on-view from the permanent DCM — not yet generated or
   // expired, (c) a per-patient generation cooldown. Live-investigated
-  // 2026-06-22 (孫澄貴, the heavily-synced probe patient): 167 JPG frames on
+  // 2026-06-22 (the heavily-synced probe patient): 167 JPG frames on
   // 6/19 → 0 on 6/22, ALL rows "2", yet OTHER family members still had 有影像檔,
   // and the study detail showed JPG=無資料 while the DCM (15 MB) stayed intact.
   // → the image data is safe; only the JPG-preview layer is affected, it's
@@ -1288,92 +1143,21 @@ export async function runNhiApiSync({
       }
       breakdown.push(`　${parts.join(" / ")}`);
     }
-    if (items.length === 0) continue;
-    byType[ep.page_type] = byType[ep.page_type] || [];
-    byType[ep.page_type].push(...items);
-  }
-
-  // 出院病摘 — separate page_type fed by the inpatient detail step
-  // above. Items skip the breakdown loop's settled-endpoint reading
-  // because they don't belong to a NHI list endpoint of their own
-  // (one per inpatient row with has_XML="Y" — the count was already
-  // surfaced as a sub-line on the 住院 breakdown row).
-  if (dischargeSummaryItems.length > 0) {
-    // biome-ignore lint/complexity/useLiteralKeys: byType is typed as {}; bracket notation works around inference gap
-    byType["document_references"] = byType["document_references"] || [];
-    // biome-ignore lint/complexity/useLiteralKeys: see above
-    byType["document_references"].push(...dischargeSummaryItems);
-  }
-
-  // v0.15+: collapse multi-channel NHI duplicates of the same imaging
-  // study. NHI's IHKE3408S01 can ship the same CT/US under multiple
-  // ori_TYPE channels — each gets its own ipL_CASE_SEQ_NO, so the
-  // mapper would otherwise emit N separate DRs with identical 10-frame
-  // payloads. dedupImagingItems groups by (code, date, hospital), hashes
-  // by first-frame content, and merges same-content buckets into one.
-  // Front+lateral X-ray (different content under same code/date/hospital)
-  // is preserved — different hashes → different items.
-  const drBucket = (byType as any).diagnostic_reports;
-  if (Array.isArray(drBucket) && drBucket.length > 0) {
-    const before = drBucket.length;
-    (byType as any).diagnostic_reports = dedupImagingItems(drBucket);
-    const after = (byType as any).diagnostic_reports.length;
-    if (after < before) {
-      console.info(
-        `[imaging-dedup] ${before} → ${after} items (collapsed ${before - after} multi-channel duplicates)`,
-      );
-    }
   }
 
   // Mask gate is read fresh per sync — defaults ON (privacy-first, v0.20.16;
-  // only an explicit opt-out disables it). When ON, also scrub the user's
-  // real name out of any NHI narrative field before it flows into the mapper.
+  // only an explicit opt-out disables it). finalizeByType aggregates the
+  // re-adapted items into page_type buckets, pushes 出院病摘, collapses
+  // multi-channel imaging duplicates (dedupImagingItems), and applies the
+  // de-identification masking (name / 身分證 / DOB / 病歷號碼 / JPEG EXIF).
+  // It runs over the SAME `settled` the breakdown loop above just read, and is
+  // shared verbatim with the fixture regression loop — single source of truth.
   const maskEnabled = await isMaskEnabled();
-  if (maskEnabled && patientOverride.name) {
-    const replacement = maskName(patientOverride.name);
-    for (const key of Object.keys(byType)) {
-      byType[key] = replaceNameDeep(byType[key], patientOverride.name, replacement);
-    }
-  }
-  // Defense-in-depth: NHI report headers (radiology / pathology) sometimes
-  // echo the patient's 身分證 in narrative text. When de-identifying, scrub
-  // it out of the same byType narratives — exact-token replace with the
-  // half-masked form so it stays consistent with Patient.identifier.value.
-  if (maskEnabled && patientOverride.id_no) {
-    const idReplacement = maskId(patientOverride.id_no, "X");
-    for (const key of Object.keys(byType)) {
-      byType[key] = replaceNameDeep(byType[key], patientOverride.id_no, idReplacement);
-    }
-  }
-  // The name/id token-replace above can't catch the birth date + 病歷號碼
-  // baked into 出院病摘 HTML and 病理報告 narratives — those aren't the
-  // user-entered values, and a mistyped override DOB would leave the real
-  // one in cleartext. Scrub them label-anchored (出生日期 → year-only,
-  // 病歷號碼 → redacted) while the 出院病摘 HTML is still plaintext here
-  // (document-reference.ts base64-encodes it at map time). Covers both the
-  // local-bundle and backend-upload paths since this runs before the split.
-  if (maskEnabled) {
-    for (const key of Object.keys(byType)) {
-      byType[key] = redactDemographicsDeep(byType[key]);
-    }
-  }
-  // Audit P2-7 (2026-06-12): PACS-exported JPEGs can carry patient
-  // demographics in EXIF/COM metadata that field masking never touches.
-  // With the toggle on, strip those segments (pixels untouched) BEFORE
-  // the frames reach the local mapper or the backend upload — both read
-  // jpgBase64s off these items. Burned-in pixel text cannot be removed;
-  // the popup's de-identify disclaimer says so.
-  const drItems = (byType as Record<string, any[]>).diagnostic_reports;
-  if (maskEnabled && Array.isArray(drItems)) {
-    for (const item of drItems as any[]) {
-      if (Array.isArray(item?.jpgBase64s)) {
-        item.jpgBase64s = item.jpgBase64s.map((b64: string) => stripJpegMetadataBase64(b64));
-      }
-      if (typeof item?.jpgBase64 === "string") {
-        item.jpgBase64 = stripJpegMetadataBase64(item.jpgBase64);
-      }
-    }
-  }
+  const byType = finalizeByType(settled, dischargeSummaryItems, {
+    maskEnabled,
+    patientName: patientOverride.name,
+    patientId: patientOverride.id_no,
+  });
 
   let total = 0;
   let _localFilename = null;

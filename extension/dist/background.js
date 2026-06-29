@@ -7357,6 +7357,312 @@
     return { filename, bytes };
   }
 
+  // src/background/s02-detail.ts
+  function pickS02MainRow(body) {
+    if (!body || typeof body !== "object") return null;
+    for (const k of Object.keys(body)) {
+      if (/^ihke\d+S02_main_data$/i.test(k) && Array.isArray(body[k]) && body[k].length > 0) {
+        return body[k][0];
+      }
+    }
+    return null;
+  }
+  function classFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return null;
+    const tn = String(main.hosp_DATA_TYPE_NAME || "");
+    if (tn.includes("\u6025")) return "EMER";
+    if (tn.includes("\u4F4F\u9662")) return "IMP";
+    if (hasEmergencyProcedure(main)) return "EMER";
+    return "AMB";
+  }
+  function hasEmergencyProcedure(main) {
+    const list = Array.isArray(main.sp_IHKE3302S05) ? main.sp_IHKE3302S05 : [];
+    for (const item of list) {
+      const name = String(item?.cure_CNAME || item?.cure_cname || "");
+      if (name.includes("\u6025\u8A3A")) return true;
+    }
+    return false;
+  }
+  function primaryIcdFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return null;
+    const codeName = main.icd9cm_CODE_CNAME || main.icd9cm_code_cname || "";
+    if (!codeName) return null;
+    const code = main.icd9cm_CODE || main.icd9cm_code || "";
+    const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
+    const pickHalf = (s, half) => {
+      const str = String(s || "");
+      const idx = str.indexOf("||");
+      if (idx === -1) return str.trim();
+      if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
+      return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
+    };
+    const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
+    const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
+    if (!code && !name_en && !name_zh) return null;
+    return { code, name_en, name_zh };
+  }
+  function secondaryIcdsFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return [];
+    const list = Array.isArray(main.icdcode_data) ? main.icdcode_data : [];
+    const out = [];
+    const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
+    const pickHalf = (s, half) => {
+      const str = String(s || "");
+      const idx = str.indexOf("||");
+      if (idx === -1) return str.trim();
+      if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
+      return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
+    };
+    for (const item of list) {
+      const codeName = item?.icd_code_name || item?.icd_CODE_NAME || "";
+      const codeMatch = String(codeName).match(/^([A-Z0-9.]+)\//);
+      const code = codeMatch ? codeMatch[1] : "";
+      const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
+      const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
+      if (!code && !name_en && !name_zh) continue;
+      out.push({ code, name_en, name_zh });
+    }
+    return out;
+  }
+  function rxOrderCodesFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return [];
+    const codes = /* @__PURE__ */ new Set();
+    for (const listKey of ["sp_IHKE3302S04_data", "sp_IHKE3302S11_data"]) {
+      const list = Array.isArray(main[listKey]) ? main[listKey] : [];
+      for (const item of list) {
+        const c = String(item?.order_code || item?.order_CODE || "").trim();
+        if (c) codes.add(c);
+      }
+    }
+    return [...codes];
+  }
+  function labOrderCodesFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return [];
+    const codes = /* @__PURE__ */ new Set();
+    for (const listKey of ["sp_IHKE3302S07_data", "sp_IHKE3302S10_data"]) {
+      const list = Array.isArray(main[listKey]) ? main[listKey] : [];
+      for (const item of list) {
+        const c = String(item?.order_CODE || item?.order_code || "").trim();
+        if (c) codes.add(c);
+      }
+    }
+    return [...codes];
+  }
+  function funcSeqNoFromS02Detail(body) {
+    const main = pickS02MainRow(body);
+    if (!main) return "";
+    return String(main.func_SEQ_NO ?? main.func_seq_no ?? main.FUNC_SEQ_NO ?? "").trim();
+  }
+
+  // src/background/build-bundle.ts
+  function epIndex(name) {
+    return NHI_API_ENDPOINTS.findIndex((e) => e.name === name);
+  }
+  function computePharmacyRowIds(settled) {
+    const pharmacyRowIds = /* @__PURE__ */ new Set();
+    for (const name of ["medications", "chronic_prescriptions"]) {
+      const idx = epIndex(name);
+      if (idx < 0 || settled[idx]?.status !== "fulfilled") continue;
+      for (const v of settled[idx].value.rawList || []) {
+        const id = v.row_ID || v.rowid || v.rowID;
+        const oriTypeName = v.ori_TYPE_NAME || v.ori_type_name || "";
+        if (id && oriTypeName.includes("\u85E5\u5C40")) {
+          pharmacyRowIds.add(id);
+        }
+      }
+    }
+    return pharmacyRowIds;
+  }
+  function reAdaptEncounters({
+    visits,
+    detailMap,
+    pharmacyRowIds
+  }) {
+    const reAdapted = [];
+    for (let i = 0; i < visits.length; i++) {
+      const detail = detailMap?.get(i) || null;
+      const cls = classFromS02Detail(detail) || "AMB";
+      const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
+      const primaryDiagnosis = primaryIcdFromS02Detail(detail);
+      const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
+      const labOrderCodes2 = labOrderCodesFromS02Detail(detail);
+      const funcSeqNo = funcSeqNoFromS02Detail(detail);
+      const visit = visits[i];
+      const rowId2 = visit.roW_ID || visit.row_id || visit.row_ID;
+      const isPharmacy = rowId2 ? pharmacyRowIds.has(rowId2) : false;
+      const it = adaptEncounterFromMedExpense(visit, cls, {
+        pharmacy: isPharmacy,
+        primary_diagnosis: primaryDiagnosis,
+        secondary_diagnoses: secondaryDiagnoses,
+        rx_order_codes: rxOrderCodes,
+        lab_order_codes: labOrderCodes2,
+        func_seq_no: funcSeqNo
+      });
+      if (it) reAdapted.push(it);
+    }
+    return reAdapted;
+  }
+  function reAdaptInpatient({
+    visits,
+    detailMap
+  }) {
+    const reAdapted = [];
+    const inpatientProcedures = [];
+    const dischargeCandidates = [];
+    for (let i = 0; i < visits.length; i++) {
+      const detail = detailMap?.get(i) || null;
+      const primaryDiagnosis = primaryIcdFromS02Detail(detail);
+      const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
+      const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
+      const labOrderCodes2 = labOrderCodesFromS02Detail(detail);
+      const it = adaptInpatientEncounter(visits[i], {
+        primary_diagnosis: primaryDiagnosis,
+        secondary_diagnoses: secondaryDiagnoses,
+        rx_order_codes: rxOrderCodes,
+        lab_order_codes: labOrderCodes2
+      });
+      if (it) reAdapted.push(it);
+      const mainRow = pickS02MainRow(detail);
+      if (mainRow) inpatientProcedures.push(...adaptInpatientProcedures(mainRow));
+      const hasXml = String(mainRow?.has_XML || mainRow?.has_xml || "").toUpperCase() === "Y";
+      if (!hasXml) continue;
+      const v = visits[i];
+      const rowId2 = String(v?.row_ID || v?.row_id || v?.roW_ID || "");
+      if (!rowId2) continue;
+      dischargeCandidates.push({
+        rowId: rowId2,
+        // ctype=3 (住院) — same value the detail page_load uses.
+        ctype: "3",
+        hospital: String(v?.hosp_ABBR || v?.hosp_abbr || ""),
+        admissionDate: rocToISO(v?.in_DATE || v?.func_DATE || "") || "",
+        dischargeDate: rocToISO(v?.out_DATE || "") || ""
+      });
+    }
+    return { items: reAdapted, inpatientProcedures, dischargeCandidates };
+  }
+  function buildDischargeSummaryItems(dischargeCandidates, htmlByRowId) {
+    const get = (k) => htmlByRowId instanceof Map ? htmlByRowId.get(k) : htmlByRowId?.[k];
+    const items = [];
+    for (const cand of dischargeCandidates) {
+      const html = get(cand.rowId);
+      if (!html) continue;
+      items.push({
+        html,
+        row_id: cand.rowId,
+        hospital: cand.hospital,
+        admission_date: cand.admissionDate,
+        discharge_date: cand.dischargeDate
+      });
+    }
+    return items;
+  }
+  function injectImagingJpegs({
+    items,
+    candidates,
+    jpegResults
+  }) {
+    const resultByKey = /* @__PURE__ */ new Map();
+    for (const r of jpegResults || []) {
+      if (!Array.isArray(r?.jpgBase64s) || r.jpgBase64s.length === 0) continue;
+      resultByKey.set(`${r.rid}|${r.ctype}`, r);
+    }
+    const out = items || [];
+    const matchedKeys = /* @__PURE__ */ new Set();
+    for (const item of out) {
+      if (!item) continue;
+      const key = `${item.rid || ""}|${item.ctype || ""}`;
+      const match = resultByKey.get(key);
+      if (match) {
+        item.jpgBase64s = match.jpgBase64s;
+        item.iplCaseSeqNo = match.iplCaseSeqNo || null;
+        matchedKeys.add(key);
+      }
+    }
+    for (const cand of candidates || []) {
+      if (cand.hasNarrativeReport) continue;
+      const key = `${cand.rid}|${cand.ctype}`;
+      const match = resultByKey.get(key);
+      if (!match || !Array.isArray(match.jpgBase64s) || match.jpgBase64s.length === 0) {
+        continue;
+      }
+      const synth = adaptImageOnlyReportFromMeta(cand.mainMeta, {
+        rid: cand.rid,
+        ctype: cand.ctype
+      });
+      if (!synth) continue;
+      synth.jpgBase64s = match.jpgBase64s;
+      synth.iplCaseSeqNo = match.iplCaseSeqNo || null;
+      out.push(synth);
+      matchedKeys.add(key);
+    }
+    return { items: out, matchedKeys };
+  }
+  function finalizeByType(settled, dischargeSummaryItems, {
+    maskEnabled,
+    patientName,
+    patientId
+  }) {
+    const byType = {};
+    for (let i = 0; i < settled.length; i++) {
+      const ep = NHI_API_ENDPOINTS[i];
+      const s = settled[i];
+      if (!s || s.status !== "fulfilled") continue;
+      const items = s.value.items || [];
+      if (items.length === 0) continue;
+      byType[ep.page_type] = byType[ep.page_type] || [];
+      byType[ep.page_type].push(...items);
+    }
+    if (dischargeSummaryItems.length > 0) {
+      byType.document_references = byType.document_references || [];
+      byType.document_references.push(...dischargeSummaryItems);
+    }
+    const drBucket = byType.diagnostic_reports;
+    if (Array.isArray(drBucket) && drBucket.length > 0) {
+      const before = drBucket.length;
+      byType.diagnostic_reports = dedupImagingItems(drBucket);
+      const after = byType.diagnostic_reports.length;
+      if (after < before) {
+        console.info(
+          `[imaging-dedup] ${before} \u2192 ${after} items (collapsed ${before - after} multi-channel duplicates)`
+        );
+      }
+    }
+    if (maskEnabled && patientName) {
+      const replacement = maskName(patientName);
+      for (const key of Object.keys(byType)) {
+        byType[key] = replaceNameDeep(byType[key], patientName, replacement);
+      }
+    }
+    if (maskEnabled && patientId) {
+      const idReplacement = maskId(patientId, "X");
+      for (const key of Object.keys(byType)) {
+        byType[key] = replaceNameDeep(byType[key], patientId, idReplacement);
+      }
+    }
+    if (maskEnabled) {
+      for (const key of Object.keys(byType)) {
+        byType[key] = redactDemographicsDeep(byType[key]);
+      }
+    }
+    const drItems = byType.diagnostic_reports;
+    if (maskEnabled && Array.isArray(drItems)) {
+      for (const item of drItems) {
+        if (Array.isArray(item?.jpgBase64s)) {
+          item.jpgBase64s = item.jpgBase64s.map((b64) => stripJpegMetadataBase64(b64));
+        }
+        if (typeof item?.jpgBase64 === "string") {
+          item.jpgBase64 = stripJpegMetadataBase64(item.jpgBase64);
+        }
+      }
+    }
+    return byType;
+  }
+
   // src/background/nhi-detail-fetchers.ts
   async function fetchDetailsInTab(tabId, baseUrl, items, spec) {
     if (items.length === 0) return [];
@@ -7517,24 +7823,31 @@
     }
     return byIdx;
   }
+  function adaptMedicationResults(results) {
+    return collectDrugs(results, MEDICATION_SPEC, null);
+  }
+  function adaptChronicMedicationResults(results) {
+    return collectDrugs(results, CHRONIC_MEDICATION_SPEC, { is_chronic: true });
+  }
   async function fetchMedicationDetails({ tabId, baseUrl, visits, skipRowIds }) {
     const skip = skipRowIds instanceof Set ? skipRowIds : new Set(skipRowIds || []);
     const reqs = visits.map((v) => ({ row_ID: rowId(v) })).filter((r) => r.row_ID && !skip.has(r.row_ID));
     const results = await fetchDetailsInTab(tabId, baseUrl, reqs, MEDICATION_SPEC);
-    return collectDrugs(results, MEDICATION_SPEC, null);
+    return adaptMedicationResults(results);
   }
   async function fetchChronicMedicationDetails({ tabId, baseUrl, visits }) {
     const reqs = visits.map((v) => ({ row_ID: rowId(v), ctype: String(v.ori_TYPE || v.ori_type || "") })).filter((r) => r.row_ID);
     const results = await fetchDetailsInTab(tabId, baseUrl, reqs, CHRONIC_MEDICATION_SPEC);
-    return collectDrugs(results, CHRONIC_MEDICATION_SPEC, { is_chronic: true });
+    return adaptChronicMedicationResults(results);
   }
-  async function fetchImagingDetails({ tabId, baseUrl, visits }) {
-    const reqs = visits.map((v, listIdx) => ({
+  function buildImagingReqs(visits) {
+    return visits.map((v, listIdx) => ({
       row_ID: rowId(v),
       ctype: v.ori_TYPE || v.ori_type || "A",
       listIdx
     })).filter((r) => r.row_ID);
-    const results = await fetchDetailsInTab(tabId, baseUrl, reqs, IMAGING_SPEC);
+  }
+  function adaptImagingDetailResults({ results, reqs, visits }) {
     const reports = [];
     const jpegCandidates = [];
     for (let i = 0; i < results.length; i++) {
@@ -7606,12 +7919,12 @@
     }
     return { reports, jpegCandidates };
   }
-  async function fetchProcedureDetails({ tabId, baseUrl, visits }) {
-    const reqs = visits.map((v) => ({
-      row_ID: v.row_ID || v.row_id || v.rowid || v.rowID || "",
-      ctype: v.ori_type || v.ori_TYPE || ""
-    })).filter((r) => r.row_ID);
-    const results = await fetchDetailsInTab(tabId, baseUrl, reqs, PROCEDURE_SPEC);
+  async function fetchImagingDetails({ tabId, baseUrl, visits }) {
+    const reqs = buildImagingReqs(visits);
+    const results = await fetchDetailsInTab(tabId, baseUrl, reqs, IMAGING_SPEC);
+    return adaptImagingDetailResults({ results, reqs, visits });
+  }
+  function adaptProcedureResults(results) {
     const procedures = [];
     for (const r of results) {
       if (!r || r.error || !r.body) continue;
@@ -7621,6 +7934,14 @@
       }
     }
     return procedures;
+  }
+  async function fetchProcedureDetails({ tabId, baseUrl, visits }) {
+    const reqs = visits.map((v) => ({
+      row_ID: v.row_ID || v.row_id || v.rowid || v.rowID || "",
+      ctype: v.ori_type || v.ori_TYPE || ""
+    })).filter((r) => r.row_ID);
+    const results = await fetchDetailsInTab(tabId, baseUrl, reqs, PROCEDURE_SPEC);
+    return adaptProcedureResults(results);
   }
   async function fetchEncounterDetails({ tabId, baseUrl, visits }) {
     const reqs = visits.map((v, idx) => ({ idx, row_ID: v.roW_ID || v.row_ID || "" })).filter((r) => r.row_ID);
@@ -8850,108 +9171,6 @@
     });
   }
 
-  // src/background/s02-detail.ts
-  function pickS02MainRow(body) {
-    if (!body || typeof body !== "object") return null;
-    for (const k of Object.keys(body)) {
-      if (/^ihke\d+S02_main_data$/i.test(k) && Array.isArray(body[k]) && body[k].length > 0) {
-        return body[k][0];
-      }
-    }
-    return null;
-  }
-  function classFromS02Detail(body) {
-    const main = pickS02MainRow(body);
-    if (!main) return null;
-    const tn = String(main.hosp_DATA_TYPE_NAME || "");
-    if (tn.includes("\u6025")) return "EMER";
-    if (tn.includes("\u4F4F\u9662")) return "IMP";
-    if (hasEmergencyProcedure(main)) return "EMER";
-    return "AMB";
-  }
-  function hasEmergencyProcedure(main) {
-    const list = Array.isArray(main.sp_IHKE3302S05) ? main.sp_IHKE3302S05 : [];
-    for (const item of list) {
-      const name = String(item?.cure_CNAME || item?.cure_cname || "");
-      if (name.includes("\u6025\u8A3A")) return true;
-    }
-    return false;
-  }
-  function primaryIcdFromS02Detail(body) {
-    const main = pickS02MainRow(body);
-    if (!main) return null;
-    const codeName = main.icd9cm_CODE_CNAME || main.icd9cm_code_cname || "";
-    if (!codeName) return null;
-    const code = main.icd9cm_CODE || main.icd9cm_code || "";
-    const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
-    const pickHalf = (s, half) => {
-      const str = String(s || "");
-      const idx = str.indexOf("||");
-      if (idx === -1) return str.trim();
-      if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
-      return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
-    };
-    const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
-    const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
-    if (!code && !name_en && !name_zh) return null;
-    return { code, name_en, name_zh };
-  }
-  function secondaryIcdsFromS02Detail(body) {
-    const main = pickS02MainRow(body);
-    if (!main) return [];
-    const list = Array.isArray(main.icdcode_data) ? main.icdcode_data : [];
-    const out = [];
-    const stripIcdPrefix = (s) => String(s || "").replace(/^[A-Z0-9.]+\/\s*/, "");
-    const pickHalf = (s, half) => {
-      const str = String(s || "");
-      const idx = str.indexOf("||");
-      if (idx === -1) return str.trim();
-      if (half === "zh") return str.slice(0, idx).trim() || str.slice(idx + 2).trim();
-      return str.slice(idx + 2).trim() || str.slice(0, idx).trim();
-    };
-    for (const item of list) {
-      const codeName = item?.icd_code_name || item?.icd_CODE_NAME || "";
-      const codeMatch = String(codeName).match(/^([A-Z0-9.]+)\//);
-      const code = codeMatch ? codeMatch[1] : "";
-      const name_en = stripIcdPrefix(pickHalf(codeName, "en"));
-      const name_zh = stripIcdPrefix(pickHalf(codeName, "zh"));
-      if (!code && !name_en && !name_zh) continue;
-      out.push({ code, name_en, name_zh });
-    }
-    return out;
-  }
-  function rxOrderCodesFromS02Detail(body) {
-    const main = pickS02MainRow(body);
-    if (!main) return [];
-    const codes = /* @__PURE__ */ new Set();
-    for (const listKey of ["sp_IHKE3302S04_data", "sp_IHKE3302S11_data"]) {
-      const list = Array.isArray(main[listKey]) ? main[listKey] : [];
-      for (const item of list) {
-        const c = String(item?.order_code || item?.order_CODE || "").trim();
-        if (c) codes.add(c);
-      }
-    }
-    return [...codes];
-  }
-  function labOrderCodesFromS02Detail(body) {
-    const main = pickS02MainRow(body);
-    if (!main) return [];
-    const codes = /* @__PURE__ */ new Set();
-    for (const listKey of ["sp_IHKE3302S07_data", "sp_IHKE3302S10_data"]) {
-      const list = Array.isArray(main[listKey]) ? main[listKey] : [];
-      for (const item of list) {
-        const c = String(item?.order_CODE || item?.order_code || "").trim();
-        if (c) codes.add(c);
-      }
-    }
-    return [...codes];
-  }
-  function funcSeqNoFromS02Detail(body) {
-    const main = pickS02MainRow(body);
-    if (!main) return "";
-    return String(main.func_SEQ_NO ?? main.func_seq_no ?? main.FUNC_SEQ_NO ?? "").trim();
-  }
-
   // src/background/sync-orchestrator.ts
   var SESSION_EXPIRED_HINT = "\u5065\u5EB7\u5B58\u647A\u767B\u5165\u903E\u6642\uFF08\u96FB\u8166\u4F11\u7720\u6216\u9592\u7F6E\u592A\u4E45\uFF09\uFF0C\u8ACB\u56DE\u5065\u5EB7\u5B58\u647A\u5206\u9801\u91CD\u65B0\u767B\u5165\uFF0C\u518D\u6309\u4E00\u6B21\u300C\u53D6\u5F97\u5065\u5EB7\u5B58\u647A\u8CC7\u6599\u300D\u5373\u53EF\u88DC\u9F4A\u3002";
   function _humanizeErrors(errs) {
@@ -9023,18 +9242,7 @@
     const errors = [];
     const settled = adaptSettledLists(settledRaw);
     _markPhase("nhi-parallel");
-    const pharmacyRowIds = /* @__PURE__ */ new Set();
-    for (const name of ["medications", "chronic_prescriptions"]) {
-      const idx = NHI_API_ENDPOINTS.findIndex((e) => e.name === name);
-      if (idx < 0 || settled[idx]?.status !== "fulfilled") continue;
-      for (const v of settled[idx].value.rawList || []) {
-        const id = v.row_ID || v.rowid || v.rowID;
-        const oriTypeName = v.ori_TYPE_NAME || v.ori_type_name || "";
-        if (id && oriTypeName.includes("\u85E5\u5C40")) {
-          pharmacyRowIds.add(id);
-        }
-      }
-    }
+    const pharmacyRowIds = computePharmacyRowIds(settled);
     const encIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "encounters");
     if (encIdx >= 0 && settled[encIdx].status === "fulfilled") {
       const visits = settled[encIdx].value.rawList || [];
@@ -9044,28 +9252,7 @@
             (sec) => sec === 0 ? `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u5C31\u91AB\u7D00\u9304\u8A73\u60C5\u2026` : `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u5C31\u91AB\u7D00\u9304\u8A73\u60C5\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
             () => fetchEncounterDetails({ tabId, baseUrl: BASE, visits })
           );
-          const reAdapted = [];
-          for (let i = 0; i < visits.length; i++) {
-            const detail = detailMap?.get(i) || null;
-            const cls = classFromS02Detail(detail) || "AMB";
-            const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
-            const primaryDiagnosis = primaryIcdFromS02Detail(detail);
-            const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
-            const labOrderCodes2 = labOrderCodesFromS02Detail(detail);
-            const funcSeqNo = funcSeqNoFromS02Detail(detail);
-            const visit = visits[i];
-            const rowId2 = visit.roW_ID || visit.row_id || visit.row_ID;
-            const isPharmacy = rowId2 ? pharmacyRowIds.has(rowId2) : false;
-            const it = adaptEncounterFromMedExpense(visit, cls, {
-              pharmacy: isPharmacy,
-              primary_diagnosis: primaryDiagnosis,
-              secondary_diagnoses: secondaryDiagnoses,
-              rx_order_codes: rxOrderCodes,
-              lab_order_codes: labOrderCodes2,
-              func_seq_no: funcSeqNo
-            });
-            if (it) reAdapted.push(it);
-          }
+          const reAdapted = reAdaptEncounters({ visits, detailMap, pharmacyRowIds });
           settled[encIdx].value.items = reAdapted;
           settled[encIdx].value.raw_count = reAdapted.length;
         } catch (e) {
@@ -9089,39 +9276,12 @@
             (sec) => sec === 0 ? `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u4F4F\u9662\u7D00\u9304\u8A73\u60C5\u2026` : `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u4F4F\u9662\u7D00\u9304\u8A73\u60C5\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,
             () => fetchInpatientDetails({ tabId, baseUrl: BASE, visits })
           );
-          const reAdapted = [];
-          const dischargeCandidatesRaw = [];
-          for (let i = 0; i < visits.length; i++) {
-            const detail = detailMap?.get(i) || null;
-            const primaryDiagnosis = primaryIcdFromS02Detail(detail);
-            const secondaryDiagnoses = secondaryIcdsFromS02Detail(detail);
-            const rxOrderCodes = rxOrderCodesFromS02Detail(detail);
-            const labOrderCodes2 = labOrderCodesFromS02Detail(detail);
-            const it = adaptInpatientEncounter(visits[i], {
-              primary_diagnosis: primaryDiagnosis,
-              secondary_diagnoses: secondaryDiagnoses,
-              rx_order_codes: rxOrderCodes,
-              lab_order_codes: labOrderCodes2
-            });
-            if (it) reAdapted.push(it);
-            const mainRow = pickS02MainRow(detail);
-            if (mainRow) inpatientProcedureItems.push(...adaptInpatientProcedures(mainRow));
-            const hasXml = String(mainRow?.has_XML || mainRow?.has_xml || "").toUpperCase() === "Y";
-            if (!hasXml) continue;
-            const v = visits[i];
-            const rowId2 = String(v?.row_ID || v?.row_id || v?.roW_ID || "");
-            if (!rowId2) continue;
-            dischargeCandidatesRaw.push({
-              rowId: rowId2,
-              // ctype=3 (住院) — same value the detail page_load uses.
-              // Hardcoded because IHKE3309S02 only returns data for ctype=3
-              // and the modal's "查看檔案" link always sends t=3.
-              ctype: "3",
-              hospital: String(v?.hosp_ABBR || v?.hosp_abbr || ""),
-              admissionDate: rocToISO(v?.in_DATE || v?.func_DATE || "") || "",
-              dischargeDate: rocToISO(v?.out_DATE || "") || ""
-            });
-          }
+          const {
+            items: reAdapted,
+            inpatientProcedures,
+            dischargeCandidates: dischargeCandidatesRaw
+          } = reAdaptInpatient({ visits, detailMap });
+          inpatientProcedureItems.push(...inpatientProcedures);
           settled[inpIdx].value.items = reAdapted;
           settled[inpIdx].value.raw_count = reAdapted.length;
           dischargeCandidates = dischargeCandidatesRaw.length;
@@ -9139,20 +9299,12 @@
                 dischargeFailReasons[k] = (dischargeFailReasons[k] || 0) + v;
               }
               for (const cand of dischargeCandidatesRaw) {
-                const html = htmlMap.get(cand.rowId);
-                if (!html) {
-                  dischargeFetchFailed++;
-                  continue;
-                }
-                dischargeFetched++;
-                dischargeSummaryItems.push({
-                  html,
-                  row_id: cand.rowId,
-                  hospital: cand.hospital,
-                  admission_date: cand.admissionDate,
-                  discharge_date: cand.dischargeDate
-                });
+                if (htmlMap.get(cand.rowId)) dischargeFetched++;
+                else dischargeFetchFailed++;
               }
+              dischargeSummaryItems.push(
+                ...buildDischargeSummaryItems(dischargeCandidatesRaw, htmlMap)
+              );
             } catch (e) {
               errors.push(`discharge summary: ${e?.message || e}`);
             }
@@ -9450,40 +9602,11 @@
             fetchFailReasonCounts.set(reason, (fetchFailReasonCounts.get(reason) ?? 0) + 1);
           }
           settled[imgIdx].value.jpegFetchFailReasons = Array.from(fetchFailReasonCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
-          const resultByKey = /* @__PURE__ */ new Map();
-          for (const r of allResults) {
-            if (!Array.isArray(r?.jpgBase64s) || r.jpgBase64s.length === 0) continue;
-            resultByKey.set(`${r.rid}|${r.ctype}`, r);
-          }
-          const items = settled[imgIdx].value.items || [];
-          const matchedKeys = /* @__PURE__ */ new Set();
-          for (const item of items) {
-            if (!item) continue;
-            const key = `${item.rid || ""}|${item.ctype || ""}`;
-            const match = resultByKey.get(key);
-            if (match) {
-              item.jpgBase64s = match.jpgBase64s;
-              item.iplCaseSeqNo = match.iplCaseSeqNo || null;
-              matchedKeys.add(key);
-            }
-          }
-          for (const cand of imagingJpegCandidates) {
-            if (cand.hasNarrativeReport) continue;
-            const key = `${cand.rid}|${cand.ctype}`;
-            const match = resultByKey.get(key);
-            if (!match || !Array.isArray(match.jpgBase64s) || match.jpgBase64s.length === 0) {
-              continue;
-            }
-            const synth = adaptImageOnlyReportFromMeta(cand.mainMeta, {
-              rid: cand.rid,
-              ctype: cand.ctype
-            });
-            if (!synth) continue;
-            synth.jpgBase64s = match.jpgBase64s;
-            synth.iplCaseSeqNo = match.iplCaseSeqNo || null;
-            items.push(synth);
-            matchedKeys.add(key);
-          }
+          const { items, matchedKeys } = injectImagingJpegs({
+            items: settled[imgIdx].value.items || [],
+            candidates: imagingJpegCandidates,
+            jpegResults: allResults
+          });
           settled[imgIdx].value.items = items;
           settled[imgIdx].value.raw_count = items.length;
           if (patientOverride.id_no) {
@@ -9510,7 +9633,6 @@
       }
     }
     _markPhase("imaging-jpeg-await");
-    const byType = {};
     const breakdown = [];
     let _imagingNeedsArm = false;
     for (let i = 0; i < settled.length; i++) {
@@ -9638,54 +9760,13 @@
         }
         breakdown.push(`\u3000${parts.join(" / ")}`);
       }
-      if (items.length === 0) continue;
-      byType[ep.page_type] = byType[ep.page_type] || [];
-      byType[ep.page_type].push(...items);
-    }
-    if (dischargeSummaryItems.length > 0) {
-      byType["document_references"] = byType["document_references"] || [];
-      byType["document_references"].push(...dischargeSummaryItems);
-    }
-    const drBucket = byType.diagnostic_reports;
-    if (Array.isArray(drBucket) && drBucket.length > 0) {
-      const before = drBucket.length;
-      byType.diagnostic_reports = dedupImagingItems(drBucket);
-      const after = byType.diagnostic_reports.length;
-      if (after < before) {
-        console.info(
-          `[imaging-dedup] ${before} \u2192 ${after} items (collapsed ${before - after} multi-channel duplicates)`
-        );
-      }
     }
     const maskEnabled = await isMaskEnabled();
-    if (maskEnabled && patientOverride.name) {
-      const replacement = maskName(patientOverride.name);
-      for (const key of Object.keys(byType)) {
-        byType[key] = replaceNameDeep(byType[key], patientOverride.name, replacement);
-      }
-    }
-    if (maskEnabled && patientOverride.id_no) {
-      const idReplacement = maskId(patientOverride.id_no, "X");
-      for (const key of Object.keys(byType)) {
-        byType[key] = replaceNameDeep(byType[key], patientOverride.id_no, idReplacement);
-      }
-    }
-    if (maskEnabled) {
-      for (const key of Object.keys(byType)) {
-        byType[key] = redactDemographicsDeep(byType[key]);
-      }
-    }
-    const drItems = byType.diagnostic_reports;
-    if (maskEnabled && Array.isArray(drItems)) {
-      for (const item of drItems) {
-        if (Array.isArray(item?.jpgBase64s)) {
-          item.jpgBase64s = item.jpgBase64s.map((b64) => stripJpegMetadataBase64(b64));
-        }
-        if (typeof item?.jpgBase64 === "string") {
-          item.jpgBase64 = stripJpegMetadataBase64(item.jpgBase64);
-        }
-      }
-    }
+    const byType = finalizeByType(settled, dischargeSummaryItems, {
+      maskEnabled,
+      patientName: patientOverride.name,
+      patientId: patientOverride.id_no
+    });
     let total = 0;
     let _localFilename = null;
     if (mode === "local") {
