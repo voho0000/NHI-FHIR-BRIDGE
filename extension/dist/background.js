@@ -4118,6 +4118,16 @@
     }
     return bestLoinc;
   }
+  function _loincRequiresBlood(loinc) {
+    if (CBC_CANONICAL_TEXT_LOINCS.has(loinc)) return true;
+    return /\bin Blood\b/i.test(LOINC_DISPLAY[loinc] ?? "");
+  }
+  function _codeFamilyIsNonBlood(code) {
+    const sp = nhiCodeSpecimen(code);
+    if (sp && sp !== "Blood") return true;
+    const prefix = String(code ?? "").trim().toUpperCase().slice(0, 2);
+    return prefix === "13";
+  }
   function findLoincDetailed(code, display) {
     if (code && code in NHI_TO_LOINC && !DISPLAY_FIRST_CODES.has(code)) {
       return { loinc: NHI_TO_LOINC[code] ?? null, cleanMatch: true };
@@ -4128,7 +4138,9 @@
       if (hit2) return { loinc: hit2, cleanMatch: true };
     }
     const hit = _findLongestMatch(combined, LOINC_MAP);
-    if (hit) return { loinc: hit, cleanMatch: true };
+    if (hit && !(_loincRequiresBlood(hit) && _codeFamilyIsNonBlood(code))) {
+      return { loinc: hit, cleanMatch: true };
+    }
     if (code && code in NHI_TO_LOINC) {
       return { loinc: NHI_TO_LOINC[code] ?? null, cleanMatch: false };
     }
@@ -4792,8 +4804,14 @@
     // 11001C ABO / 11003C RH / 11004C antibody — blood typing
     "12": "Blood",
     // 12007C AFP / 12021C CEA / 12025B Ig-G / 12053C ANA …
-    "13": "Blood",
-    // Specialty serum (less common)
+    // NHI chapter 13 (microbiology — cultures + microscopy of secretions/
+    // excreta, e.g. 13006C 排泄物/滲出物/分泌物之細菌顯微鏡檢查) is NOT one
+    // specimen family: blood culture, urine culture, sputum, wound… It was
+    // previously defaulted to "Blood", which mis-tagged secretion microscopy
+    // as a blood specimen and (with the display-only LOINC match) routed a
+    // Gram-stain pus-cell "1+(＞25/LPF)" row to the blood 770-8 Neutrophils
+    // LOINC. No safe prefix default → omit it; display markers / null decide.
+    // (2026-06-29) See _codeFamilyIsNonBlood for the paired LOINC veto.
     "14": "Blood",
     // Specialty serum (e.g. coagulation panels)
     "24": "Blood",

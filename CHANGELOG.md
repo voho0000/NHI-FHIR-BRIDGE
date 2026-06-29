@@ -3,6 +3,13 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 1.0.10 — 2026-06-29（修正:分泌物／尿液顯微鏡的白血球被誤標成血液嗜中性球）
+
+純擷取／對應修正,不改任何病人數值。
+
+- 某些「細菌顯微鏡檢查」(健保碼 13006C,檢體是排泄物／滲出物／分泌物)會回報膿細胞／白血球(例如「1+（＞25/LPF）」)。先前因為該列的醫院自填項目名含「嗜中性／Neutrophil」字樣,被誤對應到**血液** CBC 的嗜中性白血球 LOINC(770-8),使分泌物的白血球出現在血液檢驗的嗜中性球趨勢裡。
+- 現在:非血液／微生物類的健保碼不再繼承血液 CBC 的 LOINC。對不到正確 LOINC 時,改為只保留健保醫令碼與原始項目名(忠實搬運,不亂貼);同時修正這類檢查的檢體不再被預設標成「血液」。
+
 ## 1.0.9 — 2026-06-28（SMART app 網址更新至 mediprisma.tw）
 
 純設定更新,不改任何擷取邏輯與病人數值。

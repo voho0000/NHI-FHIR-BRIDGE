@@ -5062,3 +5062,60 @@ describe("CI v0.18 — no-LOINC labs prefer English assay name in code.text", ()
     expect(obs.code.text).toBe("鉀");
   });
 });
+
+// ── CI v1.0.10 — non-blood NHI code must not inherit a blood-CBC LOINC ──
+// Silent mis-tag found in a real P10109 bundle (2026-06-29): NHI 13006C
+// 排泄物/滲出物/分泌物之細菌顯微鏡檢查 (microbiology — a Gram stain) ships a
+// pus-cell row valued "1+(＞25/LPF)". Its hospital free-text item name
+// carried a neutrophil token, so display-only LOINC matching routed it to
+// 770-8 "Neutrophils in Blood by Automated count" with cleanMatch=true —
+// a secretion/urine WBC mis-shown under the blood CBC neutrophil trend.
+// Root: an unlisted code fell through to Path B (global LOINC_MAP) with no
+// NHI-code family veto (CLAUDE.md rule #7), AND prefix-13 wrongly defaulted
+// specimen to "Blood". Fix: _codeFamilyIsNonBlood vetoes a blood-only LOINC
+// for a non-blood / chapter-13 code → degrade to NHI-code-only; prefix-13
+// no longer defaults to Blood.
+describe("CI v1.0.10 — 非血液 NHI 碼不得繼承血液 CBC LOINC (13006C)", () => {
+  test("findLoinc: 13006C + neutrophil display degrades (NOT 770-8)", () => {
+    const r = findLoincDetailed("13006C", "Neutrophil");
+    expect(r.loinc).not.toBe("770-8");
+    expect(r.loinc).toBeNull();
+    // Same veto for the CJK item name.
+    expect(findLoinc("13006C", "嗜中性白血球")).not.toBe("770-8");
+  });
+
+  test("full obs: 13006C microscopy WBC → no blood LOINC, specimen not Blood, NHI code kept", () => {
+    const items = [
+      {
+        order_code: "13006C",
+        code: "13006C",
+        display: "Neutrophil", // hospital free-text item name (assaY_ITEM_NAME)
+        value: "1+(＞25/LPF)", // microscopy semi-quant pus cells
+        unit: "",
+        date: "2025-02-11",
+        hospital: "某醫院",
+        order_name: "排泄物，滲出物及分泌物之細菌顯微鏡檢查",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    // No blood-CBC LOINC tagged — degraded to NHI-code-only.
+    const loincCoding = o.code.coding.find((c: any) => c.system === "http://loinc.org");
+    expect(loincCoding).toBeUndefined();
+    // Specimen no longer mis-asserted as Blood (prefix-13 default removed).
+    expect(o.specimen?.display).not.toBe("Blood");
+    // Faithful transport: the NHI 醫令碼 + raw value are still carried.
+    const nhiCoding = o.code.coding.find((c: any) =>
+      String(c.system ?? "").includes("nhi-medical-order-code"),
+    );
+    expect(nhiCoding?.code).toBe("13006C");
+    expect(o.valueString).toBe("1+(＞25/LPF)");
+  });
+
+  test("regression guard: real hematology code still maps (08003C Hb → 718-7)", () => {
+    // Veto is gated on the NHI code FAMILY, not the display — a genuine
+    // blood code keeps its CBC LOINC.
+    expect(findLoinc("08003C", "Hb")).toBe("718-7");
+  });
+});

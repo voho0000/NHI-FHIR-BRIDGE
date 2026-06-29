@@ -223,6 +223,34 @@ function _findLongestMatch(combined: string, table: Record<string, string>): str
   return bestLoinc;
 }
 
+// A LOINC whose canonical System is Blood: a CBC/hematology analyte, or
+// any LOINC whose Long Common Name says "in Blood". Used to veto a
+// display-only (Path B) match for a code whose family isn't blood.
+function _loincRequiresBlood(loinc: string): boolean {
+  if (CBC_CANONICAL_TEXT_LOINCS.has(loinc)) return true;
+  return /\bin Blood\b/i.test(LOINC_DISPLAY[loinc] ?? "");
+}
+
+// True when the NHI 醫令碼's family is definitively NOT blood, so a
+// blood-only LOINC reached purely by display-keyword match must be
+// rejected (CLAUDE.md rule #7 — the NHI code vetoes a contradicting
+// display match). Covers (a) a positively non-blood specimen family
+// (Urine / Stool / …) and (b) NHI chapter 13 (microbiology — cultures
+// and microscopy of secretions/excreta), whose per-field item names
+// ("Neutrophil", "WBC" …) otherwise alias onto blood CBC LOINCs.
+// Concrete case: 13006C 排泄物/滲出物/分泌物之細菌顯微鏡檢查 shipped a
+// Gram-stain pus-cell row "1+(＞25/LPF)" that mis-routed to 770-8
+// (Neutrophils in Blood). nhiCodeSpecimen is a hoisted fn declared below.
+function _codeFamilyIsNonBlood(code: string): boolean {
+  const sp = nhiCodeSpecimen(code);
+  if (sp && sp !== "Blood") return true;
+  const prefix = String(code ?? "")
+    .trim()
+    .toUpperCase()
+    .slice(0, 2);
+  return prefix === "13";
+}
+
 /**
  * Return primary LOINC for this lab. Panel-aware lookup:
  *   A. Single-test NHI code → use NHI_TO_LOINC directly.
@@ -277,9 +305,15 @@ export function findLoincDetailed(
   }
 
   // B. Global display-keyword search. Hit means display matched a
-  // cross-panel canonical alias — clean match.
+  // cross-panel canonical alias — clean match, UNLESS the NHI code's
+  // family contradicts a blood-only LOINC (rule #7 veto): a non-blood /
+  // microbiology code (e.g. 13006C secretion microscopy) must not inherit
+  // a blood-CBC LOINC just because an item's free-text name carries a CBC
+  // token. Degrade to Path C / NHI-code-only so the mis-tag canary stays.
   const hit = _findLongestMatch(combined, LOINC_MAP);
-  if (hit) return { loinc: hit, cleanMatch: true };
+  if (hit && !(_loincRequiresBlood(hit) && _codeFamilyIsNonBlood(code))) {
+    return { loinc: hit, cleanMatch: true };
+  }
 
   // C. Panel code with no recognised item display → fall back to panel
   // default LOINC. NOT clean — display was unrecognised, the panel
@@ -1416,7 +1450,14 @@ const NHI_CODE_PREFIX_SPECIMEN: Readonly<Record<string, string>> = {
   "09": "Blood", // Chemistry — vast majority blood/serum (exceptions in override)
   "11": "Blood", // 11001C ABO / 11003C RH / 11004C antibody — blood typing
   "12": "Blood", // 12007C AFP / 12021C CEA / 12025B Ig-G / 12053C ANA …
-  "13": "Blood", // Specialty serum (less common)
+  // NHI chapter 13 (microbiology — cultures + microscopy of secretions/
+  // excreta, e.g. 13006C 排泄物/滲出物/分泌物之細菌顯微鏡檢查) is NOT one
+  // specimen family: blood culture, urine culture, sputum, wound… It was
+  // previously defaulted to "Blood", which mis-tagged secretion microscopy
+  // as a blood specimen and (with the display-only LOINC match) routed a
+  // Gram-stain pus-cell "1+(＞25/LPF)" row to the blood 770-8 Neutrophils
+  // LOINC. No safe prefix default → omit it; display markers / null decide.
+  // (2026-06-29) See _codeFamilyIsNonBlood for the paired LOINC veto.
   "14": "Blood", // Specialty serum (e.g. coagulation panels)
   "24": "Blood", // e.g. 24007B 血漿游離鈣
   "27": "Blood", // Specialty serum / RIA hormones (e.g. 27021B testosterone free)
