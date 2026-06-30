@@ -4310,13 +4310,11 @@
     if (CBC_CANONICAL_TEXT_LOINCS.has(loinc)) return true;
     return /\bin Blood\b/i.test(LOINC_DISPLAY[loinc] ?? "");
   }
-  function _codeFamilyIsNonBlood(code) {
-    const sp = nhiCodeSpecimen(code);
-    if (sp && sp !== "Blood") return true;
-    const prefix = String(code ?? "").trim().toUpperCase().slice(0, 2);
-    return prefix === "13";
+  function _codeFamilyNotConfirmedBlood(code, display = "", orderName = "") {
+    if (!/^\d{5}[A-Za-z]$/.test(String(code ?? "").trim())) return false;
+    return inferSpecimen(orderName, display, code) !== "Blood";
   }
-  function findLoincDetailed(code, display) {
+  function findLoincDetailed(code, display, orderName = "") {
     if (code && code in NHI_TO_LOINC && !DISPLAY_FIRST_CODES.has(code)) {
       return { loinc: NHI_TO_LOINC[code] ?? null, cleanMatch: true };
     }
@@ -4326,7 +4324,7 @@
       if (hit2) return { loinc: hit2, cleanMatch: true };
     }
     const hit = _findLongestMatch(combined, LOINC_MAP);
-    if (hit && !(_loincRequiresBlood(hit) && _codeFamilyIsNonBlood(code))) {
+    if (hit && !(_loincRequiresBlood(hit) && _codeFamilyNotConfirmedBlood(code, display, orderName))) {
       return { loinc: hit, cleanMatch: true };
     }
     if (code && code in NHI_TO_LOINC) {
@@ -4839,7 +4837,7 @@
       const hospital = String(item.hospital ?? "").trim();
       const value = String(item.value ?? "").trim();
       const display = String(item.display ?? "").trim();
-      const { loinc } = findLoincDetailed(code, display);
+      const { loinc } = findLoincDetailed(code, display, String(item.order_name ?? ""));
       const key = `${code}|${loinc ?? "_"}|${date}|${hospital}|${value}`;
       if (!groups.has(key)) {
         groups.set(key, []);
@@ -4999,7 +4997,7 @@
     // as a blood specimen and (with the display-only LOINC match) routed a
     // Gram-stain pus-cell "1+(＞25/LPF)" row to the blood 770-8 Neutrophils
     // LOINC. No safe prefix default → omit it; display markers / null decide.
-    // (2026-06-29) See _codeFamilyIsNonBlood for the paired LOINC veto.
+    // (2026-06-29) See _codeFamilyNotConfirmedBlood for the paired LOINC veto.
     "14": "Blood",
     // Specialty serum (e.g. coagulation panels)
     "24": "Blood",
@@ -5150,7 +5148,7 @@
     const hasMeaningfulInterp = MEANINGFUL_INTERPS.has(interp);
     if (!hasValue && !hasMeaningfulInterp) return null;
     const obsId = stableId(patientId, code, raw.date ?? "");
-    const lookup = findLoincDetailed(code, display);
+    const lookup = findLoincDetailed(code, display, String(raw.order_name ?? ""));
     let loinc = lookup.loinc;
     loinc = structuralLoincFix(loinc, raw.unit);
     loinc = urineProteinLoincFix(loinc, value, raw.unit);
@@ -5295,7 +5293,7 @@
       String(raw.unit ?? ""),
       String(raw.nhi_source_channel ?? "")
     );
-    const lookup = findLoincDetailed(code, display);
+    const lookup = findLoincDetailed(code, display, String(raw.order_name ?? ""));
     let loinc = lookup.loinc;
     loinc = structuralLoincFix(loinc, raw.unit);
     loinc = urineProteinLoincFix(loinc, value, raw.unit);

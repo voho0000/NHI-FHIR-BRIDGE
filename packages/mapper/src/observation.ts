@@ -231,24 +231,34 @@ function _loincRequiresBlood(loinc: string): boolean {
   return /\bin Blood\b/i.test(LOINC_DISPLAY[loinc] ?? "");
 }
 
-// True when the NHI 醫令碼's family is definitively NOT blood, so a
-// blood-only LOINC reached purely by display-keyword match must be
-// rejected (CLAUDE.md rule #7 — the NHI code vetoes a contradicting
-// display match). Covers (a) a positively non-blood specimen family
-// (Urine / Stool / …) and (b) NHI chapter 13 (microbiology — cultures
-// and microscopy of secretions/excreta), whose per-field item names
-// ("Neutrophil", "WBC" …) otherwise alias onto blood CBC LOINCs.
-// Concrete case: 13006C 排泄物/滲出物/分泌物之細菌顯微鏡檢查 shipped a
-// Gram-stain pus-cell row "1+(＞25/LPF)" that mis-routed to 770-8
-// (Neutrophils in Blood). nhiCodeSpecimen is a hoisted fn declared below.
-function _codeFamilyIsNonBlood(code: string): boolean {
-  const sp = nhiCodeSpecimen(code);
-  if (sp && sp !== "Blood") return true;
-  const prefix = String(code ?? "")
-    .trim()
-    .toUpperCase()
-    .slice(0, 2);
-  return prefix === "13";
+// True when the NHI 醫令碼 is NOT POSITIVELY a blood chapter — so a
+// blood-only LOINC reached purely by display-keyword match (Path B) must
+// be rejected (CLAUDE.md rule #7 — the NHI code vetoes a contradicting
+// display match). "Not confirmed blood" deliberately INCLUDES unknown.
+//
+// Design X (v1.0.14, user decision 2026-06-30): allow a blood-specific
+// LOINC ONLY when inferSpecimen positively returns "Blood"; non-blood
+// (Urine / Stool / Pleural …) OR unknown (no specimen marker AND code
+// prefix not in the blood allowlist) → veto. Rationale: some institutions
+// ship NO specimen marker — a row whose display is just "WBC"/"RBC" under a
+// non-blood/unknown code is then unguarded, so the only signal is the NHI
+// code itself. Blood CBC always bills under chapter 08 (in
+// NHI_CODE_PREFIX_SPECIMEN's blood allowlist 08/09/11/12/14/24/27) → genuine
+// CBC resolves to "Blood" → never vetoed; the only cost is a truly-blood
+// test under an UNKNOWN chapter degrading to uncoded — the safe direction
+// (never fabricate a blood label). Subsumes the earlier chapter-13 backstop
+// (13 → null → not "Blood" → veto). inferSpecimen is a hoisted fn declared
+// below; it already folds in nhiCodeSpecimen (the prefix table) as its step 3.
+function _codeFamilyNotConfirmedBlood(code: string, display = "", orderName = ""): boolean {
+  // Only a real NHI medical-order code (5 digits + a letter, e.g. 07018C)
+  // carries the chapter signal Design X relies on. A codeless / display-
+  // fallback row (code empty, or = the analyte name when no order code was
+  // shipped) has no chapter to judge → fall back to display-only: a bare
+  // "Neutrophil"/"Basophil" with no NHI code stays a blood differential
+  // (long-standing default — see observation-mapper "N7"). The veto only
+  // fires when a genuine code positively says the chapter isn't blood.
+  if (!/^\d{5}[A-Za-z]$/.test(String(code ?? "").trim())) return false;
+  return inferSpecimen(orderName, display, code) !== "Blood";
 }
 
 /**
@@ -258,8 +268,8 @@ function _codeFamilyIsNonBlood(code: string): boolean {
  *      (longest-key match wins, both-side word boundaries enforced).
  *   C. Fallback: panel-level LOINC from NHI_TO_LOINC if available.
  */
-export function findLoinc(code: string, display: string): string | null {
-  return findLoincDetailed(code, display).loinc;
+export function findLoinc(code: string, display: string, orderName = ""): string | null {
+  return findLoincDetailed(code, display, orderName).loinc;
 }
 
 /**
@@ -287,6 +297,7 @@ export function findLoinc(code: string, display: string): string | null {
 export function findLoincDetailed(
   code: string,
   display: string,
+  orderName = "",
 ): { loinc: string | null; cleanMatch: boolean } {
   // A. Single-test NHI code wins outright. Clean by definition — the
   // NHI billing code uniquely identifies the analyte for these codes.
@@ -311,7 +322,10 @@ export function findLoincDetailed(
   // a blood-CBC LOINC just because an item's free-text name carries a CBC
   // token. Degrade to Path C / NHI-code-only so the mis-tag canary stays.
   const hit = _findLongestMatch(combined, LOINC_MAP);
-  if (hit && !(_loincRequiresBlood(hit) && _codeFamilyIsNonBlood(code))) {
+  if (
+    hit &&
+    !(_loincRequiresBlood(hit) && _codeFamilyNotConfirmedBlood(code, display, orderName))
+  ) {
     return { loinc: hit, cleanMatch: true };
   }
 
@@ -1148,7 +1162,7 @@ function dedupNhiCrossChannelPairs(items: Record<string, any>[]): Record<string,
     const display = String(item.display ?? "").trim();
     // v0.13.1: use LOINC from the same routing pipeline as
     // buildObservation. Drop the previous `canonical` term entirely.
-    const { loinc } = findLoincDetailed(code, display);
+    const { loinc } = findLoincDetailed(code, display, String(item.order_name ?? ""));
     // v0.13.1 fix (user decision 2026-06-02): DROP `unit` from the
     // cross-channel grouping key. Use (code, loinc, date, hospital, value).
     //
@@ -1457,7 +1471,7 @@ const NHI_CODE_PREFIX_SPECIMEN: Readonly<Record<string, string>> = {
   // as a blood specimen and (with the display-only LOINC match) routed a
   // Gram-stain pus-cell "1+(＞25/LPF)" row to the blood 770-8 Neutrophils
   // LOINC. No safe prefix default → omit it; display markers / null decide.
-  // (2026-06-29) See _codeFamilyIsNonBlood for the paired LOINC veto.
+  // (2026-06-29) See _codeFamilyNotConfirmedBlood for the paired LOINC veto.
   "14": "Blood", // Specialty serum (e.g. coagulation panels)
   "24": "Blood", // e.g. 24007B 血漿游離鈣
   "27": "Blood", // Specialty serum / RIA hormones (e.g. 27021B testosterone free)
@@ -1876,7 +1890,7 @@ export function mapObservation(
   // reroute the LOINC after this point; reroutes preserve the cleanMatch
   // signal because the reroute itself is a structural cleanup, not a
   // display-keyword guess.
-  const lookup = findLoincDetailed(code, display);
+  const lookup = findLoincDetailed(code, display, String(raw.order_name ?? ""));
   let loinc = lookup.loinc;
   // v0.11.13 bug 9a: structural reroute if LOINC vs unit mismatch
   loinc = structuralLoincFix(loinc, raw.unit);
@@ -2116,7 +2130,7 @@ function buildObservation(
   );
   // v0.13: detailed lookup so we can gate code.text canonicalization on
   // cleanMatch. See findLoincDetailed() docstring + resolveObsCodeText().
-  const lookup = findLoincDetailed(code, display);
+  const lookup = findLoincDetailed(code, display, String(raw.order_name ?? ""));
   let loinc = lookup.loinc;
   // v0.11.13 (SMART app dev bug 9a 2026-05-29): structural LOINC vs
   // unit consistency check — see structuralLoincFix() docstring.

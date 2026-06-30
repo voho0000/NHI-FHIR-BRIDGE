@@ -5163,3 +5163,56 @@ describe("CI v1.0.11 — urine sediment 英文 WBC/RBC/Epith (06012C)", () => {
     expect(o.specimen?.display).toBe("Urine");
   });
 });
+
+// ── CI v1.0.14 (X) — blood-CBC LOINC only when code is POSITIVELY blood ──
+// Design X (user decision 2026-06-30): a blood-specific LOINC reached by
+// display-keyword match (Path B) is allowed ONLY when inferSpecimen
+// positively returns "Blood". Non-blood (Urine/Stool/Pleural…) OR unknown
+// (no specimen marker AND code prefix not in the blood allowlist) → veto →
+// degrade to NHI-code-only. Key driver: some institutions ship NO specimen
+// marker — a bare "WBC"/"RBC" under a non-blood/unknown code is de-blooded
+// because the NHI code itself isn't a blood chapter. Genuine CBC always
+// bills under 08 (blood allowlist) → never vetoed. Subsumes the earlier
+// chapter-13 backstop (13 → null → not "Blood" → veto).
+describe("CI v1.0.14 (X) — 血液 CBC LOINC 僅在「碼確定屬血液」時保留", () => {
+  test("markerless 非血液/未知碼 → de-blooded (Design X 核心:沒寫檢體也靠碼擋)", () => {
+    expect(findLoinc("07018C", "WBC")).toBeNull(); // 07 糞便, 無 marker → 非確定血液 → 否決
+    expect(findLoinc("07018C", "RBC")).toBeNull();
+    expect(findLoinc("16003C", "WBC")).toBeNull(); // 16 體液
+    expect(findLoinc("07018C", "WBC")).not.toBe("6690-2");
+  });
+
+  test("有檢體標記的 Stool/Pleural 也 de-blooded", () => {
+    expect(findLoinc("07018C", "Stool WBC")).toBeNull();
+    expect(findLoinc("16003C", "WBC-pleural")).toBeNull();
+  });
+
+  test("碼確定屬血液章 → 保留 CBC LOINC (08 hematology)", () => {
+    expect(findLoinc("08011C", "WBC")).toBe("6690-2"); // 08 CBC panel (Path B1)
+    expect(findLoinc("08003C", "Hb")).toBe("718-7"); // 08 single-test (Path A)
+  });
+
+  test("no regression: 13006C neutrophil still degrades", () => {
+    expect(findLoinc("13006C", "Neutrophil")).toBeNull();
+  });
+
+  test("full obs: 07018C Stool WBC → no blood LOINC, specimen Stool", () => {
+    const items = [
+      {
+        order_code: "07018C",
+        code: "07018C",
+        display: "Stool WBC",
+        value: "Not found",
+        unit: "",
+        date: "2023-06-08",
+        hospital: "某醫院",
+        order_name: "糞便檢查",
+      },
+    ];
+    const o = mapObservationsGrouped(items, PATIENT_ID).find(
+      (r) => r.resourceType === "Observation",
+    ) as any;
+    expect(o.code.coding.find((c: any) => c.system === "http://loinc.org")).toBeUndefined();
+    expect(o.specimen?.display).toBe("Stool");
+  });
+});

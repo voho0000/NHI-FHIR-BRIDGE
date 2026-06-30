@@ -3,6 +3,13 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 1.0.14 — 2026-06-30（其他檢體的白血球/紅血球不再誤標成血液 CBC）
+
+純對應修正,不改病人數值。
+
+- 強化 1.0.10 的「非血液碼不繼承血液 CBC LOINC」否決閘。**血液 CBC 的 LOINC 現在只有在「健保碼確定屬血液章別」時才保留**;只要碼不是確定血液(非血液檢體、或連 bridge 都判不出的未知章別),帶 CBC 字眼的項目(WBC/RBC/嗜中性…)一律不掛血液 LOINC,改為只剩健保碼+原始項目名。
+- 重點:**有些機構不寫檢體類型**,只送項目名「WBC/RBC」。先前這種會被誤對到血液白血球/紅血球(6690-2/789-8);現在即使沒寫檢體,只要健保碼不是血液章(如糞便 07、體液 16),就會正確 de-blood、不再混進血液 CBC 趨勢。真正的血液 CBC(章別 08)完全不受影響;沒有健保碼的裸項目(如單獨「Neutrophil」)維持原本的血液分類預設。
+
 ## 1.0.13 — 2026-06-30（住院無出院日的狀態改為 unknown,不再誤標「已結束」）
 
 純狀態標示修正,不改抓取、不改病人數值。
