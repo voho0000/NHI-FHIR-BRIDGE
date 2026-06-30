@@ -104,6 +104,65 @@ export function reAdaptEncounters({
   return reAdapted;
 }
 
+// IC-card inpatient discharge-date completion (v1.0.15). IC卡資料 records an
+// admission and a discharge as TWO separate swipe events. The 住院 list
+// (IHKE3309S01) carries only the ADMIT half (in_DATE set, out_DATE "--"), so
+// its Encounter gets no discharge date → status "unknown" (v1.0.13) even when
+// the patient was discharged. The matching DISCHARGE half (in_date "--",
+// out_date set) lives in IHKE3301S06's fixed "recent activity" window (probed
+// live 2026-06-30). This pairs each admit row missing a discharge with its
+// discharge half by (hosp_id, icd9cm_code), greedy-chronological (out >= in,
+// earliest unconsumed) so repeat stays at the same hospital+diagnosis pair in
+// order. Returns a NEW array; input is never mutated. Unmatched admits keep
+// out_DATE "--" (still "unknown" — faithful: patient may still be admitted, or
+// the discharge event isn't recorded yet). Pure → unit-tested + fixture loop.
+export function mergeInpatientDischargeDates(visits: any[], s06Rows: any[]): any[] {
+  if (!Array.isArray(visits) || visits.length === 0) return Array.isArray(visits) ? visits : [];
+  const s = (x: any) => String(x ?? "").trim();
+  const icdOf = (r: any) => s(r.icd9cm_CODE ?? r.icd9cm_code).toUpperCase();
+  const hospOf = (r: any) => s(r.hosp_ID ?? r.hosp_id);
+  const inOf = (r: any) => s(r.in_DATE ?? r.in_date);
+  const outOf = (r: any) => s(r.out_DATE ?? r.out_date);
+  const blank = (d: string) => d === "" || d === "--";
+
+  // S06 discharge halves: in blank, out filled. Group by (hosp|icd), ascending
+  // by out (ROC YYY/MM/DD is zero-padded → directly string-comparable).
+  const byKey = new Map<string, Array<{ out: string; used: boolean }>>();
+  for (const r of Array.isArray(s06Rows) ? s06Rows : []) {
+    const out = outOf(r);
+    if (!blank(inOf(r)) || blank(out)) continue;
+    const key = `${hospOf(r)}|${icdOf(r)}`;
+    let arr = byKey.get(key);
+    if (!arr) {
+      arr = [];
+      byKey.set(key, arr);
+    }
+    arr.push({ out, used: false });
+  }
+  for (const arr of byKey.values())
+    arr.sort((a, b) => (a.out < b.out ? -1 : a.out > b.out ? 1 : 0));
+
+  // Admit rows missing a discharge, earliest-first so repeat stays consume
+  // discharges in chronological order.
+  const filled = new Map<number, string>();
+  visits
+    .map((v, i) => ({ v, i }))
+    .filter(({ v }) => !blank(inOf(v)) && blank(outOf(v)))
+    .sort((a, b) => (inOf(a.v) < inOf(b.v) ? -1 : inOf(a.v) > inOf(b.v) ? 1 : 0))
+    .forEach(({ v, i }) => {
+      const cands = byKey.get(`${hospOf(v)}|${icdOf(v)}`);
+      const m = cands?.find((d) => !d.used && d.out >= inOf(v));
+      if (m) {
+        m.used = true;
+        filled.set(i, m.out);
+      }
+    });
+
+  return visits.map((v, i) =>
+    filled.has(i) ? { ...v, out_DATE: filled.get(i), __dischargeFromS06: true } : v,
+  );
+}
+
 // IHKE3309 inpatient encounters re-adapted from the S02 detail body, plus the
 // two side-products the same per-visit walk produces:
 //   - inpatientProcedures: surgeries (op_CODE / opcode_data) merged into the

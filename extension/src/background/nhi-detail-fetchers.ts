@@ -541,3 +541,40 @@ export async function fetchInpatientDetails({ tabId, baseUrl, visits }) {
   const results = await fetchDetailsInTab(tabId, baseUrl, reqs, INPATIENT_SPEC);
   return byVisitIndex(reqs, results);
 }
+
+// IHKE3301S06 — a fixed "recent activity" timeline that, unlike IHKE3309S01
+// (admit halves only), also carries the IC-card DISCHARGE halves (in_date "--",
+// out_date set) used to complete inpatient admissions whose out_DATE is "--".
+// Single list GET (ignores date params — probed live 2026-06-30). Best-effort:
+// any failure (session expired / network / shape) returns [] so the sync
+// proceeds with admit-only rows (status "unknown"), never throwing.
+export async function fetchInpatientDischargeHalves({ tabId, baseUrl }) {
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async (base) => {
+        const token = sessionStorage.getItem("token");
+        if (!token) return { error: "SESSION_EXPIRED" };
+        if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
+          return { error: "SESSION_EXPIRED" };
+        }
+        try {
+          const r = await fetch(`${base}/api/ihke3000/ihke3301s06/page_load`, {
+            method: "GET",
+            credentials: "same-origin",
+            headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+          });
+          if (!r.ok) return { error: `HTTP ${r.status}` };
+          const body = await r.json();
+          return { rows: Array.isArray(body?.main_data) ? body.main_data : [] };
+        } catch (e) {
+          return { error: String(e?.message || e) };
+        }
+      },
+      args: [baseUrl],
+    });
+    return result && Array.isArray(result.rows) ? result.rows : [];
+  } catch (_e) {
+    return [];
+  }
+}

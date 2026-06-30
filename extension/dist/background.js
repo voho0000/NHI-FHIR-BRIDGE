@@ -7505,6 +7505,41 @@
     }
     return reAdapted;
   }
+  function mergeInpatientDischargeDates(visits, s06Rows) {
+    if (!Array.isArray(visits) || visits.length === 0) return Array.isArray(visits) ? visits : [];
+    const s = (x) => String(x ?? "").trim();
+    const icdOf = (r) => s(r.icd9cm_CODE ?? r.icd9cm_code).toUpperCase();
+    const hospOf = (r) => s(r.hosp_ID ?? r.hosp_id);
+    const inOf = (r) => s(r.in_DATE ?? r.in_date);
+    const outOf = (r) => s(r.out_DATE ?? r.out_date);
+    const blank = (d) => d === "" || d === "--";
+    const byKey = /* @__PURE__ */ new Map();
+    for (const r of Array.isArray(s06Rows) ? s06Rows : []) {
+      const out = outOf(r);
+      if (!blank(inOf(r)) || blank(out)) continue;
+      const key = `${hospOf(r)}|${icdOf(r)}`;
+      let arr = byKey.get(key);
+      if (!arr) {
+        arr = [];
+        byKey.set(key, arr);
+      }
+      arr.push({ out, used: false });
+    }
+    for (const arr of byKey.values())
+      arr.sort((a, b) => a.out < b.out ? -1 : a.out > b.out ? 1 : 0);
+    const filled = /* @__PURE__ */ new Map();
+    visits.map((v, i) => ({ v, i })).filter(({ v }) => !blank(inOf(v)) && blank(outOf(v))).sort((a, b) => inOf(a.v) < inOf(b.v) ? -1 : inOf(a.v) > inOf(b.v) ? 1 : 0).forEach(({ v, i }) => {
+      const cands = byKey.get(`${hospOf(v)}|${icdOf(v)}`);
+      const m = cands?.find((d) => !d.used && d.out >= inOf(v));
+      if (m) {
+        m.used = true;
+        filled.set(i, m.out);
+      }
+    });
+    return visits.map(
+      (v, i) => filled.has(i) ? { ...v, out_DATE: filled.get(i), __dischargeFromS06: true } : v
+    );
+  }
   function reAdaptInpatient({
     visits,
     detailMap
@@ -7952,6 +7987,36 @@
     if (reqs.length === 0) return /* @__PURE__ */ new Map();
     const results = await fetchDetailsInTab(tabId, baseUrl, reqs, INPATIENT_SPEC);
     return byVisitIndex(reqs, results);
+  }
+  async function fetchInpatientDischargeHalves({ tabId, baseUrl }) {
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: async (base) => {
+          const token = sessionStorage.getItem("token");
+          if (!token) return { error: "SESSION_EXPIRED" };
+          if (location.href.includes("IHKE3001S99") || location.href.includes("IDLE")) {
+            return { error: "SESSION_EXPIRED" };
+          }
+          try {
+            const r = await fetch(`${base}/api/ihke3000/ihke3301s06/page_load`, {
+              method: "GET",
+              credentials: "same-origin",
+              headers: { Accept: "application/json", Authorization: `Bearer ${token}` }
+            });
+            if (!r.ok) return { error: `HTTP ${r.status}` };
+            const body = await r.json();
+            return { rows: Array.isArray(body?.main_data) ? body.main_data : [] };
+          } catch (e) {
+            return { error: String(e?.message || e) };
+          }
+        },
+        args: [baseUrl]
+      });
+      return result && Array.isArray(result.rows) ? result.rows : [];
+    } catch (_e) {
+      return [];
+    }
   }
 
   // src/background/imaging-list-status.ts
@@ -9267,8 +9332,16 @@
     const dischargeFailReasons = {};
     const inpIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "inpatient");
     if (inpIdx >= 0 && settled[inpIdx].status === "fulfilled") {
-      const visits = settled[inpIdx].value.rawList || [];
+      let visits = settled[inpIdx].value.rawList || [];
       if (visits.length > 0) {
+        try {
+          const dischargeHalves = await fetchInpatientDischargeHalves({ tabId, baseUrl: BASE });
+          if (dischargeHalves.length > 0) {
+            visits = mergeInpatientDischargeDates(visits, dischargeHalves);
+            settled[inpIdx].value.rawList = visits;
+          }
+        } catch (_e) {
+        }
         try {
           const detailMap = await withProgressTimer(
             (sec) => sec === 0 ? `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u4F4F\u9662\u7D00\u9304\u8A73\u60C5\u2026` : `\u{1F4E5} \u53D6\u5F97 ${visits.length} \u7B46\u4F4F\u9662\u7D00\u9304\u8A73\u60C5\u2026\uFF08\u5DF2 ${sec} \u79D2\uFF09`,

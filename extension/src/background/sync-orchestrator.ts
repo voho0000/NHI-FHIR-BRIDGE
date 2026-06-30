@@ -25,6 +25,7 @@ import {
   computePharmacyRowIds,
   finalizeByType,
   injectImagingJpegs,
+  mergeInpatientDischargeDates,
   reAdaptEncounters,
   reAdaptInpatient,
 } from "./build-bundle.js";
@@ -42,6 +43,7 @@ import {
   fetchEncounterDetails,
   fetchImagingDetails,
   fetchInpatientDetails,
+  fetchInpatientDischargeHalves,
   fetchMedicationDetails,
   fetchProcedureDetails,
 } from "./nhi-detail-fetchers.js";
@@ -290,8 +292,22 @@ export async function runNhiApiSync({
   const dischargeFailReasons: Record<string, number> = {};
   const inpIdx = NHI_API_ENDPOINTS.findIndex((e) => e.name === "inpatient");
   if (inpIdx >= 0 && settled[inpIdx].status === "fulfilled") {
-    const visits = settled[inpIdx].value.rawList || [];
+    let visits = settled[inpIdx].value.rawList || [];
     if (visits.length > 0) {
+      // IC卡資料 住院: admit & discharge are SEPARATE IC swipe events, and
+      // IHKE3309S01 carries only the admit half (out_DATE "--"). Pull the
+      // matching discharge halves from IHKE3301S06 and fill out_DATE so the
+      // Encounter gets a discharge date (status unknown→finished). Best-effort:
+      // any failure leaves admit-only rows (status "unknown") untouched.
+      try {
+        const dischargeHalves = await fetchInpatientDischargeHalves({ tabId, baseUrl: BASE });
+        if (dischargeHalves.length > 0) {
+          visits = mergeInpatientDischargeDates(visits, dischargeHalves);
+          settled[inpIdx].value.rawList = visits;
+        }
+      } catch (_e) {
+        /* best-effort: keep admit-only rows as status "unknown" */
+      }
       try {
         const detailMap = await withProgressTimer(
           (sec) =>

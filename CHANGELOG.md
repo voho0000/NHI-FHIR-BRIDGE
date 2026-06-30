@@ -3,6 +3,13 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 1.0.15 — 2026-06-30（IC卡住院補出院日:不再卡在「狀態不明」）
+
+純擷取補強,不改病人數值。
+
+- IC卡資料的住院,健保把「入院刷卡」和「出院刷卡」記成**兩筆獨立紀錄**:住院列表只有入院那筆、沒有出院日,所以那次住院的狀態一直是「不明 unknown」(1.0.13 起),即使病人其實已經出院。
+- 現在多抓健保的「近期動態」清單(帶出院刷卡那半),用**院所＋主診斷**把出院日配回入院那筆 → 住院區間補完整、狀態從「不明」變「已結束 finished」。配對採時序就近(出院日 ≥ 入院日),配不到的維持「不明」(忠實:可能還在住院,或出院刷卡尚未記錄)。盡力而為,抓取失敗不影響其他同步。
+
 ## 1.0.14 — 2026-06-30（其他檢體的白血球/紅血球不再誤標成血液 CBC）
 
 純對應修正,不改病人數值。
