@@ -53,6 +53,67 @@ describe("toUcum", () => {
   });
 });
 
+// v1.1.0 — UCUM normalisation expanded. Every target code below is web-verified
+// against NLM example-UCUM-Codes v1.4 + HL7 terminology ucum-common (2026-06-30).
+describe("toUcum — v1.1.0 web-verified mappings", () => {
+  test("cell counts → 10*N/uL (thousand / ten-thousand / million)", () => {
+    expect(toUcum("K/μL")).toBe("10*3/uL"); // μ = U+03BC (Greek mu)
+    expect(toUcum("K/µL")).toBe("10*3/uL"); // µ = U+00B5 (micro sign)
+    expect(toUcum("k/μL")).toBe("10*3/uL");
+    expect(toUcum("*1000/uL")).toBe("10*3/uL");
+    expect(toUcum("1000/uL")).toBe("10*3/uL");
+    expect(toUcum("x10^3 /uL")).toBe("10*3/uL");
+    expect(toUcum("x10^4 /uL")).toBe("10*4/uL");
+    expect(toUcum("M/μL")).toBe("10*6/uL");
+    expect(toUcum("*10^6/uL")).toBe("10*6/uL");
+    expect(toUcum("million/uL")).toBe("10*6/uL");
+  });
+
+  test("micro-sign normalised → bare /μL becomes valid /uL with no override", () => {
+    expect(toUcum("/μL")).toBe("/uL");
+    expect(toUcum("ng/µL")).toBe("ng/uL");
+  });
+
+  test("Pg (petagram) → pg (picogram); MCH/MCHC descriptive suffixes", () => {
+    expect(toUcum("Pg")).toBe("pg");
+    expect(toUcum("pg/Cell")).toBe("pg");
+    expect(toUcum("gHb/dL")).toBe("g/dL");
+  });
+
+  test("°C → Cel; mmHG mixed case → mm[Hg]", () => {
+    expect(toUcum("°C")).toBe("Cel");
+    expect(toUcum("mmHG")).toBe("mm[Hg]");
+  });
+
+  test("eGFR variants → mL/min/1.73.m2 (dot before m2)", () => {
+    expect(toUcum("mL/min/1.73m2")).toBe("mL/min/1.73.m2");
+    expect(toUcum("ml/min/1.73m2")).toBe("mL/min/1.73.m2");
+    expect(toUcum("mL/min/1.73M2")).toBe("mL/min/1.73.m2");
+    expect(toUcum("mL/min/1.73 m^2")).toBe("mL/min/1.73.m2");
+  });
+
+  test("arbitrary indices / placeholders we can't faithfully map → null", () => {
+    expect(toUcum(".")).toBeNull();
+    expect(toUcum("OPF")).toBeNull();
+    expect(toUcum("COI")).toBeNull();
+    expect(toUcum("E.U/dL")).toBeNull();
+  });
+
+  test("valid-but-odd UCUM left untouched (mm/L for HCO3 — units never modified)", () => {
+    expect(toUcum("mm/L")).toBe("mm/L");
+  });
+
+  test("reference-range bound carries the same validated UCUM code as the value", () => {
+    // makeQuantity now routes through toUcum → a K/μL bound gets code 10*3/uL.
+    expect(tryParseQuantity("7.5", "K/μL")).toEqual({
+      value: 7.5,
+      unit: "K/μL",
+      system: "http://unitsofmeasure.org",
+      code: "10*3/uL",
+    });
+  });
+});
+
 describe("tryParseQuantity", () => {
   test("plain numeric", () => {
     const q = tryParseQuantity("12.5", "mg/dL");

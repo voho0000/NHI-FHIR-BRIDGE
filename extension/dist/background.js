@@ -3927,29 +3927,80 @@
     // Case-sensitive UCUM (Eq is 'eq', not 'Eq')
     "mEq/L": "meq/L",
     "meq/l": "meq/L",
-    // BP profile fixed-value: mm[Hg] not mmHg
+    // Cell counts — UCUM scales with the 10*N factor (verified: NLM v1.4 +
+    // HL7 ucum-common). thousand = 10*3, ten-thousand = 10*4, million = 10*6.
+    // NHI/LIS ship many notations for the same magnitude.
+    "K/uL": "10*3/uL",
+    "k/uL": "10*3/uL",
+    "*1000/uL": "10*3/uL",
+    "1000/uL": "10*3/uL",
+    "x10^3 /uL": "10*3/uL",
+    "x10^3/uL": "10*3/uL",
+    "10^3/uL": "10*3/uL",
+    "x10^4 /uL": "10*4/uL",
+    "x10^4/uL": "10*4/uL",
+    "10^4/uL": "10*4/uL",
+    "M/uL": "10*6/uL",
+    "*10^6/uL": "10*6/uL",
+    "x10^6 /uL": "10*6/uL",
+    "x10^6/uL": "10*6/uL",
+    "10^6/uL": "10*6/uL",
+    "million/uL": "10*6/uL",
+    // Picogram is 'pg' (HL7); 'Pg' is petagram (10^15 g) — a case error. MCH's
+    // descriptive '/Cell' suffix isn't UCUM (a cell is a dimensionless count).
+    Pg: "pg",
+    "pg/Cell": "pg",
+    "pg/cell": "pg",
+    // MCHC (LOINC 786-4) is g/dL; 'gHb' isn't a UCUM unit (Hb is descriptive).
+    "gHb/dL": "g/dL",
+    // Degree Celsius is 'Cel' (HL7 ucum-common).
+    "\xB0C": "Cel",
+    // mmHg → mm[Hg]; cover mixed-case LIS variants.
     mmHg: "mm[Hg]",
     MMHG: "mm[Hg]",
+    mmHG: "mm[Hg]",
+    // eGFR / BSA-normalised — canonical UCUM is 'mL/min/1.73.m2' (note the
+    // multiplication dot before m2; HL7 ucum-common). Normalise LIS variants.
+    "mL/min/1.73m2": "mL/min/1.73.m2",
+    "ml/min/1.73m2": "mL/min/1.73.m2",
+    "mL/min/1.73M2": "mL/min/1.73.m2",
+    "mL/min/1.73 m^2": "mL/min/1.73.m2",
+    "mL/min/1.73 m2": "mL/min/1.73.m2",
+    "ml/min/1.73 m2": "mL/min/1.73.m2",
+    // Arbitrary indices / placeholders we can't faithfully map to UCUM → omit
+    // the code (raw label still on Quantity.unit). '.' = differential-count
+    // placeholder (Normobl/PlasmaCell); OPF = Gram-stain organisms per
+    // oil-power-field (semi-quant); COI = immunoassay cut-off index
+    // (dimensionless ratio); E.U/dL = Ehrlich units (urobilinogen, no UCUM unit).
+    ".": null,
+    OPF: null,
+    COI: null,
+    "E.U/dL": null,
     // Common Chinese 'no unit' placeholders → drop UCUM code
     \u7121: null,
+    \u7121\u55AE\u4F4D: null,
     "": null,
     "\u2014": null,
     "-": null
   };
   function toUcum(unit) {
     if (!unit) return null;
-    if (Object.prototype.hasOwnProperty.call(UCUM_OVERRIDES, unit)) {
-      return UCUM_OVERRIDES[unit] ?? null;
+    const u = unit.replace(/[µμ]/g, "u");
+    if (Object.prototype.hasOwnProperty.call(UCUM_OVERRIDES, u)) {
+      return UCUM_OVERRIDES[u] ?? null;
     }
-    if (/[^\x20-\x7E]/.test(unit)) return null;
-    return unit;
+    if (/[^\x20-\x7E]/.test(u)) return null;
+    return u;
   }
   function makeQuantity(value, unit) {
     const q = { value };
     if (unit) {
       q.unit = unit;
+    }
+    const ucumCode = toUcum(unit);
+    if (ucumCode !== null) {
       q.system = UCUM_SYSTEM;
-      q.code = unit;
+      q.code = ucumCode;
     }
     return q;
   }

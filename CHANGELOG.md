@@ -3,6 +3,18 @@
 All notable changes to NHI-FHIR-Bridge are documented here.
 Newest first. GitHub Releases page keeps the latest version only; this file is the authoritative history.
 
+## 1.1.0 — 2026-06-30（檢驗資料品質整補:單位 UCUM 正規化 + 收束今日整批）
+
+minor 版,收束今日對檢驗資料輸出的整批整補——檢驗↔就醫關聯(1.0.16)、參考範圍年齡分層忠實搬運(1.0.17)、異常判讀完全不自算只搬健保署訊號(1.0.18)、單位 UCUM 正規化(本版)。對下游 SMART app 而言檢驗資料的單位/判讀/範圍語意有實質提升,故升 minor。
+
+本版重點:修正檢驗單位的「機器碼」(`Quantity.code`),全部對照 UCUM 官方來源(NLM 範例碼 v1.4 + HL7 ucum-common)逐一查證,不再輸出無效或語意錯誤的單位碼。**原始單位文字(`Quantity.unit`)一律照搬不改**,只修給機器/驗證器用的 UCUM 碼。
+
+- **細胞計數**:`K/μL`、`*1000/uL`、`x10^3 /uL` 等 → `10*3/uL`(千倍);`M/μL`、`million/uL`、`*10^6/uL` → `10*6/uL`(百萬倍)。
+- **大小寫/字元錯誤**:`Pg`(其實是「拍克」petagram)→ `pg`(微微克);`°C` → `Cel`;`mmHG` → `mm[Hg]`。微符號 µ/μ(兩種 Unicode)統一成 UCUM 的 `u`。
+- **eGFR**:`mL/min/1.73m2` 各種寫法 → `mL/min/1.73.m2`(中間需有乘號點)。
+- **無法對應的**(`.`、`OPF`、`COI`、`E.U/dL` 等)→ 省略機器碼,但原始單位文字照常保留。
+- 參考範圍上下限的單位碼也走同一套正規化。
+
 ## 1.0.18 — 2026-06-30（檢驗異常判讀:完全不自算,只搬健保署的訊號）
 
 承 v1.0.17,進一步**完全移除「值 vs 範圍」的自行計算**。

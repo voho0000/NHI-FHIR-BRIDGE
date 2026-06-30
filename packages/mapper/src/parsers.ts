@@ -138,9 +138,17 @@ export interface RangeEntry {
 /**
  * NHI labs report units in a mix of UCUM-clean strings ('mg/dL'),
  * Taiwan-style equivalents ('mEq/L' vs UCUM 'meq/L'), full-width punctuation
- * ('％' vs '%'), and placeholder text ('無'). The TWNHIFHIR validator
- * rejects everything except canonical UCUM in Quantity.code, so we
- * normalise. `null` means "omit Quantity.code entirely".
+ * ('％' vs '%'), LIS shorthand for cell-count scaling ('K/μL', '*1000/uL'),
+ * case errors ('Pg' = petagram, not picogram), and placeholder text ('無').
+ * The TWNHIFHIR validator rejects everything except canonical UCUM in
+ * Quantity.code, so we normalise. `null` means "omit Quantity.code entirely"
+ * (the raw label still rides on Quantity.unit — faithful display).
+ *
+ * EVERY mapped code below is web-verified against the authoritative UCUM
+ * references (NLM example-UCUM-Codes v1.4 + HL7 terminology ucum-common,
+ * 2026-06-30) per project rule: no hallucinated UCUM codes. Keys are written
+ * in the micro-sign-normalised ASCII form (μ/µ → 'u', done in toUcum below),
+ * so both Unicode micro code points resolve here.
  */
 const UCUM_OVERRIDES: Record<string, string | null> = {
   // Fullwidth → ASCII
@@ -148,11 +156,58 @@ const UCUM_OVERRIDES: Record<string, string | null> = {
   // Case-sensitive UCUM (Eq is 'eq', not 'Eq')
   "mEq/L": "meq/L",
   "meq/l": "meq/L",
-  // BP profile fixed-value: mm[Hg] not mmHg
+  // Cell counts — UCUM scales with the 10*N factor (verified: NLM v1.4 +
+  // HL7 ucum-common). thousand = 10*3, ten-thousand = 10*4, million = 10*6.
+  // NHI/LIS ship many notations for the same magnitude.
+  "K/uL": "10*3/uL",
+  "k/uL": "10*3/uL",
+  "*1000/uL": "10*3/uL",
+  "1000/uL": "10*3/uL",
+  "x10^3 /uL": "10*3/uL",
+  "x10^3/uL": "10*3/uL",
+  "10^3/uL": "10*3/uL",
+  "x10^4 /uL": "10*4/uL",
+  "x10^4/uL": "10*4/uL",
+  "10^4/uL": "10*4/uL",
+  "M/uL": "10*6/uL",
+  "*10^6/uL": "10*6/uL",
+  "x10^6 /uL": "10*6/uL",
+  "x10^6/uL": "10*6/uL",
+  "10^6/uL": "10*6/uL",
+  "million/uL": "10*6/uL",
+  // Picogram is 'pg' (HL7); 'Pg' is petagram (10^15 g) — a case error. MCH's
+  // descriptive '/Cell' suffix isn't UCUM (a cell is a dimensionless count).
+  Pg: "pg",
+  "pg/Cell": "pg",
+  "pg/cell": "pg",
+  // MCHC (LOINC 786-4) is g/dL; 'gHb' isn't a UCUM unit (Hb is descriptive).
+  "gHb/dL": "g/dL",
+  // Degree Celsius is 'Cel' (HL7 ucum-common).
+  "°C": "Cel",
+  // mmHg → mm[Hg]; cover mixed-case LIS variants.
   mmHg: "mm[Hg]",
   MMHG: "mm[Hg]",
+  mmHG: "mm[Hg]",
+  // eGFR / BSA-normalised — canonical UCUM is 'mL/min/1.73.m2' (note the
+  // multiplication dot before m2; HL7 ucum-common). Normalise LIS variants.
+  "mL/min/1.73m2": "mL/min/1.73.m2",
+  "ml/min/1.73m2": "mL/min/1.73.m2",
+  "mL/min/1.73M2": "mL/min/1.73.m2",
+  "mL/min/1.73 m^2": "mL/min/1.73.m2",
+  "mL/min/1.73 m2": "mL/min/1.73.m2",
+  "ml/min/1.73 m2": "mL/min/1.73.m2",
+  // Arbitrary indices / placeholders we can't faithfully map to UCUM → omit
+  // the code (raw label still on Quantity.unit). '.' = differential-count
+  // placeholder (Normobl/PlasmaCell); OPF = Gram-stain organisms per
+  // oil-power-field (semi-quant); COI = immunoassay cut-off index
+  // (dimensionless ratio); E.U/dL = Ehrlich units (urobilinogen, no UCUM unit).
+  ".": null,
+  OPF: null,
+  COI: null,
+  "E.U/dL": null,
   // Common Chinese 'no unit' placeholders → drop UCUM code
   無: null,
+  無單位: null,
   "": null,
   "—": null,
   "-": null,
@@ -160,26 +215,39 @@ const UCUM_OVERRIDES: Record<string, string | null> = {
 
 export function toUcum(unit: string | null | undefined): string | null {
   if (!unit) return null;
-  if (Object.prototype.hasOwnProperty.call(UCUM_OVERRIDES, unit)) {
-    return UCUM_OVERRIDES[unit] ?? null;
+  // Normalise the micro sign FIRST — NHI ships both µ (U+00B5 micro sign) and
+  // μ (U+03BC Greek mu); UCUM's micro prefix is ASCII 'u'. Doing this up front
+  // means overrides key on the ASCII form and both code points resolve, and a
+  // bare 'ng/μL' / '/μL' becomes valid UCUM ('ng/uL' / '/uL') without an entry.
+  const u = unit.replace(/[µμ]/g, "u");
+  if (Object.prototype.hasOwnProperty.call(UCUM_OVERRIDES, u)) {
+    return UCUM_OVERRIDES[u] ?? null;
   }
   // Pass through only plausibly-UCUM ASCII strings ("mg/dL", "mmol/L",
   // "10*3/uL" are valid UCUM verbatim). A unit with CJK or other non-printable-
   // ASCII characters cannot be valid UCUM — return null so the Quantity builder
   // doesn't mislabel it under the UCUM system (a UCUM-aware validator would
   // reject it). The raw label still rides on Quantity.unit.
-  if (/[^\x20-\x7E]/.test(unit)) return null;
-  return unit;
+  if (/[^\x20-\x7E]/.test(u)) return null;
+  return u;
 }
 
 // ── Quantity builder ──────────────────────────────────────────────────
 
 function makeQuantity(value: number, unit: string): Quantity {
   const q: Quantity = { value };
+  // Quantity.unit keeps the raw NHI label (faithful display). The machine code
+  // goes through toUcum so a reference-range bound carries the SAME validated
+  // UCUM code as the value (e.g. "K/μL" → "10*3/uL") — and we only assert the
+  // UCUM system when toUcum produced a real code, else omit it (CJK / arbitrary
+  // / placeholder units) rather than mislabel a non-UCUM string as UCUM.
   if (unit) {
     q.unit = unit;
+  }
+  const ucumCode = toUcum(unit);
+  if (ucumCode !== null) {
     q.system = UCUM_SYSTEM;
-    q.code = unit;
+    q.code = ucumCode;
   }
   return q;
 }
