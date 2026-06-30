@@ -308,14 +308,20 @@ export function linkEncountersInResources(
       if (dxHits.length === 1) r.encounter = { reference: `Encounter/${dxHits[0]!.id}` };
       continue;
     }
-    // Diagnosis-less resource (lab Observation / report): FIRST try the visit's
-    // 檢驗醫令 list (#26 for labs) — link to the visit whose sp_IHKE3302S07/S10
-    // listed this lab's NHI 醫令碼. Resolves the 多筆同日同院門診 case the date
-    // gateway below cannot: 3 visits share (hospital, date), but only the CKD
-    // visit's list carries 09015C/09002C… so the Cr/BUN obs pin THERE. Conservative
-    // like #26: link only on a UNIQUE hit; 0 or >1 (lab listed at multiple same-day
-    // visits, or no list captured) falls through to the gateway — never strand a
-    // lab on an ambiguous order-code match.
+    // Diagnosis-less resource (lab Observation / report): link ONLY by the visit's
+    // 檢驗醫令 list (#26 for labs) — the visit whose sp_IHKE3302S07/S10 listed this
+    // lab's NHI 醫令碼. NO date gateway (removed v1.0.16, user 2026-06-30, faithful
+    // transport): per 健康存摺's own note, 申報資料 lists only tests actually DONE,
+    // but the SAME lab can be 申報'd under several same-day visits and NHI does NOT
+    // say which one owns it — so we never attribute a lab to a visit by date alone.
+    //   • exactly 1 visit lists it → link there (NHI申報 is authoritative).
+    //   • >1 list it (e.g. a CBC 申報'd under BOTH the 門診 + the 住院) → tie-break to
+    //     the 住院(IMP) whose PERIOD CONTAINS the 採檢日: FHIR Observation.encounter is
+    //     "the visit during which the observation was MADE", and a draw on a day the
+    //     admission spans WAS made during that admission (a date-in-period FACT, not
+    //     a date guess). Exactly one such IMP → link it; otherwise leave UNLINKED.
+    //   • 0 list it / no NHI code / no list captured → leave UNLINKED (independent).
+    //     寧缺勿錯 — an unlinked lab is faithful; a date-guessed one is not.
     const lCodes = labOrderCodes(r);
     if (lCodes.length > 0) {
       const labHits = cands.filter((e) => {
@@ -324,17 +330,18 @@ export function linkEncountersInResources(
       });
       if (labHits.length === 1) {
         r.encounter = { reference: `Encounter/${labHits[0]!.id}` };
-        continue;
+      } else if (labHits.length > 1) {
+        const impInSpan = labHits.filter(
+          (e) =>
+            (e.class ?? {}).code === "IMP" &&
+            String((e.period ?? {}).start ?? "").slice(0, 10) <= date &&
+            date <= String((e.period ?? {}).end ?? "").slice(0, 10),
+        );
+        if (impInSpan.length === 1) {
+          r.encounter = { reference: `Encounter/${impInSpan[0]!.id}` };
+        }
       }
     }
-    // Date gateway fallback: prefer the single-day gateway visit over the 住院
-    // whose span merely starts that day.
-    const gateways = cands.filter(
-      (e) =>
-        (e.class ?? {}).code !== "IMP" &&
-        String((e.period ?? {}).start ?? "").slice(0, 10) === date,
-    );
-    if (gateways.length === 1) r.encounter = { reference: `Encounter/${gateways[0]!.id}` };
   }
 }
 

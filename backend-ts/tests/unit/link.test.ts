@@ -192,10 +192,13 @@ describe("linkEncountersInResources — admission-day gateway disambiguation (v0
     expect(m.encounter).toEqual({ reference: "Encounter/er" });
   });
 
-  test("admission-day lab (no dx) prefers the single-day gateway over the IMP", () => {
+  test("admission-day lab with NO order-code evidence → unlinked (date gateway removed v1.0.16)", () => {
+    // Old behavior linked it to the same-day ER gateway by date alone. Faithful rule
+    // (user 2026-06-30): never attribute a lab to a visit by date — no order-list
+    // match (this obs has no NHI code) → 留白.
     const lab = obs("o1", "VGH", "2025-05-18");
     linkEncountersInResources([enc("er", "EMER", "VGH", "2025-05-18", null), IMP()], [lab]);
-    expect(lab.encounter).toEqual({ reference: "Encounter/er" });
+    expect(lab.encounter).toBeUndefined();
   });
 
   test("lab on a later admission day links to the IMP via span", () => {
@@ -252,18 +255,36 @@ describe("linkEncountersInResources — admission-day gateway disambiguation (v0
     expect(cr.encounter).toBeUndefined();
   });
 
-  test("lab whose code is in NO visit's 檢驗清單 falls through to the date gateway", () => {
+  test("lab 申報'd under BOTH 門診 + 住院 (CBC 6/07 repro) → links to the 住院 spanning 採檢日", () => {
+    // One CBC, NHI申報'd under the same-day 門診 AND the chemo 住院's lists. FHIR
+    // Observation.encounter = the visit the obs was MADE during; the draw date falls
+    // inside the admission's period → the 住院 (unique IMP-in-span tie-break).
+    const opd = enc("opd", "AMB", "NTUH", "2023-06-07", null, ["C3411"]);
+    opd.__labOrderCodes = ["08011C"];
+    const imp = enc("imp2", "IMP", "NTUH", "2023-06-07", "2023-06-09", ["Z5111"]);
+    imp.__labOrderCodes = ["08011C", "09002C"];
+    const cbc = labObs("cbc", "NTUH", "2023-06-07", "08011C"); // in BOTH lists → 住院 (made-during)
+    const bun = labObs("bun2", "NTUH", "2023-06-07", "09002C"); // only in 住院 list → 住院 (unique)
+    linkEncountersInResources([opd, imp], [cbc, bun]);
+    expect(cbc.encounter).toEqual({ reference: "Encounter/imp2" });
+    expect(bun.encounter).toEqual({ reference: "Encounter/imp2" });
+  });
+
+  test("lab whose code is in NO visit's 檢驗清單 → unlinked (no date gateway)", () => {
     const a = enc("a", "AMB", "VGH", "2025-09-16", null);
     a.__labOrderCodes = ["09015C"];
     const b = enc("b", "AMB", "VGH", "2025-09-16", null);
     b.__labOrderCodes = ["08011C"];
-    const orphan = labObs("x", "VGH", "2025-09-16", "12345C"); // listed by neither
-    // 2 same-day gateways → date fallback also ambiguous → unlinked (no wrong guess).
+    const orphan = labObs("x", "VGH", "2025-09-16", "12345C"); // listed by neither → no guess
     linkEncountersInResources([a, b], [orphan]);
     expect(orphan.encounter).toBeUndefined();
   });
 
-  test("single same-day visit → lab still links via date gateway without order-code data", () => {
+  test("single same-day visit → lab links (the ONLY candidate; not the removed multi-visit gateway)", () => {
+    // Kept: when a (hospital, date) has exactly ONE visit, the lab links to it
+    // (no ambiguity to guess). The faithful rule only removed the MULTI-candidate
+    // date gateway. Most encounters have no captured order list, so this baseline
+    // must stay or nearly every lab would unlink.
     const only = enc("only", "AMB", "VGH", "2025-09-16", null); // no __labOrderCodes
     const cr = labObs("cr", "VGH", "2025-09-16", "09015C");
     linkEncountersInResources([only], [cr]);

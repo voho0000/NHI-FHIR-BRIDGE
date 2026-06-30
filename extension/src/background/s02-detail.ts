@@ -119,6 +119,18 @@ export function secondaryIcdsFromS02Detail(body) {
 //   • 住院 detail   (IHKE3309S02) → sp_IHKE3302S11_data (the admission's given
 //     drugs; verified 2026-06-23 against a 長庚嘉義 5/18–5/22 raw — the earlier
 //     belief that the 住院 detail carries no drug list was wrong).
+// IHKE3309S02's 住院 lists ship order_CODE as a "||"-DOUBLED string
+// ("08011C||08011C"); IHKE3303S02's 門診 lists ship it plain ("08011C"). Take the
+// part before the first "|" so both shapes yield the bare NHI 醫令碼. Without
+// this the doubled 住院 codes never matched a lab's clean code, so a chemo
+// admission's whole lab workup fell through to the same-day 門診 gateway and
+// mis-linked there (live-probed H12113 2026-06-30: 住院 S10 had all 12 codes but
+// as "08011C||08011C"). No NHI 醫令碼 contains "|", so a plain code is unchanged.
+const normOrderCode = (raw) =>
+  String(raw ?? "")
+    .split("|")[0]
+    .trim();
+
 export function rxOrderCodesFromS02Detail(body) {
   const main = pickS02MainRow(body);
   if (!main) return [];
@@ -126,7 +138,7 @@ export function rxOrderCodesFromS02Detail(body) {
   for (const listKey of ["sp_IHKE3302S04_data", "sp_IHKE3302S11_data"]) {
     const list = Array.isArray(main[listKey]) ? main[listKey] : [];
     for (const item of list) {
-      const c = String(item?.order_code || item?.order_CODE || "").trim();
+      const c = normOrderCode(item?.order_code || item?.order_CODE);
       if (c) codes.add(c);
     }
   }
@@ -150,7 +162,7 @@ export function labOrderCodesFromS02Detail(body) {
   for (const listKey of ["sp_IHKE3302S07_data", "sp_IHKE3302S10_data"]) {
     const list = Array.isArray(main[listKey]) ? main[listKey] : [];
     for (const item of list) {
-      const c = String(item?.order_CODE || item?.order_code || "").trim();
+      const c = normOrderCode(item?.order_CODE || item?.order_code);
       if (c) codes.add(c);
     }
   }

@@ -127,6 +127,24 @@ describe("labOrderCodesFromS02Detail (#26 for labs)", () => {
     expect(out).toEqual(["09015C", "08011C"]);
   });
 
+  test('住院 S10 ships order_CODE "||"-doubled ("08011C||08011C") → normalised to bare code', () => {
+    // Live-probed H12113 2026-06-30: IHKE3309S02 sp_IHKE3302S10_data carries
+    // order_CODE as "08011C||08011C" (門診 S07 is plain). Without normalisation
+    // these never matched a lab's clean "08011C" so the whole chemo-admission
+    // workup mis-linked to the same-day 門診. normOrderCode takes the part
+    // before the first "|".
+    const out = labOrderCodesFromS02Detail(
+      body({
+        sp_IHKE3302S10_data: [
+          { order_CODE: "08011C||08011C" },
+          { order_CODE: "13007C||13007C" },
+          { order_CODE: "09002C" }, // already plain → unchanged
+        ],
+      }),
+    );
+    expect(out).toEqual(["08011C", "13007C", "09002C"]);
+  });
+
   test("does NOT consult the 處置/診察 非藥品醫囑 list (sp_IHKE3302S05)", () => {
     // 呼吸運動 57010B / 體位引流 47045C live in S05 — must NOT be captured as labs.
     const out = labOrderCodesFromS02Detail(

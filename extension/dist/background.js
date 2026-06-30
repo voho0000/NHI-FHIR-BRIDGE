@@ -6046,13 +6046,15 @@
         });
         if (labHits.length === 1) {
           r.encounter = { reference: `Encounter/${labHits[0].id}` };
-          continue;
+        } else if (labHits.length > 1) {
+          const impInSpan = labHits.filter(
+            (e) => (e.class ?? {}).code === "IMP" && String((e.period ?? {}).start ?? "").slice(0, 10) <= date && date <= String((e.period ?? {}).end ?? "").slice(0, 10)
+          );
+          if (impInSpan.length === 1) {
+            r.encounter = { reference: `Encounter/${impInSpan[0].id}` };
+          }
         }
       }
-      const gateways = cands.filter(
-        (e) => (e.class ?? {}).code !== "IMP" && String((e.period ?? {}).start ?? "").slice(0, 10) === date
-      );
-      if (gateways.length === 1) r.encounter = { reference: `Encounter/${gateways[0].id}` };
     }
   }
   function repairDocumentReferenceEncounters(candidates, resources) {
@@ -7425,6 +7427,7 @@
     }
     return out;
   }
+  var normOrderCode = (raw) => String(raw ?? "").split("|")[0].trim();
   function rxOrderCodesFromS02Detail(body) {
     const main = pickS02MainRow(body);
     if (!main) return [];
@@ -7432,7 +7435,7 @@
     for (const listKey of ["sp_IHKE3302S04_data", "sp_IHKE3302S11_data"]) {
       const list = Array.isArray(main[listKey]) ? main[listKey] : [];
       for (const item of list) {
-        const c = String(item?.order_code || item?.order_CODE || "").trim();
+        const c = normOrderCode(item?.order_code || item?.order_CODE);
         if (c) codes.add(c);
       }
     }
@@ -7445,7 +7448,7 @@
     for (const listKey of ["sp_IHKE3302S07_data", "sp_IHKE3302S10_data"]) {
       const list = Array.isArray(main[listKey]) ? main[listKey] : [];
       for (const item of list) {
-        const c = String(item?.order_CODE || item?.order_code || "").trim();
+        const c = normOrderCode(item?.order_CODE || item?.order_code);
         if (c) codes.add(c);
       }
     }
