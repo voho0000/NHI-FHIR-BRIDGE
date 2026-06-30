@@ -169,14 +169,17 @@ describe("NHI abnormal flag (assaY_MARK → abnormal_flag) — v0.20.6", () => {
     expect(r!.interpretation[0].coding[0].code).toBe("N");
   });
 
-  test("no flag → unchanged (bridge derivation kept: in-range value stays Normal)", () => {
+  // v1.0.18 (user 2026-06-30: 不要任何自算): the bridge NO LONGER derives H/L/N by
+  // comparing value to a parsed range. With NO NHI signal (no assaY_MARK flag, no
+  // explicit interp text) a row is left UNINTERPRETED — never a self-computed guess.
+  test("no flag + in-range value → NO interpretation (no self-compute, v1.0.18)", () => {
     const r = egfr({ value: 50, unit: "x", reference_range: "[10][100]" });
-    expect(r!.interpretation[0].coding[0].code).toBe("N");
+    expect(r!.interpretation).toBeUndefined();
   });
 
-  test("no flag + bridge-computed High kept (clean range still derives H)", () => {
+  test("no flag + out-of-range value → NO interpretation (no self-compute, v1.0.18)", () => {
     const r = egfr({ value: 200, unit: "x", reference_range: "[10][100]" });
-    expect(r!.interpretation[0].coding[0].code).toBe("H");
+    expect(r!.interpretation).toBeUndefined();
   });
 });
 

@@ -5207,11 +5207,7 @@
         }
       }
     }
-    const interpCodingResult = mapInterpretation(interp) || deriveInterpretation(
-      value !== null && value !== void 0 ? String(value) : "",
-      resource.valueQuantity,
-      resource.referenceRange?.[0]
-    );
+    const interpCodingResult = mapInterpretation(interp);
     if (interpCodingResult) {
       resource.interpretation = [{ coding: [interpCodingResult] }];
     } else if (_interpFromRange) {
@@ -5382,11 +5378,7 @@
       const flagged = rrs.find((r) => r.interpretationText);
       if (flagged?.interpretationText) _interpFromRange = flagged.interpretationText;
     }
-    const interpCodingResult = mapInterpretation(interp) || deriveInterpretation(
-      value !== null && value !== void 0 ? String(value) : "",
-      resource.valueQuantity,
-      resource.referenceRange?.[0]
-    );
+    const interpCodingResult = mapInterpretation(interp);
     if (interpCodingResult) {
       resource.interpretation = [{ coding: [interpCodingResult] }];
     } else if (_interpFromRange) {

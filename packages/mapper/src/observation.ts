@@ -1966,13 +1966,14 @@ export function mapObservation(
     }
   }
 
-  const interpCodingResult =
-    mapInterpretation(interp) ||
-    deriveInterpretation(
-      value !== null && value !== undefined ? String(value) : "",
-      resource.valueQuantity as Quantity | undefined,
-      (resource.referenceRange as RangeEntry[] | undefined)?.[0],
-    );
+  // v1.0.18 (user 2026-06-30: 不要任何自算): interpretation comes ONLY from NHI's
+  // own signals — the explicit interp field (mapInterpretation), the 正常/異常 text
+  // mis-shipped in the range field (_interpFromRange, below), and the assaY_MARK
+  // abnormal flag (applyNhiAbnormalFlag, below). The bridge NO LONGER derives
+  // H/L/N by comparing value to a parsed range (deriveInterpretation removed from
+  // the pipeline) — that computation can be wrong (e.g. a mis-parsed range) and is
+  // not NHI-supplied data. With no NHI signal, a row stays uninterpreted.
+  const interpCodingResult = mapInterpretation(interp);
   if (interpCodingResult) {
     resource.interpretation = [{ coding: [interpCodingResult] }];
   } else if (_interpFromRange) {
@@ -2244,13 +2245,14 @@ function buildObservation(
     if (flagged?.interpretationText) _interpFromRange = flagged.interpretationText;
   }
 
-  const interpCodingResult =
-    mapInterpretation(interp) ||
-    deriveInterpretation(
-      value !== null && value !== undefined ? String(value) : "",
-      resource.valueQuantity as Quantity | undefined,
-      (resource.referenceRange as RangeEntry[] | undefined)?.[0],
-    );
+  // v1.0.18 (user 2026-06-30: 不要任何自算): interpretation comes ONLY from NHI's
+  // own signals — the explicit interp field (mapInterpretation), the 正常/異常 text
+  // mis-shipped in the range field (_interpFromRange, below), and the assaY_MARK
+  // abnormal flag (applyNhiAbnormalFlag, below). The bridge NO LONGER derives
+  // H/L/N by comparing value to a parsed range (deriveInterpretation removed from
+  // the pipeline) — that computation can be wrong (e.g. a mis-parsed range) and is
+  // not NHI-supplied data. With no NHI signal, a row stays uninterpreted.
+  const interpCodingResult = mapInterpretation(interp);
   if (interpCodingResult) {
     resource.interpretation = [{ coding: [interpCodingResult] }];
   } else if (_interpFromRange) {
