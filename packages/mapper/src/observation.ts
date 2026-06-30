@@ -474,26 +474,22 @@ export function mapInterpretation(
   return interpCoding(entry[0], entry[1]);
 }
 
-// Bridge-computed interpretation codes that already carry a specific
-// abnormal/normal-direction signal and must NOT be overwritten by NHI's
-// coarser binary flag (they're more granular).
-const PRESERVE_INTERP = new Set(["H", "L", "A", "AA", "POS"]);
-
 // NHI's own abnormal flag (raw.abnormal_flag from assaY_MARK: "1" 異常 / "0"
-// 正常 / "" none) is authoritative for the abnormal/normal binary. It corrects
-// the value-vs-range derivation when a non-numeric reference range (e.g. an eGFR
-// CKD-stage text "[N:≧60,s3:30~59,…]") makes the derivation mislabel an abnormal
-// result as Normal. Policy: KEEP the bridge's granular H/L/A/AA/POS; only when
-// the bridge produced Normal (or nothing) does the NHI flag decide —
-//   1 → Abnormal (A), 0 → Normal (N). Never downgrades a bridge-computed abnormal.
+// 正常 / "" none) is AUTHORITATIVE for the abnormal/normal binary whenever NHI
+// ships it (user decision 2026-06-30: 全面以 NHI 旗標為準). When present we take
+// NHI's call — Abnormal (A) / Normal (N) — OVERRIDING the bridge's value-vs-range
+// derivation, because that derivation can be wrong when the range is an un-
+// reducible age-stratified string (the 台大癌醫 CBC "[[0-14d]…[≧18y]…]" case that
+// shipped a bogus 0-14 range → false High). NHI's flag is binary (no High/Low
+// direction), so a bridge-computed H/L is intentionally coarsened to A/N here.
+// When NHI gives NO flag we keep whatever the bridge derived from a cleanly-
+// parsed range (H/L/N), or leave it uninterpreted (e.g. age-stratified CBC with
+// no numeric range) — never guessed.
 function applyNhiAbnormalFlag(resource: Record<string, any>, raw: Record<string, any>): void {
   const flag = String(raw.abnormal_flag ?? "").trim();
-  if (flag !== "0" && flag !== "1") return;
-  const current = resource.interpretation?.[0]?.coding?.[0]?.code as string | undefined;
-  if (current && PRESERVE_INTERP.has(current)) return;
   if (flag === "1") {
     resource.interpretation = [{ coding: [interpCoding("A", "Abnormal")] }];
-  } else if (!current) {
+  } else if (flag === "0") {
     resource.interpretation = [{ coding: [interpCoding("N", "Normal")] }];
   }
 }

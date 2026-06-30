@@ -184,6 +184,31 @@ describe("parseRange — bracketed [low][high]", () => {
     expect(r?.text).toBe("[3.89][26.8]");
   });
 
+  // v1.0.17 — age-stratified ranges keep the full original text but emit NO
+  // numeric low/high (the old dash-range fallback grabbed the "0-14" age bracket
+  // as a bogus 0-14 range). See parsers.ts RR_AGE_STRATIFIED.
+  test("age-stratified range → text-only, no numeric low/high", () => {
+    const r = parseRange(
+      "[[0-14d]144-450 [15-30d]248-586 [≧18y]150-378][[0-14d]144-450 [≧18y]150-378]",
+      "K/μL",
+    );
+    expect(r?.low).toBeUndefined();
+    expect(r?.high).toBeUndefined();
+    expect(r?.text).toContain("≧18y");
+  });
+
+  test("≧18y-only age bracket → text-only (Band case [[≧18y]0-5][...])", () => {
+    const r = parseRange("[[≧18y]0-5][[≧18y]0-5]", "%");
+    expect(r?.low).toBeUndefined();
+    expect(r?.high).toBeUndefined();
+  });
+
+  test("plain numeric brackets do NOT false-trigger the age-strat guard", () => {
+    const r = parseRange("[41][53]", "%");
+    expect(r?.low?.value).toBe(41);
+    expect(r?.high?.value).toBe(53);
+  });
+
   test("empty high bracket → only low", () => {
     const r = parseRange("[40][]", "U/L");
     expect(r?.low?.value).toBe(40);

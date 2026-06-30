@@ -3912,6 +3912,7 @@
   var RR_SEX_NUM_G = /(男性|女性|男|女|M|F)\s*[:：]?\s*(?:[<>≧≦]=?)?\s*(-?\d+(?:\.\d+)?)/g;
   var RR_SINGLE_BRACKET = /^\s*\[\s*(.+?)\s*\]\s*$/;
   var RR_QUALITATIVE_PAREN = /^\s*(Normal|正常|Nonreactive|Non-reactive)\s*\(\s*(-?\d+(?:\.\d+)?)\s*\)\s*$/i;
+  var RR_AGE_STRATIFIED = /\[\s*(?:[<>≧≦]=?)?\s*\d[\d.]*\s*(?:[-~–]\s*\d[\d.]*\s*)?(?:d|y|wk|mo|yr|歲|天|日|週|月)\s*\]/i;
   var SEX_TO_FHIR = {
     \u7537\u6027: ["male", "Male"],
     \u7537: ["male", "Male"],
@@ -4055,6 +4056,9 @@
     if (!s) return null;
     if (_looksLikeInterpretationText(s)) {
       return { text: decoded, interpretationText: s };
+    }
+    if (RR_AGE_STRATIFIED.test(s)) {
+      return { text: decoded };
     }
     const entry = { text: decoded };
     const m = s.match(RR_LOWHIGH_BRACKETS);
@@ -4392,15 +4396,11 @@
     if (!entry) return null;
     return interpCoding(entry[0], entry[1]);
   }
-  var PRESERVE_INTERP = /* @__PURE__ */ new Set(["H", "L", "A", "AA", "POS"]);
   function applyNhiAbnormalFlag(resource, raw) {
     const flag = String(raw.abnormal_flag ?? "").trim();
-    if (flag !== "0" && flag !== "1") return;
-    const current = resource.interpretation?.[0]?.coding?.[0]?.code;
-    if (current && PRESERVE_INTERP.has(current)) return;
     if (flag === "1") {
       resource.interpretation = [{ coding: [interpCoding("A", "Abnormal")] }];
-    } else if (!current) {
+    } else if (flag === "0") {
       resource.interpretation = [{ coding: [interpCoding("N", "Normal")] }];
     }
   }

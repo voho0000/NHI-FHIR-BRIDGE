@@ -154,19 +154,85 @@ describe("NHI abnormal flag (assaY_MARK → abnormal_flag) — v0.20.6", () => {
     expect(r!.interpretation[0].coding[0].code).toBe("N");
   });
 
-  test("does NOT flatten a bridge-computed High to A when flag=1 (keeps granular)", () => {
+  // v1.0.17 (全面以 NHI 旗標為準): when NHI ships assaY_MARK it is authoritative
+  // and OVERRIDES the bridge's value-vs-range derivation (binary A/N — the
+  // bridge's H/L direction is intentionally coarsened). Previously the bridge's
+  // granular H/L was preserved; that masked the age-stratified-range bug where a
+  // bogus 0-14 range produced a false High the flag couldn't correct.
+  test("flag=1 OVERRIDES a bridge-computed High → A (NHI authoritative, v1.0.17)", () => {
     const r = egfr({ value: 200, unit: "x", reference_range: "[10][100]", abnormal_flag: "1" });
-    expect(r!.interpretation[0].coding[0].code).toBe("H");
+    expect(r!.interpretation[0].coding[0].code).toBe("A");
   });
 
-  test("does NOT downgrade a bridge-computed High when flag=0", () => {
+  test("flag=0 OVERRIDES a bridge-computed High → N (NHI authoritative, v1.0.17)", () => {
     const r = egfr({ value: 200, unit: "x", reference_range: "[10][100]", abnormal_flag: "0" });
-    expect(r!.interpretation[0].coding[0].code).toBe("H");
+    expect(r!.interpretation[0].coding[0].code).toBe("N");
   });
 
-  test("no flag → unchanged (in-range value stays Normal)", () => {
+  test("no flag → unchanged (bridge derivation kept: in-range value stays Normal)", () => {
     const r = egfr({ value: 50, unit: "x", reference_range: "[10][100]" });
     expect(r!.interpretation[0].coding[0].code).toBe("N");
+  });
+
+  test("no flag + bridge-computed High kept (clean range still derives H)", () => {
+    const r = egfr({ value: 200, unit: "x", reference_range: "[10][100]" });
+    expect(r!.interpretation[0].coding[0].code).toBe("H");
+  });
+});
+
+describe("age-stratified CBC reference range (台大癌醫 [[0-14d]…[≧18y]…]) — v1.0.17", () => {
+  const AGE_RANGE =
+    "[[0-14d]144-450 [15-30d]248-586 [31-180d]229-597 [0.5-6y]189-459 [6-18y]175-369 [≧18y]150-378]" +
+    "[[0-14d]144-450 [15-30d]248-586 [31-180d]229-597 [0.5-6y]189-459 [6-18y]175-369 [≧18y]150-378]";
+
+  test("range keeps full original text but NO numeric low/high (no bogus 0-14)", () => {
+    const r = mapObservation(
+      {
+        code: "08011C",
+        display: "PLT(STAT)",
+        date: "2026-04-24",
+        value: "208",
+        unit: "K/μL",
+        reference_range: AGE_RANGE,
+      },
+      PATIENT_ID,
+    );
+    expect(r!.referenceRange[0].low).toBeUndefined();
+    expect(r!.referenceRange[0].high).toBeUndefined();
+    expect(r!.referenceRange[0].text).toContain("≧18y");
+  });
+
+  test("no NHI flag + no numeric range → NO interpretation (not a false High)", () => {
+    const r = mapObservation(
+      {
+        code: "08011C",
+        display: "PLT(STAT)",
+        date: "2026-04-24",
+        value: "208",
+        unit: "K/μL",
+        reference_range: AGE_RANGE,
+        abnormal_flag: "",
+      },
+      PATIENT_ID,
+    );
+    expect(r!.interpretation).toBeUndefined();
+  });
+
+  test("age-stratified range WITH NHI flag=1 → A (flag drives it)", () => {
+    const r = mapObservation(
+      {
+        code: "08011C",
+        display: "PLT(STAT)",
+        date: "2026-04-24",
+        value: "60",
+        unit: "K/μL",
+        reference_range: AGE_RANGE,
+        abnormal_flag: "1",
+      },
+      PATIENT_ID,
+    );
+    expect(r!.referenceRange[0].low).toBeUndefined();
+    expect(r!.interpretation[0].coding[0].code).toBe("A");
   });
 });
 

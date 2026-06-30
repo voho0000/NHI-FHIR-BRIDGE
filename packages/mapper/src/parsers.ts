@@ -84,6 +84,16 @@ const RR_SEX_NUM_G = /(男性|女性|男|女|M|F)\s*[:：]?\s*(?:[<>≧≦]=?)?\
 const RR_SINGLE_BRACKET = /^\s*\[\s*(.+?)\s*\]\s*$/;
 const RR_QUALITATIVE_PAREN =
   /^\s*(Normal|正常|Nonreactive|Non-reactive)\s*\(\s*(-?\d+(?:\.\d+)?)\s*\)\s*$/i;
+// Age-stratified reference range — some hospitals (台大癌醫 et al.) ship CBC
+// ranges as a table of per-age-group brackets:
+//   "[[0-14d]144-450 [15-30d]248-586 … [≧18y]150-378][…doubled…]".
+// An age bracket is "[<comparator?><num>(-<num>)?<age-unit>]" where the unit is
+// d/y/wk/mo/yr or a CJK 歲/天/日/週/月. A plain value bracket ("[41]", "[3.89]",
+// "[0.92 ~ 1.68]", "[<115 IU/mL]") has NO age unit immediately after its number,
+// so it never matches. Detecting even one age bracket means the string is a
+// multi-segment age table the bridge must NOT reduce to a single low/high.
+const RR_AGE_STRATIFIED =
+  /\[\s*(?:[<>≧≦]=?)?\s*\d[\d.]*\s*(?:[-~–]\s*\d[\d.]*\s*)?(?:d|y|wk|mo|yr|歲|天|日|週|月)\s*\]/i;
 
 const SEX_TO_FHIR: Record<string, [string, string]> = {
   男性: ["male", "Male"],
@@ -324,6 +334,20 @@ export function parseRange(rawRange: string, unit: string): RangeEntry | null {
   // Observation.referenceRange. Caller routes them to .interpretation.
   if (_looksLikeInterpretationText(s)) {
     return { text: decoded, interpretationText: s };
+  }
+
+  // Age-stratified range (per-age-group brackets like "[[0-14d]144-450 …
+  // [≧18y]150-378]") — the bridge canNOT faithfully pick one age group's
+  // low/high without guessing, and the format varies by hospital, so keep the
+  // full original string on .text ONLY and emit NO numeric low/high. (Before
+  // this guard the dash-range fallback greedily matched the FIRST "0-14" — the
+  // "0-14 days" age bracket — and shipped low=0/high=14, mislabelling every
+  // adult CBC as out-of-range; a single v1.0.16 bundle carried 504 such obs.)
+  // Abnormal/normal for these rows then comes solely from NHI's own assaY_MARK
+  // flag (applyNhiAbnormalFlag); with no flag they stay uninterpreted rather
+  // than guessed. User decision 2026-06-30.
+  if (RR_AGE_STRATIFIED.test(s)) {
+    return { text: decoded };
   }
 
   const entry: RangeEntry = { text: decoded };
